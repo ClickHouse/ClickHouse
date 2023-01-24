@@ -3,6 +3,7 @@
 #include "Epoll.h"
 #include <Common/Exception.h>
 #include <unistd.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -59,7 +60,7 @@ void Epoll::remove(int fd)
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
 {
     if (events_count == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
+        throw Exception("There are no events in epoll", ErrorCodes::LOGICAL_ERROR);
 
     int ready_size;
     int timeout = blocking ? -1 : 0;

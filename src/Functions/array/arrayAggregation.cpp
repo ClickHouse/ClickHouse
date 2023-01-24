@@ -132,8 +132,9 @@ struct ArrayAggregateImpl
 
         if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregation function cannot be performed on type {}",
-                expression_return->getName());
+            throw Exception(
+                "array aggregation function cannot be performed on type " + expression_return->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return result;
@@ -182,7 +183,7 @@ struct ArrayAggregateImpl
                 {
                     size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
-                    res[i] = x * static_cast<ResultType>(array_size);
+                    res[i] = x * ResultType(array_size);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::min ||
                                 aggregate_operation == AggregateOperation::max)
@@ -222,7 +223,7 @@ struct ArrayAggregateImpl
                         if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
-                        res[i] = DecimalUtils::convertTo<ResultType>(product, static_cast<UInt32>(result_scale));
+                        res[i] = DecimalUtils::convertTo<ResultType>(product, result_scale);
                     }
                     else
                     {
@@ -331,7 +332,7 @@ struct ArrayAggregateImpl
                 if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
-                res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, static_cast<UInt32>(result_scale));
+                res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, result_scale);
             }
             else
             {
@@ -386,7 +387,7 @@ using FunctionArrayAverage = FunctionArrayMapped<ArrayAggregateImpl<AggregateOpe
 struct NameArrayProduct { static constexpr auto name = "arrayProduct"; };
 using FunctionArrayProduct = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::product>, NameArrayProduct>;
 
-REGISTER_FUNCTION(ArrayAggregation)
+void registerFunctionArrayAggregation(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayMin>();
     factory.registerFunction<FunctionArrayMax>();

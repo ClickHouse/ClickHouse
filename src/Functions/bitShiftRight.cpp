@@ -24,7 +24,7 @@ struct BitShiftRightImpl
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
+            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
         else
@@ -41,7 +41,7 @@ struct BitShiftRightImpl
             if (op_pointer - 1 >= begin)
             {
                 /// The right b bit of the left byte is moved to the left b bit of this byte
-                *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer - 1) << (8 - shift_right_bits)) | *out);
+                *out = UInt8(UInt8(*(op_pointer - 1) << (8 - shift_right_bits)) | *out);
             }
         }
     }
@@ -50,7 +50,7 @@ struct BitShiftRightImpl
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets)
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
+            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
         else
         {
             UInt8 word_size = 8;
@@ -87,7 +87,7 @@ struct BitShiftRightImpl
     static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnFixedString::Chars & out_vec)
     {
         if constexpr (is_big_int_v<B>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
+            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
         else
         {
             UInt8 word_size = 8;
@@ -126,7 +126,7 @@ struct BitShiftRightImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftRightImpl expected an integral type");
+            throw Exception("BitShiftRightImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
         return is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
     }
 #endif
@@ -138,7 +138,7 @@ using FunctionBitShiftRight = BinaryArithmeticOverloadResolver<BitShiftRightImpl
 
 }
 
-REGISTER_FUNCTION(BitShiftRight)
+void registerFunctionBitShiftRight(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitShiftRight>();
 }

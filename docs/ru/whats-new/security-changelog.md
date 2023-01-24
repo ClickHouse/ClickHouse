@@ -1,7 +1,6 @@
 ---
-slug: /ru/whats-new/security-changelog
-sidebar_position: 76
-sidebar_label: Security Changelog
+toc_priority: 76
+toc_title: Security Changelog
 ---
 
 # Security Changelog {#security-changelog}
@@ -84,3 +83,4 @@ unixODBC позволял указать путь для подключения 
 Некорректная конфигурация в deb пакете могла привести к неавторизованному доступу к базе данных.
 
 Обнаружено благодаря: the UK’s National Cyber Security Centre (NCSC)
+

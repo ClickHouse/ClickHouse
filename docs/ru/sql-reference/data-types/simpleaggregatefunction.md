@@ -1,6 +1,3 @@
----
-slug: /ru/sql-reference/data-types/simpleaggregatefunction
----
 # SimpleAggregateFunction(func, type) {#data-type-simpleaggregatefunction}
 
 Хранит только текущее значение агрегатной функции и не сохраняет ее полное состояние, как это делает [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md). Такая оптимизация может быть применена к функциям, которые обладают следующим свойством: результат выполнения функции `f` к набору строк `S1 UNION ALL S2` может быть получен путем выполнения `f` к отдельным частям набора строк,
@@ -12,8 +9,8 @@ slug: /ru/sql-reference/data-types/simpleaggregatefunction
 
 -   [`any`](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)
 -   [`anyLast`](../../sql-reference/aggregate-functions/reference/anylast.md#anylastx)
--   [`min`](../../sql-reference/aggregate-functions/reference/min.mdx#agg_function-min)
--   [`max`](../../sql-reference/aggregate-functions/reference/max.mdx#agg_function-max)
+-   [`min`](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min)
+-   [`max`](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max)
 -   [`sum`](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum)
 -   [`sumWithOverflow`](../../sql-reference/aggregate-functions/reference/sumwithoverflow.md#sumwithoverflowx)
 -   [`groupBitAnd`](../../sql-reference/aggregate-functions/reference/groupbitand.md#groupbitand)
@@ -25,11 +22,11 @@ slug: /ru/sql-reference/data-types/simpleaggregatefunction
 -   [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
 -   [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)
 
-    :::note "Примечание"
+!!! note "Примечание"
     Значения `SimpleAggregateFunction(func, Type)` отображаются и хранятся так же, как и `Type`, поэтому комбинаторы [-Merge](../../sql-reference/aggregate-functions/combinators.md#aggregate_functions_combinators-merge) и [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) не требуются.
 
     `SimpleAggregateFunction` имеет лучшую производительность, чем `AggregateFunction` с той же агрегатной функцией.
-    :::
+
 **Параметры**
 
 -   `func` — имя агрегатной функции.
@@ -40,3 +37,4 @@ slug: /ru/sql-reference/data-types/simpleaggregatefunction
 ``` sql
 CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
 ```
+

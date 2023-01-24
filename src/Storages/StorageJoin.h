@@ -1,10 +1,12 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
+
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/JoinUtils.h>
+#include <Interpreters/join_common.h>
 
 
 namespace DB
@@ -21,31 +23,17 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public StorageSetOrJoinBase
+class StorageJoin final : public shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
+    friend struct shared_ptr_helper<StorageJoin>;
 public:
-    StorageJoin(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const Names & key_names_,
-        bool use_nulls_,
-        SizeLimits limits_,
-        JoinKind kind_,
-        JoinStrictness strictness_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool overwrite,
-        bool persistent_);
-
     String getName() const override { return "Join"; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     /// Only delete is supported.
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
@@ -68,7 +56,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -76,22 +64,26 @@ public:
     Block getRightSampleBlock() const
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
-        Block block = metadata_snapshot->getSampleBlock();
-        convertRightBlock(block);
+        Block block = metadata_snapshot->getSampleBlock().sortColumns();
+        if (use_nulls && isLeftOrFull(kind))
+        {
+            for (auto & col : block)
+            {
+                JoinCommon::convertColumnToNullable(col);
+            }
+        }
         return block;
     }
 
     bool useNulls() const { return use_nulls; }
-
-    const Names & getKeyNames() const { return key_names; }
 
 private:
     Block sample_block;
     const Names key_names;
     bool use_nulls;
     SizeLimits limits;
-    JoinKind kind;                    /// LEFT | INNER ...
-    JoinStrictness strictness;        /// ANY | ALL
+    ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
+    ASTTableJoin::Strictness strictness;        /// ANY | ALL
     bool overwrite;
 
     std::shared_ptr<TableJoin> table_join;
@@ -107,7 +99,21 @@ private:
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
 
-    void convertRightBlock(Block & block) const;
+protected:
+    StorageJoin(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const Names & key_names_,
+        bool use_nulls_,
+        SizeLimits limits_,
+        ASTTableJoin::Kind kind_,
+        ASTTableJoin::Strictness strictness_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool overwrite,
+        bool persistent_);
 };
 
 }

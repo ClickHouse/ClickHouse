@@ -40,17 +40,19 @@ DataTypePtr FunctionValidateNestedArraySizes::getReturnTypeImpl(const DataTypes 
     size_t num_args = arguments.size();
 
     if (num_args < 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs more than two arguments; passed {}.",
-            getName(), arguments.size());
+        throw Exception(
+            "Function " + getName() + " needs more than two arguments; passed " + toString(arguments.size()) + ".",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!WhichDataType(arguments[0]).isUInt8())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {} Must be UInt.",
-                arguments[0]->getName(), getName());
+        throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + " Must be UInt.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     for (size_t i = 1; i < num_args; ++i)
         if (!WhichDataType(arguments[i]).isArray())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} Must be Array.",
-                arguments[i]->getName(), i, getName());
+            throw Exception(
+                "Illegal type " + arguments[i]->getName() + " of " + toString(i) + " argument of function " + getName() + " Must be Array.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return std::make_shared<DataTypeUInt8>();
 }
@@ -117,7 +119,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
     return ColumnUInt8::create(input_rows_count, 1);
 }
 
-REGISTER_FUNCTION(ValidateNestedArraySizes)
+void registerFunctionValidateNestedArraySizes(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidateNestedArraySizes>();
 }

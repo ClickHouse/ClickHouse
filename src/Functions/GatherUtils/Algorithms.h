@@ -7,8 +7,6 @@
 #include <Core/AccurateComparison.h>
 #include <base/range.h>
 #include "GatherUtils.h"
-#include "sliceEqualElements.h"
-#include "sliceHasImplAnyAll.h"
 
 
 namespace DB::ErrorCodes
@@ -79,7 +77,8 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
         sink.current_offset += slice.size;
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.");
+        throw Exception("Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename T>
@@ -158,7 +157,8 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArr
         ++sink.current_offset;
     }
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function writeSlice expects same column types for GenericValueSlice and GenericArraySink.");
+        throw Exception("Function writeSlice expects same column types for GenericValueSlice and GenericArraySink.",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename T>
@@ -206,9 +206,9 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     auto check_and_get_size_to_reserve = [] (auto source, IArraySource * array_source)
     {
         if (source == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Concat function expected {} or {} but got {}",
-                            demangle(typeid(Source).name()), demangle(typeid(ConstSource<Source>).name()),
-                            demangle(typeid(*array_source).name()));
+            throw Exception("Concat function expected " + demangle(typeid(Source).name()) + " or "
+                            + demangle(typeid(ConstSource<Source>).name()) + " but got "
+                            + demangle(typeid(*array_source).name()), ErrorCodes::LOGICAL_ERROR);
         return source->getSizeForReserve();
     };
 
@@ -306,7 +306,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
     {
         ssize_t size = length;
         if (size < 0)
-            size += offset;
+            size += static_cast<ssize_t>(src.getElementSize()) - offset;
 
         if (size > 0)
             writeSlice(src.getSliceFromRight(offset, size), sink);
@@ -461,19 +461,39 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 }
 
 
-template <typename T>
-bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
-                          size_t first_ind [[maybe_unused]],
-                          size_t second_ind [[maybe_unused]])
+/// Methods to check if first array has elements from second array, overloaded for various combinations of types.
+template <
+    ArraySearchType search_type,
+    typename FirstSliceType,
+    typename SecondSliceType,
+          bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
+bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-    if constexpr (is_decimal<T>)
-        return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
-    else
-        return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
-}
-inline ALWAYS_INLINE bool insliceEqualElements(const GenericArraySlice & first, size_t first_ind, size_t second_ind)
-{
-    return first.elements->compareAt(first_ind + first.begin, second_ind + first.begin, *first.elements, -1) == 0;
+    const bool has_first_null_map = first_null_map != nullptr;
+    const bool has_second_null_map = second_null_map != nullptr;
+
+    for (size_t i = 0; i < second.size; ++i)
+    {
+        bool has = false;
+        for (size_t j = 0; j < first.size && !has; ++j)
+        {
+            const bool is_first_null = has_first_null_map && first_null_map[j];
+            const bool is_second_null = has_second_null_map && second_null_map[i];
+
+            if (is_first_null && is_second_null)
+                has = true;
+
+            if (!is_first_null && !is_second_null && isEqual(first, second, j, i))
+                has = true;
+        }
+
+        if (has && search_type == ArraySearchType::Any)
+            return true;
+
+        if (!has && search_type == ArraySearchType::All)
+            return false;
+    }
+    return search_type == ArraySearchType::All;
 }
 
 template <
@@ -600,6 +620,55 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second, 
         return sliceHasImplAnyAll<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
 }
 
+
+template <typename T, typename U>
+bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
+                        const NumericArraySlice<U> & second [[maybe_unused]],
+                        size_t first_ind [[maybe_unused]],
+                        size_t second_ind [[maybe_unused]])
+{
+    /// TODO: Decimal scale
+    if constexpr (is_decimal<T> && is_decimal<U>)
+        return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
+    else if constexpr (is_decimal<T> || is_decimal<U>)
+        return false;
+    else
+        return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
+}
+
+template <typename T>
+bool sliceEqualElements(const NumericArraySlice<T> &, const GenericArraySlice &, size_t, size_t)
+{
+    return false;
+}
+
+template <typename U>
+bool sliceEqualElements(const GenericArraySlice &, const NumericArraySlice<U> &, size_t, size_t)
+{
+    return false;
+}
+
+inline ALWAYS_INLINE bool sliceEqualElements(const GenericArraySlice & first, const GenericArraySlice & second, size_t first_ind, size_t second_ind)
+{
+    return first.elements->compareAt(first_ind + first.begin, second_ind + second.begin, *second.elements, -1) == 0;
+}
+
+template <typename T>
+bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
+                          size_t first_ind [[maybe_unused]],
+                          size_t second_ind [[maybe_unused]])
+{
+    if constexpr (is_decimal<T>)
+        return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
+    else
+        return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
+}
+
+inline ALWAYS_INLINE bool insliceEqualElements(const GenericArraySlice & first, size_t first_ind, size_t second_ind)
+{
+    return first.elements->compareAt(first_ind + first.begin, second_ind + first.begin, *first.elements, -1) == 0;
+}
+
 template <ArraySearchType search_type, typename T, typename U>
 bool sliceHas(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second)
 {
@@ -612,7 +681,7 @@ bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
     if (!first.elements->structureEquals(*second.elements))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function sliceHas expects same column types for slices.");
+        throw Exception("Function sliceHas expects same column types for slices.", ErrorCodes::LOGICAL_ERROR);
 
     auto impl = sliceHasImpl<search_type, GenericArraySlice, GenericArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, nullptr);
@@ -785,3 +854,4 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 }
 
 }
+

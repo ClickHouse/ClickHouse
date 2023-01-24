@@ -60,7 +60,7 @@ public:
         std::lock_guard lock(mutex);
         bool inserted = endpoint_map.try_emplace(name, std::move(endpoint)).second;
         if (!inserted)
-            throw Exception(ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT, "Duplicate interserver IO endpoint: {}", name);
+            throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
     }
 
     bool removeEndpointIfExists(const String & name)
@@ -69,7 +69,7 @@ public:
         return endpoint_map.erase(name);
     }
 
-    InterserverIOEndpointPtr getEndpoint(const String & name) const
+    InterserverIOEndpointPtr getEndpoint(const String & name)
     try
     {
         std::lock_guard lock(mutex);
@@ -77,14 +77,14 @@ public:
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT, "No interserver IO endpoint named {}", name);
+        throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
     }
 
 private:
     using EndpointMap = std::map<String, InterserverIOEndpointPtr>;
 
     EndpointMap endpoint_map;
-    mutable std::mutex mutex;
+    std::mutex mutex;
 };
 
 }

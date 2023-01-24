@@ -19,7 +19,7 @@ using FunctionMultiSearchFirstIndexUTF8
 
 }
 
-REGISTER_FUNCTION(MultiSearchFirstIndexUTF8)
+void registerFunctionMultiSearchFirstIndexUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearchFirstIndexUTF8>();
 }

@@ -21,7 +21,6 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 
@@ -180,8 +179,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (name_part == "VersionedCollapsing")
         merging_params.mode = MergeTreeData::MergingParams::VersionedCollapsing;
     else if (!name_part.empty())
-        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown storage {}",
-            args.engine_name + getMergeTreeVerboseHelp(is_extended_storage_def));
+        throw Exception(
+            "Unknown storage " + args.engine_name + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::UNKNOWN_STORAGE);
 
     /// NOTE Quite complicated.
 
@@ -257,19 +256,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         String msg;
         if (is_extended_storage_def)
-            msg += fmt::format("With extended storage definition syntax storage {} requires ", args.engine_name);
+            msg += "With extended storage definition syntax storage " + args.engine_name + " requires ";
         else
-            msg += fmt::format("ORDER BY or PRIMARY KEY clause is missing. "
-                               "Consider using extended storage definition syntax with ORDER BY or PRIMARY KEY clause. "
-                               "With deprecated old syntax (highly not recommended) storage {} requires ", args.engine_name);
+            msg += "Storage " + args.engine_name + " requires ";
 
-        if (max_num_params == 0)
+        if (max_num_params)
+        {
+            if (min_num_params == max_num_params)
+                msg += toString(min_num_params) + " parameters: ";
+            else
+                msg += toString(min_num_params) + " to " + toString(max_num_params) + " parameters: ";
+            msg += needed_params;
+        }
+        else
             msg += "no parameters";
-        else if (min_num_params == max_num_params)
-            msg += fmt::format("{} parameters: {}", min_num_params, needed_params);
-        else
-            msg += fmt::format("{} to {} parameters: {}", min_num_params, max_num_params, needed_params);
-
 
         msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
@@ -304,41 +304,95 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             arg_idx, e.message(), getMergeTreeVerboseHelp(is_extended_storage_def));
         }
     }
-    else if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_deprecated_syntax_for_merge_tree)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "This syntax for *MergeTree engine is deprecated. "
-                                                   "Use extended storage definition syntax with ORDER BY/PRIMARY KEY clause. "
-                                                   "See also `allow_deprecated_syntax_for_merge_tree` setting.");
-    }
 
     /// For Replicated.
     String zookeeper_path;
     String replica_name;
-    RenamingRestrictions renaming_restrictions = RenamingRestrictions::ALLOW_ANY;
+    bool allow_renaming = true;
 
-    bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
-
-    /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
-    bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
-
-    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
+    if (replicated)
     {
+        bool has_arguments = arg_num + 2 <= arg_cnt;
+        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
+
+        ASTLiteral * ast_zk_path;
+        ASTLiteral * ast_replica_name;
+
+        if (has_valid_arguments)
+        {
+            /// Get path and name from engine arguments
+            ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
+                zookeeper_path = safeGet<String>(ast_zk_path->value);
+            else
+                throw Exception(
+                    "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+            ++arg_num;
+
+            ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
+            if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
+                replica_name = safeGet<String>(ast_replica_name->value);
+            else
+                throw Exception(
+                    "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::BAD_ARGUMENTS);
+
+            if (replica_name.empty())
+                throw Exception(
+                    "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
+            ++arg_num;
+        }
+        else if (is_extended_storage_def
+            && (arg_cnt == 0
+                || !engine_args[arg_num]->as<ASTLiteral>()
+                || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
+        {
+            /// Try use default values if arguments are not specified.
+            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
+            zookeeper_path = args.getContext()->getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
+            /// TODO maybe use hostname if {replica} is not defined?
+            replica_name = args.getContext()->getConfigRef().getString("default_replica_name", "{replica}");
+
+            /// Modify query, so default values will be written to metadata
+            assert(arg_num == 0);
+            ASTs old_args;
+            std::swap(engine_args, old_args);
+            auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
+            auto name_arg = std::make_shared<ASTLiteral>(replica_name);
+            ast_zk_path = path_arg.get();
+            ast_replica_name = name_arg.get();
+            engine_args.emplace_back(std::move(path_arg));
+            engine_args.emplace_back(std::move(name_arg));
+            std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
+            arg_num = 2;
+            arg_cnt += 2;
+        }
+        else
+            throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
+
+        /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
+        bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                      DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+        bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach;
+
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
+        /// We also unfold {uuid} macro, so path will not be broken after moving table from Atomic to Ordinary database.
         if (!args.attach)
         {
+            if (is_replicated_database && !is_extended_storage_def)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Old syntax is not allowed for ReplicatedMergeTree tables in Replicated databases");
+
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
             info.table_id = args.table_id;
-            /// Avoid unfolding {uuid} macro on this step.
-            /// We did unfold it in previous versions to make moving table from Atomic to Ordinary database work correctly,
-            /// but now it's not allowed (and it was the only reason to unfold {uuid} macro).
-            info.table_id.uuid = UUIDHelpers::Nil;
+            if (!allow_uuid_macro)
+                info.table_id.uuid = UUIDHelpers::Nil;
             zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
 
             info.level = 0;
+            info.table_id.uuid = UUIDHelpers::Nil;
             replica_name = args.getContext()->getMacros()->expand(replica_name, info);
         }
 
@@ -366,77 +420,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
         /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
         /// or if one of these macros is recursively expanded from some other macro.
-        /// Also do not allow to move table from Atomic to Ordinary database if there's {uuid} macro
         if (info.expanded_database || info.expanded_table)
-            renaming_restrictions = RenamingRestrictions::DO_NOT_ALLOW;
-        else if (info.expanded_uuid)
-            renaming_restrictions = RenamingRestrictions::ALLOW_PRESERVING_UUID;
-    };
-
-    if (replicated)
-    {
-        bool has_arguments = arg_num + 2 <= arg_cnt;
-        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
-
-        ASTLiteral * ast_zk_path;
-        ASTLiteral * ast_replica_name;
-
-        if (has_valid_arguments)
-        {
-            /// Get path and name from engine arguments
-            ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
-                zookeeper_path = ast_zk_path->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path in ZooKeeper must be a string literal{}",
-                    getMergeTreeVerboseHelp(is_extended_storage_def));
-            ++arg_num;
-
-            ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
-            if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
-                replica_name = ast_replica_name->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}",
-                    getMergeTreeVerboseHelp(is_extended_storage_def));
-
-            if (replica_name.empty())
-                throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}",
-                    getMergeTreeVerboseHelp(is_extended_storage_def));
-            ++arg_num;
-
-            expand_macro(ast_zk_path, ast_replica_name);
-        }
-        else if (is_extended_storage_def
-            && (arg_cnt == 0
-                || !engine_args[arg_num]->as<ASTLiteral>()
-                || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
-        {
-            /// Try use default values if arguments are not specified.
-            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            const auto & config = args.getContext()->getConfigRef();
-            zookeeper_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
-            /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
-
-            /// Modify query, so default values will be written to metadata
-            assert(arg_num == 0);
-            ASTs old_args;
-            std::swap(engine_args, old_args);
-            auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
-            auto name_arg = std::make_shared<ASTLiteral>(replica_name);
-            ast_zk_path = path_arg.get();
-            ast_replica_name = name_arg.get();
-
-            expand_macro(ast_zk_path, ast_replica_name);
-
-            engine_args.emplace_back(std::move(path_arg));
-            engine_args.emplace_back(std::move(name_arg));
-            std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
-            arg_num = 2;
-            arg_cnt += 2;
-        }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
+            allow_renaming = false;
     }
 
     /// This merging param maybe used as part of sorting key
@@ -445,8 +430,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
         if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign column name must be an unquoted string{}",
-                getMergeTreeVerboseHelp(is_extended_storage_def));
+            throw Exception(
+                "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                ErrorCodes::BAD_ARGUMENTS);
         --arg_cnt;
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
@@ -455,8 +441,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an unquoted string{}",
-                    getMergeTreeVerboseHelp(is_extended_storage_def));
+                throw Exception(
+                    "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
             --arg_cnt;
         }
     }
@@ -472,18 +459,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
         String graphite_config_name;
-        constexpr auto format_str = "Last parameter of GraphiteMergeTree must be the name (in single quotes) of the element in configuration file with the Graphite options{}";
-        String error_msg = getMergeTreeVerboseHelp(is_extended_storage_def);
+        String error_msg
+            = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
+        error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
         if (const auto * ast = engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (ast->value.getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
+                throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
 
             graphite_config_name = ast->value.get<String>();
         }
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
+            throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
 
         --arg_cnt;
         setGraphitePatternsFromConfig(args.getContext(), graphite_config_name, merging_params.graphite_params);
@@ -491,14 +479,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
         if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an unquoted string{}",
-                getMergeTreeVerboseHelp(is_extended_storage_def));
+            throw Exception(
+                "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                ErrorCodes::BAD_ARGUMENTS);
 
         --arg_cnt;
 
         if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign column name must be an unquoted string{}",
-                getMergeTreeVerboseHelp(is_extended_storage_def));
+            throw Exception(
+                "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                ErrorCodes::BAD_ARGUMENTS);
 
         --arg_cnt;
         /// Version collapsing is the only engine which add additional column to
@@ -519,8 +509,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
-    const auto & initial_storage_settings = replicated ? args.getContext()->getReplicatedMergeTreeSettings() : args.getContext()->getMergeTreeSettings();
-    std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
+    std::unique_ptr<MergeTreeSettings> storage_settings;
+    if (replicated)
+        storage_settings = std::make_unique<MergeTreeSettings>(args.getContext()->getReplicatedMergeTreeSettings());
+    else
+        storage_settings = std::make_unique<MergeTreeSettings>(args.getContext()->getMergeTreeSettings());
 
     if (is_extended_storage_def)
     {
@@ -538,9 +531,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()");
+            throw Exception(
+                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY tuple()",
+                ErrorCodes::BAD_ARGUMENTS);
 
         /// Get sorting key from engine arguments.
         ///
@@ -564,11 +558,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer().visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, partition_key, minmax_columns, primary_key_asts, args.getContext()));
+            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.getContext());
@@ -607,19 +599,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-        {
-            if (!args.attach)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, args.storage_def->settings->changes);
             metadata.settings_changes = args.storage_def->settings->ptr();
-        }
     }
     else
     {
         /// Syntax: *MergeTree(..., date, [sample_key], primary_key, index_granularity, ...)
         /// Get date:
         if (!tryGetIdentifierNameInto(engine_args[arg_num], date_column_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Date column name must be an unquoted string{}",
-                getMergeTreeVerboseHelp(is_extended_storage_def));
+            throw Exception(
+                "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                ErrorCodes::BAD_ARGUMENTS);
 
         auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
 
@@ -651,30 +640,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         ++arg_num;
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer().visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, partition_key, minmax_columns, primary_key_asts, args.getContext()));
+            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
-        {
-            storage_settings->index_granularity = ast->value.safeGet<UInt64>();
-            if (!args.attach)
-            {
-                SettingsChanges changes;
-                changes.emplace_back("index_granularity", Field(storage_settings->index_granularity));
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
-            }
-        }
+            storage_settings->index_granularity = safeGet<UInt64>(ast->value);
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index granularity must be a positive integer{}",
-                getMergeTreeVerboseHelp(is_extended_storage_def));
+            throw Exception(
+                "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                ErrorCodes::BAD_ARGUMENTS);
         ++arg_num;
 
         if (args.storage_def->ttl_table && !args.attach)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
+            throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
@@ -687,11 +667,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     if (arg_num != arg_cnt)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
+        throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
-    {
-        return std::make_shared<StorageReplicatedMergeTree>(
+        return StorageReplicatedMergeTree::create(
             zookeeper_path,
             replica_name,
             args.attach,
@@ -703,10 +682,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             merging_params,
             std::move(storage_settings),
             args.has_force_restore_data_flag,
-            renaming_restrictions);
-    }
+            allow_renaming);
     else
-        return std::make_shared<StorageMergeTree>(
+        return StorageMergeTree::create(
             args.table_id,
             args.relative_data_path,
             metadata,

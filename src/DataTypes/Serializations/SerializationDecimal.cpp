@@ -40,7 +40,7 @@ void SerializationDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precisio
         readDecimalText(istr, x, precision, unread_scale);
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
-        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 }
 
 template <typename T>
@@ -68,28 +68,6 @@ void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & 
     readText(x, istr, true);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
-
-template <typename T>
-void SerializationDecimal<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    if (settings.json.quote_decimals)
-        writeChar('"', ostr);
-
-    serializeText(column, row_num, ostr, settings);
-
-    if (settings.json.quote_decimals)
-        writeChar('"', ostr);
-}
-
-template <typename T>
-void SerializationDecimal<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    bool have_quotes = checkChar('"', istr);
-    deserializeText(column, istr, settings, false);
-    if (have_quotes)
-        assertChar('"', istr);
-}
-
 
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;

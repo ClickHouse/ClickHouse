@@ -11,7 +11,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 
@@ -20,12 +20,12 @@ namespace DB
 
 /** A stream of blocks from a shared vector of blocks
   */
-class BlocksSource : public ISource
+class BlocksSource : public SourceWithProgress
 {
 public:
     /// Acquires shared ownership of the blocks vector
     BlocksSource(BlocksPtr blocks_ptr_, Block header)
-        : ISource(std::move(header))
+        : SourceWithProgress(std::move(header))
         , blocks(blocks_ptr_), it(blocks_ptr_->begin()), end(blocks_ptr_->end()) {}
 
     String getName() const override { return "Blocks"; }

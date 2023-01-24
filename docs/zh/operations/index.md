@@ -1,7 +1,6 @@
 ---
-slug: /zh/operations/
-sidebar_position: 43
-sidebar_label: "操作"
+toc_priority: 43
+toc_title: "操作"
 ---
 
 # 操作 {#operations}
@@ -22,3 +21,5 @@ ClickHouse操作手册由以下主要部分组成：
 -   [如何用ClickHouse测试你的硬件](../operations/performance-test.md)
 -   [设置](../operations/settings/index.md)
 -   [实用工具](../operations/utilities/index.md)
+
+[原文](https://clickhouse.com/docs/en/operations/) <!--hide-->

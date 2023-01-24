@@ -1,9 +1,9 @@
 ---
-slug: /en/operations/quotas
-sidebar_position: 51
-sidebar_label: Quotas
-title: Quotas
+toc_priority: 51
+toc_title: Quotas
 ---
+
+# Quotas {#quotas}
 
 Quotas allow you to limit resource usage over a period of time or track the use of resources.
 Quotas are set up in the user config, which is usually ‘users.xml’.
@@ -101,7 +101,7 @@ Quotas can use the “quota key” feature to report on resources for multiple k
 <web_global>
     <!-- keyed – The quota_key "key" is passed in the query parameter,
             and the quota is tracked separately for each key value.
-        For example, you can pass a username as the key,
+        For example, you can pass a username of your service as the key,
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
@@ -116,3 +116,5 @@ The quota is assigned to users in the ‘users’ section of the config. See the
 For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will “start over”.
 
 When the server is restarted, quotas are reset.
+
+[Original article](https://clickhouse.com/docs/en/operations/quotas/) <!--hide-->

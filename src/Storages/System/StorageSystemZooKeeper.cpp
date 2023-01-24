@@ -16,12 +16,8 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string.hpp>
 #include <algorithm>
 #include <deque>
-#include <climits>
 
 
 namespace DB
@@ -32,157 +28,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/** ZkNodeCache is a trie tree to cache all the zookeeper writes. The purpose of this struct is to avoid creating/setting nodes
-  * repeatedly. For example, If we create path /a/b/c/d/e and path /a/b/d/f in the same transaction. We don't want to create
-  * their common path "/a/b" twice. This data structure will cache this changes and generates the eventual requests within one pass.
-  */
-struct ZkNodeCache
-{
-    using ZkNodeCachePtr = std::shared_ptr<ZkNodeCache>;
-
-    std::unordered_map<String, ZkNodeCachePtr> children;
-    String value;
-    String path;
-    bool exists;
-    bool changed;
-
-    ZkNodeCache() : exists(true), changed(false) { }
-    ZkNodeCache(String path_, bool exists_) : path(path_), exists(exists_), changed(false) { }
-
-    void insert(const std::vector<String> & nodes, zkutil::ZooKeeperPtr zookeeper, const String & value_to_set, size_t index)
-    {
-        /// If this node has an empty name, just skip it.
-        /// Possibly a "/a//b///c//d/" will cause empty node.
-        while (index < nodes.size() && nodes[index].empty())
-            ++index;
-
-        if (index == nodes.size())
-        {
-            value = value_to_set;
-            changed = true;
-            return;
-        }
-        const String & child_name = nodes[index];
-        ++index;
-        if (!children.contains(child_name))
-        {
-            String sub_path = path + "/" + child_name;
-            bool child_exist = false;
-            if (exists)
-            {
-                /// If this node doesn't exists, neither will its child.
-                child_exist = zookeeper->exists(sub_path);
-            }
-            children[child_name] = std::make_shared<ZkNodeCache>(sub_path, child_exist);
-        }
-        children[child_name]->insert(nodes, zookeeper, value_to_set, index);
-    }
-
-    void generateRequests(Coordination::Requests & requests)
-    {
-        /** If the node doesn't exists, we should generate create request.
-          * If the node exists, we should generate set request.
-          * This dfs will prove ancestor nodes are processed first.
-          */
-        if (!exists)
-        {
-            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent);
-            requests.push_back(request);
-        }
-        else if (changed)
-        {
-            auto request = zkutil::makeSetRequest(path, value, -1);
-            requests.push_back(request);
-        }
-        for (auto [_, child] : children)
-            child->generateRequests(requests);
-    }
-};
-
-class ZooKeeperSink : public SinkToStorage
-{
-    zkutil::ZooKeeperPtr zookeeper;
-
-    ZkNodeCache cache;
-
-public:
-    ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
-    String getName() const override { return "ZooKeeperSink"; }
-
-    void consume(Chunk chunk) override
-    {
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
-        size_t rows = block.rows();
-        for (size_t i = 0; i < rows; i++)
-        {
-            String name = block.getByPosition(0).column->getDataAt(i).toString();
-            String value = block.getByPosition(1).column->getDataAt(i).toString();
-            String path = block.getByPosition(2).column->getDataAt(i).toString();
-
-            /// We don't expect a "name" contains a path.
-            if (name.find('/') != std::string::npos)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not contain '/'");
-            }
-
-            if (name.empty())
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not be empty");
-            }
-
-            if (path.empty())
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `path` should not be empty");
-            }
-
-            if (path.size() + name.size() > PATH_MAX)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sum of `name` length and `path` length should not exceed PATH_MAX");
-            }
-
-            std::vector<String> path_vec;
-            boost::split(path_vec, path, boost::is_any_of("/"));
-            path_vec.push_back(name);
-            cache.insert(path_vec, zookeeper, value, 0);
-        }
-    }
-
-    void onFinish() override
-    {
-        Coordination::Requests requests;
-        cache.generateRequests(requests);
-        zookeeper->multi(requests);
-    }
-};
-
-StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
-        : IStorageSystemOneBlock<StorageSystemZooKeeper>(table_id_)
-{
-        StorageInMemoryMetadata storage_metadata;
-        ColumnsDescription desc;
-        auto columns = getNamesAndTypes();
-        for (const auto & col : columns)
-        {
-            ColumnDescription col_desc(col.name, col.type);
-            /// We only allow column `name`, `path`, `value` to insert.
-            if (col.name != "name" && col.name != "path" && col.name != "value")
-                col_desc.default_desc.kind = ColumnDefaultKind::Materialized;
-            desc.add(col_desc);
-        }
-        storage_metadata.setColumns(desc);
-        setInMemoryMetadata(storage_metadata);
-}
-
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
-{
-    if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
-    Block write_header;
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "path"));
-    return std::make_shared<ZooKeeperSink>(write_header, context);
-}
 
 NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 {
@@ -404,10 +249,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
     if (paths.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SELECT from system.zookeeper table must contain condition like path = 'path' "
-                        "or path IN ('path1','path2'...) or path IN (subquery) "
-                        "in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
+        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.", ErrorCodes::BAD_ARGUMENTS);
 
     std::unordered_set<String> added;
     while (!paths.empty())
@@ -437,10 +279,10 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         if (!prefix.empty())
         {
             // Remove nodes that do not match specified prefix
-            std::erase_if(nodes, [&prefix, &path_part] (const String & node)
+            nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&prefix, &path_part] (const String & node)
             {
                 return (path_part + '/' + node).substr(0, prefix.size()) != prefix;
-            });
+            }), nodes.end());
         }
 
         std::vector<std::future<Coordination::GetResponse>> futures;

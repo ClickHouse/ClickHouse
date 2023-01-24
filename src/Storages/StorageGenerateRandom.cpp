@@ -2,7 +2,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,6 +12,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
@@ -220,10 +220,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnInt32::create();
             column->getData().resize(limit);
-
-            for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = (rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH;
-
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int32), rng);
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];
@@ -374,16 +371,16 @@ ColumnPtr fillColumnWithRandomData(
         }
 
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
+            throw Exception("The 'GenerateRandom' is not implemented for type " + type->getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 }
 
 
-class GenerateSource : public ISource
+class GenerateSource : public SourceWithProgress
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : ISource(Nested::flatten(prepareBlockToFill(block_header_)))
+        : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
@@ -462,9 +459,9 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage GenerateRandom requires at most three arguments: "
-                            "random_seed, max_string_length, max_array_length.");
+            throw Exception("Storage GenerateRandom requires at most three arguments: "
+                "random_seed, max_string_length, max_array_length.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         std::optional<UInt64> random_seed;
         UInt64 max_string_length = 10;
@@ -472,18 +469,18 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-            if (!ast_literal.value.isNull())
-                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
+            const Field & value = engine_args[0]->as<const ASTLiteral &>().value;
+            if (!value.isNull())
+                random_seed = value.safeGet<UInt64>();
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+            max_string_length = engine_args[1]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
         if (engine_args.size() == 3)
-            max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+            max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
-        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
+        return StorageGenerateRandom::create(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
 }
 
@@ -494,7 +491,7 @@ Pipe StorageGenerateRandom::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     storage_snapshot->check(column_names);
 

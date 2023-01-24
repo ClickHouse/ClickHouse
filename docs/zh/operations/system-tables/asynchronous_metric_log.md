@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/asynchronous_metric_log
----
 ## system.asynchronous_metric_log {#system-tables-async-log}
 
 包含每分钟记录一次的 `system.asynchronous_metrics`历史值。默认开启。

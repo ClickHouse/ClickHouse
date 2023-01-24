@@ -1,5 +1,4 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -11,14 +10,12 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <DataTypes/ObjectUtils.h>
 
-#include <Client/IConnections.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 
 namespace ProfileEvents
 {
@@ -49,6 +46,55 @@ SelectStreamFactory::SelectStreamFactory(
 {
 }
 
+
+namespace
+{
+
+ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
+{
+    /// Convert header structure to expected.
+    /// Also we ignore constants from result and replace it with constants from header.
+    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
+    return ActionsDAG::makeConvertingActions(
+        block.getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        true);
+}
+
+void addConvertingActions(QueryPlan & plan, const Block & header)
+{
+    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
+        return;
+
+    auto convert_actions_dag = getConvertingDAG(plan.getCurrentDataStream().header, header);
+    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
+    plan.addStep(std::move(converting));
+}
+
+std::unique_ptr<QueryPlan> createLocalPlan(
+    const ASTPtr & query_ast,
+    const Block & header,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    UInt32 shard_num,
+    UInt32 shard_count)
+{
+    checkStackSize();
+
+    auto query_plan = std::make_unique<QueryPlan>();
+
+    InterpreterSelectQuery interpreter(
+        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+    interpreter.buildQueryPlan(*query_plan);
+
+    addConvertingActions(*query_plan, header);
+
+    return query_plan;
+}
+
+}
+
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const ASTPtr & query_ast,
@@ -65,16 +111,18 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
+        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
-    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
+    auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
             .query = query_ast,
             .header = header,
-            .shard_info = shard_info,
+            .shard_num = shard_info.shard_num,
+            .num_replicas = shard_info.getAllNodeCount(),
+            .pool = shard_info.pool,
+            .per_replica_pools = shard_info.per_replica_pools,
             .lazy = lazy,
             .local_delay = local_delay,
         });
@@ -131,7 +179,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+        UInt32 local_delay = replicated_storage->getAbsoluteDelay();
 
         if (local_delay < max_allowed_delay)
         {
@@ -152,8 +200,10 @@ void SelectStreamFactory::createForShard(
                 return;
             }
             else
-                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
-                    "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
+                throw Exception(
+                    "Local replica of shard " + toString(shard_info.shard_num)
+                    + " is stale (delay: " + toString(local_delay) + "s.), but no other replica configured",
+                    ErrorCodes::ALL_REPLICAS_ARE_STALE);
         }
 
         if (!shard_info.hasRemoteConnections())
@@ -169,69 +219,6 @@ void SelectStreamFactory::createForShard(
     }
     else
         emplace_remote_stream();
-}
-
-
-void SelectStreamFactory::createForShardWithParallelReplicas(
-    const Cluster::ShardInfo & shard_info,
-    const ASTPtr & query_ast,
-    const StorageID & main_table,
-    ContextPtr context,
-    UInt32 shard_count,
-    std::vector<QueryPlanPtr> & local_plans,
-    Shards & remote_shards)
-{
-    if (auto it = objects_by_shard.find(shard_info.shard_num); it != objects_by_shard.end())
-        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
-
-    const auto & settings = context->getSettingsRef();
-
-    auto is_local_replica_obsolete = [&]()
-    {
-        auto resolved_id = context->resolveStorageID(main_table);
-        auto main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-        const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
-
-        if (!replicated_storage)
-            return false;
-
-        UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
-
-        if (!max_allowed_delay)
-            return false;
-
-        UInt64 local_delay = replicated_storage->getAbsoluteDelay();
-        return local_delay >= max_allowed_delay;
-    };
-
-    size_t next_replica_number = 0;
-    size_t all_replicas_count = shard_info.getRemoteNodeCount();
-
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
-
-    if (settings.prefer_localhost_replica && shard_info.isLocal())
-    {
-        /// We don't need more than one local replica in parallel reading
-        if (!is_local_replica_obsolete())
-        {
-            ++all_replicas_count;
-
-            local_plans.emplace_back(createLocalPlan(
-                query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, next_replica_number, all_replicas_count, coordinator));
-
-            ++next_replica_number;
-        }
-    }
-
-    if (shard_info.hasRemoteConnections())
-        remote_shards.emplace_back(Shard{
-            .query = query_ast,
-            .header = header,
-            .shard_info = shard_info,
-            .lazy = false,
-            .local_delay = 0,
-            .coordinator = coordinator,
-        });
 }
 
 }

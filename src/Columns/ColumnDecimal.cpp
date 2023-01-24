@@ -100,8 +100,8 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
     auto s = data.size();
 
     if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
     const T * begin = data.data();
     const T * end = begin + s;
@@ -109,7 +109,7 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
+        *hash_data = intHashCRC32(*begin, *hash_data);
         ++begin;
         ++hash_data;
     }
@@ -251,9 +251,9 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
-                        "in ColumnDecimal<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+        throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length) +
+            " are out of bound in ColumnDecimal<T>::insertRangeFrom method (data.size() = " + toString(src_vec.data.size()) + ").",
+            ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     size_t old_size = data.size();
     data.resize(old_size + length);
@@ -298,7 +298,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
         {
             while (mask)
             {
-                size_t index = std::countr_zero(mask);
+                size_t index = __builtin_ctzll(mask);
                 res_data.push_back(data_pos[index]);
             #ifdef __BMI__
                 mask = _blsr_u64(mask);
@@ -341,7 +341,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     auto res = this->create(0, scale);
     if (0 == size)

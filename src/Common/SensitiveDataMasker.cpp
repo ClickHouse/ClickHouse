@@ -9,21 +9,14 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/ProfileEvents.h>
 
 #ifndef NDEBUG
 #    include <iostream>
 #endif
-
-
-namespace ProfileEvents
-{
-    extern const Event QueryMaskingRulesMatch;
-}
 
 
 namespace DB
@@ -92,7 +85,7 @@ std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker 
 void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
     if (!sensitive_data_masker_)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
+        throw Exception("Logical error: the 'sensitive_data_masker' is not set", ErrorCodes::LOGICAL_ERROR);
 
     if (sensitive_data_masker_->rulesCount() > 0)
     {
@@ -123,17 +116,18 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 
             if (!used_names.insert(rule_name).second)
             {
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                                "query_masking_rules configuration contains more than one rule named '{}'.", rule_name);
+                throw Exception(
+                    "query_masking_rules configuration contains more than one rule named '" + rule_name + "'.",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
             }
 
             auto regexp = config.getString(rule_config_prefix + ".regexp", "");
 
             if (regexp.empty())
             {
-                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                                "query_masking_rules configuration, rule '{}' has no <regexp> node or <regexp> "
-                                "is empty.", rule_name);
+                throw Exception(
+                    "query_masking_rules configuration, rule '" + rule_name + "' has no <regexp> node or <regexp> is empty.",
+                    ErrorCodes::NO_ELEMENTS_IN_CONFIG);
             }
 
             auto replace = config.getString(rule_config_prefix + ".replace", "******");
@@ -171,10 +165,6 @@ size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const
     size_t matches = 0;
     for (const auto & rule : all_masking_rules)
         matches += rule->apply(data);
-
-    if (matches)
-        ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
-
     return matches;
 }
 
@@ -192,20 +182,6 @@ void SensitiveDataMasker::printStats()
 size_t SensitiveDataMasker::rulesCount() const
 {
     return all_masking_rules.size();
-}
-
-
-std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length)
-{
-    std::string res = str;
-
-    if (auto * masker = SensitiveDataMasker::getInstance())
-        masker->wipeSensitiveData(res);
-
-    if (max_length && (res.length() > max_length))
-        res.resize(max_length);
-
-    return res;
 }
 
 }

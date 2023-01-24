@@ -9,12 +9,14 @@ namespace DB
 
 using FunctionToDayOfYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToDayOfYearImpl>;
 
-REGISTER_FUNCTION(ToDayOfYear)
+void registerFunctionToDayOfYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToDayOfYear>();
 
     /// MysQL compatibility alias.
-    factory.registerAlias("DAYOFYEAR", "toDayOfYear", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToDayOfYear>("DAYOFYEAR", FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

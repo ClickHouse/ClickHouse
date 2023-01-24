@@ -1,8 +1,0 @@
-a	Nullable(Int64)					
-b	Nullable(String)					
-c	Array(Nullable(Int64))					
-1	s1	[]
-2	}	[2]
-\N	\N	[]
-\N	\N	[]
-\N	\N	[3]

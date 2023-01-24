@@ -41,7 +41,7 @@ public:
         const Block & header_,
         size_t num_inputs_,
         AggregatingTransformParamsPtr params_,
-        const SortDescription & description_,
+        SortDescription description_,
         size_t max_block_size_,
         size_t max_block_bytes_);
 
@@ -69,7 +69,7 @@ private:
         /// Number of bytes in all columns + number of bytes in arena, related to current chunk.
         size_t total_bytes = 0;
 
-        State(const Chunk & chunk, const SortDescriptionWithPositions & description, Int64 total_bytes_);
+        State(const Chunk & chunk, const SortDescription & description, Int64 total_bytes_);
         State() = default;
 
         bool isValid() const { return current_row < num_rows; }
@@ -78,7 +78,7 @@ private:
     Block header;
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
-    SortDescriptionWithPositions description;
+    SortDescription description;
     size_t max_block_size;
     size_t max_block_bytes;
 
@@ -88,7 +88,6 @@ private:
     std::vector<size_t> inputs_to_update;
 
     std::vector<Chunk> chunks;
-    UInt64 chunk_num = 0;
     size_t accumulated_rows = 0;
     size_t accumulated_bytes = 0;
 };

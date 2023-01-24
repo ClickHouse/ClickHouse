@@ -2,7 +2,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/SchemaInferenceUtils.h>
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -24,27 +23,6 @@ namespace ErrorCodes
     throw ParsingException("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
                            "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
                            ErrorCodes::CANNOT_READ_ALL_DATA);
-}
-
-static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_rule, FormatSettings & settings, const ParsedTemplateFormatString & row_format, char default_csv_delimiter, size_t file_column)
-{
-    if (escaping_rule != FormatSettings::EscapingRule::CSV)
-        return;
-
-    /// Clean custom_delimiter from previous column.
-    settings.csv.custom_delimiter.clear();
-    /// If field delimiter is empty, we read until default csv delimiter.
-    if (row_format.delimiters[file_column + 1].empty())
-        settings.csv.delimiter = default_csv_delimiter;
-    /// If field delimiter has length = 1, it will be more efficient to use csv.delimiter.
-    else if (row_format.delimiters[file_column + 1].size() == 1)
-        settings.csv.delimiter = row_format.delimiters[file_column + 1].front();
-    /// If we have some complex delimiter, normal CSV reading will now work properly if we will
-    /// use the first character of delimiter (for example, if delimiter='||' and we have data 'abc|d||')
-    /// We have special implementation for such case that uses custom delimiter, it's not so efficient,
-    /// but works properly.
-    else
-        settings.csv.custom_delimiter = row_format.delimiters[file_column + 1];
 }
 
 TemplateRowInputFormat::TemplateRowInputFormat(
@@ -75,25 +53,18 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, std::uniqu
     std::vector<UInt8> column_in_format(header_.columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
-        const auto & column_index = row_format.format_idx_to_column_idx[i];
-        if (column_index)
+        if (row_format.format_idx_to_column_idx[i])
         {
-            if (header_.columns() <= *column_index)
-                row_format.throwInvalidFormat("Column index " + std::to_string(*column_index) +
+            if (header_.columns() <= *row_format.format_idx_to_column_idx[i])
+                row_format.throwInvalidFormat("Column index " + std::to_string(*row_format.format_idx_to_column_idx[i]) +
                                               " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
             if (row_format.escaping_rules[i] == EscapingRule::None)
                 row_format.throwInvalidFormat("Column is not skipped, but deserialization type is None", i);
 
-            size_t col_idx = *column_index;
+            size_t col_idx = *row_format.format_idx_to_column_idx[i];
             if (column_in_format[col_idx])
                 row_format.throwInvalidFormat("Duplicate column", i);
             column_in_format[col_idx] = true;
-
-            checkSupportedDelimiterAfterField(row_format.escaping_rules[i], row_format.delimiters[i + 1], data_types[*column_index]);
-        }
-        else
-        {
-            checkSupportedDelimiterAfterField(row_format.escaping_rules[i], row_format.delimiters[i + 1], nullptr);
         }
     }
 
@@ -151,8 +122,10 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
     const SerializationPtr & serialization, IColumn & column, size_t file_column)
 {
     EscapingRule escaping_rule = row_format.escaping_rules[file_column];
-    updateFormatSettingsIfNeeded(escaping_rule, settings, row_format, default_csv_delimiter, file_column);
-
+    if (escaping_rule == EscapingRule::CSV)
+        /// Will read unquoted string until settings.csv.delimiter
+        settings.csv.delimiter = row_format.delimiters[file_column + 1].empty() ? default_csv_delimiter :
+                                                                                row_format.delimiters[file_column + 1].front();
     try
     {
         return deserializeFieldByEscapingRule(type, serialization, column, *buf, escaping_rule, settings);
@@ -293,7 +266,8 @@ void TemplateRowInputFormat::resetParser()
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 TemplateFormatReader::TemplateFormatReader(
@@ -479,13 +453,15 @@ TemplateSchemaReader::TemplateSchemaReader(
     const ParsedTemplateFormatString & format_,
     const ParsedTemplateFormatString & row_format_,
     std::string row_between_delimiter,
-    const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_, getDefaultDataTypeForEscapingRules(row_format_.escaping_rules))
+    const FormatSettings & format_settings_,
+    ContextPtr context_)
+    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference)
     , buf(in_)
     , format(format_)
     , row_format(row_format_)
+    , format_settings(format_settings_)
+    , context(context_)
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
-    , default_csv_delimiter(format_settings_.csv.delimiter)
 {
     setColumnNames(row_format.column_names);
 }
@@ -509,18 +485,15 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != row_format.columnsCount(); ++i)
     {
         format_reader.skipDelimiter(i);
-        updateFormatSettingsIfNeeded(row_format.escaping_rules[i], format_settings, row_format, default_csv_delimiter, i);
+        if (row_format.escaping_rules[i] == FormatSettings::EscapingRule::CSV)
+            format_settings.csv.delimiter = row_format.delimiters[i + 1].empty() ? format_settings.csv.delimiter : row_format.delimiters[i + 1].front();
+
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
-        data_types.push_back(tryInferDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i], &json_inference_info));
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i], context));
     }
 
     format_reader.skipRowEndDelimiter();
     return data_types;
-}
-
-void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, row_format.escaping_rules[field_index], &json_inference_info);
 }
 
 static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)
@@ -544,7 +517,8 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
             {
                 if (partName == "data")
                     return 0;
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown input part {}", partName);
+                throw Exception("Unknown input part " + partName,
+                                ErrorCodes::SYNTAX_ERROR);
             });
     }
     return resultset_format;
@@ -590,31 +564,12 @@ void registerTemplateSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
     {
-        String format_name = ignore_spaces ? "TemplateIgnoreSpaces" : "Template";
-        factory.registerSchemaReader(format_name, [ignore_spaces](ReadBuffer & buf, const FormatSettings & settings)
+        factory.registerSchemaReader(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [ignore_spaces](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
         {
             size_t index = 0;
             auto idx_getter = [&](const String &) -> std::optional<size_t> { return index++; };
             auto row_format = fillRowFormat(settings, idx_getter, false);
-            return std::make_shared<TemplateSchemaReader>(buf, ignore_spaces, fillResultSetFormat(settings), row_format, settings.template_settings.row_between_delimiter, settings);
-        });
-        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
-        {
-            size_t index = 0;
-            auto idx_getter = [&](const String &) -> std::optional<size_t> { return index++; };
-            auto row_format = fillRowFormat(settings, idx_getter, false);
-            std::unordered_set<FormatSettings::EscapingRule> visited_escaping_rules;
-            String result = fmt::format("row_format={}, resultset_format={}, row_between_delimiter={}",
-                settings.template_settings.row_format,
-                settings.template_settings.resultset_format,
-                settings.template_settings.row_between_delimiter);
-            for (auto escaping_rule : row_format.escaping_rules)
-            {
-                if (!visited_escaping_rules.contains(escaping_rule))
-                    result += ", " + getAdditionalFormatInfoByEscapingRule(settings, settings.regexp.escaping_rule);
-                visited_escaping_rules.insert(escaping_rule);
-            }
-            return result;
+            return std::make_shared<TemplateSchemaReader>(buf, ignore_spaces, fillResultSetFormat(settings), row_format, settings.template_settings.row_between_delimiter, settings, context);
         });
     }
 }

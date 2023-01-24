@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-backward-compatibility-check
+# Tags: no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,5 +29,5 @@ $CLICKHOUSE_CLIENT -q "create table test_dist engine=Distributed('test_shard_loc
 $CLICKHOUSE_CLIENT -q "detach table test_dist"
 $CLICKHOUSE_CLIENT -q "drop table test"
 $CLICKHOUSE_CLIENT -q "attach table test_dist"
-$CLICKHOUSE_CLIENT --prefer_localhost_replica=1 -q "select * from test_dist" 2>&1 | grep -q "UNKNOWN_TABLE" && echo "OK" || echo "FAIL"
+$CLICKHOUSE_CLIENT -q "select * from test_dist" 2>&1 | grep -q "UNKNOWN_TABLE" && echo "OK" || echo "FAIL"
 

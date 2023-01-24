@@ -50,6 +50,8 @@ void CascadeWriteBuffer::nextImpl()
     }
 
     set(curr_buffer->position(), curr_buffer->buffer().end() - curr_buffer->position());
+//     std::cerr << "CascadeWriteBuffer a count=" << count() << " bytes=" << bytes << " offset=" << offset()
+//     << " bytes+size=" << bytes + buffer().size() << "\n";
 }
 
 
@@ -78,11 +80,11 @@ WriteBuffer * CascadeWriteBuffer::setNextBuffer()
         }
     }
     else if (curr_buffer_num >= num_sources)
-        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "There are no WriteBuffers to write result");
+        throw Exception("There are no WriteBuffers to write result", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
 
     WriteBuffer * res = prepared_sources[curr_buffer_num].get();
     if (!res)
-        throw Exception(ErrorCodes::CANNOT_CREATE_IO_BUFFER, "Required WriteBuffer is not created");
+        throw Exception("Required WriteBuffer is not created", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
     /// Check that returned buffer isn't empty
     if (!res->hasPendingData())

@@ -158,7 +158,7 @@ def assert_eq_stats(stat1, stat2):
     assert stat1.version == stat2.version
     assert stat1.cversion == stat2.cversion
     assert stat1.aversion == stat2.aversion
-    assert stat1.ephemeralOwner == stat2.ephemeralOwner
+    assert stat1.aversion == stat2.aversion
     assert stat1.dataLength == stat2.dataLength
     assert stat1.numChildren == stat2.numChildren
 

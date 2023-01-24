@@ -2,8 +2,6 @@
 
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -15,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <base/range.h>
@@ -80,7 +79,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 else
                 {
                     auto database_literal = evaluateConstantExpressionOrIdentifierAsLiteral(arg_value, context);
-                    configuration.database = checkAndGetLiteralArgument<String>(database_literal, "database");
+                    configuration.database = database_literal->as<ASTLiteral>()->value.safeGet<String>();
                 }
             }
             else
@@ -94,30 +93,6 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     }
     else
     {
-        /// Supported signatures:
-        ///
-        /// remote('addresses_expr', db.table)
-        /// remote('addresses_expr', 'db', 'table')
-        /// remote('addresses_expr', db.table, 'user')
-        /// remote('addresses_expr', 'db', 'table', 'user')
-        /// remote('addresses_expr', db.table, 'user', 'password')
-        /// remote('addresses_expr', 'db', 'table', 'user', 'password')
-        /// remote('addresses_expr', db.table, sharding_key)
-        /// remote('addresses_expr', 'db', 'table', sharding_key)
-        /// remote('addresses_expr', db.table, 'user', sharding_key)
-        /// remote('addresses_expr', 'db', 'table', 'user', sharding_key)
-        /// remote('addresses_expr', db.table, 'user', 'password', sharding_key)
-        /// remote('addresses_expr', 'db', 'table', 'user', 'password', sharding_key)
-        ///
-        /// remoteSecure() - same as remote()
-        ///
-        /// cluster('cluster_name', db.table)
-        /// cluster('cluster_name', 'db', 'table')
-        /// cluster('cluster_name', db.table, sharding_key)
-        /// cluster('cluster_name', 'db', 'table', sharding_key)
-        ///
-        /// clusterAllReplicas() - same as cluster()
-
         if (args.size() < 2 || args.size() > max_args)
             throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -131,21 +106,21 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (lit->value.getType() != Field::Types::String)
                 return false;
 
-            res = lit->value.safeGet<const String &>();
+            res = safeGet<const String &>(lit->value);
             return true;
         };
 
         if (is_cluster_function)
         {
             args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-            cluster_name = checkAndGetLiteralArgument<String>(args[arg_num], "cluster_name");
+            cluster_name = args[arg_num]->as<ASTLiteral &>().value.safeGet<const String &>();
         }
         else
         {
             if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
             {
                 if (!get_string_literal(*args[arg_num], cluster_description))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hosts pattern must be string literal (in single quotes).");
+                    throw Exception("Hosts pattern must be string literal (in single quotes).", ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
@@ -159,7 +134,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         else
         {
             args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
-            configuration.database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
+            configuration.database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
 
             ++arg_num;
 
@@ -174,7 +149,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 {
                     std::swap(qualified_name.database, qualified_name.table);
                     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                    qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
+                    qualified_name.table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                     ++arg_num;
                 }
             }
@@ -226,10 +201,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
+        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name);
+            cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettingsRef());
     }
     else
     {
@@ -243,7 +219,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 
         if (names.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard list is empty after parsing first argument");
+            throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
         auto maybe_secure_port = context->getTCPPortSecure();
 
@@ -276,7 +252,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     }
 
     if (!remote_table_function_ptr && configuration.table.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of remote table cannot be empty");
+        throw Exception("The name of remote table cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
     remote_table_id.database_name = configuration.database;
     remote_table_id.table_name = configuration.table;
@@ -291,7 +267,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
     assert(cluster);
     StoragePtr res = remote_table_function_ptr
-        ? std::make_shared<StorageDistributed>(
+        ? StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
@@ -304,7 +280,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             DistributedSettings{},
             false,
             cluster)
-        : std::make_shared<StorageDistributed>(
+        : StorageDistributed::create(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
             ConstraintsDescription{},
@@ -342,12 +318,13 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
         is_cluster_function ? " [, sharding_key]" : " [, username[, password], sharding_key]");
 }
 
+
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
     factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
     factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); });
-    factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.documentation = {}, .allow_readonly = true}});
-    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.documentation = {}, .allow_readonly = true}});
+    factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
+    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); });
 }
 
 }

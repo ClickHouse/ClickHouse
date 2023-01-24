@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/table-functions/jdbc
-sidebar_position: 43
-sidebar_label: jdbc
+toc_priority: 43
+toc_title: jdbc
 ---
 
 # jdbc {#jdbc}
@@ -35,3 +34,5 @@ SELECT a.datasource AS server1, b.datasource AS server2, b.name AS db
 FROM jdbc('mysql-dev?datasource_column', 'show databases') a
 INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
 ```
+
+[Оригинальная статья](https://clickhouse.com/docs/en/query_language/table_functions/jdbc/) <!--hide-->

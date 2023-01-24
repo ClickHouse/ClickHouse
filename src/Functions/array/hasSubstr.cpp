@@ -14,7 +14,7 @@ public:
     FunctionArrayHasSubstr() : FunctionArrayHasAllAny(GatherUtils::ArraySearchType::Substr, name) {}
 };
 
-REGISTER_FUNCTION(HasSubstr)
+void registerFunctionHasSubstr(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayHasSubstr>();
 }

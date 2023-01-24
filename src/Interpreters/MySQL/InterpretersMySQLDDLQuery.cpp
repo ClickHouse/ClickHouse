@@ -6,7 +6,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
@@ -70,7 +69,7 @@ static inline String resolveDatabase(
     return current_database != replica_clickhouse_database ? "" : replica_clickhouse_database;
 }
 
-NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
+static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
 {
     NamesAndTypesList columns_name_and_type;
     for (const auto & declare_column_ast : columns_definition->children)
@@ -78,7 +77,7 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
         const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
 
         if (!declare_column || !declare_column->data_type)
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Missing type in definition of column.");
+            throw Exception("Missing type in definition of column.", ErrorCodes::UNKNOWN_TYPE);
 
         bool is_nullable = true;
         bool is_unsigned = false;
@@ -86,10 +85,10 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
         {
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
             {
-                if (options->changes.contains("is_null"))
+                if (options->changes.count("is_null"))
                     is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
 
-                if (options->changes.contains("is_unsigned"))
+                if (options->changes.count("is_unsigned"))
                     is_unsigned = options->changes.at("is_unsigned")->as<ASTLiteral>()->value.safeGet<UInt64>();
             }
         }
@@ -147,22 +146,22 @@ NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
 static ColumnsDescription createColumnsDescription(const NamesAndTypesList & columns_name_and_type, const ASTExpressionList * columns_definition)
 {
     if (columns_name_and_type.size() != columns_definition->children.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns of different size provided.");
+            throw Exception("Columns of different size provided.", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsDescription columns_description;
 
-    /// FIXME: we could write it like auto [a, b] = std::tuple(x, y),
-    /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
-    /// (see git blame for details).
-    auto column_name_and_type = columns_name_and_type.begin();
-    const auto * declare_column_ast = columns_definition->children.begin();
-    for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
+    for (
+        auto [column_name_and_type, declare_column_ast] = std::tuple{columns_name_and_type.begin(), columns_definition->children.begin()};
+        column_name_and_type != columns_name_and_type.end();
+        column_name_and_type++,
+        declare_column_ast++
+    )
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
         String comment;
         if (declare_column->column_options)
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
-                if (options->changes.contains("comment"))
+                if (options->changes.count("comment"))
                     comment = options->changes.at("comment")->as<ASTLiteral>()->value.safeGet<String>();
 
         ColumnDescription column_description(column_name_and_type->name, column_name_and_type->type);
@@ -239,7 +238,7 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
                 if (const auto & function = index_expression->as<ASTFunction>())
                 {
                     /// column_name(int64 literal)
-                    if (columns_name_set.contains(function->name) && function->arguments->children.size() == 1)
+                    if (columns_name_set.count(function->name) && function->arguments->children.size() == 1)
                     {
                         const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
 
@@ -277,13 +276,13 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
         {
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
             {
-                if (options->changes.contains("unique_key"))
+                if (options->changes.count("unique_key"))
                     unique_keys->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(declare_column->name));
 
-                if (options->changes.contains("primary_key"))
+                if (options->changes.count("primary_key"))
                     primary_keys->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(declare_column->name));
 
-                if (options->changes.contains("auto_increment"))
+                if (options->changes.count("auto_increment"))
                     increment_columns.emplace(declare_column->name);
             }
         }
@@ -326,7 +325,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
             return std::make_shared<ASTIdentifier>(column_name);
 
         return makeASTFunction("intDiv", std::make_shared<ASTIdentifier>(column_name),
-           std::make_shared<ASTLiteral>(static_cast<UInt64>(type_max_size / 1000)));
+           std::make_shared<ASTLiteral>(UInt64(type_max_size / 1000)));
     };
 
     ASTPtr best_partition;
@@ -337,7 +336,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
         WhichDataType which(type);
 
         if (which.isNullable())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: MySQL primary key must be not null, it is a bug.");
+            throw Exception("LOGICAL ERROR: MySQL primary key must be not null, it is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         if (which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64())
         {
@@ -386,10 +385,10 @@ static ASTPtr getOrderByPolicy(
 
         for (const auto & [name, type] : names_and_types)
         {
-            if (order_by_columns_set.contains(name))
+            if (order_by_columns_set.count(name))
                 continue;
 
-            if (increment_columns.contains(name))
+            if (increment_columns.count(name))
             {
                 order_by_columns_set.emplace(name);
                 increment_keys.emplace_back(NameAndTypePair(name, type));
@@ -440,7 +439,7 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
                 missing_columns_definition = false;
         }
         if (missing_columns_definition)
-            throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
+            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     }
 }
 
@@ -473,8 +472,8 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     ColumnsDescription columns_description = createColumnsDescription(columns_name_and_type, create_defines->columns);
 
     if (primary_keys.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The {}.{} cannot be materialized, because there is no primary keys.",
-            backQuoteIfNeed(mysql_database), backQuoteIfNeed(create_query.table));
+        throw Exception("The " + backQuoteIfNeed(mysql_database) + "." + backQuoteIfNeed(create_query.table)
+            + " cannot be materialized, because there is no primary keys.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto columns = std::make_shared<ASTColumns>();
 
@@ -494,7 +493,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     String sign_column_name = getUniqueColumnName(columns_name_and_type, "_sign");
     String version_column_name = getUniqueColumnName(columns_name_and_type, "_version");
     columns->set(columns->columns, InterpreterCreateQuery::formatColumns(columns_description));
-    columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", static_cast<UInt64>(1)));
+    columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", UInt64(1)));
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
 
     /// Add minmax skipping index for _version column.
@@ -544,35 +543,21 @@ void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/
 ASTs InterpreterDropImpl::getRewrittenQueries(
     const InterpreterDropImpl::TQuery & drop_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
-    /// Skip drop database|view|dictionary|others
-    if (drop_query.kind != TQuery::Kind::Table)
+    const auto & database_name = resolveDatabase(drop_query.getDatabase(), mysql_database, mapped_to_database, context);
+
+    /// Skip drop database|view|dictionary
+    if (database_name != mapped_to_database || !drop_query.table || drop_query.is_view || drop_query.is_dictionary)
         return {};
-    TQuery::QualifiedNames tables = drop_query.names;
-    ASTs rewritten_querys;
-    for (const auto & table: tables)
-    {
-        const auto & database_name = resolveDatabase(table.schema, mysql_database, mapped_to_database, context);
-        if (database_name != mapped_to_database)
-            continue;
-        auto rewritten_query = std::make_shared<ASTDropQuery>();
-        rewritten_query->setTable(table.shortName);
-        rewritten_query->setDatabase(mapped_to_database);
-        if (drop_query.is_truncate)
-            rewritten_query->kind = ASTDropQuery::Kind::Truncate;
-        else
-            rewritten_query->kind = ASTDropQuery::Kind::Drop;
-        rewritten_query->is_view = false;
-        //To avoid failure, we always set exists
-        rewritten_query->if_exists = true;
-        rewritten_querys.push_back(rewritten_query);
-    }
-    return rewritten_querys;
+
+    ASTPtr rewritten_query = drop_query.clone();
+    rewritten_query->as<ASTDropQuery>()->setDatabase(mapped_to_database);
+    return ASTs{rewritten_query};
 }
 
 void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, ContextPtr /*context*/)
 {
     if (rename_query.exchange)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot execute exchange for external ddl query.");
+        throw Exception("Cannot execute exchange for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 ASTs InterpreterRenameImpl::getRewrittenQueries(
@@ -585,7 +570,7 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
         const auto & from_database = resolveDatabase(rename_element.from.database, mysql_database, mapped_to_database, context);
 
         if ((from_database == mapped_to_database || to_database == mapped_to_database) && to_database != from_database)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for external ddl query.");
+            throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
 
         if (from_database == mapped_to_database)
         {
@@ -718,7 +703,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                 auto modify_columns = getColumnsList(alter_command->additional_columns);
 
                 if (modify_columns.size() != 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "It is a bug");
+                    throw Exception("It is a bug", ErrorCodes::LOGICAL_ERROR);
 
                 new_column_name = modify_columns.front().name;
 
@@ -751,7 +736,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             const auto & to_database = resolveDatabase(alter_command->new_database_name, mysql_database, mapped_to_database, context);
 
             if (to_database != mapped_to_database)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for external ddl query.");
+                throw Exception("Cannot rename with other database for external ddl query.", ErrorCodes::NOT_IMPLEMENTED);
 
             /// For ALTER TABLE table_name RENAME TO new_table_name_1, RENAME TO new_table_name_2;
             /// We just need to generate RENAME TABLE table_name TO new_table_name_2;

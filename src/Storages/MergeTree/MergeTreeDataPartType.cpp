@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <base/EnumReflection.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -12,16 +11,29 @@ namespace ErrorCodes
 
 void MergeTreeDataPartType::fromString(const String & str)
 {
-    auto maybe_value = magic_enum::enum_cast<MergeTreeDataPartType::Value>(str);
-    if (!maybe_value || *maybe_value == Value::Unknown)
-        throw DB::Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unexpected string for part type: {}", str);
-
-    value = *maybe_value;
+    if (str == "Wide")
+        value = WIDE;
+    else if (str == "Compact")
+        value = COMPACT;
+    else if (str == "InMemory")
+        value = IN_MEMORY;
+    else
+        throw DB::Exception("Unexpected string for part type: " + str, ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
 String MergeTreeDataPartType::toString() const
 {
-    return String(magic_enum::enum_name(value));
+    switch (value)
+    {
+        case WIDE:
+            return "Wide";
+        case COMPACT:
+            return "Compact";
+        case IN_MEMORY:
+            return "InMemory";
+        default:
+            return "Unknown";
+    }
 }
 
 }

@@ -583,7 +583,9 @@ private:
                 if (auto res = executeLowCardinality(arguments))
                     return res;
 
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
+                throw Exception(
+                    "Illegal internal type of first argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
             }
         }
 
@@ -592,7 +594,9 @@ private:
               || (res = executeConst(arguments, result_type))
               || (res = executeString(arguments))
               || (res = executeGeneric(arguments))))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
+            throw Exception(
+                "Illegal internal type of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
 
         return res;
     }
@@ -714,7 +718,9 @@ private:
     /**
      * Catches arguments of type LowCardinality(T) (left) and U (right).
      *
-     * The perftests showed that the amount of action needed to convert the non-constant right argument to the index column
+     * The perftests
+     * https://clickhouse-test-reports.s3.yandex.net/12550/2d27fa0fa8c198a82bf1fe3625050ccf56695976/integration_tests_(release).html
+     * showed that the amount of action needed to convert the non-constant right argument to the index column
      * (similar to the left one's) is significantly higher than converting the array itself to an ordinary column.
      *
      * So, in terms of performance it's more optimal to fall back to default implementation and catch only constant
@@ -924,7 +930,9 @@ private:
                     null_map_data,
                     null_map_item);
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(
+                    "Logical error: ColumnConst contains not String nor FixedString column",
+                        ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(&data.right))
         {

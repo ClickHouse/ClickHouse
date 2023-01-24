@@ -1,13 +1,12 @@
-#include "config.h"
 #include <string_view>
+#include <Common/config.h>
 #include <Common/Exception.h>
 #include <base/types.h>
 #include <IO/VarInt.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-#include <Common/safe_cast.h>
+#include <base/logger_useful.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL
@@ -51,15 +50,15 @@ uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
     {
-        return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
+        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
     }
     else if (Method == AES_256_GCM_SIV)
     {
-        return static_cast<uint8_t>(CompressionMethodByte::AES_256_GCM_SIV);
+        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
@@ -100,7 +99,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
@@ -117,7 +116,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
@@ -132,7 +131,7 @@ std::string lastErrorString()
 /// This function get key and nonce and encrypt text with their help.
 /// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
-size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
+size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
 {
     /// Init context for encryption, using key.
     EVP_AEAD_CTX encrypt_ctx;
@@ -161,7 +160,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
 /// This function get key and nonce and encrypt text with their help.
 /// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
-size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
+size_t decrypt(const std::string_view & ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
 {
     /// Init context for decryption with given key.
     EVP_AEAD_CTX decrypt_ctx;
@@ -196,8 +195,9 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
         if (arguments)
         {
             if (!arguments->children.empty())
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Codec {} must not have parameters, given {}",
-                                getMethodName(Method), arguments->children.size());
+                throw Exception("Codec " + getMethodName(Method) + " must not have parameters, given " +
+                                std::to_string(arguments->children.size()),
+                                ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
         }
         return std::make_shared<CompressionCodecEncrypted>(Method);
     });
@@ -228,9 +228,7 @@ inline char* writeNonce(const String& nonce, char* dest)
         ++dest;
         size_t copied_symbols = nonce.copy(dest, nonce.size());
         if (copied_symbols != nonce.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}",
-                            copied_symbols, nonce.size());
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}", copied_symbols, nonce.size());
         dest += copied_symbols;
         return dest;
     }
@@ -274,7 +272,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 {
     // if method is not smaller than MAX_ENCRYPTION_METHOD it is incorrect
     if (method >= MAX_ENCRYPTION_METHOD)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong argument for loading configurations.");
+        throw Exception("Wrong argument for loading configurations.", ErrorCodes::BAD_ARGUMENTS);
 
     /// Scan all keys in config and add them into storage. If key is in hex, transform it.
     /// Remember key ID for each key, because it will be used in encryption/decryption
@@ -342,8 +340,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
         new_params->nonce[method] = config.getString(config_prefix + ".nonce", "");
 
     if (new_params->nonce[method].size() != actual_nonce_size && !new_params->nonce[method].empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}",
-                        new_params->nonce[method].size(), actual_nonce_size);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}", new_params->nonce[method].size(), actual_nonce_size);
 }
 
 bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -384,7 +381,7 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
 {
     /// It parameters were not set, throw exception
     if (!params.get())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
+        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
 
     /// Save parameters in variable, because they can always change.
     /// As this function not atomic, we should be certain that we get information from one particular version for correct work.
@@ -411,7 +408,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     String key;
     /// See description of previous finction, logic is the same.
     if (!params.get())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
+        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
 
     const auto current_params = params.get();
 
@@ -481,12 +478,9 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Length of encrypted text should be equal to text length plus tag_size (which was added by algorithm).
     if (out_len != source_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't encrypt data, length after encryption {} is wrong, expected {}",
-                        out_len, source_size + tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't encrypt data, length after encryption {} is wrong, expected {}", out_len, source_size + tag_size);
 
-    size_t out_size = out_len + keyid_size + nonce_size;
-    return safe_cast<UInt32>(out_size);
+    return out_len + keyid_size + nonce_size;
 }
 
 void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
@@ -509,15 +503,12 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
     /// Count text size (nonce and key_id was read from source)
     size_t ciphertext_size = source_size - keyid_size - nonce_size;
     if (ciphertext_size != uncompressed_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}",
-                        uncompressed_size, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}", uncompressed_size, ciphertext_size - tag_size);
 
 
     size_t out_len = decrypt({ciphertext, ciphertext_size}, dest, encryption_method, key, nonce);
     if (out_len != ciphertext_size - tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't decrypt data, out length after decryption {} is wrong, expected {}",
-                        out_len, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, out length after decryption {} is wrong, expected {}", out_len, ciphertext_size - tag_size);
 }
 
 }

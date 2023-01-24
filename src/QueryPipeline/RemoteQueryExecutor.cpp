@@ -8,13 +8,9 @@
 #include <Common/CurrentThread.h>
 #include "Core/Protocol.h"
 #include "IO/ReadHelpers.h"
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
@@ -242,6 +238,10 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
+    if (CurrentThread::isInitialized())
+    {
+        modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+    }
 
     {
         std::lock_guard lock(duplicated_part_uuids_mutex);
@@ -271,7 +271,6 @@ Block RemoteQueryExecutor::read()
 
     while (true)
     {
-        std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
             return Block();
 
@@ -357,7 +356,7 @@ std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs
         else
             return read(*read_context);
     }
-    throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
+    throw Exception("Found duplicate uuids while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
 }
 
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
@@ -375,9 +374,7 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
                 got_duplicated_part_uuids = true;
             break;
         case Protocol::Server::Data:
-            /// Note: `packet.block.rows() > 0` means it's a header block.
-            /// We can actually return it, and the first call to RemoteQueryExecutor::read
-            /// will return earlier. We should consider doing it.
+            /// If the block is not empty and is not a header block
             if (packet.block && (packet.block.rows() > 0))
                 return adaptBlockStructure(packet.block, header);
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
@@ -414,14 +411,10 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
         case Protocol::Server::Totals:
             totals = packet.block;
-            if (totals)
-                totals = adaptBlockStructure(totals, header);
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
-            if (extremes)
-                extremes = adaptBlockStructure(packet.block, header);
             break;
 
         case Protocol::Server::Log:
@@ -439,10 +432,8 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
         default:
             got_unknown_packet_from_replica = true;
-            throw Exception(
-                ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
-                "Unknown packet {} from one of the following replicas: {}",
-                packet.type,
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
                 connections->dumpAddresses());
     }
 
@@ -466,7 +457,7 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 void RemoteQueryExecutor::processReadTaskRequest()
 {
     if (!task_iterator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
+        throw Exception("Distributed task iterator is not initialized", ErrorCodes::LOGICAL_ERROR);
     auto response = (*task_iterator)();
     connections->sendReadTaskResponse(response);
 }
@@ -474,7 +465,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(PartitionReadRequest request)
 {
     if (!parallel_reading_coordinator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
+        throw Exception("Coordinator for parallel reading from replicas is not initialized", ErrorCodes::LOGICAL_ERROR);
 
     auto response = parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponse(response);
@@ -512,7 +503,7 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
     }
     else
     {
-        /// Drain connections synchronously without suppressing errors.
+        /// Drain connections synchronously w/o suppressing errors.
         CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
         ConnectionCollector::drainConnections(*connections, /* throw_error= */ true);
         CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
@@ -572,25 +563,22 @@ void RemoteQueryExecutor::sendExternalTables()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
-                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, context);
+                    auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
                         context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
-                    QueryPlan plan;
-                    cur->read(
-                        plan,
+                    Pipe pipe = cur->read(
                         metadata_snapshot->getColumns().getNamesOfPhysical(),
                         storage_snapshot, query_info, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
-                    auto builder = plan.buildQueryPipeline(
-                        QueryPlanOptimizationSettings::fromContext(context),
-                        BuildQueryPipelineSettings::fromContext(context));
+                    if (pipe.empty())
+                        return std::make_unique<Pipe>(
+                            std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
 
-                    builder->resize(1);
-                    builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
+                    pipe.addTransform(std::make_shared<LimitsCheckingTransform>(pipe.getHeader(), limits));
 
-                    return builder;
+                    return std::make_unique<Pipe>(std::move(pipe));
                 };
 
                 data->pipe = data->creating_pipe_callback();
@@ -605,8 +593,7 @@ void RemoteQueryExecutor::sendExternalTables()
 
 void RemoteQueryExecutor::tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context)
 {
-    /// Flag was_cancelled is atomic because it is checked in read(),
-    /// in case of packet had been read by fiber (async_socket_for_remote).
+    /// Flag was_cancelled is atomic because it is checked in read().
     std::lock_guard guard(was_cancelled_mutex);
 
     if (was_cancelled)

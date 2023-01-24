@@ -1,3 +1,0 @@
-with_on_cluster_02250_ON_CLUSTER_grant_default
-without_on_cluster_02250_ON_CLUSTER_grant_default
-Not enough privileges. To execute this query it's necessary to have grant CLUSTER ON *.*. (ACCESS_DENIED)

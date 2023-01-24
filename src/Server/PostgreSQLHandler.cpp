@@ -11,7 +11,7 @@
 #include <base/scope_guard.h>
 #include <random>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -57,8 +57,6 @@ void PostgreSQLHandler::run()
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
-
-    session->getClientInfo().connection_id = connection_id;
 
     try
     {
@@ -277,12 +275,9 @@ void PostgreSQLHandler::processQuery()
 
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
-        auto parse_res = splitMultipartQuery(query->query, queries,
-            settings.max_query_size,
-            settings.max_parser_depth,
-            settings.allow_settings_after_format_in_insert);
+        auto parse_res = splitMultipartQuery(query->query, queries, settings.max_query_size, settings.max_parser_depth);
         if (!parse_res.second)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
+            throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
         std::random_device rd;
         std::mt19937 gen(rd());

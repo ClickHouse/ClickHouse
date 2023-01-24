@@ -73,7 +73,8 @@
         FORMAT Null;
     </query>
 
+    <drop_query>DROP TABLE IF EXISTS simple_key_flat_dictionary_source_table</drop_query>
+
     <drop_query>DROP DICTIONARY IF EXISTS simple_key_flat_dictionary</drop_query>
 
-    <drop_query>DROP TABLE IF EXISTS simple_key_flat_dictionary_source_table</drop_query>
 </test>

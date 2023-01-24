@@ -1,6 +1,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <cerrno>
+#include <errno.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -35,7 +35,7 @@ WriteBufferFromFile::WriteBufferFromFile(
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
-#ifdef OS_DARWIN
+#ifdef __APPLE__
     bool o_direct = (flags != -1) && (flags & O_DIRECT);
     if (o_direct)
         flags = flags & ~O_DIRECT;
@@ -47,7 +47,7 @@ WriteBufferFromFile::WriteBufferFromFile(
         throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
                                errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 
-#ifdef OS_DARWIN
+#ifdef __APPLE__
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
@@ -93,7 +93,7 @@ void WriteBufferFromFile::close()
     next();
 
     if (0 != ::close(fd))
-        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
+        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
     fd = -1;
     metric_increment.destroy();

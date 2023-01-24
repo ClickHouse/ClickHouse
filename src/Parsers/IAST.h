@@ -5,11 +5,11 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
+#include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <set>
-#include <list>
 
 
 class SipHash;
@@ -26,7 +26,7 @@ namespace ErrorCodes
 using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
-using Strings = std::vector<String>;
+
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
@@ -35,7 +35,7 @@ class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAS
 public:
     ASTs children;
 
-    virtual ~IAST();
+    virtual ~IAST() = default;
     IAST() = default;
     IAST(const IAST &) = default;
     IAST & operator=(const IAST &) = default;
@@ -48,12 +48,12 @@ public:
 
     virtual void appendColumnName(WriteBuffer &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
+        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     virtual void appendColumnNameWithoutAlias(WriteBuffer &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
+        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
@@ -65,7 +65,7 @@ public:
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {}", getColumnName());
+        throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::LOGICAL_ERROR);
     }
 
     /** Get the text that identifies this element. */
@@ -92,7 +92,7 @@ public:
       */
     size_t checkDepth(size_t max_depth) const
     {
-        return checkDepthImpl(max_depth);
+        return checkDepthImpl(max_depth, 0);
     }
 
     /** Get total number of tree elements
@@ -119,7 +119,7 @@ public:
 
         T * casted = dynamic_cast<T *>(child.get());
         if (!casted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
 
         children.push_back(child);
         field = casted;
@@ -129,11 +129,11 @@ public:
     void replace(T * & field, const ASTPtr & child)
     {
         if (!child)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
+            throw Exception("Trying to replace AST subtree with nullptr", ErrorCodes::LOGICAL_ERROR);
 
         T * casted = dynamic_cast<T *>(child.get());
         if (!casted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
 
         for (ASTPtr & current_child : children)
         {
@@ -145,7 +145,7 @@ public:
             }
         }
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+        throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
     }
 
     template <typename T>
@@ -169,7 +169,7 @@ public:
         });
 
         if (child == children.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
 
         children.erase(child);
         field = nullptr;
@@ -185,7 +185,6 @@ public:
         bool one_line;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
-        bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
         // Newline or whitespace.
         char nl_or_ws;
@@ -225,7 +224,6 @@ public:
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
-        bool surround_each_list_element_with_parens = false;
         const IAST * current_select = nullptr;
     };
 
@@ -237,16 +235,13 @@ public:
 
     virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
+        throw Exception("Unknown element in AST: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     // A simple way to add some user-readable context to an error message.
-    String formatWithSecretsHidden(size_t max_length = 0, bool one_line = true) const;
-    String formatForLogging(size_t max_length = 0) const { return formatWithSecretsHidden(max_length, true); }
-    String formatForErrorMessage() const { return formatWithSecretsHidden(0, true); }
-
-    /// If an AST has secret parts then formatForLogging() will replace them with the placeholder '[HIDDEN]'.
-    virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
+    std::string formatForErrorMessage() const;
+    template <typename AstArray>
+    static std::string formatForErrorMessage(const AstArray & array);
 
     void cloneChildren();
 
@@ -276,17 +271,24 @@ public:
     static const char * hilite_substitution;
     static const char * hilite_none;
 
-protected:
-    bool childrenHaveSecretParts() const;
-
 private:
-    size_t checkDepthImpl(size_t max_depth) const;
-
-    /** Forward linked list of ASTPtr to delete.
-      * Used in IAST destructor to avoid possible stack overflow.
-      */
-    ASTPtr next_to_delete = nullptr;
-    ASTPtr * next_to_delete_list_head = nullptr;
+    size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
+
+template <typename AstArray>
+std::string IAST::formatForErrorMessage(const AstArray & array)
+{
+    WriteBufferFromOwnString buf;
+    for (size_t i = 0; i < array.size(); ++i)
+    {
+        if (i > 0)
+        {
+            const char * delim = ", ";
+            buf.write(delim, strlen(delim));
+        }
+        array[i]->format(IAST::FormatSettings(buf, true /* one line */));
+    }
+    return buf.str();
+}
 
 }

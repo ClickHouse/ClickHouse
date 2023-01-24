@@ -1,7 +1,6 @@
 ---
-slug: /ru/operations/utilities/clickhouse-copier
-sidebar_position: 59
-sidebar_label: clickhouse-copier
+toc_priority: 59
+toc_title: clickhouse-copier
 ---
 
 # clickhouse-copier {#clickhouse-copier}
@@ -181,3 +180,4 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
 ```
 
 `clickhouse-copier` отслеживает изменения `/task/path/description` и применяет их «на лету». Если вы поменяете, например, значение `max_workers`, то количество процессов, выполняющих задания, также изменится.
+

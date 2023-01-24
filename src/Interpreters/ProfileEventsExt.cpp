@@ -2,7 +2,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -72,7 +71,7 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     {
         size_t i = 0;
         columns[i++]->insertData(host_name.data(), host_name.size());
-        columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
+        columns[i++]->insert(UInt64(snapshot.current_time));
         columns[i++]->insert(UInt64{snapshot.thread_id});
         columns[i++]->insert(Type::INCREMENT);
     }
@@ -82,8 +81,8 @@ static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::Mutabl
 {
     size_t i = 0;
     columns[i++]->insertData(host_name.data(), host_name.size());
-    columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
-    columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
+    columns[i++]->insert(UInt64(snapshot.current_time));
+    columns[i++]->insert(UInt64{snapshot.thread_id});
     columns[i++]->insert(Type::GAUGE);
 
     columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
@@ -106,7 +105,7 @@ void getProfileEvents(
         {"value", std::make_shared<DataTypeInt64>()},
     };
 
-    ColumnsWithTypeAndName temp_columns;
+     ColumnsWithTypeAndName temp_columns;
     for (auto const & name_and_type : column_names_and_types)
         temp_columns.emplace_back(name_and_type.type, name_and_type.name);
 
@@ -163,8 +162,9 @@ void getProfileEvents(
     dumpMemoryTracker(group_snapshot, columns, server_display_name);
 
     Block curr_block;
+    size_t rows = 0;
 
-    while (profile_queue->tryPop(curr_block))
+    for (; profile_queue->tryPop(curr_block); ++rows)
     {
         auto curr_columns = curr_block.getColumns();
         for (size_t j = 0; j < curr_columns.size(); ++j)

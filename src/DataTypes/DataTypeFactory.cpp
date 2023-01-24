@@ -33,12 +33,7 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
     /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
     /// let's make the threshold significantly lower.
     /// It is impractical for user to have complex data types with this depth.
-
-#if defined(SANITIZER) || !defined(NDEBUG)
-    static constexpr size_t data_type_max_parse_depth = 150;
-#else
-    static constexpr size_t data_type_max_parse_depth = 300;
-#endif
+    static constexpr size_t data_type_max_parse_depth = 200;
 
     ParserDataType parser;
     ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
@@ -50,7 +45,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
     if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->parameters)
-            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Data type cannot have multiple parenthesized parameters.");
+            throw Exception("Data type cannot have multiple parenthesized parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
         return get(func->name, func->arguments);
     }
 
@@ -65,7 +60,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
             return get("Null", {});
     }
 
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type.");
+    throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
@@ -106,32 +101,36 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
 void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
+        throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
+            " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
     String family_name_lowercase = Poco::toLower(family_name);
 
     if (isAlias(family_name) || isAlias(family_name_lowercase))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is already registered as alias", family_name);
+        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is already registered as alias",
+                        ErrorCodes::LOGICAL_ERROR);
 
     if (!data_types.emplace(family_name, creator).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is not unique",
-            family_name);
+        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is not unique",
+            ErrorCodes::LOGICAL_ERROR);
+
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
+        throw Exception("DataTypeFactory: the case insensitive data type family name '" + family_name + "' is not unique",
+            ErrorCodes::LOGICAL_ERROR);
 }
 
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
-            name);
+        throw Exception("DataTypeFactory: the data type " + name + " has been provided "
+            " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
     registerDataType(name, [name, creator](const ASTPtr & ast)
     {
         if (ast)
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
+            throw Exception("Data type " + name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
         return creator();
     }, case_sensitiveness);
 }
@@ -185,9 +184,9 @@ const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String &
 
     auto hints = this->getHints(family_name);
     if (!hints.empty())
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}. Maybe you meant: {}", family_name, toString(hints));
+        throw Exception("Unknown data type family: " + family_name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_TYPE);
     else
-        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
+        throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
 }
 
 DataTypeFactory::DataTypeFactory()
@@ -205,11 +204,11 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
-    registerDataTypeIPv4andIPv6(*this);
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
+    registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainBool(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);

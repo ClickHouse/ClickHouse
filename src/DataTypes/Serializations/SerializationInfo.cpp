@@ -1,9 +1,9 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnSparse.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
-#include <Core/Block.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -47,22 +47,9 @@ void SerializationInfo::Data::add(const Data & other)
     num_defaults += other.num_defaults;
 }
 
-void SerializationInfo::Data::addDefaults(size_t length)
-{
-    num_rows += length;
-    num_defaults += length;
-}
-
 SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_)
     : settings(settings_)
     , kind(kind_)
-{
-}
-
-SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_, const Data & data_)
-    : settings(settings_)
-    , kind(kind_)
-    , data(data_)
 {
 }
 
@@ -80,13 +67,6 @@ void SerializationInfo::add(const SerializationInfo & other)
         kind = chooseKind(data, settings);
 }
 
-void SerializationInfo::addDefaults(size_t length)
-{
-    data.addDefaults(length);
-    if (settings.choose_kind)
-        kind = chooseKind(data, settings);
-}
-
 void SerializationInfo::replaceData(const SerializationInfo & other)
 {
     data = other.data;
@@ -94,7 +74,9 @@ void SerializationInfo::replaceData(const SerializationInfo & other)
 
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
-    return std::make_shared<SerializationInfo>(kind, settings, data);
+    auto res = std::make_shared<SerializationInfo>(kind, settings);
+    res->data = data;
+    return res;
 }
 
 void SerializationInfo::serialializeKindBinary(WriteBuffer & out) const
@@ -108,7 +90,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     readBinary(kind_num, in);
     auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind_num);
     if (!maybe_kind)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind {}", std::to_string(kind_num));
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind " + std::to_string(kind_num));
 
     kind = *maybe_kind;
 }
@@ -239,8 +221,13 @@ void SerializationInfoByName::readJSON(ReadBuffer & in)
                     "Missed field '{}' in SerializationInfo of columns", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
-            if (auto it = find(name); it != end())
-                it->second->fromJSON(*elem_object);
+            auto it = find(name);
+
+            if (it == end())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "There is no column {} in serialization infos", name);
+
+            it->second->fromJSON(*elem_object);
         }
     }
 }

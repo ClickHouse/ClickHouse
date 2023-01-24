@@ -1,7 +1,5 @@
 -- Tags: no-parallel, no-fasttest
 
-SET prefer_localhost_replica=1;
-
 DROP TABLE IF EXISTS file;
 DROP TABLE IF EXISTS url;
 DROP TABLE IF EXISTS view;

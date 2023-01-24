@@ -21,6 +21,20 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+template <typename F>
+static Float64 integrateSimpson(Float64 a, Float64 b, F && func)
+{
+    const size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b) - std::round(a)));
+    const long double h = (b - a) / iterations;
+    Float64 sum_odds = 0.0;
+    for (size_t i = 1; i < iterations; i += 2)
+        sum_odds += func(a + i * h);
+    Float64 sum_evens = 0.0;
+    for (size_t i = 2; i < iterations; i += 2)
+        sum_evens += func(a + i * h);
+    return (func(a) + func(b) + 2 * sum_evens + 4 * sum_odds) * h / 3;
+}
+
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = std::vector<Float64>;
 
@@ -47,7 +61,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
 
         /// Scipy implementation throws exception in this case too.
         if (count_equal == size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All numbers in both samples are identical");
+            throw Exception("All numbers in both samples are identical", ErrorCodes::BAD_ARGUMENTS);
 
         tie_numenator += std::pow(count_equal, 3) - count_equal;
         for (size_t iter = left; iter < right; ++iter)
@@ -118,3 +132,4 @@ struct StatisticalSample
 };
 
 }
+

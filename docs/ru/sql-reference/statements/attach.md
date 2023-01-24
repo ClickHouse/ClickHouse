@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/attach
-sidebar_position: 40
-sidebar_label: ATTACH
+toc_priority: 40
+toc_title: ATTACH
 ---
 
 # ATTACH {#attach}

@@ -46,10 +46,8 @@ public:
     int compare(const char * str1, size_t length1, const char * str2, size_t length2) const;
 
     const std::string & getLocale() const;
-
-    bool operator==(const Collator & other) const { return this->getLocale() == other.getLocale(); }
-
 private:
+
     std::string locale;
     UCollator * collator;
 };

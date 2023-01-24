@@ -1,0 +1,25 @@
+.section {
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: cover;
+	overflow: visible;
+	position: relative;
+
+	&-bg {
+		background-repeat: no-repeat;
+		background-position: center;
+		background-size: cover;
+		display: block;
+		height: 100%;
+		left: 50%;
+		position: absolute;
+		top: 0;
+		transform: translateX(-50%);
+		z-index: 1;
+	}
+
+	> .container {
+		position: relative;
+		z-index: 2;
+	}
+}

@@ -67,9 +67,6 @@ struct FixedHashTableCalculatedSize
 {
     size_t getSize(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
     {
-        if (!buf)
-            return 0;
-
         size_t res = 0;
         for (const Cell * end = buf + num_cells; buf != end; ++buf)
             if (!buf->isZero(state))
@@ -79,9 +76,6 @@ struct FixedHashTableCalculatedSize
 
     bool isEmpty(const Cell * buf, const typename Cell::State & state, size_t num_cells) const
     {
-        if (!buf)
-            return true;
-
         for (const Cell * end = buf + num_cells; buf != end; ++buf)
             if (!buf->isZero(state))
                 return false;
@@ -264,7 +258,7 @@ public:
         inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
-                throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
+                throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
 
             return cell.getValue();
         }

@@ -1,5 +1,6 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -10,6 +11,7 @@
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
@@ -81,11 +83,12 @@ SetOrJoinSink::SetOrJoinSink(
 
 void SetOrJoinSink::consume(Chunk chunk)
 {
-    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
+    /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
+    Block sorted_block = getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
 
-    table.insertBlock(block, getContext());
+    table.insertBlock(sorted_block, getContext());
     if (persistent)
-        backup_stream.write(block);
+        backup_stream.write(sorted_block);
 }
 
 void SetOrJoinSink::onFinish()
@@ -129,7 +132,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 
 
     if (relative_path_.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
+        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     path = relative_path_;
 }
@@ -146,7 +149,9 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), false, true))
 {
+
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
+    header = header.sortColumns();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
@@ -167,6 +172,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     disk->createDirectories(fs::path(path) / "tmp/");
 
     Block header = metadata_snapshot->getSampleBlock();
+    header = header.sortColumns();
 
     increment = 0;
     set = std::make_shared<Set>(SizeLimits(), false, true);
@@ -242,8 +248,9 @@ void registerStorageSet(StorageFactory & factory)
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, args.engine_args.size());
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         bool has_settings = args.storage_def->settings;
         SetSettings set_settings;
@@ -251,7 +258,7 @@ void registerStorageSet(StorageFactory & factory)
             set_settings.loadFromQuery(*args.storage_def);
 
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
-        return std::make_shared<StorageSet>(
+        return StorageSet::create(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }

@@ -17,11 +17,9 @@ class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, A
 {
 public:
     using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
-    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>;
     using LookupResult = typename Impl::LookupResult;
 
-    using Base::Base;
-    using Base::prefetch;
+    using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>::TwoLevelHashTable;
 
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)

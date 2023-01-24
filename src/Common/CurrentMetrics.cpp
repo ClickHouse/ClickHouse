@@ -5,7 +5,6 @@
 #define APPLY_FOR_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
-    M(Move, "Number of currently executing moves") \
     M(PartMutation, "Number of mutations (ALTER DELETE/UPDATE)") \
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
@@ -30,13 +29,7 @@
     M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
-    M(TotalTemporaryFiles, "Number of temporary files created") \
-    M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
-    M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
-    M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
-    M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
-    M(RemoteRead, "Number of read with remote reader in fly") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
@@ -88,24 +81,6 @@
     M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
-    M(KafkaConsumers, "Number of active Kafka consumers") \
-    M(KafkaConsumersWithAssignment, "Number of active Kafka consumers which have some partitions assigned.") \
-    M(KafkaProducers, "Number of active Kafka producer created") \
-    M(KafkaLibrdkafkaThreads, "Number of active librdkafka threads") \
-    M(KafkaBackgroundReads, "Number of background reads currently working (populating materialized views from Kafka)") \
-    M(KafkaConsumersInUse, "Number of consumers which are currently used by direct or background reads") \
-    M(KafkaWrites, "Number of currently running inserts to Kafka") \
-    M(KafkaAssignedPartitions, "Number of partitions Kafka tables currently assigned to") \
-    M(FilesystemCacheReadBuffers, "Number of active cache buffers") \
-    M(CacheFileSegments, "Number of existing cache file segments") \
-    M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
-    M(FilesystemCacheSize, "Filesystem cache size in bytes") \
-    M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
-    M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(S3Requests, "S3 requests") \
-    M(KeeperAliveConnections, "Number of alive connections") \
-    M(KeeperOutstandingRequets, "Number of outstanding requests") \
-    M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
 
 namespace CurrentMetrics
 {

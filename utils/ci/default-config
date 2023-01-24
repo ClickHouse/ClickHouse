@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -e -x
+
+if [[ -z "$INITIALIZED" ]]; then
+
+INITIALIZED=1
+
+SCRIPTPATH=$(pwd)
+WORKSPACE=${SCRIPTPATH}/workspace
+PROJECT_ROOT=$(cd $SCRIPTPATH/.. && pwd)
+
+# Almost all scripts take no arguments. Arguments should be in config.
+
+# get-sources
+SOURCES_METHOD=local                # clone, local, tarball
+SOURCES_CLONE_URL="https://github.com/ClickHouse/ClickHouse.git"
+SOURCES_BRANCH="master"
+SOURCES_COMMIT=HEAD                 # do checkout of this commit after clone
+
+# prepare-toolchain
+COMPILER=gcc                        # gcc, clang
+COMPILER_INSTALL_METHOD=packages    # packages, sources
+COMPILER_PACKAGE_VERSION=7          # or 6.0 for clang
+
+# install-compiler-from-sources
+CLANG_SOURCES_BRANCH=trunk          # or tags/RELEASE_600/final
+GCC_SOURCES_VERSION=latest          # or gcc-7.1.0
+
+# install-libraries
+ENABLE_EMBEDDED_COMPILER=1
+
+# build
+BUILD_METHOD=normal                 # normal, debian
+BUILD_TARGETS=clickhouse            # tagtet name, all; only for "normal"
+BUILD_TYPE=RelWithDebInfo           # RelWithDebInfo, Debug, ASan, TSan
+CMAKE_FLAGS=""
+
+# prepare-docker-image-ubuntu
+DOCKER_UBUNTU_VERSION=bionic
+DOCKER_UBUNTU_ARCH=arm64            # How the architecture is named in a tarball at https://partner-images.canonical.com/core/
+DOCKER_UBUNTU_QUEMU_ARCH=aarch64    # How the architecture is named in QEMU
+DOCKER_UBUNTU_TAG_ARCH=arm64        # How the architecture is named in Docker
+DOCKER_UBUNTU_QEMU_VER=v2.9.1
+DOCKER_UBUNTU_REPO=multiarch/ubuntu-core
+
+THREADS=$(grep -c ^processor /proc/cpuinfo || nproc || sysctl -a | grep -F 'hw.ncpu' | grep -oE '[0-9]+')
+
+# All scripts should return 0 in case of success, 1 in case of permanent error,
+#  2 in case of temporary error, any other code in case of permanent error.
+function die {
+    echo ${1:-Error}
+    exit ${2:1}
+}
+
+[[ $EUID -ne 0 ]] && SUDO=sudo
+
+./install-os-packages.sh prepare
+
+# Configuration parameters may be overridden with CONFIG environment variable pointing to config file.
+[[ -n "$CONFIG" ]] && source $CONFIG
+
+mkdir -p $WORKSPACE
+
+fi

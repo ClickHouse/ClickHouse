@@ -292,10 +292,15 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
 
     if (usable_count < min_entries)
-        throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-                "All connection tries failed. Log: \n\n{}\n", fail_messages);
+        throw DB::NetException(
+                "All connection tries failed. Log: \n\n" + fail_messages + "\n",
+                DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 
-    std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
+    try_results.erase(
+            std::remove_if(
+                    try_results.begin(), try_results.end(),
+                    [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
+            try_results.end());
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(
@@ -338,7 +343,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     Int64 config_priority = 1;
     /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
-    UInt64 random = 0;
+    UInt32 random = 0;
 
     void randomize()
     {
@@ -352,7 +357,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     }
 
 private:
-    std::minstd_rand rng = std::minstd_rand(static_cast<uint_fast32_t>(randomSeed()));
+    std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
 
 template <typename TNestedPool>

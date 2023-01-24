@@ -5,7 +5,7 @@
 #include <Interpreters/Session.h>
 #include <Access/Credentials.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
 
 #include <base/scope_guard.h>
@@ -94,8 +94,10 @@ void Native41::authenticate(
     }
 
     if (auth_response->size() != Poco::SHA1Engine::DIGEST_SIZE)
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Wrong size of auth response. Expected: {} bytes, received: {} bytes.",
-            std::to_string(Poco::SHA1Engine::DIGEST_SIZE), std::to_string(auth_response->size()));
+        throw Exception(
+            "Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE)
+                + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
+            ErrorCodes::UNKNOWN_EXCEPTION);
 
     session.authenticate(MySQLNative41Credentials{user_name, scramble, *auth_response}, address);
 }
@@ -121,10 +123,8 @@ void Sha256Password::authenticate(
         packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
 
         if (packet_endpoint->in->eof())
-            throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES,
-                            "Client doesn't support authentication method {} used by ClickHouse. "
-                            "Specifying user password using 'password_double_sha1_hex' may fix the problem.",
-                            getName());
+            throw Exception("Client doesn't support authentication method " + getName() + " used by ClickHouse. Specifying user password using 'password_double_sha1_hex' may fix the problem.",
+                            ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
 
         AuthSwitchResponse response;
         packet_endpoint->receivePacket(response);
@@ -144,7 +144,7 @@ void Sha256Password::authenticate(
         SCOPE_EXIT(BIO_free(mem));
         if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
         {
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to write public key to memory. Error: {}", getOpenSSLErrors());
+            throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
         }
         char * pem_buf = nullptr;
 #    pragma GCC diagnostic push
@@ -182,16 +182,12 @@ void Sha256Password::authenticate(
         const auto * ciphertext = reinterpret_cast<const unsigned char *>(unpack_auth_response.data());
 
         unsigned char plaintext[RSA_size(&private_key)];
-#if USE_BORINGSSL
         int plaintext_size = RSA_private_decrypt(unpack_auth_response.size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#else
-        int plaintext_size = RSA_private_decrypt(static_cast<int>(unpack_auth_response.size()), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#endif
         if (plaintext_size == -1)
         {
             if (!sent_public_key)
                 LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to decrypt auth data. Error: {}", getOpenSSLErrors());
+            throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
         }
 
         password.resize(plaintext_size);

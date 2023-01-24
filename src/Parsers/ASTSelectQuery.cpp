@@ -7,7 +7,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <Parsers/QueryParameterVisitor.h>
+
 
 namespace DB
 {
@@ -93,41 +93,19 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         where()->formatImpl(s, state, frame);
     }
 
-    if (!group_by_all && groupBy())
+    if (groupBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
-        if (!group_by_with_grouping_sets)
-        {
-            s.one_line
+        s.one_line
             ? groupBy()->formatImpl(s, state, frame)
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        }
     }
-
-    if (group_by_all)
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY ALL" << (s.hilite ? hilite_none : "");
 
     if (group_by_with_rollup)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
 
     if (group_by_with_cube)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
-
-    if (group_by_with_grouping_sets)
-    {
-        if (!groupBy()) /// sanity check, issue 43049
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupt AST");
-        auto nested_frame = frame;
-        nested_frame.surround_each_list_element_with_parens = true;
-        nested_frame.expression_list_prepend_whitespace = false;
-        nested_frame.indent++;
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
-        s.ostr << " (";
-        s.one_line
-        ? groupBy()->formatImpl(s, state, nested_frame)
-        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, nested_frame);
-        s.ostr << ")";
-    }
 
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
@@ -151,17 +129,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.one_line
             ? orderBy()->formatImpl(s, state, frame)
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-
-        if (interpolate())
-        {
-            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTERPOLATE" << (s.hilite ? hilite_none : "");
-            if (!interpolate()->children.empty())
-            {
-                s.ostr << " (";
-                interpolate()->formatImpl(s, state, frame);
-                s.ostr << " )";
-            }
-        }
     }
 
     if (limitByLength())
@@ -197,7 +164,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitOffset()->formatImpl(s, state, frame);
     }
 
-    if (settings() && assert_cast<ASTSetQuery *>(settings().get())->print_in_format)
+    if (settings())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings()->formatImpl(s, state, frame);
@@ -258,7 +225,7 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
             if (!array_join)
                 array_join = tables_element.array_join->as<ASTArrayJoin>();
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Support for more than one ARRAY JOIN in query is not implemented");
+                throw Exception("Support for more than one ARRAY JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -283,7 +250,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple JOIN does not support the query.");
+                throw Exception("Multiple JOIN does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -347,25 +314,6 @@ std::pair<ASTPtr, bool> ASTSelectQuery::arrayJoinExpressionList() const
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
     return getFirstTableJoin(*this);
-}
-
-bool ASTSelectQuery::hasJoin() const
-{
-    if (!tables())
-        return false;
-
-    const auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
-    if (tables_in_select_query.children.empty())
-        return false;
-
-    for (const auto & child : tables_in_select_query.children)
-    {
-        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
-        if (tables_element.table_join)
-            return true;
-    }
-
-    return false;
 }
 
 static String getTableExpressionAlias(const ASTTableExpression * table_expression)
@@ -446,7 +394,7 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.contains(expr))
+    else if (positions.count(expr))
     {
         size_t pos = positions[expr];
         children.erase(children.begin() + pos);
@@ -459,8 +407,8 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 
 ASTPtr & ASTSelectQuery::getExpression(Expression expr)
 {
-    if (!positions.contains(expr))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Get expression before set");
+    if (!positions.count(expr))
+        throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
 }
 
@@ -477,16 +425,6 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
 
     tables_element.table_expression->as<ASTTableExpression &>().final = true;
-}
-
-bool ASTSelectQuery::hasQueryParameters() const
-{
-    if (!has_query_parameters.has_value())
-    {
-        has_query_parameters = !analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty();
-    }
-
-    return  has_query_parameters.value();
 }
 
 }

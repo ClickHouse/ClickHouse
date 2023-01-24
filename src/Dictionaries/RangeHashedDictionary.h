@@ -150,8 +150,6 @@ private:
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
-            AttributeContainerType<IPv4>,
-            AttributeContainerType<IPv6>,
             AttributeContainerType<StringRef>,
             AttributeContainerType<Array>>
             container;
@@ -191,9 +189,7 @@ private:
         ContainerType<DateTime64>,
         ContainerType<Float32>,
         ContainerType<Float64>,
-        ContainerType<UUID>,
-        ContainerType<IPv4>,
-        ContainerType<IPv6>>;
+        ContainerType<UUID>>;
 
     struct KeyAttribute final
     {
@@ -251,8 +247,5 @@ private:
     mutable std::atomic<size_t> found_count{0};
     Arena string_arena;
 };
-
-extern template class RangeHashedDictionary<DictionaryKeyType::Simple>;
-extern template class RangeHashedDictionary<DictionaryKeyType::Complex>;
 
 }

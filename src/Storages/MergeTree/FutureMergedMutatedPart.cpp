@@ -16,7 +16,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 
     size_t sum_rows = 0;
     size_t sum_bytes_uncompressed = 0;
-    MergeTreeDataPartType future_part_type = MergeTreeDataPartType::Unknown;
+    MergeTreeDataPartType future_part_type = MergeTreeDataPartType::UNKNOWN;
     for (const auto & part : parts_)
     {
         sum_rows += part->rows_count;
@@ -39,8 +39,9 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         const MergeTreeData::DataPartPtr & first_part = parts_.front();
 
         if (part->partition.value != first_part->partition.value)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempting to merge parts {} and {} that are in different partitions",
-                first_part->name, part->name);
+            throw Exception(
+                "Attempting to merge parts " + first_part->name + " and " + part->name + " that are in different partitions",
+                ErrorCodes::LOGICAL_ERROR);
     }
 
     parts = std::move(parts_);
@@ -80,7 +81,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         name = part_info.getPartNameV0(min_date, max_date);
     }
     else
-        name = part_info.getPartNameV1();
+        name = part_info.getPartName();
 }
 
 void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const IReservation * reservation)

@@ -31,7 +31,7 @@ struct BitAndImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitAndImpl expected an integral type");
+            throw Exception("BitAndImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
         return b.CreateAnd(left, right);
     }
 #endif
@@ -42,7 +42,7 @@ using FunctionBitAnd = BinaryArithmeticOverloadResolver<BitAndImpl, NameBitAnd, 
 
 }
 
-REGISTER_FUNCTION(BitAnd)
+void registerFunctionBitAnd(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitAnd>();
 }

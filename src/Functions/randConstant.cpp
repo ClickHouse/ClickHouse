@@ -59,10 +59,8 @@ public:
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
 
 private:
     ToType value;
@@ -92,9 +90,9 @@ public:
     {
         size_t number_of_arguments = data_types.size();
         if (number_of_arguments > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
-                            getName(), number_of_arguments);
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(number_of_arguments) + ", should be 0 or 1.",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         return std::make_shared<DataTypeNumber<ToType>>();
     }
 
@@ -119,7 +117,7 @@ using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameR
 
 }
 
-REGISTER_FUNCTION(RandConstant)
+void registerFunctionRandConstant(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBuilderRandConstant>();
 }

@@ -11,9 +11,3 @@ with generateUUIDv4() as uuid,
     identity(lower(hex(reverse(reinterpretAsString(uuid))))) as str,
     reinterpretAsUUID(reverse(unhex(str))) as uuid2
 select uuid = uuid2;
-
-select '-- UUID variants --';
-select hex(UUIDStringToNum('00112233-4455-6677-8899-aabbccddeeff', 1));
-select hex(UUIDStringToNum('00112233-4455-6677-8899-aabbccddeeff', 2));
-select UUIDNumToString(UUIDStringToNum('00112233-4455-6677-8899-aabbccddeeff', 1), 1);
-select UUIDNumToString(UUIDStringToNum('00112233-4455-6677-8899-aabbccddeeff', 2), 2);

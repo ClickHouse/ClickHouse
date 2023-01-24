@@ -1,5 +1,4 @@
 import pytest
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -261,11 +260,6 @@ def test_introspection():
     assert instance.query("SHOW GRANTS", user="A") == TSV(
         ["GRANT SELECT ON test.table TO A", "GRANT R1 TO A"]
     )
-
-    assert instance.query("SHOW GRANTS FOR R1", user="A") == TSV([])
-    with pytest.raises(QueryRuntimeException, match="Not enough privileges"):
-        assert instance.query("SHOW GRANTS FOR R2", user="A")
-
     assert instance.query("SHOW GRANTS", user="B") == TSV(
         [
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",

@@ -41,7 +41,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isNumber(*arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
+            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -74,7 +74,7 @@ public:
          */
 
         if (summary_utf8_len > (1 << 29))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
+            throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
         size_t size_in_bytes_with_margin = summary_utf8_len * 4 + input_rows_count;
         data_to.resize(size_in_bytes_with_margin);
@@ -116,8 +116,8 @@ public:
             {
                 UInt64 rand = rng();
 
-                UInt32 code_point1 = generate_code_point(static_cast<UInt32>(rand));
-                UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
+                UInt32 code_point1 = generate_code_point(rand);
+                UInt32 code_point2 = generate_code_point(rand >> 32);
 
                 /// We have padding in column buffers that we can overwrite.
                 size_t length1 = UTF8::convertCodePointToUTF8(code_point1, pos, sizeof(int));
@@ -148,7 +148,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(RandomStringUTF8)
+void registerFunctionRandomStringUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRandomStringUTF8>();
 }

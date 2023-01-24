@@ -186,7 +186,7 @@ public:
     /// Checks that all columns exist and dependencies between them.
     /// This check is lightweight and base only on metadata.
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
-    void validate(const StoragePtr & table, ContextPtr context) const;
+    void validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
@@ -209,10 +209,7 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
-
-    /// Check if commands have any inverted index
-    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata, ContextPtr context);
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const;
 };
 
 }

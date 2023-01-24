@@ -16,11 +16,14 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
         {
             pos = internal_buffer.begin() + offset;
             working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
-            return static_cast<size_t>(pos - internal_buffer.begin());
+            return size_t(pos - internal_buffer.begin());
         }
         else
-            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
-                offset, std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
+            throw Exception(
+                "Seek position is out of bounds. "
+                "Offset: "
+                    + std::to_string(offset) + ", Max: " + std::to_string(size_t(internal_buffer.end() - internal_buffer.begin())),
+                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
     }
     else if (whence == SEEK_CUR)
     {
@@ -29,14 +32,17 @@ off_t ReadBufferFromMemory::seek(off_t offset, int whence)
         {
             pos = new_pos;
             working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
-            return static_cast<size_t>(pos - internal_buffer.begin());
+            return size_t(pos - internal_buffer.begin());
         }
         else
-            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}, Max: {}",
-                offset, std::to_string(static_cast<size_t>(internal_buffer.end() - internal_buffer.begin())));
+            throw Exception(
+                "Seek position is out of bounds. "
+                "Offset: "
+                    + std::to_string(offset) + ", Max: " + std::to_string(size_t(internal_buffer.end() - internal_buffer.begin())),
+                ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
     }
     else
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
+        throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 }
 
 off_t ReadBufferFromMemory::getPosition()

@@ -1,112 +1,56 @@
 # -*- coding: utf-8 -*-
-from ast import literal_eval
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Optional, Tuple
-from html import escape
-import csv
 import os
 import datetime
 
-### BEST FRONTEND PRACTICES BELOW
+### FIXME: BEST FRONTEND PRACTICIES BELOW
 
 HTML_BASE_TEST_TEMPLATE = """
 <!DOCTYPE html>
 <html>
   <style>
-
-:root {{
-    --color: white;
-    --background: hsl(190deg, 90%, 5%) linear-gradient(180deg, hsl(190deg, 90%, 10%), hsl(190deg, 90%, 0%));
-    --td-background: hsl(190deg, 90%, 15%);
-    --th-background: hsl(180deg, 90%, 15%);
-    --link-color: #FF5;
-    --link-hover-color: #F40;
-    --menu-background: hsl(190deg, 90%, 20%);
-    --menu-hover-background: hsl(190deg, 100%, 50%);
-    --menu-hover-color: black;
-    --text-gradient: linear-gradient(90deg, #8F8, #F88);
-    --shadow-intensity: 1;
-    --tr-hover-filter: brightness(120%);
-    --table-border-color: black;
+@font-face {{
+    font-family:'Yandex Sans Display Web';
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+    font-weight:400;
+    font-style:normal;
+    font-stretch:normal
 }}
 
-[data-theme="light"] {{
-    --color: black;
-    --background: hsl(190deg, 90%, 90%) linear-gradient(180deg, #EEE, #DEE);
-    --td-background: white;
-    --th-background: #EEE;
-    --link-color: #08F;
-    --link-hover-color: #F40;
-    --menu-background: white;
-    --menu-hover-background: white;
-    --menu-hover-color: #F40;
-    --text-gradient: linear-gradient(90deg, black, black);
-    --shadow-intensity: 0.1;
-    --tr-hover-filter: brightness(95%);
-    --table-border-color: #DDD;
-}}
-
-.gradient {{
-    background-image: var(--text-gradient);
-    background-size: 100%;
-    background-repeat: repeat;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    -moz-text-fill-color: transparent;
-    -webkit-background-clip: text;
-    -moz-background-clip: text;
-}}
-html {{ min-height: 100%; font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: var(--background); color: var(--color); }}
+body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
 h1 {{ margin-left: 10px; }}
-th, td {{ padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; border: 1px solid var(--table-border-color); }}
-td {{ background: var(--td-background); }}
-th {{ background: var(--th-background); }}
-a {{ color: var(--link-color); text-decoration: none; }}
-a:hover, a:active {{ color: var(--link-hover-color); text-decoration: none; }}
-table {{ box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); border-collapse: collapse; border-spacing: 0; }}
-p.links a {{ padding: 5px; margin: 3px; background: var(--menu-background); line-height: 2.5; white-space: nowrap; box-shadow: 0 8px 25px -5px rgba(0, 0, 0, var(--shadow-intensity)); }}
-p.links a:hover {{ background: var(--menu-hover-background); color: var(--menu-hover-color); }}
+th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
+td {{ white-space: pre; font-family: Monospace, Courier New; }}
+border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
+a {{ color: #06F; text-decoration: none; }}
+a:hover, a:active {{ color: #F40; text-decoration: underline; }}
+table {{ border: 0; }}
+.main {{ margin-left: 10%; }}
+p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 th {{ cursor: pointer; }}
-tr:hover {{ filter: var(--tr-hover-filter); }}
 .failed {{ cursor: pointer; }}
+.failed-content.open {{}}
 .failed-content {{ display: none; }}
-#fish {{ display: none; float: right; position: relative; top: -20em; right: 2vw; margin-bottom: -20em; width: 30vw; filter: brightness(7%); z-index: -1; }}
-
-.themes {{
-    float: right;
-    font-size: 20pt;
-    margin-bottom: 1rem;
-}}
-
-#toggle-dark, #toggle-light {{
-    padding-right: 0.5rem;
-    user-select: none;
-    cursor: pointer;
-}}
-
-#toggle-dark:hover, #toggle-light:hover {{
-    display: inline-block;
-    transform: translate(1px, 1px);
-    filter: brightness(125%);
-}}
 
   </style>
   <title>{title}</title>
 </head>
 <body>
 <div class="main">
-<span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
-<h1><span class="gradient">{header}</span></h1>
+
+<h1>{header}</h1>
 <p class="links">
 <a href="{raw_log_url}">{raw_log_name}</a>
 <a href="{commit_url}">Commit</a>
 {additional_urls}
 <a href="{task_url}">Task (github actions)</a>
-<a href="{job_url}">Job (github actions)</a>
 </p>
 {test_part}
-<img id="fish" src="https://presentations.clickhouse.com/images/fish.png" />
+</body>
 <script type="text/javascript">
     /// Straight from https://stackoverflow.com/questions/14267781/sorting-html-table-with-javascript
 
@@ -122,6 +66,7 @@ tr:hover {{ filter: var(--tr-hover-filter); }}
         v1 !== '' && v2 !== '' && !isNaN(v1) && !isNaN(v2) ? v1 - v2 : v1.toString().localeCompare(v2)
         )(getCellValue(asc ? a : b, idx), getCellValue(asc ? b : a, idx));
 
+    // do the work...
     document.querySelectorAll('th').forEach(th => th.addEventListener('click', (() => {{
         const table = th.closest('table');
         Array.from(table.querySelectorAll('tr:nth-child(n+2)'))
@@ -131,33 +76,10 @@ tr:hover {{ filter: var(--tr-hover-filter); }}
 
     Array.from(document.getElementsByClassName("failed")).forEach(tr => tr.addEventListener('click', function() {{
         var content = this.nextElementSibling;
+        content.classList.toggle("failed-content.open");
         content.classList.toggle("failed-content");
     }}));
-
-    let theme = 'dark';
-
-    function setTheme(new_theme) {{
-        theme = new_theme;
-        document.documentElement.setAttribute('data-theme', theme);
-        window.localStorage.setItem('theme', theme);
-        drawFish();
-    }}
-
-    function drawFish() {{
-        document.getElementById('fish').style.display = (document.body.clientHeight > 3000 && theme == 'dark') ? 'block' : 'none';
-    }}
-
-    document.getElementById('toggle-light').addEventListener('click', e => setTheme('light'));
-    document.getElementById('toggle-dark').addEventListener('click', e => setTheme('dark'));
-
-    let new_theme = window.localStorage.getItem('theme');
-    if (new_theme && new_theme != theme) {{
-        setTheme(new_theme);
-    }}
-
-    drawFish();
 </script>
-</body>
 </html>
 """
 
@@ -173,92 +95,6 @@ HTML_TEST_PART = """
 BASE_HEADERS = ["Test name", "Test status"]
 
 
-@dataclass
-class TestResult:
-    name: str
-    status: str
-    # the following fields are optional
-    time: Optional[float] = None
-    log_files: Optional[List[Path]] = None
-    raw_logs: Optional[str] = None
-    # the field for uploaded logs URLs
-    log_urls: Optional[List[str]] = None
-
-    def set_raw_logs(self, raw_logs: str) -> None:
-        self.raw_logs = raw_logs
-
-    def set_log_files(self, log_files_literal: str) -> None:
-        self.log_files = []  # type: Optional[List[Path]]
-        log_paths = literal_eval(log_files_literal)
-        if not isinstance(log_paths, list):
-            raise ValueError(
-                f"Malformed input: must be a list literal: {log_files_literal}"
-            )
-        for log_path in log_paths:
-            file = Path(log_path)
-            assert file.exists()
-            self.log_files.append(file)
-
-
-TestResults = List[TestResult]
-
-
-def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestResults:
-    results = []  # type: TestResults
-    with open(results_path, "r", encoding="utf-8") as descriptor:
-        reader = csv.reader(descriptor, delimiter="\t")
-        for line in reader:
-            name = line[0]
-            status = line[1]
-            time = None
-            if len(line) >= 3 and line[2]:
-                # The value can be emtpy, but when it's not,
-                # it's the time spent on the test
-                try:
-                    time = float(line[2])
-                except ValueError:
-                    pass
-
-            result = TestResult(name, status, time)
-            if len(line) == 4 and line[3]:
-                # The value can be emtpy, but when it's not,
-                # the 4th value is a pythonic list, e.g. ['file1', 'file2']
-                if with_raw_logs:
-                    result.set_raw_logs(line[3])
-                else:
-                    result.set_log_files(line[3])
-
-            results.append(result)
-
-    return results
-
-
-@dataclass
-class BuildResult:
-    compiler: str
-    build_type: str
-    sanitizer: str
-    status: str
-    elapsed_seconds: int
-
-
-BuildResults = List[BuildResult]
-
-
-class ReportColorTheme:
-    class ReportColor:
-        yellow = "#FFB400"
-        red = "#F00"
-        green = "#0A0"
-        blue = "#00B4FF"
-
-    default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
-    bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
-
-
-ColorTheme = Tuple[str, str, str]
-
-
 def _format_header(header, branch_name, branch_url=None):
     result = " ".join([w.capitalize() for w in header.split(" ")])
     result = result.replace("Clickhouse", "ClickHouse")
@@ -267,26 +103,20 @@ def _format_header(header, branch_name, branch_url=None):
         result = "ClickHouse " + result
     result += " for "
     if branch_url:
-        result += f'<a href="{branch_url}">{branch_name}</a>'
+        result += '<a href="{url}">{name}</a>'.format(url=branch_url, name=branch_name)
     else:
         result += branch_name
     return result
 
 
-def _get_status_style(status: str, colortheme: Optional[ColorTheme] = None) -> str:
-    ok_statuses = ("OK", "success", "PASSED")
-    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout")
-
-    if colortheme is None:
-        colortheme = ReportColorTheme.default
-
+def _get_status_style(status):
     style = "font-weight: bold;"
-    if status in ok_statuses:
-        style += f"color: {colortheme[0]};"
-    elif status in fail_statuses:
-        style += f"color: {colortheme[1]};"
+    if status in ("OK", "success", "PASSED"):
+        style += "color: #0A0;"
+    elif status in ("FAIL", "failure", "error", "FAILED", "Timeout"):
+        style += "color: #F00;"
     else:
-        style += f"color: {colortheme[2]};"
+        style += "color: #FFB400;"
     return style
 
 
@@ -306,89 +136,90 @@ def _get_html_url(url):
     if isinstance(url, tuple):
         href, name = url[0], _get_html_url_name(url)
     if href and name:
-        return f'<a href="{href}">{_get_html_url_name(url)}</a>'
+        return '<a href="{href}">{name}</a>'.format(
+            href=href, name=_get_html_url_name(url)
+        )
     return ""
 
 
 def create_test_html_report(
-    header: str,
-    test_results: TestResults,
-    raw_log_url: str,
-    task_url: str,
-    job_url: str,
-    branch_url: str,
-    branch_name: str,
-    commit_url: str,
-    additional_urls: Optional[List[str]] = None,
-    statuscolors: Optional[ColorTheme] = None,
-) -> str:
+    header,
+    test_result,
+    raw_log_url,
+    task_url,
+    branch_url,
+    branch_name,
+    commit_url,
+    additional_urls=None,
+    with_raw_logs=False,
+):
     if additional_urls is None:
         additional_urls = []
 
-    if test_results:
+    if test_result:
         rows_part = ""
         num_fails = 0
         has_test_time = False
-        has_log_urls = False
+        has_test_logs = False
+        for result in test_result:
+            test_name = result[0]
+            test_status = result[1]
 
-        # Display entires with logs at the top (they correspond to failed tests)
-        test_results.sort(
-            key=lambda result: result.raw_logs is None and result.log_files is None
-        )
+            test_logs = None
+            test_time = None
+            if len(result) > 2:
+                test_time = result[2]
+                has_test_time = True
 
-        for test_result in test_results:
-            colspan = 0
-            if test_result.log_files is not None:
-                has_log_urls = True
+            if len(result) > 3:
+                test_logs = result[3]
+                has_test_logs = True
 
             row = "<tr>"
-            is_fail = test_result.status in ("FAIL", "FLAKY")
-            if is_fail and test_result.raw_logs is not None:
+            is_fail = test_status in ("FAIL", "FLAKY")
+            if is_fail and with_raw_logs and test_logs is not None:
                 row = '<tr class="failed">'
-            row += "<td>" + test_result.name + "</td>"
-            colspan += 1
-            style = _get_status_style(test_result.status, colortheme=statuscolors)
+            row += "<td>" + test_name + "</td>"
+            style = _get_status_style(test_status)
 
             # Allow to quickly scroll to the first failure.
-            fail_id = ""
+            is_fail_id = ""
             if is_fail:
                 num_fails = num_fails + 1
-                fail_id = f'id="fail{num_fails}" '
+                is_fail_id = 'id="fail' + str(num_fails) + '" '
 
-            row += f'<td {fail_id}style="{style}">{test_result.status}</td>'
-            colspan += 1
+            row += (
+                "<td "
+                + is_fail_id
+                + 'style="{}">'.format(style)
+                + test_status
+                + "</td>"
+            )
 
-            if test_result.time is not None:
-                has_test_time = True
-                row += f"<td>{test_result.time}</td>"
-                colspan += 1
+            if test_time is not None:
+                row += "<td>" + test_time + "</td>"
 
-            if test_result.log_urls is not None:
-                test_logs_html = "<br>".join(
-                    [_get_html_url(url) for url in test_result.log_urls]
-                )
+            if test_logs is not None and not with_raw_logs:
+                test_logs_html = "<br>".join([_get_html_url(url) for url in test_logs])
                 row += "<td>" + test_logs_html + "</td>"
-                colspan += 1
 
             row += "</tr>"
             rows_part += row
-            if test_result.raw_logs is not None:
-                raw_logs = escape(test_result.raw_logs)
-                row = (
-                    '<tr class="failed-content">'
-                    f'<td colspan="{colspan}"><pre>{raw_logs}</pre></td>'
-                    "</tr>"
-                )
+            if test_logs is not None and with_raw_logs:
+                row = '<tr class="failed-content">'
+                # TODO: compute colspan too
+                row += '<td colspan="3"><pre>' + test_logs + "</pre></td>"
+                row += "</tr>"
                 rows_part += row
 
-        headers = BASE_HEADERS.copy()
+        headers = BASE_HEADERS
         if has_test_time:
             headers.append("Test time, sec.")
-        if has_log_urls:
+        if has_test_logs and not with_raw_logs:
             headers.append("Logs")
 
-        headers_html = "".join(["<th>" + h + "</th>" for h in headers])
-        test_part = HTML_TEST_PART.format(headers=headers_html, rows=rows_part)
+        headers = "".join(["<th>" + h + "</th>" for h in headers])
+        test_part = HTML_TEST_PART.format(headers=headers, rows=rows_part)
     else:
         test_part = ""
 
@@ -396,23 +227,18 @@ def create_test_html_report(
         [_get_html_url(url) for url in sorted(additional_urls, key=_get_html_url_name)]
     )
 
-    raw_log_name = os.path.basename(raw_log_url)
-    if "?" in raw_log_name:
-        raw_log_name = raw_log_name.split("?")[0]
-
-    html = HTML_BASE_TEST_TEMPLATE.format(
+    result = HTML_BASE_TEST_TEMPLATE.format(
         title=_format_header(header, branch_name),
         header=_format_header(header, branch_name, branch_url),
-        raw_log_name=raw_log_name,
+        raw_log_name=os.path.basename(raw_log_url),
         raw_log_url=raw_log_url,
         task_url=task_url,
-        job_url=job_url,
         test_part=test_part,
         branch_name=branch_name,
         commit_url=commit_url,
         additional_urls=additional_html_urls,
     )
-    return html
+    return result
 
 
 HTML_BASE_BUILD_TEMPLATE = """
@@ -420,7 +246,20 @@ HTML_BASE_BUILD_TEMPLATE = """
 <html>
 <head>
   <style>
-body {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }}
+@font-face {{
+    font-family:'Yandex Sans Display Web';
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+    font-weight:400;
+    font-style:normal;
+    font-stretch:normal
+}}
+
+body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
 h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
 border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
@@ -441,6 +280,8 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Compiler</th>
 <th>Build type</th>
 <th>Sanitizer</th>
+<th>Bundled</th>
+<th>Splitted</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -460,45 +301,48 @@ LINK_TEMPLATE = '<a href="{url}">{text}</a>'
 
 
 def create_build_html_report(
-    header: str,
-    build_results: BuildResults,
-    build_logs_urls: List[str],
-    artifact_urls_list: List[List[str]],
-    task_url: str,
-    branch_url: str,
-    branch_name: str,
-    commit_url: str,
-) -> str:
+    header,
+    build_results,
+    build_logs_urls,
+    artifact_urls_list,
+    task_url,
+    branch_url,
+    branch_name,
+    commit_url,
+):
     rows = ""
     for (build_result, build_log_url, artifact_urls) in zip(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"
-        row += f"<td>{build_result.compiler}</td>"
+        row += "<td>{}</td>".format(build_result.compiler)
         if build_result.build_type:
-            row += f"<td>{build_result.build_type}</td>"
+            row += "<td>{}</td>".format(build_result.build_type)
         else:
-            row += "<td>relwithdebuginfo</td>"
+            row += "<td>{}</td>".format("relwithdebuginfo")
         if build_result.sanitizer:
-            row += f"<td>{build_result.sanitizer}</td>"
+            row += "<td>{}</td>".format(build_result.sanitizer)
         else:
-            row += "<td>none</td>"
+            row += "<td>{}</td>".format("none")
+
+        row += "<td>{}</td>".format(build_result.bundled)
+        row += "<td>{}</td>".format(build_result.splitted)
 
         if build_result.status:
             style = _get_status_style(build_result.status)
-            row += f'<td style="{style}">{build_result.status}</td>'
+            row += '<td style="{}">{}</td>'.format(style, build_result.status)
         else:
             style = _get_status_style("error")
-            row += f'<td style="{style}">error</td>'
+            row += '<td style="{}">{}</td>'.format(style, "error")
 
-        row += f'<td><a href="{build_log_url}">link</a></td>'
+        row += '<td><a href="{}">link</a></td>'.format(build_log_url)
 
         if build_result.elapsed_seconds:
             delta = datetime.timedelta(seconds=build_result.elapsed_seconds)
         else:
-            delta = "unknown"  # type: ignore
+            delta = "unknown"
 
-        row += f"<td>{delta}</td>"
+        row += "<td>{}</td>".format(str(delta))
 
         links = ""
         link_separator = "<br/>"
@@ -510,7 +354,7 @@ def create_build_html_report(
                 links += link_separator
             if links:
                 links = links[: -len(link_separator)]
-            row += f"<td>{links}</td>"
+            row += "<td>{}</td>".format(links)
 
         row += "</tr>"
         rows += row

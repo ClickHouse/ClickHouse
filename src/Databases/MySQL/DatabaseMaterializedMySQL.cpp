@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 
@@ -39,7 +39,7 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
 
 void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
 
     if (!settings->allows_query_when_mysql_lost && exception)
     {
@@ -59,15 +59,15 @@ void DatabaseMaterializedMySQL::rethrowExceptionIfNeeded() const
 
 void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exception_)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     exception = exception_;
 }
 
-void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
 {
-    DatabaseAtomic::startupTables(thread_pool, mode);
+    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
 
-    if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+    if (!force_attach)
         materialize_thread.assertMySQLAvailable();
 
     materialize_thread.startSynchronization();
@@ -80,10 +80,10 @@ void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & 
     DatabaseAtomic::createTable(context_, name, table, query);
 }
 
-void DatabaseMaterializedMySQL::dropTable(ContextPtr context_, const String & name, bool sync)
+void DatabaseMaterializedMySQL::dropTable(ContextPtr context_, const String & name, bool no_delay)
 {
     checkIsInternalQuery(context_, "DROP TABLE");
-    DatabaseAtomic::dropTable(context_, name, sync);
+    DatabaseAtomic::dropTable(context_, name, no_delay);
 }
 
 void DatabaseMaterializedMySQL::attachTable(ContextPtr context_, const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -103,13 +103,13 @@ void DatabaseMaterializedMySQL::renameTable(ContextPtr context_, const String & 
     checkIsInternalQuery(context_, "RENAME TABLE");
 
     if (exchange)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support EXCHANGE TABLE.");
+        throw Exception("MaterializedMySQL database does not support EXCHANGE TABLE.", ErrorCodes::NOT_IMPLEMENTED);
 
     if (dictionary)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support RENAME DICTIONARY.");
+        throw Exception("MaterializedMySQL database does not support RENAME DICTIONARY.", ErrorCodes::NOT_IMPLEMENTED);
 
     if (to_database.getDatabaseName() != DatabaseAtomic::getDatabaseName())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for MaterializedMySQL database.");
+        throw Exception("Cannot rename with other database for MaterializedMySQL database.", ErrorCodes::NOT_IMPLEMENTED);
 
     DatabaseAtomic::renameTable(context_, name, *this, to_name, exchange, dictionary);
 }

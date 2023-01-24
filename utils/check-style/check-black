@@ -6,14 +6,8 @@ set -e
 GIT_ROOT=$(git rev-parse --show-cdup)
 GIT_ROOT=${GIT_ROOT:-.}
 tmp=$(mktemp)
-# Find all *.py files in the repo except the contrib directory
-find_cmd=(find "$GIT_ROOT" -name '*.py' -not -path "$GIT_ROOT/contrib/*")
-if ! "${find_cmd[@]}" -exec black --check --diff {} + 1>"$tmp" 2>&1; then
+if ! find "$GIT_ROOT" -name '*.py' -not -path "$GIT_ROOT/contrib/*" -exec black --check --diff {} + 1>"$tmp" 2>&1; then
   # Show the result only if some files need formatting
   cat "$tmp"
-  # Apply formatting
-  "${find_cmd[@]}" -exec black {} + 1>/dev/null 2>&1
-  # Automatically add changed files to stage
-  "${find_cmd[@]}" -exec git add -u {} + 1>/dev/null 2>&1
 fi
 rm "$tmp"

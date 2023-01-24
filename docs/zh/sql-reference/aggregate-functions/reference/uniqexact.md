@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/uniqexact
-sidebar_position: 191
+toc_priority: 191
 ---
 
 # uniqExact {#agg_function-uniqexact}

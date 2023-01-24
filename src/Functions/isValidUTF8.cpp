@@ -241,12 +241,12 @@ SOFTWARE.
 
     [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to Array argument");
+        throw Exception("Cannot apply function isValidUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt8> &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to UUID argument");
+        throw Exception("Cannot apply function isValidUTF8 to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -256,7 +256,7 @@ struct NameIsValidUTF8
 };
 using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
 
-REGISTER_FUNCTION(IsValidUTF8)
+void registerFunctionIsValidUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidUTF8>();
 }

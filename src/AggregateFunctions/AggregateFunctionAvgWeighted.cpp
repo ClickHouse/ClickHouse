@@ -39,7 +39,7 @@ bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
     }
 
 template <class First, class ... TArgs>
-IAggregateFunction * create(const IDataType & second_type, TArgs && ... args)
+static IAggregateFunction * create(const IDataType & second_type, TArgs && ... args)
 {
     const WhichDataType which(second_type);
 
@@ -51,7 +51,7 @@ IAggregateFunction * create(const IDataType & second_type, TArgs && ... args)
 
 // Not using helper functions because there are no templates for binary decimal/numeric function.
 template <class... TArgs>
-IAggregateFunction * create(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
+static IAggregateFunction * create(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
 {
     const WhichDataType which(first_type);
 
@@ -71,9 +71,11 @@ createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & a
     const auto data_type_weight = static_cast<const DataTypePtr>(argument_types[1]);
 
     if (!allowTypes(data_type, data_type_weight))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Types {} and {} are non-conforming as arguments for aggregate function {}",
-                        data_type->getName(), data_type_weight->getName(), name);
+        throw Exception(
+            "Types " + data_type->getName() +
+            " and " + data_type_weight->getName() +
+            " are non-conforming as arguments for aggregate function " + name,
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     AggregateFunctionPtr ptr;
 

@@ -55,7 +55,7 @@ namespace
     };
 }
 
-REGISTER_FUNCTION(ToJSONString)
+void registerFunctionToJSONString(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToJSONString>();
 }

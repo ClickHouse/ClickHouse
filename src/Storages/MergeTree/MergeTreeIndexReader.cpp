@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
-#include <Interpreters/Context.h>
 
 namespace
 {
@@ -16,17 +15,14 @@ std::unique_ptr<MergeTreeReaderStream> makeIndexReader(
     UncompressedCache * uncompressed_cache,
     MergeTreeReaderSettings settings)
 {
-    auto context = part->storage.getContext();
-    auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-
     return std::make_unique<MergeTreeReaderStream>(
-        part->getDataPartStoragePtr(),
-        index->getFileName(), extension, marks_count,
+        part->volume->getDisk(),
+        part->getFullRelativePath() + index->getFileName(), extension, marks_count,
         all_mark_ranges,
         std::move(settings), mark_cache, uncompressed_cache,
         part->getFileSizeOrZero(index->getFileName() + extension),
         &part->index_granularity_info,
-        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE, false, load_marks_threadpool);
+        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE, false);
 }
 
 }
@@ -44,7 +40,8 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     MergeTreeReaderSettings settings)
     : index(index_)
 {
-    auto index_format = index->getDeserializedFormat(part_->getDataPartStorage(), index->getFileName());
+    const std::string & path_prefix = part_->getFullRelativePath() + index->getFileName();
+    auto index_format = index->getDeserializedFormat(part_->volume->getDisk(), path_prefix);
 
     stream = makeIndexReader(
         index_format.extension,
@@ -71,7 +68,7 @@ void MergeTreeIndexReader::seek(size_t mark)
 MergeTreeIndexGranulePtr MergeTreeIndexReader::read()
 {
     auto granule = index->createIndexGranule();
-    granule->deserializeBinary(*stream->getDataBuffer(), version);
+    granule->deserializeBinary(*stream->data_buffer, version);
     return granule;
 }
 

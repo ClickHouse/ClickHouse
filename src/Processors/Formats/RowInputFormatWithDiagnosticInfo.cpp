@@ -35,15 +35,12 @@ void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
     offset_of_current_row = in->offset();
 }
 
-std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawDataImpl(bool is_errors_record)
+String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 {
-    WriteBufferFromOwnString out_diag;
-    WriteBufferFromOwnString out_data;
-
     if (in->eof())
-        return std::make_pair(
-            "Buffer has gone, cannot extract information about what has been parsed.",
-            "Buffer has gone, cannot extract information about what has been parsed.");
+        return "Buffer has gone, cannot extract information about what has been parsed.";
+
+    WriteBufferFromOwnString out;
 
     const auto & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
@@ -52,9 +49,8 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
     size_t bytes_read_at_start_of_buffer = in->count() - in->offset();
     if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
     {
-        out_diag << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
-        out_data << "Could not collect raw data because two last rows aren't in buffer (rare case)\n";
-        return std::make_pair(out_diag.str(), out_data.str());
+        out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
+        return out.str();
     }
 
     max_length_of_column_name = 0;
@@ -69,49 +65,30 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
 
     /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 
-    if (!is_errors_record && offset_of_prev_row <= in->buffer().size())
+    if (offset_of_prev_row <= in->buffer().size())
     {
         in->position() = in->buffer().begin() + offset_of_prev_row;
 
-        out_diag << "\nRow " << (row_num - 1) << ":\n";
-        if (!parseRowAndPrintDiagnosticInfo(columns, out_diag))
-            return std::make_pair(out_diag.str(), out_data.str());
+        out << "\nRow " << (row_num - 1) << ":\n";
+        if (!parseRowAndPrintDiagnosticInfo(columns, out))
+            return out.str();
     }
     else
     {
         if (in->buffer().size() < offset_of_current_row)
         {
-            out_diag << "Could not print diagnostic info because parsing of data hasn't started.\n";
-            out_data << "Could not collect raw data because parsing of data hasn't started.\n";
-            return std::make_pair(out_diag.str(), out_data.str());
+            out << "Could not print diagnostic info because parsing of data hasn't started.\n";
+            return out.str();
         }
 
         in->position() = in->buffer().begin() + offset_of_current_row;
     }
 
-    char * data = in->position();
-    while (data < in->buffer().end() && *data != '\n' && *data != '\r' && *data != '\0')
-    {
-        out_data << *data;
-        ++data;
-    }
+    out << "\nRow " << row_num << ":\n";
+    parseRowAndPrintDiagnosticInfo(columns, out);
+    out << "\n";
 
-    out_diag << "\nRow " << row_num << ":\n";
-    parseRowAndPrintDiagnosticInfo(columns, out_diag);
-    out_diag << "\n";
-
-    return std::make_pair(out_diag.str(), out_data.str());
-}
-
-String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
-{
-    auto diagnostic_and_raw_data = getDiagnosticAndRawDataImpl(false);
-    return std::get<0>(diagnostic_and_raw_data);
-}
-
-std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawData()
-{
-    return getDiagnosticAndRawDataImpl(true);
+    return out.str();
 }
 
 bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(const String & col_name,
@@ -138,7 +115,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     auto * curr_position = in->position();
 
     if (curr_position < prev_position)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: parsing is non-deterministic.");
+        throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
     if (isNativeNumber(type) || isDate(type) || isDateTime(type) || isDateTime64(type))
     {
