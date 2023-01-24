@@ -32,7 +32,7 @@ namespace ErrorCodes
 
 
 void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_gorilla_codec_for_non_float_data) const
+    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (family_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
@@ -41,19 +41,19 @@ void CompressionCodecFactory::validateCodec(
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs, enable_gorilla_codec_for_non_float_data);
+            {}, sanity_check, allow_experimental_codecs);
     }
     else
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs, enable_gorilla_codec_for_non_float_data);
+            {}, sanity_check, allow_experimental_codecs);
     }
 }
 
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_gorilla_codec_for_non_float_data) const
+    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -177,9 +177,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                                 "to skip this check).", codec_description);
 
             if (column_type)
-                if (with_floating_point_timeseries_codec &&
-                    !WhichDataType(*column_type).isFloat() &&
-                    !enable_gorilla_codec_for_non_float_data)
+                if (with_floating_point_timeseries_codec && !WhichDataType(*column_type).isFloat())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The combination of compression codecs {} is meaningless,"
                         " because it does not make sense to apply a floating-point time series codec to non-floating-point columns"
