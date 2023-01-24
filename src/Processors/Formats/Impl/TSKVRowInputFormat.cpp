@@ -84,7 +84,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
             tmp.append(buf.position(), next_pos - buf.position());
             buf.position() += next_pos + 1 - buf.position();
             if (buf.eof())
-                throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
 
             tmp.push_back(parseEscapeSequence(*buf.position()));
             ++buf.position();
@@ -130,7 +130,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 if (!it)
                 {
                     if (!format_settings.skip_unknown_fields)
-                        throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing TSKV format: {}", name_ref.toString());
 
                     /// If the key is not found, skip the value.
                     NullOutput sink;
@@ -141,7 +141,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     index = it->getMapped();
 
                     if (seen_columns[index])
-                        throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing TSKV format: {}", name_ref.toString());
 
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
@@ -156,7 +156,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
             {
                 /// The only thing that can go without value is `tskv` fragment that is ignored.
                 if (!(name_ref.size == 4 && 0 == memcmp(name_ref.data, "tskv", 4)))
-                    throw Exception("Found field without value while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Found field without value while parsing TSKV format: {}", name_ref.toString());
             }
 
             if (in->eof())
@@ -182,7 +182,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     seen_columns[index] = read_columns[index] = false;
                 }
 
-                throw Exception("Found garbage after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Found garbage after field in TSKV format: {}", name_ref.toString());
             }
         }
     }
@@ -255,7 +255,7 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
         {
             /// The only thing that can go without value is `tskv` fragment that is ignored.
             if (!(name_ref.size == 4 && 0 == memcmp(name_ref.data, "tskv", 4)))
-                throw Exception("Found field without value while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Found field without value while parsing TSKV format: {}", name_ref.toString());
         }
 
     }
