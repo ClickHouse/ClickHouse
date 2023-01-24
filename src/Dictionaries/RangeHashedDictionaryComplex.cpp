@@ -1,7 +1,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
-/// RangeHashedDictionary is separated into two files
-/// RangeHashedDictionary_simple.cpp and RangeHashedDictionary_complex.cpp 
+/// RangeHashedDictionary is instantiated from two files
+/// RangeHashedDictionaryCimple.cpp and RangeHashedDictionaryComplex.cpp
 /// to better parallelize the build procedure and avoid MSan build failure
 /// due to excessive resource consumption.
 
