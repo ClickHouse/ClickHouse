@@ -156,7 +156,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, String(needles[j].data(), needles[j].size()), nullptr, accum);
+            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, String(needles[j].data(), needles[j].size()), nullptr, accum, nullptr);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)

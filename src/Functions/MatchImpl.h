@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
 #include "Regexps.h"
 
