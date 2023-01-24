@@ -141,9 +141,10 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     size_t maybe_overflow;
     if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_factor is too big ({}). Multiplication to max_upload_part_size ({}) will cause integer overflow",
-            ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Setting upload_part_size_multiply_factor is too big ({}). "
+                        "Multiplication to max_upload_part_size ({}) will cause integer overflow",
+                        ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
     if (!storage_class_name.empty() && !storage_class_names.contains(storage_class_name))
