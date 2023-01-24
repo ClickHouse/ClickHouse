@@ -59,7 +59,12 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt8: [[fallthrough]];
+        case TypeIndex::UInt8:
+        {
+            if (isBool(type))
+                return orc::createPrimitiveType(orc::TypeKind::BOOLEAN);
+            return orc::createPrimitiveType(orc::TypeKind::BYTE);
+        }
         case TypeIndex::Int8:
         {
             return orc::createPrimitiveType(orc::TypeKind::BYTE);
@@ -148,7 +153,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         }
         default:
         {
-            throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
         }
     }
 }
@@ -457,7 +462,7 @@ void ORCBlockOutputFormat::writeColumn(
             break;
         }
         default:
-            throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
     }
 }
 
@@ -515,6 +520,11 @@ void ORCBlockOutputFormat::finalizeImpl()
     writer->close();
 }
 
+void ORCBlockOutputFormat::resetFormatterImpl()
+{
+    writer.reset();
+}
+
 void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
@@ -531,7 +541,6 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);

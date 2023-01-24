@@ -293,8 +293,7 @@ void TemplateRowInputFormat::resetParser()
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 TemplateFormatReader::TemplateFormatReader(
@@ -545,8 +544,7 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
             {
                 if (partName == "data")
                     return 0;
-                throw Exception("Unknown input part " + partName,
-                                ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown input part {}", partName);
             });
     }
     return resultset_format;

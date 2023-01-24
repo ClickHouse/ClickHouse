@@ -43,8 +43,8 @@ static String toValidUTF8String(const String & name)
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, params_), settings(settings_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     fields.reserve(sample.columns());
@@ -229,7 +229,9 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
 
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", map_type.getKeyType()->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Only maps with String key type are supported in BSON, got key type: {}",
+                                map_type.getKeyType()->getName());
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);
@@ -452,7 +454,9 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         {
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", map_type.getKeyType()->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Only maps with String key type are supported in BSON, got key type: {}",
+                                map_type.getKeyType()->getName());
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);
@@ -519,8 +523,8 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "BSONEachRow",
-        [](WriteBuffer & buf, const Block & sample, const RowOutputFormatParams & params, const FormatSettings & _format_settings)
-        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, params, _format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
+        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
 }
 

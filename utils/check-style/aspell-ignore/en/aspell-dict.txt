@@ -33,6 +33,7 @@ CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBMSs
 DateTime
+DateTimes
 DockerHub
 Doxygen
 Encodings
@@ -55,6 +56,7 @@ IPv
 IntN
 Integrations
 JSONAsString
+JSONAsObject
 JSONColumns
 JSONColumnsWithMetadata
 JSONCompact
@@ -102,6 +104,8 @@ NYPD
 NuRaft
 ObjectId
 Ok
+OLAP
+OLTP
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -123,6 +127,8 @@ PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
+QueryResultCacheHits
+QueryResultCacheMisses
 RBAC
 RawBLOB
 RedHat
@@ -171,6 +177,7 @@ Werror
 Woboq
 WriteBuffer
 WriteBuffers
+WithNamesAndTypes
 XCode
 YAML
 YYYY
@@ -247,6 +254,7 @@ datafiles
 dataset
 datasets
 datetime
+datetimes
 dbms
 ddl
 deallocation
@@ -361,6 +369,7 @@ mysqldump
 mysqljs
 noop
 nullable
+nullability
 num
 obfuscator
 odbc
@@ -485,6 +494,7 @@ tokenization
 toml
 toolchain
 toolset
+transactionally
 tskv
 tsv
 tui

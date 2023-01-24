@@ -64,7 +64,6 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
-        .apply_deleted_mask = context->applyDeletedMask(),
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
     };
@@ -582,8 +581,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 while (need_marks > 0)
                 {
                     if (part.ranges.empty())
-                        throw Exception("Unexpected end of ranges while spreading marks among streams",
-                                        ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
 
                     MarkRange & range = part.ranges.front();
 
@@ -953,7 +951,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
 
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (settings.allow_experimental_analyzer)
         {
             const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
             for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
@@ -1023,7 +1021,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     if (result.column_names_to_read.empty())
     {
         NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
-        result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
+        result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
     // storage_snapshot->check(result.column_names_to_read);

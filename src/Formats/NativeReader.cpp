@@ -45,7 +45,7 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
 {
     istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
     if (!istr_concrete)
-        throw Exception("When need to use index for NativeReader, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "When need to use index for NativeReader, istr must be CompressedReadBufferFromFile.");
 
     if (index_block_it == index_block_end)
         return;
@@ -168,9 +168,9 @@ Block NativeReader::read()
         {
             /// Index allows to do more checks.
             if (index_column_it->name != column.name)
-                throw Exception("Index points to column with wrong name: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
             if (index_column_it->type != type_name)
-                throw Exception("Index points to column with wrong type: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
         }
 
         /// Data
@@ -213,7 +213,7 @@ Block NativeReader::read()
     if (use_index)
     {
         if (index_column_it != index_block_it->columns.end())
-            throw Exception("Inconsistent index: not all columns were read", ErrorCodes::INCORRECT_INDEX);
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Inconsistent index: not all columns were read");
 
         ++index_block_it;
         if (index_block_it != index_block_end)

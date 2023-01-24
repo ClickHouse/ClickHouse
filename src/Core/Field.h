@@ -13,6 +13,7 @@
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
+#include <base/IPv4andIPv6.h>
 #include <base/DayNum.h>
 #include <base/strong_typedef.h>
 #include <base/EnumReflection.h>
@@ -73,29 +74,29 @@ struct AggregateFunctionStateData
 
     bool operator < (const AggregateFunctionStateData &) const
     {
-        throw Exception("Operator < is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator < is not implemented for AggregateFunctionStateData.");
     }
 
     bool operator <= (const AggregateFunctionStateData &) const
     {
-        throw Exception("Operator <= is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator <= is not implemented for AggregateFunctionStateData.");
     }
 
     bool operator > (const AggregateFunctionStateData &) const
     {
-        throw Exception("Operator > is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator > is not implemented for AggregateFunctionStateData.");
     }
 
     bool operator >= (const AggregateFunctionStateData &) const
     {
-        throw Exception("Operator >= is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for AggregateFunctionStateData.");
     }
 
     bool operator == (const AggregateFunctionStateData & rhs) const
     {
         if (name != rhs.name)
-            throw Exception("Comparing aggregate functions with different types: " + name + " and " + rhs.name,
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Comparing aggregate functions with different types: {} and {}",
+                    name, rhs.name);
 
         return data == rhs.data;
     }
@@ -147,7 +148,7 @@ public:
     const DecimalField<T> & operator += (const DecimalField<T> & r)
     {
         if (scale != r.getScale())
-            throw Exception("Add different decimal fields", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Add different decimal fields");
         dec += r.getValue();
         return *this;
     }
@@ -155,7 +156,7 @@ public:
     const DecimalField<T> & operator -= (const DecimalField<T> & r)
     {
         if (scale != r.getScale())
-            throw Exception("Sub different decimal fields", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sub different decimal fields");
         dec -= r.getValue();
         return *this;
     }
@@ -192,6 +193,8 @@ template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
 
 template <> struct NearestFieldTypeImpl<DayNum> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UUID> { using Type = UUID; };
+template <> struct NearestFieldTypeImpl<IPv4> { using Type = IPv4; };
+template <> struct NearestFieldTypeImpl<IPv6> { using Type = IPv6; };
 template <> struct NearestFieldTypeImpl<Int16> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
 
@@ -292,6 +295,8 @@ public:
             UUID = 27,
             Bool = 28,
             Object = 29,
+            IPv4 = 30,
+            IPv6 = 31,
         };
     };
 
@@ -468,6 +473,8 @@ public:
             case Types::Int128:  return get<Int128>()  < rhs.get<Int128>();
             case Types::Int256:  return get<Int256>()  < rhs.get<Int256>();
             case Types::UUID:    return get<UUID>()    < rhs.get<UUID>();
+            case Types::IPv4:    return get<IPv4>()    < rhs.get<IPv4>();
+            case Types::IPv6:    return get<IPv6>()    < rhs.get<IPv6>();
             case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
@@ -481,7 +488,7 @@ public:
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         }
 
-        throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
     }
 
     bool operator> (const Field & rhs) const
@@ -507,6 +514,8 @@ public:
             case Types::Int128:  return get<Int128>()  <= rhs.get<Int128>();
             case Types::Int256:  return get<Int256>()  <= rhs.get<Int256>();
             case Types::UUID:    return get<UUID>().toUnderType() <= rhs.get<UUID>().toUnderType();
+            case Types::IPv4:    return get<IPv4>()    <= rhs.get<IPv4>();
+            case Types::IPv6:    return get<IPv6>()    <= rhs.get<IPv6>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
@@ -520,7 +529,7 @@ public:
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         }
 
-        throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
     }
 
     bool operator>= (const Field & rhs) const
@@ -547,6 +556,8 @@ public:
                 return std::bit_cast<UInt64>(get<Float64>()) == std::bit_cast<UInt64>(rhs.get<Float64>());
             }
             case Types::UUID:    return get<UUID>()    == rhs.get<UUID>();
+            case Types::IPv4:    return get<IPv4>()    == rhs.get<IPv4>();
+            case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();
             case Types::String:  return get<String>()  == rhs.get<String>();
             case Types::Array:   return get<Array>()   == rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
@@ -563,7 +574,7 @@ public:
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         }
 
-        throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
     }
 
     bool operator!= (const Field & rhs) const
@@ -586,6 +597,8 @@ public:
             case Types::Int128:  return f(field.template get<Int128>());
             case Types::Int256:  return f(field.template get<Int256>());
             case Types::UUID:    return f(field.template get<UUID>());
+            case Types::IPv4:    return f(field.template get<IPv4>());
+            case Types::IPv6:    return f(field.template get<IPv6>());
             case Types::Float64: return f(field.template get<Float64>());
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
@@ -612,7 +625,7 @@ public:
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, Float64, String, Array, Tuple, Map,
+        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData
         > storage;
@@ -747,6 +760,8 @@ template <> struct Field::TypeToEnum<Int64>   { static constexpr Types::Which va
 template <> struct Field::TypeToEnum<Int128>  { static constexpr Types::Which value = Types::Int128; };
 template <> struct Field::TypeToEnum<Int256>  { static constexpr Types::Which value = Types::Int256; };
 template <> struct Field::TypeToEnum<UUID>    { static constexpr Types::Which value = Types::UUID; };
+template <> struct Field::TypeToEnum<IPv4>    { static constexpr Types::Which value = Types::IPv4; };
+template <> struct Field::TypeToEnum<IPv6>    { static constexpr Types::Which value = Types::IPv6; };
 template <> struct Field::TypeToEnum<Float64> { static constexpr Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static constexpr Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static constexpr Types::Which value = Types::Array; };
@@ -769,6 +784,8 @@ template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64
 template <> struct Field::EnumToType<Field::Types::Int128>  { using Type = Int128; };
 template <> struct Field::EnumToType<Field::Types::Int256>  { using Type = Int256; };
 template <> struct Field::EnumToType<Field::Types::UUID>    { using Type = UUID; };
+template <> struct Field::EnumToType<Field::Types::IPv4>    { using Type = IPv4; };
+template <> struct Field::EnumToType<Field::Types::IPv6>    { using Type = IPv6; };
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
@@ -887,38 +904,38 @@ class WriteBuffer;
 
 /// It is assumed that all elements of the array have the same type.
 void readBinary(Array & x, ReadBuffer & buf);
-[[noreturn]] inline void readText(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
-[[noreturn]] inline void readQuoted(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readText(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
+[[noreturn]] inline void readQuoted(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 
 /// It is assumed that all elements of the array have the same type.
 /// Also write size and type into buf. UInt64 and Int64 is written in variadic size form
 void writeBinary(const Array & x, WriteBuffer & buf);
 void writeText(const Array & x, WriteBuffer & buf);
-[[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Array quoted."); }
 
 void readBinary(Tuple & x, ReadBuffer & buf);
-[[noreturn]] inline void readText(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-[[noreturn]] inline void readQuoted(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readText(Tuple &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Tuple."); }
+[[noreturn]] inline void readQuoted(Tuple &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Tuple."); }
 
 void writeBinary(const Tuple & x, WriteBuffer & buf);
 void writeText(const Tuple & x, WriteBuffer & buf);
-[[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Tuple quoted."); }
 
 void readBinary(Map & x, ReadBuffer & buf);
-[[noreturn]] inline void readText(Map &, ReadBuffer &) { throw Exception("Cannot read Map.", ErrorCodes::NOT_IMPLEMENTED); }
-[[noreturn]] inline void readQuoted(Map &, ReadBuffer &) { throw Exception("Cannot read Map.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readText(Map &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Map."); }
+[[noreturn]] inline void readQuoted(Map &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Map."); }
 
 void writeBinary(const Map & x, WriteBuffer & buf);
 void writeText(const Map & x, WriteBuffer & buf);
-[[noreturn]] inline void writeQuoted(const Map &, WriteBuffer &) { throw Exception("Cannot write Map quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void writeQuoted(const Map &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Map quoted."); }
 
 void readBinary(Object & x, ReadBuffer & buf);
-[[noreturn]] inline void readText(Object &, ReadBuffer &) { throw Exception("Cannot read Object.", ErrorCodes::NOT_IMPLEMENTED); }
-[[noreturn]] inline void readQuoted(Object &, ReadBuffer &) { throw Exception("Cannot read Object.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void readText(Object &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Object."); }
+[[noreturn]] inline void readQuoted(Object &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Object."); }
 
 void writeBinary(const Object & x, WriteBuffer & buf);
 void writeText(const Object & x, WriteBuffer & buf);
-[[noreturn]] inline void writeQuoted(const Object &, WriteBuffer &) { throw Exception("Cannot write Object quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+[[noreturn]] inline void writeQuoted(const Object &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Object quoted."); }
 
 __attribute__ ((noreturn)) inline void writeText(const AggregateFunctionStateData &, WriteBuffer &)
 {
