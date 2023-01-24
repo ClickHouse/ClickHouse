@@ -1,12 +1,10 @@
 #pragma once
 
 #include <string>
-#include <map>
 #include <unordered_map>
 #include <vector>
 #include <memory>
 #include <utility>
-#include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -15,8 +13,6 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
-#include <Storages/MergeTree/GinIndexStore.h>
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
@@ -166,11 +162,6 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart([[maybe_unused]]const GinIndexStorePtr &store) const
-    {
-        return createIndexAggregator();
-    }
-
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query_info, ContextPtr context) const = 0;
 
@@ -237,7 +228,5 @@ void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
 void annoyIndexValidator(const IndexDescription & index, bool attach);
 #endif
-MergeTreeIndexPtr ginIndexCreator(const IndexDescription& index);
-void ginIndexValidator(const IndexDescription& index, bool attach);
 
 }

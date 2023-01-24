@@ -12,13 +12,15 @@ slug: /zh/operations/system-tables/one
 **示例**
 
 ```sql
-SELECT * FROM system.one LIMIT 10;
+:) SELECT * FROM system.one LIMIT 10;
 ```
 
-```response
+```text
 ┌─dummy─┐
 │     0 │
 └───────┘
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/one) <!--hide-->

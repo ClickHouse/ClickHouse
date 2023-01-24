@@ -3,7 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnFunction.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -96,17 +95,6 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
         return ColumnMap::create(nested_no_lc);
     }
 
-    /// Special case when column is a lazy argument of short circuit function.
-    /// We should call recursiveRemoveLowCardinality on the result column
-    /// when function will be executed.
-    if (const auto * column_function = typeid_cast<const ColumnFunction *>(column.get()))
-    {
-        if (!column_function->isShortCircuitArgument())
-            return column;
-
-        return column_function->recursivelyConvertResultToFullColumnIfLowCardinality();
-    }
-
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
         return column_low_cardinality->convertToFullColumn();
 
@@ -157,8 +145,8 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         {
             const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
             if (!column_array)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
-                                column->getName(), from_type->getName());
+                throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
+                                ErrorCodes::ILLEGAL_COLUMN);
 
             const auto & nested_from = from_array_type->getNestedType();
             const auto & nested_to = to_array_type->getNestedType();
@@ -175,8 +163,8 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         {
             const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
             if (!column_tuple)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
-                                column->getName(), from_type->getName());
+                throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
+                                ErrorCodes::ILLEGAL_COLUMN);
 
             auto columns = column_tuple->getColumns();
             const auto & from_elements = from_tuple_type->getElements();
@@ -202,7 +190,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         }
     }
 
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert: {} to {}", from_type->getName(), to_type->getName());
+    throw Exception("Cannot convert: " + from_type->getName() + " to " + to_type->getName(), ErrorCodes::TYPE_MISMATCH);
 }
 
 }

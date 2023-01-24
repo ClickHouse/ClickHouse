@@ -67,7 +67,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0, size = parameters.size(); i < size; ++i)
+        for (size_t i = 0; i < parameters.size(); ++i)
         {
             if (i)
                 stream << ", ";
@@ -172,9 +172,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     std::optional<size_t> version;
 
     if (!arguments || arguments->children.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Data type AggregateFunction requires parameters: "
-                        "version(optionally), name of aggregate function and list of data types for arguments");
+        throw Exception("Data type AggregateFunction requires parameters: "
+            "version(optionally), name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTPtr data_type_ast = arguments->children[0];
     size_t argument_types_start_idx = 1;
@@ -196,7 +195,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (const auto * parametric = data_type_ast->as<ASTFunction>())
     {
         if (parametric->parameters)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
+            throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
 
         function_name = parametric->name;
 
@@ -225,20 +224,18 @@ static DataTypePtr create(const ASTPtr & arguments)
     }
     else if (data_type_ast->as<ASTLiteral>())
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Aggregate function name for data type AggregateFunction must "
-                        "be passed as identifier (without quotes) or function");
+        throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
+            ErrorCodes::BAD_ARGUMENTS);
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected AST element passed as aggregate function name for data type AggregateFunction. "
-                        "Must be identifier or function.");
+        throw Exception("Unexpected AST element passed as aggregate function name for data type AggregateFunction. Must be identifier or function.",
+            ErrorCodes::BAD_ARGUMENTS);
 
     for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
+        throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
     AggregateFunctionProperties properties;
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);

@@ -23,17 +23,17 @@ struct S3ObjectStorageSettings
     S3ObjectStorageSettings() = default;
 
     S3ObjectStorageSettings(
-        const S3Settings::RequestSettings & request_settings_,
+        const S3Settings::ReadWriteSettings & s3_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
         int32_t objects_chunk_size_to_delete_)
-        : request_settings(request_settings_)
+        : s3_settings(s3_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
     {}
 
-    S3Settings::RequestSettings request_settings;
+    S3Settings::ReadWriteSettings s3_settings;
 
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
@@ -172,7 +172,7 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        size_t size,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     void copyObjectMultipartImpl(
@@ -180,14 +180,13 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        size_t size,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
         std::optional<ObjectAttributes> metadata = std::nullopt) const;
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-    size_t getObjectSize(const std::string & bucket_from, const std::string & key) const;
-    void checkObjectExists(const std::string & bucket_from, const std::string & key, std::string_view description) const;
+    Aws::S3::Model::HeadObjectOutcome requestObjectHeadData(const std::string & bucket_from, const std::string & key) const;
 
     std::string bucket;
 
@@ -217,11 +216,6 @@ public:
     {
         data_source_description.type = DataSourceType::S3_Plain;
     }
-
-    /// Notes:
-    /// - supports BACKUP to this disk
-    /// - does not support INSERT into MergeTree table on this disk
-    bool isWriteOnce() const override { return true; }
 };
 
 }

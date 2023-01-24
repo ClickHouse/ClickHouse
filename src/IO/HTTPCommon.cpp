@@ -60,7 +60,7 @@ namespace
         else if (uri.getScheme() == "http")
             return false;
         else
-            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
+            throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
     }
 
     HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
@@ -77,7 +77,7 @@ namespace
 
             session = std::move(https_session);
 #else
-            throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without HTTPS support");
+            throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
         }
         else
@@ -312,30 +312,15 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
         || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
-        int code = status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS
-            ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-            : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+        std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        error_message.exceptions(std::ios::failbit);
+        error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
+                      << response.getReason() << ", body: " << istr.rdbuf();
 
-        std::stringstream body; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        body.exceptions(std::ios::failbit);
-        body << istr.rdbuf();
-
-        throw HTTPException(code, request.getURI(), status, response.getReason(), body.str());
+        throw Exception(error_message.str(),
+            status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                                             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
     }
-}
-
-Exception HTTPException::makeExceptionMessage(
-    int code,
-    const std::string & uri,
-    Poco::Net::HTTPResponse::HTTPStatus http_status,
-    const std::string & reason,
-    const std::string & body)
-{
-    return Exception(code,
-        "Received error from remote server {}. "
-        "HTTP status code: {} {}, "
-        "body: {}",
-        uri, static_cast<int>(http_status), reason, body);
 }
 
 }

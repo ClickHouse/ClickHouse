@@ -259,8 +259,9 @@ private:
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isNumber(WhichDataType(arg)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
-                    "Must be numeric", arg->getName(), std::to_string(arg_idx + 1), getName());
+                throw Exception(
+                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be numeric",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return std::make_shared<DataTypeFloat32>();

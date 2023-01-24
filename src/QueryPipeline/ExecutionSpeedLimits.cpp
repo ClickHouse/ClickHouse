@@ -101,7 +101,7 @@ void ExecutionSpeedLimits::throttle(
 }
 
 template <typename... Args>
-static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
+static bool handleOverflowMode(OverflowMode mode, int code, fmt::format_string<Args...> fmt, Args &&... args)
 {
     switch (mode)
     {
@@ -112,7 +112,7 @@ static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<A
             ProfileEvents::increment(ProfileEvents::OverflowBreak);
             return false;
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown overflow mode");
+            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
     }
 }
 

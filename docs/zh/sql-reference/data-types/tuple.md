@@ -17,15 +17,17 @@ slug: /zh/sql-reference/data-types/tuple
 
 创建元组的示例：
 
-```sql
-SELECT tuple(1,'a') AS x, toTypeName(x)
-```
+    :) SELECT tuple(1,'a') AS x, toTypeName(x)
 
-```response
-┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
-│ (1,'a') │ Tuple(UInt8, String)      │
-└─────────┴───────────────────────────┘
-```
+    SELECT
+        (1, 'a') AS x,
+        toTypeName(x)
+
+    ┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
+    │ (1,'a') │ Tuple(UInt8, String)      │
+    └─────────┴───────────────────────────┘
+
+    1 rows in set. Elapsed: 0.021 sec.
 
 ## 元组中的数据类型 {#yuan-zu-zhong-de-shu-ju-lei-xing}
 
@@ -33,12 +35,14 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 
 自动数据类型检测示例：
 
-```sql
-SELECT tuple(1, NULL) AS x, toTypeName(x)
-```
+    SELECT tuple(1, NULL) AS x, toTypeName(x)
 
-```response
-┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
-│ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
-└──────────┴─────────────────────────────────┘
-```
+    SELECT
+        (1, NULL) AS x,
+        toTypeName(x)
+
+    ┌─x────────┬─toTypeName(tuple(1, NULL))──────┐
+    │ (1,NULL) │ Tuple(UInt8, Nullable(Nothing)) │
+    └──────────┴─────────────────────────────────┘
+
+    1 rows in set. Elapsed: 0.002 sec.

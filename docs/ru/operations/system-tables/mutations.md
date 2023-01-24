@@ -48,3 +48,4 @@ slug: /ru/operations/system-tables/mutations
 -   [Мутации](../../sql-reference/statements/alter/index.md#mutations)
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [Репликация данных](../../engines/table-engines/mergetree-family/replication.md) (семейство ReplicatedMergeTree)
+

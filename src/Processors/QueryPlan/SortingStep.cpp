@@ -70,7 +70,7 @@ SortingStep::SortingStep(
     , optimize_sorting_by_input_stream_properties(optimize_sorting_by_input_stream_properties_)
 {
     if (sort_settings.max_bytes_before_external_sort && sort_settings.tmp_data == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
+        throw Exception("Temporary data storage for external sorting is not provided", ErrorCodes::LOGICAL_ERROR);
 
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;

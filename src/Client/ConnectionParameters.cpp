@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
+#include <base/setTerminalEcho.h>
 #include <base/scope_guard.h>
 
 #include <readpassphrase/readpassphrase.h>
@@ -40,7 +41,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     if (config.getBool("ask-password", false))
     {
         if (config.has("password"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
+            throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
         password_prompt = true;
     }
     else

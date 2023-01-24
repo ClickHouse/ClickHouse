@@ -133,39 +133,19 @@ The dictionary is completely stored in memory in the form of a hash table. The d
 
 The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
 
+If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
+
+- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
+- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
+
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 Configuration example:
 
 ``` xml
 <layout>
-  <hashed />
-</layout>
-```
-
-or
-
-``` sql
-LAYOUT(HASHED())
-```
-
-If `shards` greater then 1 (default is `1`) the dictionary will load data in parallel, useful if you have huge amount of elements in one dictionary.
-
-Configuration example:
-
-``` xml
-<layout>
   <hashed>
-    <shards>10</shards>
-    <!-- Size of the backlog for blocks in parallel queue.
-
-         Since the bottleneck in parallel loading is rehash, and so to avoid
-         stalling because of thread is doing rehash, you need to have some
-         backlog.
-
-         10000 is good balance between memory and speed.
-         Even for 10e10 elements and can handle all the load without starvation. -->
-    <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+    <preallocate>0</preallocate>
   </hashed>
 </layout>
 ```
@@ -173,7 +153,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED(SHARDS 10 [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(HASHED(PREALLOCATE 0))
 ```
 
 ### sparse_hashed
@@ -181,6 +161,8 @@ LAYOUT(HASHED(SHARDS 10 [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
 The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
+
+It will be also preallocated so as `hashed` (with `preallocate` set to `true`), and note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
@@ -193,10 +175,8 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(SPARSE_HASHED())
+LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 ```
-
-It is also possible to use `shards` for this type of dictionary, and again it is more important for `sparse_hashed` then for `hashed`, since `sparse_hashed` is slower.
 
 ### complex_key_hashed
 
@@ -206,17 +186,14 @@ Configuration example:
 
 ``` xml
 <layout>
-  <complex_key_hashed>
-    <shards>1</shards>
-    <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
-  </complex_key_hashed>
+  <complex_key_hashed />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
 ### complex_key_sparse_hashed
@@ -227,16 +204,14 @@ Configuration example:
 
 ``` xml
 <layout>
-  <complex_key_sparse_hashed>
-    <shards>1</shards>
-  </complex_key_sparse_hashed>
+  <complex_key_sparse_hashed />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
 ```
 
 ### hashed_array
@@ -632,7 +607,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data must completely fit into RAM.
-
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

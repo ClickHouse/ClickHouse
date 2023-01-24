@@ -91,7 +91,7 @@ struct MultiMatchAllIndicesImpl
         hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for vectorscan");
+            throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -111,7 +111,7 @@ struct MultiMatchAllIndicesImpl
             UInt64 length = haystack_offsets[i] - offset - 1;
             /// vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
-                throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
+                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
             /// scan, check, update the offsets array and the offset of haystack.
             err = hs_scan(
                 regexps->getDB(),
@@ -122,7 +122,7 @@ struct MultiMatchAllIndicesImpl
                 on_match,
                 &res);
             if (err != HS_SUCCESS)
-                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
+                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
             offsets[i] = res.size();
             offset = haystack_offsets[i];
         }
@@ -135,7 +135,9 @@ struct MultiMatchAllIndicesImpl
         (void)edit_distance;
         (void)max_hyperscan_regexp_length;
         (void)max_hyperscan_regexp_total_length;
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
+        throw Exception(
+            "multi-search all indices is not implemented when vectorscan is off",
+            ErrorCodes::NOT_IMPLEMENTED);
 #endif // USE_VECTORSCAN
     }
 
@@ -201,7 +203,7 @@ struct MultiMatchAllIndicesImpl
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
             if (err != HS_SUCCESS)
-                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for vectorscan");
+                throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -219,7 +221,7 @@ struct MultiMatchAllIndicesImpl
 
             /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())
-                throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
+                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
 
             /// scan, check, update the offsets array and the offset of haystack.
             err = hs_scan(
@@ -231,7 +233,7 @@ struct MultiMatchAllIndicesImpl
                 on_match,
                 &res);
             if (err != HS_SUCCESS)
-                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
+                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
 
             offsets[i] = res.size();
 
@@ -249,7 +251,9 @@ struct MultiMatchAllIndicesImpl
         (void)edit_distance;
         (void)max_hyperscan_regexp_length;
         (void)max_hyperscan_regexp_total_length;
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
+        throw Exception(
+            "multi-search all indices is not implemented when vectorscan is off",
+            ErrorCodes::NOT_IMPLEMENTED);
 #endif // USE_VECTORSCAN
     }
 };

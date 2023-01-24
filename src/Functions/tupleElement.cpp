@@ -68,9 +68,9 @@ public:
         const size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), number_of_arguments);
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(number_of_arguments) + ", should be 2 or 3",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         size_t count_arrays = 0;
         const IDataType * tuple_col = arguments[0].type.get();
@@ -108,10 +108,7 @@ public:
 
             if (count_arrays != default_argument_count_arrays)
             {
-                throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATCHED,
-                                "Dimension of types mismatched between first argument and third argument. "
-                                "Dimension of 1st argument: {}. "
-                                "Dimension of 3rd argument: {}.",count_arrays, default_argument_count_arrays);
+                throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATCHED, "Dimension of types mismatched between first argument and third argument. Dimension of 1st argument: {}. Dimension of 3rd argument: {}.",count_arrays, default_argument_count_arrays);
             }
             return arguments[2].type;
         }
@@ -201,8 +198,7 @@ private:
             const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
             if (!array_x.hasEqualOffsets(array_y))
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
-                                "The argument 1 and argument 3 of function {} have different array sizes", getName());
+                throw Exception("The argument 1 and argument 3 of function " + getName() + " have different array sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
             }
         }
     }
@@ -223,8 +219,7 @@ private:
         {
             if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
-                                "The argument 1 and argument 3 of function {} have different array sizes", getName());
+                throw Exception("The argument 1 and argument 3 of function " + getName() + " have different array sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
             }
             prev_offset = offsets_y[row];
         }
@@ -257,7 +252,7 @@ private:
 
             if (argument_size == 2)
             {
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                throw Exception("Tuple doesn't have element with name '" + name_col->getValue<String>() + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
             }
             return std::nullopt;
         }

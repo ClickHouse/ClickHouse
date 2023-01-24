@@ -53,8 +53,10 @@ CSVRowInputFormat::CSVRowInputFormat(
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CSV format may not work correctly with delimiter '{}'. "
-                        "Try use CustomSeparated format instead.", format_settings.csv.delimiter);
+        throw Exception(
+            String("CSV format may not work correctly with delimiter '") + format_settings.csv.delimiter
+                + "'. Try use CustomSeparated format instead.",
+            ErrorCodes::BAD_ARGUMENTS);
 }
 
 void CSVRowInputFormat::syncAfterError()
@@ -84,7 +86,7 @@ static void skipEndOfLine(ReadBuffer & in)
                 ErrorCodes::INCORRECT_DATA);
     }
     else if (!in.eof())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected end of line");
+        throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
 }
 
 /// Skip `whitespace` symbols allowed in CSV.
@@ -272,15 +274,15 @@ void CSVFormatReader::skipPrefixBeforeHeader()
 }
 
 
-CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_)
     : FormatWithNamesAndTypesSchemaReader(
         in_,
-        format_settings_,
+        format_setting_,
         with_names_,
         with_types_,
         &reader,
         getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV))
-    , reader(in_, format_settings_)
+    , reader(in_, format_setting_)
 {
 }
 
@@ -291,7 +293,7 @@ DataTypes CSVSchemaReader::readRowAndGetDataTypes()
         return {};
 
     auto fields = reader.readRow();
-    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), FormatSettings::EscapingRule::CSV);
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), FormatSettings::EscapingRule::CSV);
 }
 
 
@@ -328,7 +330,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
         {
             pos = find_first_symbols<'"'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
             else if (pos == in.buffer().end())
                 continue;
             else if (*pos == '"')
@@ -344,7 +346,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
         {
             pos = find_first_symbols<'"', '\r', '\n'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
             else if (pos == in.buffer().end())
                 continue;
 

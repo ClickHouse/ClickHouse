@@ -49,3 +49,5 @@ slug: /zh/operations/system-tables/mutations
 - Mutations
 - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 表引擎
 - [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) 族
+
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/mutations) <!--hide-->

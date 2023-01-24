@@ -23,7 +23,7 @@ class IRestoreCoordination;
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads);
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -103,8 +103,6 @@ private:
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size);
-    std::vector<Info> getAllActiveBackupInfos() const;
-    std::vector<Info> getAllActiveRestoreInfos() const;
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
@@ -115,8 +113,6 @@ private:
     std::atomic<size_t> num_active_restores = 0;
     mutable std::mutex infos_mutex;
     Poco::Logger * log;
-    const bool allow_concurrent_backups;
-    const bool allow_concurrent_restores;
 };
 
 }

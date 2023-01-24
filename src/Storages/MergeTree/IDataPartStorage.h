@@ -1,6 +1,5 @@
 #pragma once
 #include <IO/ReadSettings.h>
-#include <IO/WriteSettings.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -9,8 +8,6 @@
 #include <boost/core/noncopyable.hpp>
 #include <memory>
 #include <optional>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
@@ -41,9 +38,6 @@ public:
 
     /// Name of the file that the iterator currently points to.
     virtual std::string name() const = 0;
-
-    /// Path of the file that the iterator currently points to.
-    virtual std::string path() const = 0;
 
     virtual ~IDataPartStorageIterator() = default;
 };
@@ -88,7 +82,7 @@ public:
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
-    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
+    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) = 0;
     virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
@@ -216,7 +210,6 @@ public:
         const String & name,
         size_t buf_size,
         const WriteSettings & settings) = 0;
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & name, size_t buf_size, WriteMode mode, const WriteSettings & settings) = 0;
 
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
@@ -241,12 +234,11 @@ public:
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
     ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
     virtual void rename(
-        std::string new_root_path,
-        std::string new_part_dir,
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
         Poco::Logger * log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
-
 
     /// Starts a transaction of mutable operations.
     virtual void beginTransaction() = 0;

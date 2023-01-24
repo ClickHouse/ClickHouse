@@ -557,7 +557,5 @@ extern template class ColumnVector<Int256>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
 extern template class ColumnVector<UUID>;
-extern template class ColumnVector<IPv4>;
-extern template class ColumnVector<IPv6>;
 
 }

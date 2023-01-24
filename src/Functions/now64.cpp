@@ -87,15 +87,9 @@ public:
         return std::make_unique<ExecutableFunctionNow64>(time_value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     Field time_value;
@@ -124,14 +118,17 @@ public:
 
         if (arguments.size() > 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0, or 1, or 2", getName());
+            throw Exception("Arguments size of function " + getName() + " should be 0, or 1, or 2", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
         if (!arguments.empty())
         {
             const auto & argument = arguments[0];
             if (!isInteger(argument.type) || !argument.column || !isColumnConst(*argument.column))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 0 argument of function {}. "
-                                "Expected const integer.", argument.type->getName(), getName());
+                throw Exception("Illegal type " + argument.type->getName() +
+                                " of 0" +
+                                " argument of function " + getName() +
+                                ". Expected const integer.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             scale = static_cast<UInt32>(argument.column->get64(0));
         }

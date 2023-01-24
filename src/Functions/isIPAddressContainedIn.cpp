@@ -29,17 +29,22 @@ public:
 
     explicit IPAddressVariant(std::string_view address_str)
     {
+        /// IP address parser functions require that the input is
+        /// NULL-terminated so we need to copy it.
+        const auto address_str_copy = std::string(address_str);
+
         UInt32 v4;
-        if (DB::parseIPv4whole(address_str.begin(), address_str.end(), reinterpret_cast<unsigned char *>(&v4)))
+        if (DB::parseIPv4(address_str_copy.c_str(), reinterpret_cast<unsigned char *>(&v4)))
         {
             addr = v4;
         }
         else
         {
             addr = IPv6AddrType();
-            bool success = DB::parseIPv6whole(address_str.begin(), address_str.end(), std::get<IPv6AddrType>(addr).data());
+            bool success = DB::parseIPv6(address_str_copy.c_str(), std::get<IPv6AddrType>(addr).data());
             if (!success)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Neither IPv4 nor IPv6 address: '{}'", address_str);
+                throw DB::Exception("Neither IPv4 nor IPv6 address: '" + address_str_copy + "'",
+                                    DB::ErrorCodes::CANNOT_PARSE_TEXT);
         }
     }
 
@@ -75,9 +80,9 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
     size_t pos_slash = cidr_str.find('/');
 
     if (pos_slash == 0)
-        throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Error parsing IP address with prefix: {}", std::string(cidr_str));
+        throw DB::Exception("Error parsing IP address with prefix: " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
     if (pos_slash == std::string_view::npos)
-        throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "The text does not contain '/': {}", std::string(cidr_str));
+        throw DB::Exception("The text does not contain '/': " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
 
     std::string_view addr_str = cidr_str.substr(0, pos_slash);
     IPAddressVariant addr(addr_str);
@@ -90,7 +95,7 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
     uint8_t max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
     bool has_error = parse_error != std::errc() || parse_end != prefix_str_end || prefix > max_prefix;
     if (has_error)
-        throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "The CIDR has a malformed prefix bits: {}", std::string(cidr_str));
+        throw DB::Exception("The CIDR has a malformed prefix bits: " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
 
     return {addr, static_cast<UInt8>(prefix)};
 }
@@ -146,15 +151,16 @@ namespace DB
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (arguments.size() != 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                    getName(), arguments.size());
+                throw Exception(
+                    "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) + ", should be 2",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             const DataTypePtr & addr_type = arguments[0];
             const DataTypePtr & prefix_type = arguments[1];
 
             if (!isString(addr_type) || !isString(prefix_type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The arguments of function {} must be String", getName());
+                throw Exception("The arguments of function " + getName() + " must be String",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             return std::make_shared<DataTypeUInt8>();
         }

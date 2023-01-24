@@ -48,7 +48,7 @@ public:
 
     virtual bool isFilled() const override { return true; }
 
-    virtual IBlocksStreamPtr
+    virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block &, const Block &, UInt64) const override
     {
         return nullptr;

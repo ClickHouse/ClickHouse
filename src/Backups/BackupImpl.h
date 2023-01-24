@@ -47,10 +47,9 @@ public:
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupWriter> writer_,
         const ContextPtr & context_,
-        bool is_internal_backup_,
-        const std::shared_ptr<IBackupCoordination> & coordination_,
-        const std::optional<UUID> & backup_uuid_,
-        bool deduplicate_files_);
+        bool is_internal_backup_ = false,
+        const std::shared_ptr<IBackupCoordination> & coordination_ = {},
+        const std::optional<UUID> & backup_uuid_ = {});
 
     ~BackupImpl() override;
 
@@ -133,7 +132,6 @@ private:
     String lock_file_name;
     std::atomic<size_t> num_files_written = 0;
     bool writing_finalized = false;
-    bool deduplicate_files = true;
     const Poco::Logger * log;
 };
 

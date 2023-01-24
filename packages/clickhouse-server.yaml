@@ -12,6 +12,8 @@ priority: "optional"
 
 conflicts:
 - clickhouse-keeper
+depends:
+- adduser
 replaces:
 - clickhouse-server-common
 - clickhouse-server-base

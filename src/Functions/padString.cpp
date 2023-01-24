@@ -164,7 +164,7 @@ namespace
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                     getName(),
-                    number_of_arguments);
+                    std::to_string(number_of_arguments));
 
             if (!isStringOrFixedString(arguments[0]))
                 throw Exception(
@@ -271,8 +271,9 @@ namespace
                     new_length = new_length_slice.elements->getUInt(new_length_slice.position);
                     if (new_length > MAX_NEW_LENGTH)
                     {
-                        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "New padded length ({}) is too big, maximum is: {}",
-                            std::to_string(new_length), std::to_string(MAX_NEW_LENGTH));
+                        throw Exception(
+                            "New padded length (" + std::to_string(new_length) + ") is too big, maximum is: " + std::to_string(MAX_NEW_LENGTH),
+                            ErrorCodes::TOO_LARGE_STRING_SIZE);
                     }
                     if (is_const_new_length)
                     {

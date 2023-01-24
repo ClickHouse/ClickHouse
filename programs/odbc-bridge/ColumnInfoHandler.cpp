@@ -181,7 +181,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         }
 
         if (columns.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns definition was not returned");
+            throw Exception("Columns definition was not returned", ErrorCodes::LOGICAL_ERROR);
 
         WriteBufferFromHTTPServerResponse out(
             response,

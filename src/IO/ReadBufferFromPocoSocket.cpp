@@ -62,21 +62,21 @@ bool ReadBufferFromPocoSocket::nextImpl()
     }
     catch (const Poco::Net::NetException & e)
     {
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
+        throw NetException(e.displayText() + ", while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket ({}, {} ms)",
+        throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
             peer_address.toString(),
-            socket.impl()->getReceiveTimeout().totalMilliseconds());
+            socket.impl()->getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
     }
     catch (const Poco::IOException & e)
     {
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
+        throw NetException(e.displayText() + ", while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
     }
 
     if (bytes_read < 0)
-        throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket ({})", peer_address.toString());
+        throw NetException("Cannot read from socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 
     if (bytes_read)
         working_buffer.resize(bytes_read);

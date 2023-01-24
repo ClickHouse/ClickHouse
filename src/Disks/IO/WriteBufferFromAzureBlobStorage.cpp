@@ -8,12 +8,6 @@
 #include <Common/Throttler.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
-}
-
 namespace DB
 {
 
@@ -125,7 +119,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
         uploadBlock(tmp_buffer->data(), tmp_buffer->size());
 
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(size_to_upload, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+        write_settings.remote_throttler->add(size_to_upload);
 }
 
 }

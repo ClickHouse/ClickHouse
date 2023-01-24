@@ -103,9 +103,7 @@ struct MergeTreePartInfo
         return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
     }
 
-    String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;
-    String getPartNameForLogs() const;
-    String getPartNameV1() const;
+    String getPartName() const;
     String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const
     {

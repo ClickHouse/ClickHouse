@@ -221,7 +221,7 @@ public:
     }
 
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, std::make_shared<DataTypeUInt8>())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params)
     {
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
@@ -239,10 +239,15 @@ public:
             else if (option == "strict_increase")
                 strict_increase = true;
             else if (option == "strict")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "strict is replaced with strict_deduplication in Aggregate function {}", getName());
+                throw Exception{"strict is replaced with strict_deduplication in Aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS};
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", getName(), option);
+                throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
         }
+    }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }

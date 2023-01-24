@@ -48,6 +48,7 @@ public:
 
     std::optional<FileInfo> getFileInfo(const String & file_name) const override;
     std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
+    std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) const override;
 
     String getNextArchiveSuffix() override;
     Strings getAllArchiveSuffixes() const override;
