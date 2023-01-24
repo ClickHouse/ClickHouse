@@ -11,8 +11,10 @@
 #include <thread>
 #include <set>
 
+namespace {
+
 #if defined(OS_LINUX)
-static int32_t readFrom(const char * filename, int default_value)
+int32_t readFrom(const char * filename, int default_value)
 {
     std::ifstream infile(filename);
     if (!infile.is_open())
@@ -25,7 +27,7 @@ static int32_t readFrom(const char * filename, int default_value)
 }
 
 /// Try to look at cgroups limit if it is available.
-static uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
+uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 {
     uint32_t quota_count = default_cpu_count;
     /// Return the number of milliseconds per period process is guaranteed to run.
@@ -41,8 +43,8 @@ static uint32_t getCGroupLimitedCPUCores(unsigned default_cpu_count)
 
 /// Returns number of physical cores, unlike std::thread::hardware_concurrency() which returns the logical core count. With 2-way SMT
 /// (HyperThreading) enabled, physical_concurrency() returns half of of std::thread::hardware_concurrency(), otherwise return the same.
-static unsigned physical_concurrency()
-#if defined(OS_LINUX)
+#if defined(__x86_64__) && defined(OS_LINUX)
+unsigned physical_concurrency()
 try
 {
     /// The CPUID instruction isn't reliable across different vendors and CPU models. The best option to get the physical core count is
@@ -87,13 +89,9 @@ catch (...)
 {
     return std::thread::hardware_concurrency(); /// parsing error
 }
-#else
-{
-    return std::thread::hardware_concurrency();
-}
 #endif
 
-static unsigned getNumberOfPhysicalCPUCoresImpl()
+unsigned getNumberOfPhysicalCPUCoresImpl()
 {
     unsigned cpu_count = std::thread::hardware_concurrency(); /// logical cores (with SMT/HyperThreading)
 
@@ -113,6 +111,8 @@ static unsigned getNumberOfPhysicalCPUCoresImpl()
 #endif
 
     return cpu_count;
+}
+
 }
 
 unsigned getNumberOfPhysicalCPUCores()
