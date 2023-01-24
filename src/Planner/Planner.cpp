@@ -1381,8 +1381,12 @@ void Planner::buildPlanForQueryNode()
         else if (!limit_applied && apply_offset && query_node.hasOffset())
             addOffsetStep(query_plan, query_analysis_result);
 
-        const auto & projection_analysis_result = expression_analysis_result.getProjection();
-        addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", result_actions_to_execute);
+        /// Project names is not done on shards, because initiator will not find columns in blocks
+        if (!query_processing_info.isToAggregationState())
+        {
+            const auto & projection_analysis_result = expression_analysis_result.getProjection();
+            addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", result_actions_to_execute);
+        }
     }
 
     addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
