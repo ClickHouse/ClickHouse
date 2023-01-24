@@ -47,5 +47,8 @@ select 110, (select count() from logs where level = 'Warning' group by message_f
 select 120, count() < 3 from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.10);
 select 130, count() < 10 from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.05);
 
+-- Each message matches its pattern (returns 0 rows)
+select 140, message_format_string, any(message) from logs where message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
+                                                     and message not like ('Code: %Exception: '||s||'%') group by message_format_string;
 
 drop table logs;

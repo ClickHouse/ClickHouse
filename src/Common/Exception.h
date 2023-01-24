@@ -178,11 +178,11 @@ private:
 /// more convenient calculation of problem line number.
 class ParsingException : public Exception
 {
+    ParsingException(const std::string & msg, int code);
 public:
     ParsingException();
-    ParsingException(const std::string & msg, int code);
     ParsingException(int code, const std::string & message);
-    ParsingException(int code, std::string && message) : Exception(message, code) {}
+    ParsingException(int code, std::string && message) : Exception(std::move(message), code) {}
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
