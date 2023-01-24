@@ -5,11 +5,11 @@
 /// Saves a format string for already formatted message
 struct PreformattedMessage
 {
-    String message;
+    std::string message;
     std::string_view format_string;
 
-    operator const String & () const { return message; }
-    operator String () && { return std::move(message); }
+    operator const std::string & () const { return message; }
+    operator std::string () && { return std::move(message); }
     operator fmt::format_string<> () const { UNREACHABLE(); }
 };
 
