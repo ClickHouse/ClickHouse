@@ -4768,61 +4768,61 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             auto & identifier_node = node->as<IdentifierNode &>();
             auto unresolved_identifier = identifier_node.getIdentifier();
             auto resolve_identifier_expression_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
-            node = resolve_identifier_expression_result.resolved_identifier;
+            auto resolved_identifier_node = resolve_identifier_expression_result.resolved_identifier;
 
-            if (node && result_projection_names.empty() &&
+            if (resolved_identifier_node && result_projection_names.empty() &&
                 (resolve_identifier_expression_result.isResolvedFromJoinTree() || resolve_identifier_expression_result.isResolvedFromExpressionArguments()))
             {
-                auto projection_name_it = node_to_projection_name.find(node);
+                auto projection_name_it = node_to_projection_name.find(resolved_identifier_node);
                 if (projection_name_it != node_to_projection_name.end())
                     result_projection_names.push_back(projection_name_it->second);
             }
 
-            if (node && !node_alias.empty())
+            if (resolved_identifier_node && !node_alias.empty())
                 scope.alias_name_to_lambda_node.erase(node_alias);
 
-            if (!node && allow_lambda_expression)
+            if (!resolved_identifier_node && allow_lambda_expression)
             {
-                node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
+                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier;
 
-                if (node && !node_alias.empty())
+                if (resolved_identifier_node && !node_alias.empty())
                     scope.alias_name_to_expression_node.erase(node_alias);
             }
 
-            if (!node && allow_table_expression)
+            if (!resolved_identifier_node && allow_table_expression)
             {
-                node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope).resolved_identifier;
+                resolved_identifier_node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope).resolved_identifier;
 
-                if (node)
+                if (resolved_identifier_node)
                 {
                     /// If table identifier is resolved as CTE clone it and resolve
-                    auto * subquery_node = node->as<QueryNode>();
-                    auto * union_node = node->as<UnionNode>();
+                    auto * subquery_node = resolved_identifier_node->as<QueryNode>();
+                    auto * union_node = resolved_identifier_node->as<UnionNode>();
                     bool resolved_as_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
 
                     if (resolved_as_cte)
                     {
-                        node = node->clone();
-                        subquery_node = node->as<QueryNode>();
-                        union_node = node->as<UnionNode>();
+                        resolved_identifier_node = resolved_identifier_node->clone();
+                        subquery_node = resolved_identifier_node->as<QueryNode>();
+                        union_node = resolved_identifier_node->as<UnionNode>();
 
                         if (subquery_node)
                             subquery_node->setIsCTE(false);
                         else
                             union_node->setIsCTE(false);
 
-                        IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
+                        IdentifierResolveScope subquery_scope(resolved_identifier_node, &scope /*parent_scope*/);
                         subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
                         if (subquery_node)
-                            resolveQuery(node, subquery_scope);
+                            resolveQuery(resolved_identifier_node, subquery_scope);
                         else
-                            resolveUnion(node, subquery_scope);
+                            resolveUnion(resolved_identifier_node, subquery_scope);
                     }
                 }
             }
 
-            if (!node)
+            if (!resolved_identifier_node)
             {
                 std::string message_clarification;
                 if (allow_lambda_expression)
@@ -4849,10 +4849,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                     getHintsErrorMessageSuffix(hints));
             }
 
-            if (node->getNodeType() == QueryTreeNodeType::LIST)
+            if (resolved_identifier_node->getNodeType() == QueryTreeNodeType::LIST)
             {
                 result_projection_names.clear();
-                resolved_expression_it = resolved_expressions.find(node);
+                resolved_expression_it = resolved_expressions.find(resolved_identifier_node);
                 if (resolved_expression_it != resolved_expressions.end())
                     return resolved_expression_it->second;
                 else
@@ -4861,6 +4861,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                         unresolved_identifier.getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
             }
+
+            node = std::move(resolved_identifier_node);
 
             if (result_projection_names.empty())
                 result_projection_names.push_back(unresolved_identifier.getFullName());
