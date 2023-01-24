@@ -292,9 +292,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
 
     if (usable_count < min_entries)
-        throw DB::NetException(
-                "All connection tries failed. Log: \n\n" + fail_messages + "\n",
-                DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
+        throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
     std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 

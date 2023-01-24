@@ -50,14 +50,14 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             props, /*parquet::default_writer_properties(),*/
             &file_writer);
         if (!status.ok())
-            throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table: {}", status.ToString());
     }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto status = file_writer->WriteTable(*arrow_table, format_settings.parquet.row_group_size);
 
     if (!status.ok())
-        throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while writing a table: {}", status.ToString());
 }
 
 void ParquetBlockOutputFormat::finalizeImpl()
@@ -71,7 +71,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
 
     auto status = file_writer->Close();
     if (!status.ok())
-        throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table: {}", status.ToString());
 }
 
 void ParquetBlockOutputFormat::resetFormatterImpl()

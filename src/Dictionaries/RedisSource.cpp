@@ -159,7 +159,7 @@ namespace DB
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Too low keys in request to source: {}, expected 2 or more",
-                        DB::toString(keys_array.size()));
+                        keys_array.size());
                 }
 
                 if (num_rows + keys_array.size() - 1 > max_block_size)
