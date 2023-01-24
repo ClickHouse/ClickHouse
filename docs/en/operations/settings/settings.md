@@ -4398,6 +4398,12 @@ The number of lines to skip at the beginning of data in TSV input format.
 
 Default value: `0`.
 
+### input_format_tsv_detect_header {#input_format_tsv_detect_header}
+
+Automatically detect header with names and types in TSV format.
+
+Enabled by default.
+
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
 Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
@@ -4557,6 +4563,12 @@ Enabled by default.
 The number of lines to skip at the beginning of data in CSV input format.
 
 Default value: `0`.
+
+### input_format_csv_detect_header {#input_format_csv_detect_header}
+
+Automatically detect header with names and types in CSV format.
+
+Enabled by default.
 
 ### format_csv_null_representation {#format_csv_null_representation}
 
@@ -5119,6 +5131,12 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md/#format-customseparated) data format.
 
 Default value: `''`.
+
+### input_format_custom_detect_header {#input_format_custom_detect_header}
+
+Automatically detect header with names and types in CustomSeparated format.
+
+Enabled by default.
 
 ## Regexp format settings {#regexp-format-settings}
 
