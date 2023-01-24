@@ -121,11 +121,10 @@ namespace
     {
         if (expected != calculated)
         {
-            String message = "Checksum of extra info doesn't match: corrupted data."
-                " Reference: " + getHexUIntLowercase(expected.first) + getHexUIntLowercase(expected.second)
-                + ". Actual: " + getHexUIntLowercase(calculated.first) + getHexUIntLowercase(calculated.second)
-                + ".";
-            throw Exception(message, ErrorCodes::CHECKSUM_DOESNT_MATCH);
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
+                            "Checksum of extra info doesn't match: corrupted data. Reference: {}{}. Actual: {}{}.",
+                            getHexUIntLowercase(expected.first), getHexUIntLowercase(expected.second),
+                            getHexUIntLowercase(calculated.first), getHexUIntLowercase(calculated.second));
         }
     }
 
