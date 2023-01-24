@@ -136,7 +136,7 @@ public:
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
         if (params.size() > 2)
-            throw Exception("Aggregate function " + getName() + " require two parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require two parameter or less", getName());
 
         if (params.empty())
         {
@@ -145,7 +145,7 @@ public:
         }
 
         if (params[0].getType() != Field::Types::String)
-            throw Exception("Aggregate function " + getName() + " require first parameter to be a String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
         const auto & param = params[0].get<String>();
         if (param == "two-sided")
@@ -155,14 +155,14 @@ public:
         else if (param == "greater")
             alternative = Alternative::Greater;
         else
-            throw Exception("Unknown parameter in aggregate function " + getName() +
-                    ". It must be one of: 'two-sided', 'less', 'greater'", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown parameter in aggregate function {}. "
+                    "It must be one of: 'two-sided', 'less', 'greater'", getName());
 
         if (params.size() != 2)
             return;
 
         if (params[1].getType() != Field::Types::UInt64)
-                throw Exception("Aggregate function " + getName() + " require second parameter to be a UInt64", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a UInt64", getName());
 
         continuity_correction = static_cast<bool>(params[1].get<UInt64>());
     }
@@ -226,7 +226,7 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         if (!this->data(place).size_x || !this->data(place).size_y)
-            throw Exception("Aggregate function " + getName() + " require both samples to be non empty", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
         auto [u_statistic, p_value] = this->data(place).getResult(alternative, continuity_correction);
 

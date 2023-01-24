@@ -22,7 +22,7 @@ struct DivideDecimalsImpl
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (b.value == 0)
-            throw DB::Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+            throw DB::Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
         if (a.value == 0)
             return Decimal256(0);
 
@@ -49,7 +49,7 @@ struct DivideDecimalsImpl
         std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
 
         if (divided.size() > DecimalUtils::max_precision<Decimal256>)
-            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
         return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(divided));
     }
 };

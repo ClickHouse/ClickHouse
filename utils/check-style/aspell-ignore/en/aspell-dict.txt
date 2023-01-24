@@ -104,6 +104,8 @@ NYPD
 NuRaft
 ObjectId
 Ok
+OLAP
+OLTP
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -125,6 +127,8 @@ PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
+QueryResultCacheHits
+QueryResultCacheMisses
 RBAC
 RawBLOB
 RedHat
@@ -490,6 +494,7 @@ tokenization
 toml
 toolchain
 toolset
+transactionally
 tskv
 tsv
 tui
