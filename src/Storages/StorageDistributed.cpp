@@ -27,7 +27,6 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
-#include "Core/SettingsEnums.h"
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -47,6 +46,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -80,6 +80,7 @@
 #include <Processors/Sinks/EmptySink.h>
 
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -90,8 +91,6 @@
 #include <filesystem>
 #include <optional>
 #include <cassert>
-
-#include <boost/rational.hpp>
 
 
 namespace fs = std::filesystem;
@@ -307,13 +306,13 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
 }
 
-bool useVirtualShards(const Settings & settings, const Cluster & cluster)
+bool canUseCustomKey(const Settings & settings, const Cluster & cluster)
 {
     return settings.max_parallel_replicas > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
         && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
 }
-}
 
+}
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
 StorageDistributed::~StorageDistributed() = default;
@@ -453,7 +452,33 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    if (useVirtualShards(settings, *cluster))
+    const auto use_virtual_shards = [&]
+    {
+        if (!canUseCustomKey(settings, *cluster))
+            return false;
+
+        auto distributed_table = DatabaseAndTableWithAlias(
+            *getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0), local_context->getCurrentDatabase());
+
+        if (containsCustomKeyForTable(settings.parallel_replicas_custom_key, distributed_table, *local_context))
+        {
+            LOG_INFO(log, "Found custom_key for {}", distributed_table.getQualifiedNamePrefix(false));
+            return true;
+        }
+
+        DatabaseAndTableWithAlias remote_table_info;
+        remote_table_info.database = remote_database;
+        remote_table_info.table = remote_table;
+        if (containsCustomKeyForTable(settings.parallel_replicas_custom_key, remote_table_info, *local_context))
+        {
+            LOG_INFO(log, "Found custom_key for {}", remote_table_info.getQualifiedNamePrefix(false));
+            return true;
+        }
+
+        return false;
+    };
+
+    if (use_virtual_shards())
     {
         LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
 
@@ -767,23 +792,40 @@ void StorageDistributed::read(
     auto settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (useVirtualShards(settings, *getCluster()))
+    if (canUseCustomKey(settings, *getCluster()))
     {
-        if (query_info.getCluster()->getShardCount() == 1)
+        const auto get_custom_key_ast = [&]() -> ASTPtr
         {
-            // we are reading from single shard with multiple replicas but didn't transform replicas
-            // into virtual shards with custom_key set
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
-        }
+            auto distributed_table = DatabaseAndTableWithAlias(
+                *getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0), local_context->getCurrentDatabase());
+            if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, distributed_table, *local_context))
+                return custom_key_ast;
 
-        auto custom_key_ast = parseParallelReplicaCustomKey(settings.parallel_replicas_custom_key.value, *local_context);
+            DatabaseAndTableWithAlias remote_table_info;
+            remote_table_info.database = remote_database;
+            remote_table_info.table = remote_table;
+            if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, remote_table_info, *local_context))
+                return custom_key_ast;
 
-        additional_shard_filter_generator =
-            [&, custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
-        {
-            return getCustomKeyFilterForParallelReplica(
-                shard_count, shard_num - 1, custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
+            return nullptr;
         };
+
+        if (auto custom_key_ast = get_custom_key_ast())
+        {
+            if (query_info.getCluster()->getShardCount() == 1)
+            {
+                // we are reading from single shard with multiple replicas but didn't transform replicas
+                // into virtual shards with custom_key set
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
+            }
+
+            additional_shard_filter_generator =
+                [&, custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
+            {
+                return getCustomKeyFilterForParallelReplica(
+                    shard_count, shard_num - 1, custom_key_ast, settings.parallel_replicas_custom_key_filter_type, *this, local_context);
+            };
+        }
     }
 
     bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas

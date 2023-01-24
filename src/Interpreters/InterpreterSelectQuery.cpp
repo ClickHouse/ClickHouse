@@ -513,18 +513,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
     if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
     {
-        LOG_INFO(log, "Processing query on a replica using custom_key");
-        if (!storage)
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
+        if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, joined_tables.tablesWithColumns().front().table, *context))
+        {
+            LOG_INFO(log, "Processing query on a replica using custom_key");
+            if (!storage)
+                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
 
-        auto custom_key_ast = parseParallelReplicaCustomKey(settings.parallel_replicas_custom_key.value, *context);
-        parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-            settings.parallel_replicas_count,
-            settings.parallel_replica_offset,
-            std::move(custom_key_ast),
-            settings.parallel_replicas_custom_key_filter_type,
-            *storage,
-            context);
+            parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
+                settings.parallel_replicas_count,
+                settings.parallel_replica_offset,
+                std::move(custom_key_ast),
+                settings.parallel_replicas_custom_key_filter_type,
+                *storage,
+                context);
+        }
     }
 
     auto analyze = [&](bool try_move_to_prewhere)

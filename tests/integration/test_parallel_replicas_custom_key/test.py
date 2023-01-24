@@ -70,7 +70,7 @@ def test_parallel_replicas_custom_key(start_cluster, cluster, custom_key, filter
                     "prefer_localhost_replica": 0,
                     "max_parallel_replicas": 3,
                     "parallel_replicas_mode": "custom_key",
-                    "parallel_replicas_custom_key": custom_key,
+                    "parallel_replicas_custom_key": f"{{'test_table': '{custom_key}'}}",
                     "parallel_replicas_custom_key_filter_type": filter_type,
                 },
             )
@@ -89,3 +89,47 @@ def test_parallel_replicas_custom_key(start_cluster, cluster, custom_key, filter
         assert n1.contains_in_log(
             "Single shard cluster used with custom_key, transforming replicas into virtual shards"
         )
+
+
+def test_custom_key_different_table_names(start_cluster):
+    def run(table_source, table_name_for_custom_key):
+        for node in nodes:
+            node.rotate_logs()
+
+        row_num = 1000
+        insert_data("test_single_shard_multiple_replicas", row_num)
+
+        n1 = nodes[0]
+        assert (
+            int(
+                n1.query(
+                    f"SELECT count() FROM {table_source}",
+                    settings={
+                        "prefer_localhost_replica": 0,
+                        "max_parallel_replicas": 3,
+                        "parallel_replicas_mode": "custom_key",
+                        "parallel_replicas_custom_key": f"{{'{table_name_for_custom_key}': 'sipHash64(value)'}}",
+                    },
+                )
+            )
+            == row_num
+        )
+
+        # we first transform all replicas into shards and then append for each shard filter
+        assert n1.contains_in_log(
+            "Single shard cluster used with custom_key, transforming replicas into virtual shards"
+        )
+
+    run("dist_table", "dist_table")
+    run("dist_table as d", "d")
+    run("dist_table as d", "dist_table")
+    run("dist_table as d", "test_table")
+    run(
+        "cluster('test_single_shard_multiple_replicas', default.test_table)",
+        "test_table",
+    )
+    run("cluster('test_single_shard_multiple_replicas', default.test_table) as d", "d")
+    run(
+        "cluster('test_single_shard_multiple_replicas', default.test_table) as d",
+        "test_table",
+    )
