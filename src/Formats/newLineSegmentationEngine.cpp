@@ -20,7 +20,7 @@ std::pair<bool, size_t> newLineFileSegmentationEngine(ReadBuffer & in, DB::Memor
     {
         pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
-            throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
         else if (pos == in.buffer().end())
             continue;
 

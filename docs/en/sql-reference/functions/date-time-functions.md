@@ -1582,3 +1582,8 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
+
+## Related content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+

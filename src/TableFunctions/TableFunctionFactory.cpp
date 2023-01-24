@@ -21,13 +21,12 @@ void TableFunctionFactory::registerFunction(
     const std::string & name, Value value, CaseSensitiveness case_sensitiveness)
 {
     if (!table_functions.emplace(name, value).second)
-        throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), value).second)
-        throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: "
+                        "the case insensitive table function name '{}' is not unique", name);
 
     KnownTableFunctionNames::instance().add(name, (case_sensitiveness == CaseInsensitive));
 }

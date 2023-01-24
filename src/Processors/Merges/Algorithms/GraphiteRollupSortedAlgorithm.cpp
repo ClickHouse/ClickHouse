@@ -33,7 +33,7 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
             def.unmodified_column_numbers.push_back(i);
 
     if (!WhichDataType(header.getByPosition(def.value_column_num).type).isFloat64())
-        throw Exception("Only `Float64` data type is allowed for the value column of GraphiteMergeTree", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only `Float64` data type is allowed for the value column of GraphiteMergeTree");
 
     return def;
 }

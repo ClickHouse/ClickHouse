@@ -28,7 +28,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
     String elem = "profiles." + profile_name;
 
     if (!config.has(elem))
-        throw Exception("There is no profile '" + profile_name + "' in configuration file.", ErrorCodes::THERE_IS_NO_PROFILE);
+        throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "There is no profile '{}' in configuration file.", profile_name);
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(elem, config_keys);
@@ -47,7 +47,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
 void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config)
 {
     if (!config.has(path))
-        throw Exception("There is no path '" + path + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", path);
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(path, config_keys);
@@ -125,13 +125,12 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
         const auto & name = setting.getName();
         if (config.has(name) && !setting.isObsolete())
         {
-            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
                 " You can add it to <profiles><default> if you want to change default value of this setting."
                 " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
                 " in the main configuration file.",
-                name, config_path),
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                name, config_path);
         }
     }
 }

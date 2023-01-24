@@ -300,7 +300,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
         && isFinite(x_shift)
         && isFinite(y_shift)
         && isFinite(grid_size)))
-        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
 }
 
 template <typename CoordinateType>
