@@ -1244,22 +1244,29 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard)
 {
-    /*
     if (create.temporary)
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
 
+        create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+
         String temporary_table_name = create.getTable();
-        auto temporary_table = TemporaryTableHolder(getContext(), properties.columns, properties.constraints, query_ptr);
+        auto creator = [&](const StorageID & table_id)
+        {
+            return StorageFactory::instance().get(create,
+                database->getTableDataPath(table_id.getTableName()),
+                getContext(),
+                getContext()->getGlobalContext(),
+                properties.columns,
+                properties.constraints,
+                false);
+        };
+        auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
+
         getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
         return true;
-    }
-    */
-
-    if (create.temporary)
-    {
-        create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
     }
 
     if (!ddl_guard)
@@ -1368,35 +1375,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     else
     {
-        if (create.temporary)
-        {
-            String temporary_table_name = create.getTable();
-            // ASTPtr original_create = create.clone();
-            auto creator = [&](const StorageID & table_id)
-            {
-                return StorageFactory::instance().get(create,
-                    database->getTableDataPath(table_id.getTableName()),
-                    getContext(),
-                    getContext()->getGlobalContext(),
-                    properties.columns,
-                    properties.constraints,
-                    false);
-            };
-            auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
-
-            getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
-            return true;
-        }
-        else
-        {
-            res = StorageFactory::instance().get(create,
-                data_path,
-                getContext(),
-                getContext()->getGlobalContext(),
-                properties.columns,
-                properties.constraints,
-                false);
-        }
+        res = StorageFactory::instance().get(create,
+            data_path,
+            getContext(),
+            getContext()->getGlobalContext(),
+            properties.columns,
+            properties.constraints,
+            false);
 
         /// If schema wes inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
