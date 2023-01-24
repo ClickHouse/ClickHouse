@@ -2920,6 +2920,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
         }
     }
 
+    if (!scope.context->getSettingsRef().enable_global_with_statement)
+        return {};
+
     /** Nested subqueries cannot access outer subqueries table expressions from JOIN tree because
       * that can prevent resolution of table expression from CTE.
       *
