@@ -119,7 +119,7 @@ template <typename ValueType>
 static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
 {
     if (!ast || !ast->as<ASTLiteral>())
-        throw Exception("Database engine " + engine_name + " requested literal argument.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
 
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
@@ -268,7 +268,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         catch (...)
         {
             const auto & exception_message = getCurrentExceptionMessage(true);
-            throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
+            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     }
 #endif
@@ -278,7 +278,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception("Lazy database require cache_expiration_time_seconds argument", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
 
         const auto & arguments = engine->arguments->children;
 
@@ -291,7 +291,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 3)
-            throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires 3 arguments: zookeeper path, shard name and replica name");
 
         auto & arguments = engine->arguments->children;
         for (auto & engine_arg : arguments)
@@ -456,7 +456,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQLite database requires 1 argument: database path");
 
         const auto & arguments = engine->arguments->children;
 
@@ -466,7 +466,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     }
 #endif
 
-    throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+    throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
 }
 
 }

@@ -367,7 +367,7 @@ namespace
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     if (name == "view")
-        throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Table function view cannot be used as an expression");
 
     /// If function can be converted to literal it will be parsed as literal after formatting.
     /// In distributed query it may lead to mismathed column names.
@@ -1020,7 +1020,9 @@ String getFunctionName(const IAST * ast)
     String res;
     if (tryGetFunctionNameInto(ast, res))
         return res;
-    throw Exception(ast ? queryToString(*ast) + " is not an function" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    if (ast)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an function", queryToString(*ast));
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 
 std::optional<String> tryGetFunctionName(const IAST * ast)

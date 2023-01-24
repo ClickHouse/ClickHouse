@@ -703,9 +703,8 @@ private:
                 || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
                 return res;
             else
-                throw Exception("Illegal column " + col_right_untyped->getName()
-                    + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
+                    col_right_untyped->getName(), getName());
         }
         else if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
@@ -725,9 +724,8 @@ private:
                 || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
                 return res;
             else
-                throw Exception("Illegal column " + col_right_untyped->getName()
-                    + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second argument of function {}",
+                    col_right_untyped->getName(), getName());
         }
 
         return nullptr;
@@ -752,8 +750,8 @@ private:
         };
 
         if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
-            throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong call for {} with {} and {}",
+                            getName(), col_left.type->getName(), col_right.type->getName());
 
         return res;
     }
@@ -792,7 +790,7 @@ private:
                 c0_const_size = c0_const_fixed_string->getN();
             }
             else
-                throw Exception("Logical error: ColumnConst contains not String nor FixedString column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
         }
 
         if (c1_const)
@@ -811,7 +809,7 @@ private:
                 c1_const_size = c1_const_fixed_string->getN();
             }
             else
-                throw Exception("Logical error: ColumnConst contains not String nor FixedString column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
         }
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
@@ -871,10 +869,8 @@ private:
                     c1_fixed_string->getChars(), c1_fixed_string->getN(),
                     c_res->getData());
             else
-                throw Exception("Illegal columns "
-                    + c0->getName() + " and " + c1->getName()
-                    + " of arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} and {} of arguments of function {}",
+                    c0->getName(), c1->getName(), getName());
 
             return c_res;
         }
@@ -940,10 +936,10 @@ private:
         const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
-            throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Comparison of zero-sized tuples is not implemented.");
 
         if (tuple_size != typeid_cast<const DataTypeTuple &>(*c1.type).getElements().size())
-            throw Exception("Cannot compare tuples of different sizes.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot compare tuples of different sizes.");
 
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -992,7 +988,7 @@ private:
             size_t input_rows_count) const
     {
         if (0 == tuple_size)
-            throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Comparison of zero-sized tuples is not implemented.");
 
         ColumnsWithTypeAndName convolution_columns(tuple_size);
         ColumnsWithTypeAndName tmp_columns(2);
@@ -1276,9 +1272,8 @@ public:
                 || (res = executeNumLeftType<Int256>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float32>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))))
-                throw Exception("Illegal column " + col_left_untyped->getName()
-                    + " of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    col_left_untyped->getName(), getName());
 
             return res;
         }
@@ -1323,9 +1318,8 @@ public:
             {
                 /// Check does another data type is comparable to Decimal, includes Int and Float.
                 if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
-                    throw Exception(
-                        "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "No operation {} between {} and {}",
+                        getName(), left_type->getName(), right_type->getName());
                 /// When Decimal comparing to Float32/64, we convert both of them into Float64.
                 /// Other systems like MySQL and Spark also do as this.
                 if (left_is_float || right_is_float)
@@ -1351,7 +1345,7 @@ public:
                   || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
                   || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
                   || (res = executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}))))
-                throw Exception("Date related common types can only be UInt32/UInt64/Int32/Decimal", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
         else if (left_type->equals(*right_type))

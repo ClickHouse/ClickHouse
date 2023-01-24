@@ -26,7 +26,8 @@ bool MarkRange::operator<(const MarkRange & rhs) const
         if (is_intersection)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Intersecting mark ranges are not allowed, it is a bug! First range ({}, {}), second range ({}, {})",
+                "Intersecting mark ranges are not allowed, it is a bug! "
+                "First range ({}, {}), second range ({}, {})",
                 begin, end, rhs.begin, rhs.end);
     }
 

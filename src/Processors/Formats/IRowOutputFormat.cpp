@@ -40,7 +40,7 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
-        throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in totals chunk, expected 1", num_rows);
 
     const auto & columns = chunk.getColumns();
 
@@ -57,7 +57,7 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
     if (num_rows != 2)
-        throw Exception("Got " + toString(num_rows) + " in extremes chunk, expected 2", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in extremes chunk, expected 2", num_rows);
 
     writeBeforeExtremes();
     writeMinExtreme(columns, 0);

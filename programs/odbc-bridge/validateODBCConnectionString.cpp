@@ -38,10 +38,10 @@ std::string validateODBCConnectionString(const std::string & connection_string)
     static constexpr size_t MAX_CONNECTION_STRING_SIZE = 1000;
 
     if (connection_string.empty())
-        throw Exception("ODBC connection string cannot be empty", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+        throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string cannot be empty");
 
     if (connection_string.size() >= MAX_CONNECTION_STRING_SIZE)
-        throw Exception("ODBC connection string is too long", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+        throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string is too long");
 
     const char * pos = connection_string.data();
     const char * end = pos + connection_string.size();
@@ -51,7 +51,7 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         while (pos < end && isWhitespaceASCII(*pos))
         {
             if (*pos != ' ')
-                throw Exception("ODBC connection string parameter contains unusual whitespace character", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+                throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter contains unusual whitespace character");
             ++pos;
         }
     };
@@ -63,7 +63,8 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         if (pos < end && isValidIdentifierBegin(*pos))
             ++pos;
         else
-            throw Exception("ODBC connection string parameter name doesn't begin with valid identifier character", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING,
+                            "ODBC connection string parameter name doesn't begin with valid identifier character");
 
         /// Additionally allow dash and dot symbols in names.
         /// Strictly speaking, the name with that characters should be escaped.
@@ -83,7 +84,8 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         {
             signed char c = *pos;
             if (c < 32 || strchr("[]{}(),;?*=!@'\"", c) != nullptr)
-                throw Exception("ODBC connection string parameter value is unescaped and contains illegal character", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+                throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING,
+                                "ODBC connection string parameter value is unescaped and contains illegal character");
             ++pos;
         }
 
@@ -97,7 +99,7 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         if (pos < end && *pos == '{')
             ++pos;
         else
-            throw Exception("ODBC connection string parameter value doesn't begin with opening curly brace", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter value doesn't begin with opening curly brace");
 
         while (pos < end)
         {
@@ -109,13 +111,13 @@ std::string validateODBCConnectionString(const std::string & connection_string)
             }
 
             if (*pos == 0)
-                throw Exception("ODBC connection string parameter value contains ASCII NUL character", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+                throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter value contains ASCII NUL character");
 
             res += *pos;
             ++pos;
         }
 
-        throw Exception("ODBC connection string parameter is escaped but there is no closing curly brace", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+        throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter is escaped but there is no closing curly brace");
     };
 
     auto read_value = [&]
@@ -139,25 +141,25 @@ std::string validateODBCConnectionString(const std::string & connection_string)
 
         Poco::toUpperInPlace(name);
         if (name == "FILEDSN" || name == "SAVEFILE" || name == "DRIVER")
-            throw Exception("ODBC connection string has forbidden parameter", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string has forbidden parameter");
 
         if (pos >= end)
-            throw Exception("ODBC connection string parameter doesn't have value", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter doesn't have value");
 
         if (*pos == '=')
             ++pos;
         else
-            throw Exception("ODBC connection string parameter doesn't have value", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string parameter doesn't have value");
 
         skip_whitespaces();
         std::string value = read_value();
         skip_whitespaces();
 
         if (name.size() > MAX_ELEMENT_SIZE || value.size() > MAX_ELEMENT_SIZE)
-            throw Exception("ODBC connection string has too long keyword or value", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string has too long keyword or value");
 
         if (!parameters.emplace(name, value).second)
-            throw Exception("Duplicate parameter found in ODBC connection string", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "Duplicate parameter found in ODBC connection string");
 
         if (pos >= end)
             break;
@@ -165,7 +167,7 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         if (*pos == ';')
             ++pos;
         else
-            throw Exception("Unexpected character found after parameter value in ODBC connection string", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+            throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "Unexpected character found after parameter value in ODBC connection string");
     }
 
     /// Reconstruct the connection string.
@@ -173,12 +175,12 @@ std::string validateODBCConnectionString(const std::string & connection_string)
     auto it = parameters.find("DSN");
 
     if (parameters.end() == it)
-        throw Exception("DSN parameter is mandatory for ODBC connection string", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+        throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "DSN parameter is mandatory for ODBC connection string");
 
     std::string dsn = it->second;
 
     if (dsn.empty())
-        throw Exception("DSN parameter cannot be empty in ODBC connection string", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+        throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "DSN parameter cannot be empty in ODBC connection string");
 
     parameters.erase(it);
 
@@ -241,7 +243,7 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         write_element(elem.first, elem.second);
 
     if (reconstructed_connection_string.size() >= MAX_CONNECTION_STRING_SIZE)
-        throw Exception("ODBC connection string is too long", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+        throw Exception(ErrorCodes::BAD_ODBC_CONNECTION_STRING, "ODBC connection string is too long");
 
     return reconstructed_connection_string;
 }

@@ -46,7 +46,7 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const st
 
     return socket;
 #else
-    throw Exception("SSL is not enabled at build time.", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "SSL is not enabled at build time.");
 #endif
 }
 
