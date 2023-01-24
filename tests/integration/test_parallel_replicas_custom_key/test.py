@@ -68,7 +68,7 @@ def test_parallel_replicas_custom_key(start_cluster, cluster, custom_key, filter
                 "SELECT count() FROM dist_table",
                 settings={
                     "prefer_localhost_replica": 0,
-                    "max_parallel_replicas": 3,
+                    "max_parallel_replicas": 4,
                     "parallel_replicas_mode": "custom_key",
                     "parallel_replicas_custom_key": f"{{'test_table': '{custom_key}'}}",
                     "parallel_replicas_custom_key_filter_type": filter_type,
@@ -92,7 +92,7 @@ def test_parallel_replicas_custom_key(start_cluster, cluster, custom_key, filter
 
 
 def test_custom_key_different_table_names(start_cluster):
-    def run(table_source, table_name_for_custom_key):
+    def run(table_source, table_name_for_custom_key, should_use_virtual_shard=True):
         for node in nodes:
             node.rotate_logs()
 
@@ -106,7 +106,7 @@ def test_custom_key_different_table_names(start_cluster):
                     f"SELECT count() FROM {table_source}",
                     settings={
                         "prefer_localhost_replica": 0,
-                        "max_parallel_replicas": 3,
+                        "max_parallel_replicas": 4,
                         "parallel_replicas_mode": "custom_key",
                         "parallel_replicas_custom_key": f"{{'{table_name_for_custom_key}': 'sipHash64(value)'}}",
                     },
@@ -116,7 +116,7 @@ def test_custom_key_different_table_names(start_cluster):
         )
 
         # we first transform all replicas into shards and then append for each shard filter
-        assert n1.contains_in_log(
+        assert not should_use_virtual_shard or n1.contains_in_log(
             "Single shard cluster used with custom_key, transforming replicas into virtual shards"
         )
 
@@ -133,3 +133,4 @@ def test_custom_key_different_table_names(start_cluster):
         "cluster('test_single_shard_multiple_replicas', default.test_table) as d",
         "test_table",
     )
+    run("dist_table as d", "dist", should_use_virtual_shard=False)
