@@ -3,8 +3,11 @@
 #include <string>
 #include <vector>
 
+#include <Common/logger_useful.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/Element.h>
+#include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/ObjectId.h>
 
 #include <Columns/ColumnNullable.h>
@@ -15,6 +18,7 @@
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>
 
 // only after poco
@@ -29,10 +33,110 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int UNKNOWN_TYPE;
     extern const int MONGODB_ERROR;
 }
 
+
+#if POCO_VERSION < 0x01070800
+/// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
+void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
+{
+    Poco::MongoDB::Database db(database);
+
+    /// Challenge-response authentication.
+    std::string nonce;
+
+    /// First step: request nonce.
+    {
+        auto command = db.createCommand();
+        command->setNumberToReturn(1);
+        command->selector().add<Int32>("getnonce", 1);
+
+        Poco::MongoDB::ResponseMessage response;
+        connection.sendRequest(*command, response);
+
+        if (response.documents().empty())
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned empty response for 'getnonce' command",
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+        auto doc = response.documents()[0];
+        try
+        {
+            double ok = doc->get<double>("ok", 0);
+            if (ok != 1)
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+                    " has field 'ok' missing or having wrong value",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+            nonce = doc->get<std::string>("nonce", "");
+            if (nonce.empty())
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that"
+                    " has field 'nonce' missing or empty",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+        catch (Poco::NotFoundException & e)
+        {
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned response for 'getnonce' command that has missing required field: "
+                    + e.displayText(),
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+    }
+
+    /// Second step: use nonce to calculate digest and send it back to the server.
+    /// Digest is hex_md5(n.nonce + username + hex_md5(username + ":mongo:" + password))
+    {
+        std::string first = user + ":mongo:" + password;
+
+        Poco::MD5Engine md5;
+        md5.update(first);
+        std::string digest_first(Poco::DigestEngine::digestToHex(md5.digest()));
+        std::string second = nonce + user + digest_first;
+        md5.reset();
+        md5.update(second);
+        std::string digest_second(Poco::DigestEngine::digestToHex(md5.digest()));
+
+        auto command = db.createCommand();
+        command->setNumberToReturn(1);
+        command->selector()
+            .add<Int32>("authenticate", 1)
+            .add<std::string>("user", user)
+            .add<std::string>("nonce", nonce)
+            .add<std::string>("key", digest_second);
+
+        Poco::MongoDB::ResponseMessage response;
+        connection.sendRequest(*command, response);
+
+        if (response.empty())
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned empty response for 'authenticate' command",
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+
+        auto doc = response.documents()[0];
+        try
+        {
+            double ok = doc->get<double>("ok", 0);
+            if (ok != 1)
+                throw Exception(
+                    "Cannot authenticate in MongoDB: server returned response for 'authenticate' command that"
+                    " has field 'ok' missing or having wrong value",
+                    ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+        catch (Poco::NotFoundException & e)
+        {
+            throw Exception(
+                "Cannot authenticate in MongoDB: server returned response for 'authenticate' command that has missing required field: "
+                    + e.displayText(),
+                ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+        }
+    }
+}
+#endif
 
 std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
 {
@@ -98,8 +202,9 @@ namespace
                     parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
                 break;
             default:
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected a number, got type id = {} for column {}",
-                    toString(value.type()), name);
+                throw Exception(
+                    "Type mismatch, expected a number, got type id = " + toString(value.type()) + " for column " + name,
+                    ErrorCodes::TYPE_MISMATCH);
         }
     }
 
@@ -155,15 +260,15 @@ namespace
                     break;
                 }
 
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String, got type id = {} for column {}",
-                                toString(value.type()), name);
+                throw Exception{"Type mismatch, expected String, got type id = " + toString(value.type()) + " for column " + name,
+                                ErrorCodes::TYPE_MISMATCH};
             }
 
             case ValueType::vtDate:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
-                                    toString(value.type()), name);
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
+                                    ErrorCodes::TYPE_MISMATCH};
 
                 assert_cast<ColumnUInt16 &>(column).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())));
@@ -173,8 +278,8 @@ namespace
             case ValueType::vtDateTime:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
-                                    toString(value.type()), name);
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
+                                    ErrorCodes::TYPE_MISMATCH};
 
                 assert_cast<ColumnUInt32 &>(column).getData().push_back(
                     static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
@@ -188,12 +293,13 @@ namespace
                     assert_cast<ColumnUUID &>(column).getData().push_back(parse<UUID>(string));
                 }
                 else
-                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String (UUID), got type id = {} for column {}",
-                                        toString(value.type()), name);
+                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) + " for column "
+                                        + name,
+                                    ErrorCodes::TYPE_MISMATCH};
                 break;
             }
             default:
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Value of unsupported type:{}", column.getName());
+                throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
         }
     }
 

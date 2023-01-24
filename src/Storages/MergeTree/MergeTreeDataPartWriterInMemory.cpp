@@ -11,18 +11,18 @@ namespace ErrorCodes
 }
 
 MergeTreeDataPartWriterInMemory::MergeTreeDataPartWriterInMemory(
-    const MutableDataPartInMemoryPtr & part_,
+    const DataPartInMemoryPtr & part_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeWriterSettings & settings_)
-    : IMergeTreeDataPartWriter(part_, columns_list_, metadata_snapshot_, settings_)
+    : IMergeTreeDataPartWriter(part_, nullptr, columns_list_, metadata_snapshot_, settings_)
     , part_in_memory(part_) {}
 
 void MergeTreeDataPartWriterInMemory::write(
     const Block & block, const IColumn::Permutation * permutation)
 {
     if (part_in_memory->block)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataPartWriterInMemory supports only one write");
+        throw Exception("DataPartWriterInMemory supports only one write", ErrorCodes::LOGICAL_ERROR);
 
     Block primary_key_block;
     if (settings.rewrite_primary_key)

@@ -47,10 +47,13 @@ public:
               arguments[0]->equals(*arguments[2]) &&
               arguments[0]->equals(*arguments[3])))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type of argument of {} all coordinate arguments must have the same type, "
-                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0]->getName(),
-                            arguments[1]->getName(), arguments[2]->getName(), arguments[3]->getName());
+            throw Exception("Illegal type of argument of " + getName() +
+                            " all coordinate arguments must have the same type, instead they are:" +
+                            arguments[0]->getName() + ", " +
+                            arguments[1]->getName() + ", " +
+                            arguments[2]->getName() + ", " +
+                            arguments[3]->getName() + ".",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -97,9 +100,12 @@ public:
 
         if (!lon_min || !lat_min || !lon_max || !lat_max || !precision)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported argument types for function {} : {}, {}, {}, {}.",
-                            getName(), lon_min_column->getName(),
-                            lat_min_column->getName(), lon_max_column->getName(), lat_max_column->getName());
+            throw Exception("Unsupported argument types for function " + getName() + " : " +
+                            lon_min_column->getName() + ", " +
+                            lat_min_column->getName() + ", " +
+                            lon_max_column->getName() + ", " +
+                            lat_max_column->getName() + ".",
+                            ErrorCodes::LOGICAL_ERROR);
         }
 
         auto col_res = ColumnArray::create(ColumnString::create());
@@ -122,9 +128,9 @@ public:
 
             if (prepared_args.items_count > max_array_size)
             {
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "{} would produce {} array elements, "
-                                "which is bigger than the allowed maximum of {}",
-                                getName(), prepared_args.items_count, max_array_size);
+                throw Exception(getName() + " would produce " + std::to_string(prepared_args.items_count) +
+                                " array elements, which is bigger than the allowed maximum of " + std::to_string(max_array_size),
+                                ErrorCodes::TOO_LARGE_ARRAY_SIZE);
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
@@ -142,13 +148,14 @@ public:
 
         if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "String column size mismatch (internal logical error)");
+            throw Exception("String column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
         }
 
         if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Array column size mismatch (internal logical error){} != {}",
-                            res_offsets.back(), std::to_string(res_strings.size()));
+            throw Exception("Array column size mismatch (internal logical error)" +
+                            std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size()),
+                            ErrorCodes::LOGICAL_ERROR);
         }
 
         result = std::move(col_res);

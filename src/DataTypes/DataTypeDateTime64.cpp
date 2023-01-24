@@ -21,8 +21,8 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_z
       TimezoneMixin(time_zone_name)
 {
     if (scale > max_scale)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
-            "Maximum is up to nanoseconds (9).", std::to_string(scale));
+        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
@@ -30,8 +30,8 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time
       TimezoneMixin(time_zone_info)
 {
     if (scale > max_scale)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
-            "Maximum is up to nanoseconds (9).", std::to_string(scale));
+        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 }
 
 std::string DataTypeDateTime64::doGetName() const

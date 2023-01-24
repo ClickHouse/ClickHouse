@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
@@ -33,26 +32,29 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", getName());
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        return;
+        throw Exception("Table function '" + getName() + "' requires at least one argument: "
+                        " structure, [random_seed, max_string_length, max_array_length].",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (args.size() > 4)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function '{}' requires at most four arguments: "
-                        " structure, [random_seed, max_string_length, max_array_length].", getName());
+        throw Exception("Table function '" + getName() + "' requires at most four arguments: "
+                        " structure, [random_seed, max_string_length, max_array_length].",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     // All the arguments must be literals.
     for (const auto & arg : args)
     {
         if (!arg->as<const ASTLiteral>())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(fmt::format(
                 "All arguments of table function '{}' must be literals. "
-                "Got '{}' instead", getName(), arg->formatForErrorMessage());
+                "Got '{}' instead", getName(), arg->formatForErrorMessage()),
+                ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -75,23 +77,12 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
 ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const
 {
-    if (structure == "auto")
-    {
-        if (structure_hint.empty())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Table function '{}' was used without structure argument but structure could not be determined automatically. Please, "
-                "provide structure manually",
-                getName());
-        return structure_hint;
-    }
-
     return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    ColumnsDescription columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context);
     auto res = std::make_shared<StorageGenerateRandom>(
         StorageID(getDatabaseName(), table_name), columns, String{}, max_array_length, max_string_length, random_seed);
     res->startup();
@@ -100,7 +91,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_functio
 
 void registerTableFunctionGenerate(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateRandom>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionGenerateRandom>();
 }
 
 }

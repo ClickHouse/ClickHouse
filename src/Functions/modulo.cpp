@@ -78,11 +78,11 @@ struct ModuloByConstantImpl
 #pragma GCC diagnostic pop
 
         if (unlikely(static_cast<A>(b) == 0))
-            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
+            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
         /// Division by min negative value.
         if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
-            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+            throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
 
         /// Modulo of division by negative number is the same as the positive number.
         if (b < 0)
@@ -124,7 +124,6 @@ struct ModuloLegacyByConstantImpl : ModuloByConstantImpl<A, B>
 {
     using Op = ModuloLegacyImpl<A, B>;
 };
-
 }
 
 /** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
@@ -169,30 +168,6 @@ using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, 
 REGISTER_FUNCTION(ModuloLegacy)
 {
     factory.registerFunction<FunctionModuloLegacy>();
-}
-
-struct NamePositiveModulo
-{
-    static constexpr auto name = "positiveModulo";
-};
-using FunctionPositiveModulo = BinaryArithmeticOverloadResolver<PositiveModuloImpl, NamePositiveModulo, false>;
-
-REGISTER_FUNCTION(PositiveModulo)
-{
-    factory.registerFunction<FunctionPositiveModulo>(
-        {
-            R"(
-Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positiveModulo` always return non-negative number.
-Returns the difference between `a` and the nearest integer not greater than `a` divisible by `b`.
-In other words, the function returning the modulus (modulo) in the terms of Modular Arithmetic.
-        )",
-            Documentation::Examples{{"positiveModulo", "SELECT positiveModulo(-1, 10);"}},
-            Documentation::Categories{"Arithmetic"}},
-        FunctionFactory::CaseInsensitive);
-
-    factory.registerAlias("positive_modulo", "positiveModulo", FunctionFactory::CaseInsensitive);
-    /// Compatibility with Spark:
-    factory.registerAlias("pmod", "positiveModulo", FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -35,22 +36,20 @@ public:
         if (!column_node)
             return;
 
-        if (column_node->getColumnName() == "__grouping_set")
-            return;
-
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA)
+        if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN ||
+            column_source_node_type == QueryTreeNodeType::LAMBDA)
             return;
 
         /// JOIN using expression
-        if (column_node->hasExpression() && column_source_node_type == QueryTreeNodeType::JOIN)
+        if (column_node->hasExpression() && column_source_node->getNodeType() == QueryTreeNodeType::JOIN)
             return;
 
         auto & table_expression_data = planner_context.getOrCreateTableExpressionData(column_source_node);
 
-        if (column_node->hasExpression() && column_source_node_type != QueryTreeNodeType::ARRAY_JOIN)
+        if (column_node->hasExpression())
         {
             /// Replace ALIAS column with expression
             table_expression_data.addAliasColumnName(column_node->getColumnName());
@@ -62,10 +61,9 @@ public:
         if (column_source_node_type != QueryTreeNodeType::TABLE &&
             column_source_node_type != QueryTreeNodeType::TABLE_FUNCTION &&
             column_source_node_type != QueryTreeNodeType::QUERY &&
-            column_source_node_type != QueryTreeNodeType::UNION &&
-            column_source_node_type != QueryTreeNodeType::ARRAY_JOIN)
+            column_source_node_type != QueryTreeNodeType::UNION)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Expected table, table function, array join, query or union column source. Actual {}",
+                "Expected table, table function, query or union column source. Actual {}",
                 column_source_node->formatASTForErrorMessage());
 
         bool column_already_exists = table_expression_data.hasColumn(column_node->getColumnName());
@@ -106,6 +104,9 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContext & 
             bool storage_is_remote = table_function_node->getStorage()->isRemote();
             table_expression_data.setIsRemote(storage_is_remote);
         }
+
+        if (table_expression_data.isRemote())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Remote storages are not supported");
     }
 
     CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context);

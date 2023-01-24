@@ -41,14 +41,11 @@ public:
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
-        bool is_subquery = false,
-        bool is_create_parameterized_view = false);
+        bool is_subquery = false);
 
     void ignoreWithTotals() override;
 
     bool supportsTransactions() const override { return true; }
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;

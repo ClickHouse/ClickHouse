@@ -41,7 +41,8 @@ public:
     {
         if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+            throw Exception("First argument should be String",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return DataTypeFactory::instance().get(DataTypeName().getName());

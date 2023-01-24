@@ -25,10 +25,11 @@ namespace ErrorCodes
 static void checkForCarriageReturn(ReadBuffer & in)
 {
     if (!in.eof() && (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r')))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
+        throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
-            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.");
+            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
+            ErrorCodes::INCORRECT_DATA);
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
@@ -267,7 +268,7 @@ DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypes()
         return {};
 
     auto fields = reader.readRow();
-    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
 }
 
 void registerInputFormatTabSeparated(FormatFactory & factory)
@@ -336,7 +337,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
 
         if (pos > in.buffer().end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
+            throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
         else if (pos == in.buffer().end())
             continue;
 

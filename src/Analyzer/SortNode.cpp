@@ -35,6 +35,38 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     children[sort_expression_child_index] = std::move(expression_);
 }
 
+String SortNode::getName() const
+{
+    String result = getExpression()->getName();
+
+    if (sort_direction == SortDirection::ASCENDING)
+        result += " ASC";
+    else
+        result += " DESC";
+
+    if (nulls_sort_direction)
+    {
+        if (*nulls_sort_direction == SortDirection::ASCENDING)
+            result += " NULLS FIRST";
+        else
+            result += " NULLS LAST";
+    }
+
+    if (with_fill)
+        result += " WITH FILL";
+
+    if (hasFillFrom())
+        result += " FROM " + getFillFrom()->getName();
+
+    if (hasFillStep())
+        result += " STEP " + getFillStep()->getName();
+
+    if (hasFillTo())
+        result += " TO " + getFillTo()->getName();
+
+    return result;
+}
+
 void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "SORT id: " << format_state.getNodeId(this);
@@ -91,8 +123,7 @@ bool SortNode::isEqualImpl(const IQueryTreeNode & rhs) const
 void SortNode::updateTreeHashImpl(HashState & hash_state) const
 {
     hash_state.update(sort_direction);
-    /// use some determined value if `nulls_sort_direction` is `nullopt`
-    hash_state.update(nulls_sort_direction.value_or(sort_direction));
+    hash_state.update(nulls_sort_direction);
     hash_state.update(with_fill);
 
     if (collator)

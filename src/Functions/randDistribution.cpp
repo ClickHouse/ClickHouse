@@ -210,9 +210,7 @@ private:
     {
         if (parameter_number >= arguments.size())
             throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Parameter number ({}) is greater than the size of arguments ({}). This is a bug",
-                            parameter_number, arguments.size());
+                ErrorCodes::LOGICAL_ERROR, "Parameter number ({}) is greater than the size of arguments ({}). This is a bug", parameter_number, arguments.size());
 
         const IColumn * col = arguments[parameter_number].column.get();
 
@@ -245,9 +243,7 @@ public:
     {
         auto desired = Distribution::getNumberOfArguments();
         if (arguments.size() != desired && arguments.size() != desired + 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Wrong number of arguments for function {}. Should be {} or {}",
-                            getName(), desired, desired + 1);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}. Should be {} or {}", getName(), desired, desired + 1);
 
         for (size_t i = 0; i < Distribution::getNumberOfArguments(); ++i)
         {
@@ -357,7 +353,7 @@ Typical usage:
     {
     R"(
 Returns a random number from the exponential distribution.
-Accepts one parameter - lambda value.
+Accepts one parameter.
 
 Typical usage:
 [example:typical]
@@ -417,7 +413,7 @@ Typical usage:
     {
     R"(
 Returns a random number from the Bernoulli distribution.
-Accepts one parameter - probability of success.
+Accepts two parameters - probability of success.
 
 Typical usage:
 [example:typical]
@@ -462,7 +458,7 @@ Typical usage:
     {
     R"(
 Returns a random number from the poisson distribution.
-Accepts one parameter - the mean number of occurrences.
+Accepts two parameters - the mean number of occurrences.
 
 Typical usage:
 [example:typical]

@@ -26,7 +26,7 @@ def tx(session, query):
 
 def test_rollback_unfinished_on_restart1(start_cluster):
     node.query(
-        "create table mt (n int, m int) engine=MergeTree order by n partition by n % 2 settings remove_empty_parts = 0"
+        "create table mt (n int, m int) engine=MergeTree order by n partition by n % 2"
     )
     node.query("insert into mt values (1, 10), (2, 20)")
     tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
@@ -82,7 +82,6 @@ def test_rollback_unfinished_on_restart1(start_cluster):
     ).strip()
 
     node.restart_clickhouse(kill=True)
-    node.query("SYSTEM WAIT LOADING PARTS mt")
 
     assert (
         node.query("select *, _part from mt order by n")
@@ -105,8 +104,6 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         "0_4_4_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "0_8_8_0\t0\ttid5\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
-        "1_1_1_1\t1\ttid1\tcsn_1\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
-        "1_1_1_1_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
         "1_3_3_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_5_5_0\t1\ttid6\tcsn_6\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
@@ -117,7 +114,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
 
 def test_rollback_unfinished_on_restart2(start_cluster):
     node.query(
-        "create table mt2 (n int, m int) engine=MergeTree order by n partition by n % 2 settings remove_empty_parts = 0"
+        "create table mt2 (n int, m int) engine=MergeTree order by n partition by n % 2"
     )
     node.query("insert into mt2 values (1, 10), (2, 20)")
     tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
@@ -172,7 +169,6 @@ def test_rollback_unfinished_on_restart2(start_cluster):
     ).strip()
 
     node.restart_clickhouse(kill=True)
-    node.query("SYSTEM WAIT LOADING PARTS mt2")
 
     assert (
         node.query("select *, _part from mt2 order by n")
@@ -194,6 +190,5 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         "0_4_4_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
         "0_5_5_0\t0\ttid5\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
-        "1_1_1_1\t1\ttid1\tcsn_1\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
         "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
     )

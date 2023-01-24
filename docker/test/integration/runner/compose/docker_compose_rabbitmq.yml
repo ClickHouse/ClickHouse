@@ -5,7 +5,7 @@ services:
         image: rabbitmq:3.8-management-alpine
         hostname: rabbitmq1
         expose:
-            - ${RABBITMQ_PORT:-5672}
+            - ${RABBITMQ_PORT}
         environment:
             RABBITMQ_DEFAULT_USER: "root"
             RABBITMQ_DEFAULT_PASS: "clickhouse"

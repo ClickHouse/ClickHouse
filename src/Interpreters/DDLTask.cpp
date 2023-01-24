@@ -8,11 +8,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
-#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -29,14 +28,12 @@ namespace ErrorCodes
     extern const int DNS_ERROR;
 }
 
-
 HostID HostID::fromString(const String & host_port_str)
 {
     HostID res;
     std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
     return res;
 }
-
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
@@ -171,13 +168,6 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
-void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
-{
-    /// Convert rewritten AST back to string.
-    query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
-}
-
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
 {
     auto query_context = Context::createCopy(from_context);
@@ -248,7 +238,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
-        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Received unknown DDL query");
+        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
     cluster_name = query_on_cluster->cluster;
     cluster = context->tryGetCluster(cluster_name);
@@ -275,7 +265,6 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    /// Rewrite AST without ON CLUSTER.
     WithoutOnClusterASTRewriteParams params;
     params.default_database = address_in_cluster.default_database;
     params.host_id = address_in_cluster.toString();
@@ -321,8 +310,7 @@ bool DDLTask::tryFindHostInCluster()
                         {
                             if (!query_with_table->database)
                                 throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name "
-                                                "must be qualified by database name.");
+                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
 
                             if (default_database == query_with_table->getDatabase())
                                 return true;
@@ -417,7 +405,6 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
-    formatRewrittenQuery(context);
 }
 
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)

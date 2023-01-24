@@ -1,40 +1,41 @@
-#include <IO/WriteHelpers.h>
-#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/AsynchronousInsertLog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <base/scope_guard.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <IO/WriteHelpers.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -74,7 +75,7 @@ namespace
         const char * getName() const override { return "storage definition with comment"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
-            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+            ParserStorage storage_p;
             ASTPtr storage;
 
             if (!storage_p.parse(pos, storage, expected))
@@ -136,15 +137,13 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (config.has(config_prefix + ".engine"))
     {
         if (config.has(config_prefix + ".partition_by"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "If 'engine' is specified for system table, PARTITION BY parameters should "
-                            "be specified directly inside 'engine' and 'partition_by' setting doesn't make sense");
+            throw Exception("If 'engine' is specified for system table, "
+                "PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense",
+                ErrorCodes::BAD_ARGUMENTS);
         if (config.has(config_prefix + ".ttl"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, "
-                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
-        if (config.has(config_prefix + ".storage_policy"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, SETTINGS storage_policy = '...' "
-                            "should be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
+            throw Exception("If 'engine' is specified for system table, "
+                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
+                            ErrorCodes::BAD_ARGUMENTS);
         engine = config.getString(config_prefix + ".engine");
     }
     else
@@ -159,9 +158,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         engine += " ORDER BY ";
         engine += TSystemLog::getDefaultOrderBy();
-        String storage_policy = config.getString(config_prefix + ".storage_policy", "");
-        if (!storage_policy.empty())
-            engine += " SETTINGS storage_policy = " + quoteString(storage_policy);
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.

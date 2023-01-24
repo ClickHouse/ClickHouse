@@ -50,7 +50,7 @@ try
             zstd_buf.ignore();
 
             if (x != i)
-                throw DB::Exception(0, "Failed!, read: {}, expected: {}", x, i);
+                throw DB::Exception("Failed!, read: " + std::to_string(x) + ", expected: " + std::to_string(i), 0);
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."

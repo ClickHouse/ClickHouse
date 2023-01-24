@@ -177,7 +177,10 @@ def get_table_uuid(node, db_atomic, table):
     return uuid
 
 
+@pytest.fixture(autouse=True)
 def drop_table(cluster):
+    yield
+
     node_names = ["node1z", "node2z", "node1n", "node2n", "node_another_bucket"]
 
     for node_name in node_names:
@@ -246,7 +249,7 @@ def test_restore_another_bucket_path(cluster, db_atomic, zero_copy):
     node_another_bucket = cluster.instances["node_another_bucket"]
 
     create_restore_file(node_another_bucket, bucket="root")
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket, "test", schema, attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -254,5 +257,3 @@ def test_restore_another_bucket_path(cluster, db_atomic, zero_copy):
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
     ) == "({})".format(size * (keys - dropped_keys))
-
-    drop_table(cluster)

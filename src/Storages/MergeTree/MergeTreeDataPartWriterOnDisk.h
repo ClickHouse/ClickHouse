@@ -50,7 +50,7 @@ public:
     {
         Stream(
             const String & escaped_column_name_,
-            const MutableDataPartStoragePtr & data_part_storage,
+            const DataPartStorageBuilderPtr & data_part_storage_builder,
             const String & data_path_,
             const std::string & data_file_extension_,
             const std::string & marks_path_,
@@ -92,7 +92,8 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
 
     MergeTreeDataPartWriterOnDisk(
-        const MergeTreeMutableDataPartPtr & data_part_,
+        const MergeTreeData::DataPartPtr & data_part_,
+        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -162,7 +163,6 @@ protected:
     /// Data is already written up to this mark.
     size_t current_mark = 0;
 
-    GinIndexStores gin_index_stores;
 private:
     void initSkipIndices();
     void initPrimaryIndex();

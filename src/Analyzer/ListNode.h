@@ -16,8 +16,6 @@ using ListNodePtr = std::shared_ptr<ListNode>;
 class ListNode final : public IQueryTreeNode
 {
 public:
-    using iterator = QueryTreeNodes::iterator;
-
     /// Initialize list node with empty nodes
     ListNode();
 
@@ -41,10 +39,9 @@ public:
         return QueryTreeNodeType::LIST;
     }
 
-    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+    String getName() const override;
 
-    iterator begin() { return children.begin(); }
-    iterator end() { return children.end(); }
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;

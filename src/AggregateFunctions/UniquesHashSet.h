@@ -329,7 +329,7 @@ public:
         free();
     }
 
-    void ALWAYS_INLINE insert(Value x)
+    void insert(Value x)
     {
         HashValue hash_value = hash(x);
         if (!good(hash_value))

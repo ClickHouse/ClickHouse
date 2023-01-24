@@ -3,17 +3,11 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
-#include <wyhash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
+#include <wyhash.h>
 
 #include "config.h"
-
-#ifdef __clang__
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wused-but-marked-unused"
-#endif
-#include <xxhash.h>
 
 #if USE_BLAKE3
 #    include <blake3.h>
@@ -23,6 +17,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <xxhash.h>
 
 #if USE_SSL
 #    include <openssl/md4.h>
@@ -52,7 +47,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Common/TargetSpecific.h>
-#include <base/IPv4andIPv6.h>
 #include <base/range.h>
 #include <base/bit_cast.h>
 
@@ -453,7 +447,7 @@ struct JavaHashImpl
     static ReturnType apply(T x)
     {
         if (std::is_unsigned_v<T>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsigned types are not supported");
+            throw Exception("Unsigned types are not supported", ErrorCodes::NOT_IMPLEMENTED);
         const size_t size = sizeof(T);
         const char * data = reinterpret_cast<const char *>(&x);
         return apply(data, size);
@@ -469,7 +463,7 @@ struct JavaHashImpl
 
     static ReturnType combineHashes(Int32, Int32)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Java hash is not combineable for multiple arguments");
+        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -493,7 +487,7 @@ struct JavaHashUTF16LEImpl
         }
 
         if (size % 2 != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arguments for javaHashUTF16LE must be in the form of UTF-16");
+            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::BAD_ARGUMENTS);
 
         UInt32 h = 0;
         for (size_t i = 0; i < size; i += 2)
@@ -504,7 +498,7 @@ struct JavaHashUTF16LEImpl
 
     static Int32 combineHashes(Int32, Int32)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Java hash is not combineable for multiple arguments");
+        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -525,7 +519,7 @@ struct HiveHashImpl
 
     static Int32 combineHashes(Int32, Int32)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Hive hash is not combineable for multiple arguments");
+        throw Exception("Hive hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -594,7 +588,7 @@ struct ImplXxHash32
     static constexpr auto name = "xxHash32";
     using ReturnType = UInt32;
 
-    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH32(s, len, 0); }
+    static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
     /**
       *  With current implementation with more than 1 arguments it will give the results
       *  non-reproducible from outside of CH.
@@ -615,24 +609,7 @@ struct ImplXxHash64
     using ReturnType = UInt64;
     using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH64(s, len, 0); }
-
-    /*
-       With current implementation with more than 1 arguments it will give the results
-       non-reproducible from outside of CH. (see comment on ImplXxHash32).
-     */
-    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
-
-struct ImplXXH3
-{
-    static constexpr auto name = "xxh3";
-    using ReturnType = UInt64;
-    using uint128_t = CityHash_v1_0_2::uint128;
-
-    static auto apply(const char * s, const size_t len) { return XXH_INLINE_XXH3_64bits(s, len); }
+    static auto apply(const char * s, const size_t len) { return XXH64(s, len, 0); }
 
     /*
        With current implementation with more than 1 arguments it will give the results
@@ -669,7 +646,7 @@ struct ImplBLAKE3
         {
             auto err_st = std::string(err_msg);
             blake3_free_char_pointer(err_msg);
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function returned error message: {}", err_st);
+            throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
     #endif
@@ -691,9 +668,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeFixedString>(Impl::length);
     }
@@ -743,25 +720,10 @@ public:
             }
             return col_to;
         }
-        else if (
-            const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
-        {
-            auto col_to = ColumnFixedString::create(Impl::length);
-            const typename ColumnIPv6::Container & data = col_from_ip->getData();
-            const auto size = col_from_ip->size();
-            auto & chars_to = col_to->getChars();
-            const auto length = IPV6_BINARY_LENGTH;
-            chars_to.resize(size * Impl::length);
-            for (size_t i = 0; i < size; ++i)
-            {
-                Impl::apply(
-                    reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
-            }
-            return col_to;
-        }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), getName());
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                    + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -797,8 +759,9 @@ private:
             return col_to;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), Name::name);
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                    + " of first argument of function " + Name::name,
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
 public:
@@ -812,8 +775,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isValueRepresentedByNumber())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
@@ -853,11 +816,9 @@ public:
             return executeType<Decimal32>(arguments);
         else if (which.isDecimal64())
             return executeType<Decimal64>(arguments);
-        else if (which.isIPv4())
-            return executeType<IPv4>(arguments);
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(), getName());
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -960,8 +921,9 @@ private:
             }
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                column->getName(), getName());
+            throw Exception("Illegal column " + column->getName()
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename FromType, bool first>
@@ -1001,8 +963,9 @@ private:
             }
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                column->getName(), getName());
+            throw Exception("Illegal column " + column->getName()
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <bool first>
@@ -1077,8 +1040,9 @@ private:
             }
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    column->getName(), getName());
+            throw Exception("Illegal column " + column->getName()
+                    + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <bool first>
@@ -1127,8 +1091,9 @@ private:
             executeArray<first>(type, &*full_column, vec_to);
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    column->getName(), getName());
+            throw Exception("Illegal column " + column->getName()
+                    + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <bool first>
@@ -1149,8 +1114,6 @@ private:
         else if (which.isInt128()) executeBigIntType<Int128, first>(icolumn, vec_to);
         else if (which.isInt256()) executeBigIntType<Int256, first>(icolumn, vec_to);
         else if (which.isUUID()) executeBigIntType<UUID, first>(icolumn, vec_to);
-        else if (which.isIPv4()) executeIntType<IPv4, first>(icolumn, vec_to);
-        else if (which.isIPv6()) executeBigIntType<IPv6, first>(icolumn, vec_to);
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
@@ -1386,18 +1349,18 @@ public:
     {
         const auto arg_count = arguments.size();
         if (arg_count != 1 && arg_count != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
-                "passed {}, should be 1 or 2.", getName(), arg_count);
+            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " +
+                toString(arg_count) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto * first_arg = arguments.front().get();
         if (!WhichDataType(first_arg).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", first_arg->getName(), getName());
+            throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (arg_count == 2)
         {
             const auto & second_arg = arguments.back();
             if (!isInteger(second_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", second_arg->getName(), getName());
+                throw Exception{"Illegal type " + second_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt64>();
@@ -1415,7 +1378,7 @@ public:
         else if (arg_count == 2)
             return executeTwoArgs(arguments);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
+            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
     }
 
 private:
@@ -1445,15 +1408,15 @@ private:
             return col_to;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception{"Illegal column " + arguments[0].column->getName() +
+                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
         if (!isColumnConst(*level_col))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
+            throw Exception{"Second argument of function " + getName() + " must be an integral constant", ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
 
@@ -1481,8 +1444,8 @@ private:
             return col_to;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception{"Illegal column " + arguments[0].column->getName() +
+                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 };
 
@@ -1545,12 +1508,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
-using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 }
-
-#ifdef __clang__
-#    pragma clang diagnostic pop
-#endif

@@ -357,12 +357,16 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
             if (read_checksum != hash.get64())
             {
-                constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
+                const auto error_string = fmt::format(
+                    "Invalid checksum while reading state from {}. Got {}, expected {}",
+                    path.generic_string(),
+                    hash.get64(),
+                    read_checksum);
 #ifdef NDEBUG
-                LOG_ERROR(logger, error_format, path.generic_string(), hash.get64(), read_checksum);
+                LOG_ERROR(logger, fmt::runtime(error_string));
                 return nullptr;
 #else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, path.generic_string(), hash.get64(), read_checksum);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, error_string);
 #endif
             }
 

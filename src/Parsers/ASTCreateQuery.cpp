@@ -210,8 +210,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
-    if (as_table_function)
-        res->set(res->as_table_function, as_table_function->clone());
     if (comment)
         res->set(res->comment, comment->clone());
 
@@ -441,13 +439,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
         comment->formatImpl(settings, state, frame);
     }
-}
-
-bool ASTCreateQuery::isParameterizedView() const
-{
-    if (is_ordinary_view && select && select->hasQueryParameters())
-        return true;
-    return false;
 }
 
 }

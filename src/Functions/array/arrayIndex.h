@@ -583,7 +583,9 @@ private:
                 if (auto res = executeLowCardinality(arguments))
                     return res;
 
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
+                throw Exception(
+                    "Illegal internal type of first argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
             }
         }
 
@@ -592,7 +594,9 @@ private:
               || (res = executeConst(arguments, result_type))
               || (res = executeString(arguments))
               || (res = executeGeneric(arguments))))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
+            throw Exception(
+                "Illegal internal type of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
 
         return res;
     }
@@ -924,7 +928,9 @@ private:
                     null_map_data,
                     null_map_item);
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
+                throw Exception(
+                    "Logical error: ColumnConst contains not String nor FixedString column",
+                        ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(&data.right))
         {

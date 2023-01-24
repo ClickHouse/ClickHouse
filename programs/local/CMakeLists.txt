@@ -14,10 +14,8 @@ set (CLICKHOUSE_LOCAL_LINK
 
 clickhouse_program_add(local)
 
-target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
-
-if (TARGET ch_rust::skim)
-    target_link_libraries(clickhouse-local-lib PRIVATE ch_rust::skim)
+if(NOT CLICKHOUSE_ONE_SHARED)
+    target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
 endif()
 
 # Always use internal readpassphrase

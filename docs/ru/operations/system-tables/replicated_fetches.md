@@ -69,3 +69,4 @@ thread_id:                   54
 **Смотрите также**
 
 -   [Управление таблицами ReplicatedMergeTree](../../sql-reference/statements/system/#query-language-system-replicated)
+

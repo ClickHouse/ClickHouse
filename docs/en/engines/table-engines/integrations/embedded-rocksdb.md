@@ -84,3 +84,5 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
     </tables>
 </rocksdb>
 ```
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->

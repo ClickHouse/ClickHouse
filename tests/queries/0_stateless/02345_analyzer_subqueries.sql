@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET use_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
@@ -32,7 +32,7 @@ WITH 1 AS global_a SELECT b.a FROM (SELECT global_a AS a) AS b;
 SELECT * FROM (SELECT * FROM (SELECT * FROM test_table));
 SELECT * FROM (SELECT id, value FROM (SELECT * FROM test_table));
 
-WITH 1 AS a SELECT (SELECT * FROM (SELECT * FROM (SELECT a + 1)));
+WITH 1 AS a SELECT (SELECT * FROM (SELECT * FROM (SELECT a + 1))) SETTINGS use_analyzer=1;
 
 SELECT 'Subqueries CTE';
 

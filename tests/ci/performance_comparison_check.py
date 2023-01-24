@@ -112,16 +112,6 @@ if __name__ == "__main__":
     else:
         check_name_with_group = check_name
 
-    is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
-    if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
-        status = "success"
-        message = "Skipped, not labeled with 'pr-performance'"
-        report_url = GITHUB_RUN_URL
-        post_commit_status(
-            gh, pr_info.sha, check_name_with_group, message, status, report_url
-        )
-        sys.exit(0)
-
     test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
         "test_grep_exclude_filter"
     ]
@@ -176,7 +166,7 @@ if __name__ == "__main__":
     )
     logging.info("Going to run command %s", run_command)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = os.path.join(temp_path, "runlog.log")
 
     popen_env = os.environ.copy()
     popen_env.update(env_extra)
@@ -198,7 +188,7 @@ if __name__ == "__main__":
         "all-query-metrics.tsv": os.path.join(
             result_path, "report/all-query-metrics.tsv"
         ),
-        "run.log": run_log_path,
+        "runlog.log": run_log_path,
     }
 
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
@@ -236,7 +226,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message.lower():
+        if "errors" in message:
             status = "failure"
         # TODO: Remove until here
     except Exception:
@@ -253,8 +243,8 @@ if __name__ == "__main__":
 
     report_url = GITHUB_RUN_URL
 
-    if uploaded["run.log"]:
-        report_url = uploaded["run.log"]
+    if uploaded["runlog.log"]:
+        report_url = uploaded["runlog.log"]
 
     if uploaded["compare.log"]:
         report_url = uploaded["compare.log"]

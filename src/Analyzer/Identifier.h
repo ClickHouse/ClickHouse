@@ -152,11 +152,6 @@ public:
         return popFirst(1);
     }
 
-    void pop_front() /// NOLINT
-    {
-        return popFirst();
-    }
-
     void popLast(size_t parts_to_remove_size)
     {
         assert(parts_to_remove_size <= parts.size());
@@ -182,21 +177,23 @@ public:
 
     void push_back(std::string && part) /// NOLINT
     {
-        emplace_back(std::move(part));
+        parts.push_back(std::move(part));
+        full_name += '.';
+        full_name += parts.back();
     }
 
     void push_back(const std::string & part) /// NOLINT
     {
-        emplace_back(part);
+        parts.push_back(part);
+        full_name += '.';
+        full_name += parts.back();
     }
 
     template <typename ...Args>
     void emplace_back(Args&&... args) /// NOLINT
     {
         parts.emplace_back(std::forward<Args>(args)...);
-        bool was_not_empty = parts.size() != 1;
-        if (was_not_empty)
-            full_name += '.';
+        full_name += '.';
         full_name += parts.back();
     }
 private:
@@ -367,26 +364,6 @@ inline std::ostream & operator<<(std::ostream & stream, const IdentifierView & i
 }
 
 }
-
-template <>
-struct std::hash<DB::Identifier>
-{
-    size_t operator()(const DB::Identifier & identifier) const
-    {
-        std::hash<std::string> hash;
-        return hash(identifier.getFullName());
-    }
-};
-
-template <>
-struct std::hash<DB::IdentifierView>
-{
-    size_t operator()(const DB::IdentifierView & identifier) const
-    {
-        std::hash<std::string_view> hash;
-        return hash(identifier.getFullName());
-    }
-};
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
 

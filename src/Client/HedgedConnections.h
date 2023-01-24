@@ -91,12 +91,12 @@ public:
 
     void sendReadTaskResponse(const String &) override
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
+        throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }
 
     void sendMergeTreeReadTaskResponse(PartitionReadResponse) override
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
+        throw Exception("sendMergeTreeReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }
 
     Packet receivePacket() override;

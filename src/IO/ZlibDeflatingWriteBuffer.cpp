@@ -40,7 +40,7 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
 #pragma GCC diagnostic pop
 
     if (rc != Z_OK)
-        throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
+        throw Exception(std::string("deflateInit2 failed: ") + zError(rc) + "; zlib version: " + ZLIB_VERSION, ErrorCodes::ZLIB_DEFLATE_FAILED);
 }
 
 void ZlibDeflatingWriteBuffer::nextImpl()

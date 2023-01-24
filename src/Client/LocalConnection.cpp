@@ -5,7 +5,6 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Protocol.h>
 
 
@@ -201,7 +200,7 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
     else if (state->pushing_executor)
         state->pushing_executor->push(block);
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown executor");
+        throw Exception("Unknown executor", ErrorCodes::LOGICAL_ERROR);
 
     if (send_profile_events)
         sendProfileEvents();

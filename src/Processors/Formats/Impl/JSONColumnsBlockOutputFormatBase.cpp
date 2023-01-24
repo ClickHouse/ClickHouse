@@ -28,6 +28,7 @@ void JSONColumnsBlockOutputFormatBase::consume(Chunk chunk)
 
 void JSONColumnsBlockOutputFormatBase::writeSuffix()
 {
+
     writeChunk(mono_chunk);
     mono_chunk.clear();
 }

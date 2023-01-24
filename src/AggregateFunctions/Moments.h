@@ -134,7 +134,7 @@ public:
             overflow = overflow || common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4));
 
         if (overflow)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     void merge(const VarMomentsDecimal & rhs)
@@ -149,7 +149,7 @@ public:
             overflow = overflow || common::addOverflow(getM(4), rhs.getM(4), getM(4));
 
         if (overflow)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
@@ -163,7 +163,7 @@ public:
         NativeType tmp;
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / m0), scale));
     }
 
@@ -177,7 +177,7 @@ public:
         NativeType tmp;
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / (m0 - 1)), scale));
     }
 
@@ -191,7 +191,7 @@ public:
             common::subOverflow(3 * getM(2), NativeType(tmp / m0), tmp) ||
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(3), NativeType(tmp / m0), tmp))
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
     }
 
@@ -207,7 +207,7 @@ public:
             common::subOverflow(4 * getM(3), NativeType(tmp / m0), tmp) ||
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(4), NativeType(tmp / m0), tmp))
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
     }
 
@@ -482,8 +482,6 @@ struct ZTestMoments
 template <typename T>
 struct AnalysisOfVarianceMoments
 {
-    constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
-
     /// Sums of values within a group
     std::vector<T> xs1{};
     /// Sums of squared values within a group
@@ -495,10 +493,6 @@ struct AnalysisOfVarianceMoments
     {
         if (xs1.size() >= possible_size)
             return;
-
-        if (possible_size > MAX_GROUPS_NUMBER)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups for analysis of variance (should be no more than {}, got {})",
-                            MAX_GROUPS_NUMBER, possible_size);
 
         xs1.resize(possible_size, 0.0);
         xs2.resize(possible_size, 0.0);

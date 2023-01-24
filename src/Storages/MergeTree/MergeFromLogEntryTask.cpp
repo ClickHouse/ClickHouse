@@ -109,11 +109,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
-            constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            String message;
-            LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
+            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, message);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
 
             return PrepareResult{
                 .prepared_successfully = false,
@@ -161,9 +160,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
-        auto disk_name = part_ptr->getDataPartStorage().getDiskName();
-        size_t volume_index = storage.getStoragePolicy()->getVolumeIndexByDiskName(disk_name);
-        max_volume_index = std::max(max_volume_index, volume_index);
+        max_volume_index = std::max(max_volume_index, part_ptr->data_part_storage->getVolumeIndex(*storage.getStoragePolicy()));
     }
 
     /// It will live until the whole task is being destroyed
@@ -174,8 +171,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
     if (future_merged_part->name != entry.new_part_name)
     {
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
-            backQuote(future_merged_part->name), backQuote(entry.new_part_name));
+        throw Exception("Future merged part name " + backQuote(future_merged_part->name) + " differs from part name in log entry: "
+            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
@@ -297,15 +294,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     part = merge_task->getFuture().get();
+    auto builder = merge_task->getBuilder();
 
-    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
-    /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
-    /// not able to remove the part and will throw an exception (because someone holds the pointer).
-    ///
-    /// Why we cannot reset task right after obtaining part from getFuture()? Because it holds RAII wrapper for
-    /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
-    /// and it's really needed.
+    /// Task is not needed
     merge_task.reset();
+
+    storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr, builder);
 
     try
     {

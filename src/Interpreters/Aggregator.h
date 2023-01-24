@@ -863,7 +863,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             #undef M
 
             default:
-                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
     }
 };

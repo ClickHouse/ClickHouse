@@ -571,13 +571,13 @@ Similar to base58Decode, but returns an empty string in case of error.
 
 ## base64Encode(s)
 
-Encodes ‘s’ FixedString or String into base64.
+Encodes ‘s’ string into base64
 
 Alias: `TO_BASE64`.
 
 ## base64Decode(s)
 
-Decode base64-encoded FixedString or String ‘s’ into original string. In case of failure raises an exception.
+Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
 
 Alias: `FROM_BASE64`.
 
@@ -1150,49 +1150,3 @@ A text with tags .
 The content within <b>CDATA</b>
 Do Nothing for 2 Minutes 2:00 &nbsp;
 ```
-
-## ascii(s) {#ascii}
-
-Returns the ASCII code point of the first character of str.  The result type is Int32.
-
-If s is empty, the result is 0. If the first character is not an ASCII character or not part of the Latin-1 Supplement range of UTF-16, the result is undefined.
-
-
-
-## concatWithSeparator
-
-Returns the concatenation strings separated by string separator. If any of the argument values is `NULL`, the function returns `NULL`.
-
-**Syntax**
-
-``` sql
-concatWithSeparator(sep, expr1, expr2, expr3...)
-```
-
-**Arguments**
--   sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
--   exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
-
-**Returned values**
--   The concatenated String.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT concatWithSeparator('a', '1', '2', '3', '4')
-```
-
-Result:
-
-``` text
-┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
-│ 1a2a3a4                           │
-└───────────────────────────────────┘
-```
-
-## concatWithSeparatorAssumeInjective
-Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
-
-The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
