@@ -53,10 +53,8 @@ CSVRowInputFormat::CSVRowInputFormat(
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
-        throw Exception(
-            String("CSV format may not work correctly with delimiter '") + format_settings.csv.delimiter
-                + "'. Try use CustomSeparated format instead.",
-            ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CSV format may not work correctly with delimiter '{}'. "
+                        "Try use CustomSeparated format instead.", format_settings.csv.delimiter);
 }
 
 void CSVRowInputFormat::syncAfterError()
@@ -86,7 +84,7 @@ static void skipEndOfLine(ReadBuffer & in)
                 ErrorCodes::INCORRECT_DATA);
     }
     else if (!in.eof())
-        throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected end of line");
 }
 
 /// Skip `whitespace` symbols allowed in CSV.
@@ -330,7 +328,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
         {
             pos = find_first_symbols<'"'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
             else if (pos == in.buffer().end())
                 continue;
             else if (*pos == '"')
@@ -346,7 +344,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
         {
             pos = find_first_symbols<'"', '\r', '\n'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
             else if (pos == in.buffer().end())
                 continue;
 

@@ -88,9 +88,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         size_t num_columns = requested_columns.size();
 
         if (res_columns.size() != num_columns)
-            throw Exception("invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
-                            "Expected " + toString(num_columns) + ", "
-                            "got " + toString(res_columns.size()), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
+                            "Expected {}, got {}", num_columns, res_columns.size());
 
         /// Convert columns list to block.
         /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
@@ -171,14 +170,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 
         if (res_columns.size() != num_columns)
         {
-            throw Exception(
-                "Invalid number of columns passed to MergeTreeReader::performRequiredConversions. "
-                "Expected "
-                    + toString(num_columns)
-                    + ", "
-                      "got "
-                    + toString(res_columns.size()),
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Invalid number of columns passed to MergeTreeReader::performRequiredConversions. "
+                            "Expected {}, got {}", num_columns, res_columns.size());
         }
 
         Block copy_block;
@@ -262,9 +256,8 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const Na
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 {
     if (num_columns_to_read != requested_columns.size())
-        throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
-                        "Expected " + toString(requested_columns.size()) + ", "
-                        "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::readRows. "
+                        "Expected {}, got {}", requested_columns.size(), num_columns_to_read);
 }
 
 }

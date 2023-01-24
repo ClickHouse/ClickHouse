@@ -406,9 +406,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), arguments.size());
 
         if (!isDate(arguments[0]) && !isDate32(arguments[0]) && !isDateTime(arguments[0]) && !isDateTime64(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
