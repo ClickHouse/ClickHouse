@@ -3763,7 +3763,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
 void StorageReplicatedMergeTree::updateQuorum(const String & part_name, bool is_parallel)
 {
     if (is_parallel && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parallel quorum inserts are not compatible with deprecated *MergeTree-syntax");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parallel quorum inserts are not compatible with the deprecated syntax of *MergeTree engines");
 
     auto zookeeper = getZooKeeper();
 
