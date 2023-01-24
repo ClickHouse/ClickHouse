@@ -13,7 +13,7 @@ function run_with_custom_key {
                 echo "filter_type='$filter_type' max_replicas=$max_replicas prefer_localhost_replica=$prefer_localhost_replica"
                 query="$1 SETTINGS max_parallel_replicas=$max_replicas\
     , parallel_replicas_mode='custom_key'\
-    , parallel_replicas_custom_key='$2'\
+    , parallel_replicas_custom_key={'02535_custom_key': '$2'}\
     , parallel_replicas_custom_key_filter_type='$filter_type'\
     , prefer_localhost_replica=$prefer_localhost_replica"
                 $CLICKHOUSE_CLIENT --query="$query"

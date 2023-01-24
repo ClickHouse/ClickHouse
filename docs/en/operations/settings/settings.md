@@ -1291,10 +1291,14 @@ Default value: `sample_key`.
 
 ## parallel_replicas_custom_key {#settings-parallel_replicas_custom_key}
 
-Arbitrary integer expression that will be used to split work between replicas.
+Map of arbitrary integer expression that can be used to split work between replicas for a specific table.
+If it's used with `cluster` function, the key can be name of the local table defined inside the `cluster` function.
+If it's used with `Distributed` engine, the key can be name of the distributed table, alias or the local table for which the `Distributed` engine is created.
+The value can be any integer expression.
+
 Used only if `parallel_replicas_mode` is set to `custom_key`.
 
-Default value: `''`.
+Default value: `{}`.
 
 ## parallel_replicas_custom_key_filter_type {#settings-parallel_replicas_custom_key_filter_type}
 

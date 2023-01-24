@@ -116,15 +116,43 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     return makeASTFunction("and", std::move(lower_function), std::move(upper_function));
 }
 
-ASTPtr parseParallelReplicaCustomKey(std::string_view custom_key, const Context & context)
+ASTPtr parseCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context)
 {
-    if (custom_key.empty())
-        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Parallel replicas mode set to 'custom_key' but 'parallel_replicas_custom_key' has no value");
+    for (size_t i = 0; i < custom_keys.size(); ++i)
+    {
+        const auto & tuple = custom_keys[i].safeGet<const Tuple &>();
+        auto & table = tuple.at(0).safeGet<String>();
+        auto & filter = tuple.at(1).safeGet<String>();
 
-    ParserExpression parser;
-    const auto & settings = context.getSettingsRef();
-    return parseQuery(
-        parser, custom_key.data(), custom_key.data() + custom_key.size(),
-        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
+        if (table == target.alias ||
+            (table == target.table && context.getCurrentDatabase() == target.database) ||
+            (table == target.database + '.' + target.table))
+        {
+            /// Try to parse expression
+            ParserExpression parser;
+            const auto & settings = context.getSettingsRef();
+            return parseQuery(
+                parser, filter.data(), filter.data() + filter.size(),
+                "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
+        }
+    }
+
+    return nullptr;
 }
+
+bool containsCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context)
+{
+    for (size_t i = 0; i < custom_keys.size(); ++i)
+    {
+        const auto & tuple = custom_keys[i].safeGet<const Tuple &>();
+        auto & table = tuple.at(0).safeGet<String>();
+
+        if (table == target.alias ||
+            (table == target.table && context.getCurrentDatabase() == target.database) ||
+            (table == target.database + '.' + target.table))
+            return true;
+    }
+    return false;
+}
+
 }

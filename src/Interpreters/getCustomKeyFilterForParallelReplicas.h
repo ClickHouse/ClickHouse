@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 #include <Core/SettingsEnums.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
@@ -18,6 +19,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     const IStorage & storage,
     const ContextPtr & context);
 
-ASTPtr parseParallelReplicaCustomKey(std::string_view custom_key, const Context & context);
+ASTPtr parseCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context);
+
+bool containsCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context);
 
 }
