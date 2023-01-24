@@ -122,9 +122,8 @@ void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char *
 void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(
-                "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
+                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
     auto row_id = store->getNextRowIDRange(rows_read);
@@ -272,7 +271,7 @@ bool MergeTreeConditionInverted::alwaysUnknownOrTrue() const
             rpn_stack.back() = arg1 || arg2;
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     return rpn_stack[0];
@@ -283,8 +282,7 @@ bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
     std::shared_ptr<MergeTreeIndexGranuleInverted> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleInverted>(idx_granule);
     if (!granule)
-        throw Exception(
-                "GinFilter index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
@@ -361,11 +359,11 @@ bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             rpn_stack.emplace_back(true, false);
         }
         else
-            throw Exception("Unexpected function type in GinFilterCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in GinFilterCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in GinFilterCondition::mayBeTrueOnGranule", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in GinFilterCondition::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
 }
@@ -756,17 +754,19 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception("Inverted index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Inverted index can be used only with `String`, `FixedString`,"
+                            "`LowCardinality(String)`, `LowCardinality(FixedString)` "
+                            "column or Array with `String` or `FixedString` values column.");
     }
 
     if (index.arguments.size() > 2)
-        throw Exception("Inverted index must have less than two arguments.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Inverted index must have less than two arguments.");
 
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception("The first Inverted index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The first Inverted index argument must be positive integer.");
 
     if (index.arguments.size() == 2 && (index.arguments[1].getType() != Field::Types::Float64 || index.arguments[1].get<Float64>() <= 0 || index.arguments[1].get<Float64>() > 1))
-        throw Exception("The second Inverted index argument must be a float between 0 and 1.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The second Inverted index argument must be a float between 0 and 1.");
 
     /// Just validate
     size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();

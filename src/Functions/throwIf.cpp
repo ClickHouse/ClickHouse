@@ -43,7 +43,7 @@ public:
         if (number_of_arguments < 1 || number_of_arguments > (allow_custom_error_code_argument ? 3 : 2))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be {}",
-                getName(), toString(number_of_arguments), allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
+                getName(), number_of_arguments, allow_custom_error_code_argument ? "1 or 2 or 3" : "1 or 2");
 
         if (!isNativeNumber(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

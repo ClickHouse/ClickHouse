@@ -26,9 +26,9 @@ GinFilterParameters::GinFilterParameters(size_t ngrams_, Float64 density_)
     , density(density_)
 {
     if (ngrams > 8)
-        throw Exception("The size of inverted index filter cannot be greater than 8", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The size of inverted index filter cannot be greater than 8");
     if (density <= 0 || density > 1)
-        throw Exception("The density of inverted index filter must be between 0 and 1", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The density inverted index gin filter must be between 0 and 1");
 }
 
 GinFilter::GinFilter(const GinFilterParameters & params_)
