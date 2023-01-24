@@ -40,8 +40,6 @@ class Reviews:
         self.reviews = {}  # type: Dict[NamedUser, PullRequestReview]
         for r in reviews:
             user = r.user
-            if r.state not in self.STATES:
-                continue
 
             if not self.reviews.get(user):
                 self.reviews[user] = r
