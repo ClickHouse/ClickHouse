@@ -581,8 +581,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 while (need_marks > 0)
                 {
                     if (part.ranges.empty())
-                        throw Exception("Unexpected end of ranges while spreading marks among streams",
-                                        ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
 
                     MarkRange & range = part.ranges.front();
 

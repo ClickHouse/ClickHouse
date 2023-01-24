@@ -241,7 +241,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
                     break;
                 }
                 default:
-                    throw Exception("Unsupported dictionary attribute type for MongoDB dictionary source", ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary attribute type for MongoDB dictionary source");
             }
         }
     }

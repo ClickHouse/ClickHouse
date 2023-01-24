@@ -31,7 +31,7 @@ public:
     {
 #ifndef NDEBUG
         if (checkpoint)
-            throw DB::Exception("Does not support recursive checkpoints.", ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Does not support recursive checkpoints.");
 #endif
         checkpoint_in_own_memory = currentlyReadFromOwnMemory();
         if (!checkpoint_in_own_memory)

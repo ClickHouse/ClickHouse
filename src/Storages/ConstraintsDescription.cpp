@@ -57,7 +57,7 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
             case ASTConstraintDeclaration::Type::ASSUME:
                 return static_cast<UInt8>(ConstraintType::ASSUME);
         }
-        throw Exception("Unknown constraint type.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown constraint type.");
     };
 
     ASTs res;
