@@ -173,15 +173,10 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     String backup_name_for_logging = backup_info.toStringForLogging();
     try
     {
-        /// Check if there are no concurrent backups
-        if (num_active_backups && !allow_concurrent_backups)
+        if (!checkConcurrentBackups(backup_settings))
         {
-            /// If its an internal backup and we currently have 1 active backup, it could be the original query, validate using backup_uuid
-            if (!(num_active_backups == 1 && backup_settings.internal && getAllActiveBackupInfos().at(0).id == toString(*backup_settings.backup_uuid)))
-            {
-                addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::BACKUP_FAILED);
-                throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
-            }
+            addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::BACKUP_FAILED);
+            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
         }
 
         addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::CREATING_BACKUP);
@@ -410,15 +405,10 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         auto backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         String backup_name_for_logging = backup_info.toStringForLogging();
 
-        /// Check if there are no concurrent restores
-        if (num_active_restores && !allow_concurrent_restores)
+        if (!checkConcurrentRestores(restore_settings))
         {
-            /// If its an internal restore and we currently have 1 active restore, it could be the original query, validate using iz
-            if (!(num_active_restores == 1 && restore_settings.internal && getAllActiveRestoreInfos().at(0).id == toString(*restore_settings.restore_uuid)))
-            {
-                addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
-                throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
-            }
+            addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
+            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
         }
 
         addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
@@ -739,6 +729,34 @@ std::vector<BackupsWorker::Info> BackupsWorker::getAllActiveRestoreInfos() const
             res_infos.push_back(info);
     }
     return res_infos;
+}
+
+bool BackupsWorker::checkConcurrentBackups(const BackupSettings & backup_settings) const
+{
+    /// Check if there are no concurrent backups
+    if (!allow_concurrent_backups && num_active_backups)
+    {
+        /// If its an internal backup and we currently have 1 active backup, it could be the original query, validate using backup_uuid
+        if (!(num_active_backups == 1 && backup_settings.internal && getAllActiveBackupInfos().at(0).id == toString(*backup_settings.backup_uuid)))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool BackupsWorker::checkConcurrentRestores(const RestoreSettings & restore_settings) const
+{
+    /// Check if there are no concurrent restores
+    if (!allow_concurrent_restores && num_active_restores)
+    {
+        /// If its an internal restore and we currently have 1 active restore, it could be the original query, validate using iz
+        if (!(num_active_restores == 1 && restore_settings.internal && getAllActiveRestoreInfos().at(0).id == toString(*restore_settings.restore_uuid)))
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 void BackupsWorker::shutdown()
