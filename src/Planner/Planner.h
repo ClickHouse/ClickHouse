@@ -35,6 +35,12 @@ public:
         GlobalPlannerContextPtr global_planner_context_,
         PlannerConfiguration planner_configuration_ = {});
 
+    /// Initialize planner with query tree after query analysis phase and planner context
+    Planner(const QueryTreeNodePtr & query_tree_,
+        const SelectQueryOptions & select_query_options_,
+        PlannerContextPtr planner_context_,
+        PlannerConfiguration planner_configuration_ = {});
+
     const QueryPlan & getQueryPlan() const
     {
         return query_plan;
