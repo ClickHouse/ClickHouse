@@ -89,8 +89,6 @@ void MergePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
-        auto & thread_status = CurrentThread::get();
-        thread_status.finalizePerformanceCounters();
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         merge_task.reset();
         storage.writePartLog(

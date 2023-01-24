@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsScope.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 namespace ProfileEvents
@@ -267,6 +268,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
+    ProfileEventsScope profile_events_scope(&profile_counters);
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
@@ -289,18 +291,18 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
-        auto & thread_status = CurrentThread::get();
-        thread_status.finalizePerformanceCounters();
-        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters));
+            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
     }};
 }
 
 
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
+    ProfileEventsScope profile_events_scope(&profile_counters);
+
     part = merge_task->getFuture().get();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
