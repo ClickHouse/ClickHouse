@@ -112,7 +112,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compress_primary_key(settings.compress_primary_key)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
-        throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
 
     if (!data_part->getDataPartStorage().exists())
         data_part->getDataPartStorage().createDirectories();
@@ -282,7 +283,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             auto it = gin_index_stores.find(stream_name);
             if (it == gin_index_stores.cend())
             {
-                throw Exception("Index '" + stream_name + "' does not exist", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index '{}' does not exist", stream_name);
             }
             store = it->second;
         }

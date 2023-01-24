@@ -51,9 +51,8 @@ public:
         }
         if (arguments.size() > 3)
         {
-            throw Exception("Too many arguments for function " + getName() +
-                            " expected at most 3",
-                            ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Too many arguments for function {} expected at most 3",
+                            getName());
         }
 
         return std::make_shared<DataTypeString>();
@@ -93,7 +92,7 @@ public:
         out_vec.resize(pos - begin);
 
         if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
-            throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column size mismatch (internal logical error)");
 
         result = std::move(col_str);
 
@@ -125,9 +124,8 @@ public:
             arguments_description += arguments[i].column->getName();
         }
 
-        throw Exception("Unsupported argument types: " + arguments_description +
-                        + " for function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported argument types: {} for function {}",
+                        arguments_description, getName());
     }
 };
 

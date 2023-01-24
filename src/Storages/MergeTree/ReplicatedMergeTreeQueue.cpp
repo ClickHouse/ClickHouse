@@ -432,7 +432,7 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
         else if (remove_part)
             status.parts_to_do.remove(part_name);
         else
-            throw Exception("Called remove part from mutations, but nothing removed", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Called remove part from mutations, but nothing removed");
 
         if (status.parts_to_do.size() == 0)
             some_mutations_are_probably_done = true;
@@ -581,7 +581,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
     }
 
     if (pull_log_blocker.isCancelled())
-        throw Exception("Log pulling is cancelled", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
 
     String index_str = zookeeper->get(fs::path(replica_path) / "log_pointer");
     UInt64 index;
@@ -637,8 +637,8 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
             String last_entry = *last;
             if (!startsWith(last_entry, "log-"))
-                throw Exception("Error in zookeeper data: unexpected node " + last_entry + " in " + zookeeper_path + "/log",
-                    ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER);
+                throw Exception(ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER, "Error in zookeeper data: unexpected node {} in {}/log",
+                    last_entry, zookeeper_path);
 
             UInt64 last_entry_index = parse<UInt64>(last_entry.substr(strlen("log-")));
 
@@ -1576,7 +1576,7 @@ void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(
     std::vector<LogEntryPtr> & covered_entries_to_wait)
 {
     if (!entry.actual_new_part_name.empty())
-        throw Exception("Entry actual part isn't empty yet. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry actual part isn't empty yet. This is a bug.");
 
     entry.actual_new_part_name = actual_part_name;
 
