@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
 using OperationID = BackupsWorker::OperationID;
@@ -121,10 +122,12 @@ namespace
 }
 
 
-BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads)
+BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
     : backups_thread_pool(num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
     , restores_thread_pool(num_restore_threads, /* max_free_threads = */ 0, num_restore_threads)
     , log(&Poco::Logger::get("BackupsWorker"))
+    , allow_concurrent_backups(allow_concurrent_backups_)
+    , allow_concurrent_restores(allow_concurrent_restores_)
 {
     /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
 }
@@ -156,6 +159,17 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         backup_id = backup_settings.id;
     else
         backup_id = toString(*backup_settings.backup_uuid);
+
+    /// Check if there are no concurrent backups
+    if (num_active_backups && !allow_concurrent_backups)
+    {
+        /// If its an internal backup and we currently have 1 active backup, it could be the original query, validate using backup_uuid
+        if (!(num_active_backups == 1 && backup_settings.internal && getAllActiveBackupInfos().at(0).id == toString(*backup_settings.backup_uuid)))
+        {
+            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                            "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
+        }
+    }
 
     std::shared_ptr<IBackupCoordination> backup_coordination;
     if (backup_settings.internal)
@@ -370,6 +384,9 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     auto restore_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
 
+    if (!restore_settings.backup_uuid)
+        restore_settings.backup_uuid = UUIDHelpers::generateV4();
+
     /// `restore_id` will be used as a key to the `infos` map, so it should be unique.
     OperationID restore_id;
     if (restore_settings.internal)
@@ -377,7 +394,18 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     else if (!restore_settings.id.empty())
         restore_id = restore_settings.id;
     else
-        restore_id = toString(UUIDHelpers::generateV4());
+        restore_id = toString(*restore_settings.backup_uuid);
+
+    /// Check if there are no concurrent restores
+    if (num_active_restores && !allow_concurrent_restores)
+    {
+        /// If its an internal restore and we currently have 1 active restore, it could be the original query, validate using iz
+        if (!(num_active_restores == 1 && restore_settings.internal && getAllActiveRestoreInfos().at(0).id == toString(*restore_settings.backup_uuid)))
+        {
+            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                            "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
+        }
+    }
 
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     if (restore_settings.internal)
@@ -471,6 +499,7 @@ void BackupsWorker::doRestore(
         backup_open_params.context = context;
         backup_open_params.backup_info = backup_info;
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
+        backup_open_params.backup_uuid = restore_settings.backup_uuid;
         backup_open_params.password = restore_settings.password;
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
@@ -682,6 +711,30 @@ std::vector<BackupsWorker::Info> BackupsWorker::getAllInfos() const
     for (const auto & info : infos | boost::adaptors::map_values)
     {
         if (!info.internal)
+            res_infos.push_back(info);
+    }
+    return res_infos;
+}
+
+std::vector<BackupsWorker::Info> BackupsWorker::getAllActiveBackupInfos() const
+{
+    std::vector<Info> res_infos;
+    std::lock_guard lock{infos_mutex};
+    for (const auto & info : infos | boost::adaptors::map_values)
+    {
+        if (info.status==BackupStatus::CREATING_BACKUP)
+            res_infos.push_back(info);
+    }
+    return res_infos;
+}
+
+std::vector<BackupsWorker::Info> BackupsWorker::getAllActiveRestoreInfos() const
+{
+    std::vector<Info> res_infos;
+    std::lock_guard lock{infos_mutex};
+    for (const auto & info : infos | boost::adaptors::map_values)
+    {
+        if (info.status==BackupStatus::RESTORING)
             res_infos.push_back(info);
     }
     return res_infos;
