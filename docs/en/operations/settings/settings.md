@@ -2950,7 +2950,27 @@ Enables or disables truncate before insert in [File](../../engines/table-engines
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` replaces existing content of the file with the new data.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## s3_truncate_on_insert 
+
+Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists. 
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## hdfs_truncate_on_insert 
+
+Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists. 
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
 
 Default value: `0`.
 
@@ -2960,7 +2980,35 @@ Enables or disables creating a new file on each insert in file engine tables if 
 
 `data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc. 
 
-Disabled by default.
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## s3_create_new_file_on_insert 
+
+Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
+
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## hdfs_create_new_file_on_insert
+
+Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
+
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
 
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
