@@ -923,15 +923,16 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         /*
         if (create.storage && !create.storage->engine)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table: must be either ENGINE = Memory or empty");
-
-        auto engine_ast = std::make_shared<ASTFunction>();
-        // engine_ast->name = "Memory";
-        engine_ast->name = create.storage->engine->name;
-        engine_ast->no_empty_args = true;
-        auto storage_ast = std::make_shared<ASTStorage>();
-        storage_ast->set(storage_ast->engine, engine_ast);
-        create.set(create.storage, storage_ast);
         */
+        if (!create.storage)
+        {
+            auto engine_ast = std::make_shared<ASTFunction>();
+            engine_ast->name = "Memory";
+            engine_ast->no_empty_args = true;
+            auto storage_ast = std::make_shared<ASTStorage>();
+            storage_ast->set(storage_ast->engine, engine_ast);
+            create.set(create.storage, storage_ast);
+        }
         return;
     }
 
