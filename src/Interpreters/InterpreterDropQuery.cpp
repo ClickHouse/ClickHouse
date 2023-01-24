@@ -287,10 +287,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 table->drop();
                 table->is_dropped = true;
             }
-            else if (kind == ASTDropQuery::Kind::Detach)
-            {
-                table->is_detached = true;
-            }
         }
     }
 
