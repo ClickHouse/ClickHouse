@@ -827,6 +827,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     size_t files;
     readBinary(files, in);
 
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
+
     for (size_t i = 0; i < files; ++i)
     {
         String file_name;
@@ -844,8 +846,8 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
                 "This may happen if we are trying to download part from malicious replica or logical error.",
                 absolute_file_path, data_part_storage->getRelativePath());
 
-        auto file_out = data_part_storage->writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
-        HashingWriteBuffer hashing_out(*file_out);
+        written_files.emplace_back(data_part_storage->writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {}));
+        HashingWriteBuffer hashing_out(*written_files.back());
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
 
         if (blocker.isCancelled())
@@ -869,9 +871,14 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             file_name != "columns.txt" &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
+    }
 
+    /// Call fsync for all files at once in attempt to decrease the latency
+    for (auto & file : written_files)
+    {
+        file->finalize();
         if (sync)
-            hashing_out.sync();
+            file->sync();
     }
 }
 
