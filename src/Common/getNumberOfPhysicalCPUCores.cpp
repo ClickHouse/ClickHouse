@@ -11,7 +11,8 @@
 #include <thread>
 #include <set>
 
-namespace {
+namespace
+{
 
 #if defined(OS_LINUX)
 int32_t readFrom(const char * filename, int default_value)
