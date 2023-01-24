@@ -78,7 +78,7 @@ void MergeTreeSink::consume(Chunk chunk)
         MergeTreeDataWriter::TemporaryPart temp_part;
 
         {
-            ScopedProfileEvents scoped_attach(&part_counters);
+            ProfileEventsScope scoped_attach(&part_counters);
 
             Stopwatch watch;
             temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
@@ -145,7 +145,7 @@ void MergeTreeSink::finishDelayedChunk()
 
     for (auto & partition : delayed_chunk->partitions)
     {
-        ScopedProfileEvents scoped_attach(&partition.part_counters);
+        ProfileEventsScope scoped_attach(&partition.part_counters);
 
         partition.temp_part.finalize();
 

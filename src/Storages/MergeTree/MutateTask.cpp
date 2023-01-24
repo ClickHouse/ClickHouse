@@ -816,7 +816,7 @@ public:
     bool executeStep() override
     {
         /// Metrics will be saved in the local profile_counters.
-        ScopedProfileEvents profile_events_scope(&profile_counters);
+        ProfileEventsScope profile_events_scope(&profile_counters);
 
         auto & current_level_parts = level_parts[current_level];
         auto & next_level_parts = level_parts[next_level];
@@ -1144,7 +1144,7 @@ public:
     bool executeStep() override
     {
         /// Metrics will be saved in the local profile_counters.
-        ScopedProfileEvents profile_events_scope(&profile_counters);
+        ProfileEventsScope profile_events_scope(&profile_counters);
 
         switch (state)
         {
@@ -1278,7 +1278,7 @@ public:
     bool executeStep() override
     {
         /// Metrics will be saved in the local profile_counters.
-        ScopedProfileEvents profile_events_scope(&profile_counters);
+        ProfileEventsScope profile_events_scope(&profile_counters);
 
         switch (state)
         {
