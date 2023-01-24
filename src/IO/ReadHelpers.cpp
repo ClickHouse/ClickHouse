@@ -39,8 +39,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-template <typename IteratorSrc, typename IteratorDst>
-void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
+template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
+inline void parseHex(IteratorSrc src, IteratorDst dst)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
@@ -52,18 +52,18 @@ void parseUUID(const UInt8 * src36, UInt8 * dst16)
 {
     /// If string is not like UUID - implementation specific behaviour.
 
-    parseHex(&src36[0], &dst16[0], 4);
-    parseHex(&src36[9], &dst16[4], 2);
-    parseHex(&src36[14], &dst16[6], 2);
-    parseHex(&src36[19], &dst16[8], 2);
-    parseHex(&src36[24], &dst16[10], 6);
+    parseHex<4>(&src36[0], &dst16[0]);
+    parseHex<2>(&src36[9], &dst16[4]);
+    parseHex<2>(&src36[14], &dst16[6]);
+    parseHex<2>(&src36[19], &dst16[8]);
+    parseHex<6>(&src36[24], &dst16[10]);
 }
 
 void parseUUIDWithoutSeparator(const UInt8 * src36, UInt8 * dst16)
 {
     /// If string is not like UUID - implementation specific behaviour.
 
-    parseHex(&src36[0], &dst16[0], 16);
+    parseHex<16>(&src36[0], &dst16[0]);
 }
 
 /** Function used when byte ordering is important when parsing uuid
@@ -74,11 +74,11 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
     /// If string is not like UUID - implementation specific behaviour.
 
     /// FIXME This code looks like trash.
-    parseHex(&src36[0], dst16 + 8, 4);
-    parseHex(&src36[9], dst16 + 12, 2);
-    parseHex(&src36[14], dst16 + 14, 2);
-    parseHex(&src36[19], dst16, 2);
-    parseHex(&src36[24], dst16 + 2, 6);
+    parseHex<4>(&src36[0], dst16 + 8);
+    parseHex<2>(&src36[9], dst16 + 12);
+    parseHex<2>(&src36[14], dst16 + 14);
+    parseHex<2>(&src36[19], dst16);
+    parseHex<6>(&src36[24], dst16 + 2);
 }
 
 /** Function used when byte ordering is important when parsing uuid
@@ -88,8 +88,8 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
 {
     /// If string is not like UUID - implementation specific behaviour.
 
-    parseHex(&src36[0], dst16 + 8, 8);
-    parseHex(&src36[16], dst16, 8);
+    parseHex<8>(&src36[0], dst16 + 8);
+    parseHex<8>(&src36[16], dst16);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -151,7 +151,7 @@ void assertEOF(ReadBuffer & buf)
 void assertNotEOF(ReadBuffer & buf)
 {
     if (buf.eof())
-        throw Exception("Attempt to read after EOF", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF");
 }
 
 
@@ -326,7 +326,7 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     if (buf.eof())
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+            throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Cannot parse escape sequence");
         else
             return ReturnType(false);
     }
@@ -491,8 +491,8 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-template <typename Vector>
-void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+template <typename Vector, bool parse_complex_escape_sequence>
+void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -508,9 +508,31 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
             return;
 
         if (*buf.position() == '\\')
-            parseComplexEscapeSequence(s, buf);
+        {
+            if constexpr (parse_complex_escape_sequence)
+            {
+                parseComplexEscapeSequence(s, buf);
+            }
+            else
+            {
+                s.push_back(*buf.position());
+                ++buf.position();
+                if (!buf.eof())
+                {
+                    s.push_back(*buf.position());
+                    ++buf.position();
+                }
+            }
+        }
     }
 }
+
+template <typename Vector>
+void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+{
+    readEscapedStringIntoImpl<Vector, true>(s, buf);
+}
+
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
@@ -665,7 +687,7 @@ concept WithResize = requires (T value)
     { value.size() } -> std::integral<>;
 };
 
-template <typename Vector>
+template <typename Vector, bool include_quotes>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     /// Empty string
@@ -682,6 +704,9 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
     if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
     {
+        if constexpr (include_quotes)
+            s.push_back(maybe_quote);
+
         ++buf.position();
 
         /// The quoted case. We are looking for the next quotation mark.
@@ -698,8 +723,12 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (!buf.hasPendingData())
                 continue;
 
+            if constexpr (include_quotes)
+                s.push_back(maybe_quote);
+
             /// Now there is a quotation mark under the cursor. Is there any following?
             ++buf.position();
+
             if (buf.eof())
                 return;
 
@@ -829,33 +858,23 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     s.clear();
-    bool add_quote = false;
-    char quote = '\'';
-
-    if (!buf.eof() && (*buf.position() == '\'' || *buf.position() == '"'))
-    {
-        quote = *buf.position();
-        s.push_back(quote);
-        add_quote = true;
-    }
-
-    readCSVStringInto(s, buf, settings);
-
-    if (add_quote)
-        s.push_back(quote);
+    readCSVStringInto<String, true>(s, buf, settings);
 }
 
 void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read CSV field with two possible delimiters, one of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot read CSV field with two possible delimiters, one "
+                        "of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
 
     /// Read all data until first_delimiter or second_delimiter
     while (true)
     {
         if (buf.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
+            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on "
+                            "of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
 
         char * next_pos = buf.position();
         while (next_pos != buf.buffer().end() && *next_pos != first_delimiter[0] && *next_pos != second_delimiter[0])
@@ -1037,7 +1056,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     auto error = []
     {
         if constexpr (throw_exception)
-            throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date: value is too short");
         return ReturnType(false);
     };
 
@@ -1208,7 +1227,7 @@ template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateL
 void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 {
     if (buf.eof())
-        throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
     else if (*buf.position() == '"') /// skip double-quoted string
     {
         NullOutput sink;
@@ -1221,7 +1240,7 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 
         double v;
         if (!tryReadFloatText(v, buf))
-            throw Exception("Expected a number field for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field.toString());
     }
     else if (*buf.position() == 'n') /// skip null
     {
@@ -1262,7 +1281,7 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
                 break;
             }
             else
-                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
         }
     }
     else if (*buf.position() == '{') /// skip whole object
@@ -1279,12 +1298,12 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
                 readJSONStringInto(sink, buf);
             }
             else
-                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
 
             // ':'
             skipWhitespaceIfAny(buf);
             if (buf.eof() || !(*buf.position() == ':'))
-                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
             ++buf.position();
             skipWhitespaceIfAny(buf);
 
@@ -1300,12 +1319,13 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
         }
 
         if (buf.eof())
-            throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
         ++buf.position();
     }
     else
     {
-        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol '{}' for key '{}'",
+                        std::string(*buf.position(), 1), name_of_field.toString());
     }
 }
 
@@ -1677,6 +1697,12 @@ void readJSONField(String & s, ReadBuffer & buf)
     s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueInto(s, buf, parse_func);
+}
+
+void readTSVField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringIntoImpl<String, false>(s, buf);
 }
 
 }

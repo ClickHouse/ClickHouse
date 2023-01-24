@@ -39,7 +39,7 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Disk name can contain only alphanumeric and '_' ({})", disk_name);
 
         if (disk_name == default_disk_name)
             has_default_disk = true;
@@ -78,7 +78,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Disk name can contain only alphanumeric and '_' ({})", disk_name);
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
         if (!result->getDisksMap().contains(disk_name))
@@ -113,8 +113,8 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeBackQuotedString(name, warning);
         }
 
-        writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
-        LOG_WARNING(&Poco::Logger::get("DiskSelector"), fmt::runtime(warning.str()));
+        LOG_WARNING(&Poco::Logger::get("DiskSelector"), "{} disappeared from configuration, "
+                                                        "this change will be applied after restart of ClickHouse", warning.str());
     }
 
     return result;
@@ -126,7 +126,7 @@ DiskPtr DiskSelector::get(const String & name) const
     assertInitialized();
     auto it = disks.find(name);
     if (it == disks.end())
-        throw Exception("Unknown disk " + name, ErrorCodes::UNKNOWN_DISK);
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "Unknown disk {}", name);
     return it->second;
 }
 
