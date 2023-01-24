@@ -106,14 +106,15 @@ public:
     /// If it is a post-processing codec such as encryption. Usually it does not make sense to apply non-post-processing codecs after this.
     virtual bool isEncryption() const { return false; }
 
+    /// If it is a specialized codec for floating-point time series. Applying it to non-floating point data is suspicious.
+    virtual bool isFloatingPointTimeSeries() const { return false; }
+
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
-
-    virtual bool isFloatingPointTimeSeries() const { return false; }
 
 protected:
     /// This is used for fuzz testing

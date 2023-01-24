@@ -40,12 +40,10 @@ public:
     CompressionCodecPtr getDefaultCodec() const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    ///
-    /// Note: enable_gorilla_codec_for_non_float_data is a transitory parameter and can be removed after v23.6 (being implicitly false then), see comments in Core/Settings.h.
-    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_gorilla_codec_for_non_float_data) const;
+    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Validate codecs AST specified by user
-    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_gorilla_codec_for_non_float_data) const;
+    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
