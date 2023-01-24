@@ -1714,7 +1714,7 @@ something_weird{problem="division by zero"} +Inf -3982045
 
 ## Protobuf {#protobuf}
 
-Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
+Protobuf - is a [Protocol Buffers](https://protobuf.dev/) format.
 
 This format requires an external format schema. The schema is cached between queries.
 ClickHouse supports both `proto2` and `proto3` syntaxes. Repeated/optional/required fields are supported.
