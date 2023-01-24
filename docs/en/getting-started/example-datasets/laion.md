@@ -36,8 +36,7 @@ text_emb = np.load(text_npy)
 data = pd.read_parquet(metadata_file)
 
 # combine them
-data = pd.concat([data, pd.DataFrame({"image_embedding" : [*im_emb]})], axis=1, copy=False)
-data = pd.concat([data, pd.DataFrame({"text_embedding" : [*text_emb]})], axis=1, copy=False)
+data = pd.concat([data, pd.DataFrame({"image_embedding" : [*im_emb]}), pd.DataFrame({"text_embedding" : [*text_emb]})], axis=1, copy=False)
 
 # you can save more columns
 data = data[['url', 'caption', 'similarity', "image_embedding", "text_embedding"]]
