@@ -23,12 +23,14 @@ namespace ProfileEvents
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
     extern const Event S3PutObject;
+    extern const Event S3CopyObject;
     extern const Event S3UploadPart;
     extern const Event S3UploadPartCopy;
 
     extern const Event DiskS3CreateMultipartUpload;
     extern const Event DiskS3CompleteMultipartUpload;
     extern const Event DiskS3PutObject;
+    extern const Event DiskS3CopyObject;
     extern const Event DiskS3UploadPart;
     extern const Event DiskS3UploadPartCopy;
 }
@@ -627,6 +629,10 @@ namespace
             size_t max_retry = std::max(max_unexpected_write_error_retries, 1UL);
             for (size_t i = 0; i < max_retry; ++i)
             {
+                ProfileEvents::increment(ProfileEvents::S3CopyObject);
+                if (for_disk_s3)
+                    ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
+
                 auto outcome = client_ptr->CopyObject(request);
                 if (outcome.IsSuccess())
                 {
