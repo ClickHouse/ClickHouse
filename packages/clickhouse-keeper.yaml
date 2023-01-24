@@ -30,6 +30,8 @@ contents:
   type: config|noreplace
 - src: root/usr/bin/clickhouse-keeper
   dst: /usr/bin/clickhouse-keeper
+- src: clickhouse-keeper.service
+  dst: /lib/systemd/system/clickhouse-keeper.service
 # docs
 - src: ../AUTHORS
   dst: /usr/share/doc/clickhouse-keeper/AUTHORS
