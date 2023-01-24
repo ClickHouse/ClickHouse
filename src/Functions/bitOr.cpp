@@ -30,7 +30,7 @@ struct BitOrImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception("BitOrImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitOrImpl expected an integral type");
         return b.CreateOr(left, right);
     }
 #endif

@@ -26,7 +26,9 @@ ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder init failed: zstd version: {}", ZSTD_VERSION_STRING);
     size_t ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
     if (ZSTD_isError(ret))
-        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder option setting failed: error code: {}; zstd version: {}", ret, ZSTD_VERSION_STRING);
+        throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
+                        "zstd stream encoder option setting failed: error code: {}; zstd version: {}",
+                        ret, ZSTD_VERSION_STRING);
 
     input = {nullptr, 0, 0};
     output = {nullptr, 0, 0};
@@ -61,7 +63,9 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
             size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_flush);
             if (ZSTD_isError(compression_result))
                 throw Exception(
-                    ErrorCodes::ZSTD_ENCODER_FAILED, "Zstd stream encoding failed: error code: {}; zstd version: {}", ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
+                                ErrorCodes::ZSTD_ENCODER_FAILED,
+                                "Zstd stream encoding failed: error code: {}; zstd version: {}",
+                                ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
 
             first_write = false;
             out->position() = out->buffer().begin() + output.pos;
@@ -133,7 +137,9 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
     while (remaining != 0)
     {
         if (ZSTD_isError(remaining))
-            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "Zstd stream encoder end failed: error: '{}' zstd version: {}", ZSTD_getErrorName(remaining), ZSTD_VERSION_STRING);
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
+                            "Zstd stream encoder end failed: error: '{}' zstd version: {}",
+                            ZSTD_getErrorName(remaining), ZSTD_VERSION_STRING);
 
         remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
     }
@@ -152,7 +158,8 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
         size_t err = ZSTD_freeCCtx(cctx);
         /// This is just in case, since it is impossible to get an error by using this wrapper.
         if (unlikely(err))
-            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}", ZSTD_getErrorName(err), ZSTD_VERSION_STRING);
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}",
+                            ZSTD_getErrorName(err), ZSTD_VERSION_STRING);
     }
     catch (...)
     {

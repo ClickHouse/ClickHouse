@@ -131,15 +131,15 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!data_type_p.parse(pos, type, expected))
         return false;
 
-    if (!s_granularity.ignore(pos, expected))
-        return false;
-
-    if (!granularity_p.parse(pos, granularity, expected))
-        return false;
+    if (s_granularity.ignore(pos, expected))
+    {
+        if (!granularity_p.parse(pos, granularity, expected))
+            return false;
+    }
 
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->name = name->as<ASTIdentifier &>().name();
-    index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+    index->granularity = granularity ? granularity->as<ASTLiteral &>().value.safeGet<UInt64>() : 1;
     index->set(index->expr, expr);
     index->set(index->type, type);
     node = index;
@@ -684,7 +684,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!query->storage)
             query->set(query->storage, std::make_shared<ASTStorage>());
         else if (query->storage->primary_key)
-            throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->primary_key = query->columns_list->primary_key;
     }

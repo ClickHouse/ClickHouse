@@ -70,7 +70,7 @@ BlockIO InterpreterDropQuery::execute()
     else if (drop.database)
         return executeToDatabase(drop);
     else
-        throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
 }
 
 
@@ -111,8 +111,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     {
         if (query.if_exists)
             return {};
-        throw Exception("Temporary table " + backQuoteIfNeed(table_id.table_name) + " doesn't exist",
-                        ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
     }
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
@@ -202,7 +201,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
             if (table->isDictionary())
-                throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot TRUNCATE dictionary");
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
             if (table->isStaticStorage())
@@ -263,7 +262,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
     if (kind == ASTDropQuery::Kind::Detach)
-        throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
     else
     {
         auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
@@ -287,6 +286,10 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 /// Delete table data
                 table->drop();
                 table->is_dropped = true;
+            }
+            else if (kind == ASTDropQuery::Kind::Detach)
+            {
+                table->is_detached = true;
             }
         }
     }
@@ -332,7 +335,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     {
         if (query.kind == ASTDropQuery::Kind::Truncate)
         {
-            throw Exception("Unable to truncate database", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to truncate database");
         }
         else if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -340,7 +343,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
-                throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
 
             if (database->hasReplicationThread())
                 database->stopReplication();
