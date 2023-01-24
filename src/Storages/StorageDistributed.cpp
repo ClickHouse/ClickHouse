@@ -663,8 +663,12 @@ void StorageDistributed::read(
         StorageID remote_storage_id{remote_database, remote_table};
         auto query_tree_with_replaced_distributed_table = buildQueryTreeDistributedTableReplacedWithLocalTable(query_info, remote_storage_id);
         query_ast = queryNodeToSelectQuery(query_tree_with_replaced_distributed_table);
-        Planner planner(query_tree_with_replaced_distributed_table, SelectQueryOptions(processed_stage), PlannerConfiguration{.only_analyze = true});
+
+        Planner planner(query_tree_with_replaced_distributed_table,
+            SelectQueryOptions(processed_stage),
+            PlannerConfiguration{.only_analyze = true});
         planner.buildQueryPlanIfNeeded();
+
         header = planner.getQueryPlan().getCurrentDataStream().header;
     }
     else
@@ -716,8 +720,12 @@ void StorageDistributed::read(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        Planner planner(query_info.query_tree, SelectQueryOptions(processed_stage), PlannerConfiguration{.only_analyze = true});
+        Planner planner(query_info.query_tree,
+            SelectQueryOptions(processed_stage),
+            query_info.planner_context,
+            PlannerConfiguration{.only_analyze = true});
         planner.buildQueryPlanIfNeeded();
+
         auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
 
         auto rename_actions_dag = ActionsDAG::makeConvertingActions(
