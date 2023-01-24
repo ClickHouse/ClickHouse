@@ -34,7 +34,7 @@ struct QuantileReservoirSampler
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
-        throw Exception("Method add with weight is not implemented for ReservoirSampler", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for ReservoirSampler");
     }
 
     void merge(const QuantileReservoirSampler & rhs)
