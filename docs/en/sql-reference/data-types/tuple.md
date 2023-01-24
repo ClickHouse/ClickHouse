@@ -183,5 +183,3 @@ ORDER BY key ASC;
 │   2 │             2 │                                     0 │
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/data_types/tuple/) <!--hide-->

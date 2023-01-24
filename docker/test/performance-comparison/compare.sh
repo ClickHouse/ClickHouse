@@ -193,7 +193,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=($(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
+        test_files=($(ls "$test_prefix" | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
@@ -210,7 +210,7 @@ function run_tests
     # We can filter out certain tests
     if [ -v CHPC_TEST_GREP_EXCLUDE ]; then
         # filter tests array in bash https://stackoverflow.com/a/40375567
-        filtered_test_files=( $( for i in ${test_files[@]} ; do echo $i ; done | grep -v ${CHPC_TEST_GREP_EXCLUDE} ) )
+        filtered_test_files=( $( for i in ${test_files[@]} ; do echo $i ; done | rg -v ${CHPC_TEST_GREP_EXCLUDE} ) )
         test_files=("${filtered_test_files[@]}")
     fi
 
@@ -284,7 +284,7 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        if [ "$(grep -c $(basename $test) changed-test-definitions.txt)" -gt 0 ]
+        if [ "$(rg -c $(basename $test) changed-test-definitions.txt)" -gt 0 ]
         then
           # Run all queries from changed test files to ensure that all new queries will be tested.
           max_queries=0
@@ -399,7 +399,7 @@ clickhouse-local --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
--- Separately process 'partial' queries which we could only run on the new server
+-- Separately process backward-incompatible ('partial') queries which we could only run on the new server
 -- because they use new functions. We can't make normal stats for them, but still
 -- have to show some stats so that the PR author can tweak them.
 create view partial_queries as select test, query_index
@@ -518,7 +518,7 @@ IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics-for-stats.tsv" | sort | uniq)
 do
     file="analyze/tmp/${prefix//	/_}.tsv"
-    grep "^$prefix	" "analyze/query-run-metrics-for-stats.tsv" > "$file" &
+    rg "^$prefix	" "analyze/query-run-metrics-for-stats.tsv" > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
             --file \"$file\" \
@@ -650,7 +650,7 @@ create view partial_query_times as select * from
         'test text, query_index int, time_stddev float, time_median double')
     ;
 
--- Report for partial queries that we could only run on the new server (e.g.
+-- Report for backward-incompatible ('partial') queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
     settings output_format_decimal_trailing_zeros = 1
@@ -829,7 +829,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 -- Guess the number of query runs used for this test. The number is required to
 -- calculate and check the average query run time in the report.
 -- We have to be careful, because we will encounter:
---  1) partial queries which run only on one server
+--  1) backward-incompatible ('partial') queries which run only on one server
 --  3) some errors that make query run for a different number of times on a
 --     particular server.
 --
@@ -1088,7 +1088,7 @@ do
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
         # string, but this is unlikely and escaping the query for grep is a pain.
-        grep -F "$query	" "report/stacks.$version.tsv" \
+        rg -F "$query	" "report/stacks.$version.tsv" \
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
@@ -1117,7 +1117,7 @@ do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
 
         # Ditto the above comment about -F.
-        grep -F "$query	" "report/metric-deviation.$version.tsv" \
+        rg -F "$query	" "report/metric-deviation.$version.tsv" \
             | cut -f4- > "$query_file.$version.metrics.rep" &
     done
 done
@@ -1132,8 +1132,8 @@ do
     {
         # The second grep is a heuristic for error messages like
         # "socket.timeout: timed out".
-        grep -h -m2 -i '\(Exception\|Error\):[^:]' "$log" \
-            || grep -h -m2 -i '^[^ ]\+: ' "$log" \
+        rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
+            || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
             || head -2 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
@@ -1180,7 +1180,7 @@ IFS=$'\n'
 for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
 do
     file="metrics/$prefix.tsv"
-    grep "^$prefix	" "metrics/metrics.tsv" | cut -f2- > "$file"
+    rg "^$prefix	" "metrics/metrics.tsv" | cut -f2- > "$file"
 
     gnuplot -e "
         set datafile separator '\t';

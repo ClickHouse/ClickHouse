@@ -65,9 +65,9 @@ class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunctio
 {
 public:
     IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
-        : result_type(result_type_)
-        , argument_types(argument_types_)
+        : argument_types(argument_types_)
         , parameters(parameters_)
+        , result_type(result_type_)
     {}
 
     /// Get main function name.
@@ -95,7 +95,7 @@ public:
     /// Get type which will be used for prediction result in case if function is an ML method.
     virtual DataTypePtr getReturnTypeToPredict() const
     {
-        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Prediction is not supported for {}", getName());
     }
 
     virtual bool isVersioned() const { return false; }
@@ -199,7 +199,7 @@ public:
         size_t /*limit*/,
         ContextPtr /*context*/) const
     {
-        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method predictValues is not supported for {}", getName());
     }
 
     /** Returns true for aggregate functions of type -State
@@ -409,9 +409,9 @@ public:
 #endif
 
 protected:
-    DataTypePtr result_type;
     DataTypes argument_types;
     Array parameters;
+    DataTypePtr result_type;
 };
 
 

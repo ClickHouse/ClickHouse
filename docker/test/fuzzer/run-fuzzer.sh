@@ -5,6 +5,7 @@ set -x
 
 # core.COMM.PID-TID
 sysctl kernel.core_pattern='core.%e.%p-%P'
+dmesg --clear ||:
 
 set -e
 set -u
@@ -17,13 +18,25 @@ repo_dir=ch
 BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-15_debug_none_unsplitted_disable_False_binary"}
 BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
+function git_clone_with_retry
+{
+    for _ in 1 2 3 4; do
+        if git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$1" 2>&1 | ts '%Y-%m-%d %H:%M:%S';then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
+}
+
 function clone
 {
     # For local runs, start directly from the "fuzz" stage.
     rm -rf "$repo_dir" ||:
     mkdir "$repo_dir" ||:
 
-    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$repo_dir" 2>&1 | ts '%Y-%m-%d %H:%M:%S'
+    git_clone_with_retry "$repo_dir"
     (
         cd "$repo_dir"
         if [ "$PR_TO_TEST" != "0" ]; then
@@ -241,13 +254,29 @@ quit
     # clickhouse-client. We don't check for existence of server process, because
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
-    if clickhouse-client --query "select 1 format Null"
-    then
-        server_died=0
-    else
-        echo "Server live check returns $?"
-        server_died=1
-    fi
+
+    for _ in {1..100}
+    do
+        if clickhouse-client --query "SELECT 1" 2> err
+        then
+            server_died=0
+            break
+        else
+            # There are legitimate queries leading to this error, example:
+            # SELECT * FROM remote('127.0.0.{1..255}', system, one)
+            if grep -F 'TOO_MANY_SIMULTANEOUS_QUERIES' err
+            then
+                # Give it some time to cool down
+                clickhouse-client --query "SHOW PROCESSLIST"
+                sleep 1
+            else
+                echo "Server live check returns $?"
+                cat err
+                server_died=1
+                break
+            fi
+        fi
+    done
 
     # wait in background to call wait in foreground and ensure that the
     # process is alive, since w/o job control this is the only way to obtain
@@ -262,14 +291,17 @@ quit
     if [ "$server_died" == 1 ]
     then
         # The server has died.
-        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
 
-        if grep -E --text 'Sanitizer: (out-of-memory|failed to allocate)' description.txt
+        IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+
+        if [ "${IS_SANITIZED}" -eq "1" ] && rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' description.txt
         then
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
+            # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
             task_exit_code=0
             echo "success" > status.txt
         else
@@ -299,18 +331,18 @@ quit
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { grep --text -o "Found error:.*" fuzzer.log \
-            || grep --text -ao "Exception:.*" fuzzer.log \
+        { rg --text -o "Found error:.*" fuzzer.log \
+            || rg --text -ao "Exception:.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi
 
     if test -f core.*; then
-        pigz core.*
-        mv core.*.gz core.gz
+        zstd --threads=0 core.*
+        mv core.*.zst core.zst
     fi
 
-    dmesg -T | grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
+    dmesg -T | rg -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
 }
 
 case "$stage" in
@@ -344,13 +376,14 @@ case "$stage" in
 "report")
 
 CORE_LINK=''
-if [ -f core.gz ]; then
-    CORE_LINK='<a href="core.gz">core.gz</a>'
+if [ -f core.zst ]; then
+    CORE_LINK='<a href="core.zst">core.zst</a>'
 fi
 
-grep --text -F '<Fatal>' server.log > fatal.log ||:
+rg --text -F '<Fatal>' server.log > fatal.log ||:
+dmesg -T > dmesg.log ||:
 
-pigz server.log
+zstd --threads=0 server.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
@@ -375,8 +408,9 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
 <p class="links">
   <a href="run.log">run.log</a>
   <a href="fuzzer.log">fuzzer.log</a>
-  <a href="server.log.gz">server.log.gz</a>
+  <a href="server.log.zst">server.log.zst</a>
   <a href="main.log">main.log</a>
+  <a href="dmesg.log">dmesg.log</a>
   ${CORE_LINK}
 </p>
 <table>

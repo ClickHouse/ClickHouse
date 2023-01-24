@@ -70,17 +70,17 @@ StorageMaterializedView::StorageMaterializedView(
     storage_metadata.setColumns(columns_);
 
     if (!query.select)
-        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// If the destination table is not set, use inner table
     has_inner_table = query.to_table_id.empty();
     if (has_inner_table && !query.storage)
-        throw Exception(
-            "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
-            ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "You must specify where to save results of a MaterializedView query: "
+                        "either ENGINE or an existing table in a TO clause");
 
     if (query.select->list_of_selects->children.size() != 1)
-        throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "UNION is not supported for MATERIALIZED VIEW");
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
     storage_metadata.setSelectQuery(select);
@@ -230,9 +230,8 @@ void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
 {
     if (!has_inner_table)
-        throw Exception(
-            "MATERIALIZED VIEW targets existing table " + target_table_id.getNameForLogs() + ". "
-            + "Execute the statement directly on it.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "MATERIALIZED VIEW targets existing table {}. "
+            "Execute the statement directly on it.", target_table_id.getNameForLogs());
 }
 
 bool StorageMaterializedView::optimize(
@@ -320,10 +319,10 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
     getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
-void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
+void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context, bool force_wait)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->mutate(commands, local_context);
+    getTargetTable()->mutate(commands, local_context, force_wait);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)

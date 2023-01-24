@@ -114,7 +114,7 @@ Cluster::Address::Address(
 
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
     if (!port)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}", config_prefix + ".port");
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
     is_local = isLocal(config.getInt(port_type, 0));
 
@@ -201,7 +201,7 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 {
     auto pos = host_port_string.find_last_of(':');
     if (pos == std::string::npos)
-        throw Exception("Incorrect <host>:<port> format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect <host>:<port> format {}", host_port_string);
 
     return {unescapeForFileName(host_port_string.substr(0, pos)), parse<UInt16>(host_port_string.substr(pos + 1))};
 }
@@ -213,7 +213,7 @@ String Cluster::Address::toFullString(bool use_compact_format) const
     {
         if (shard_index == 0 || replica_index == 0)
             // shard_num/replica_num like in system.clusters table
-            throw Exception("shard_num/replica_num cannot be zero", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_num/replica_num cannot be zero");
 
         return fmt::format("shard{}_replica{}", shard_index, replica_index);
     }
@@ -263,12 +263,12 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
         const char * colon = strchr(full_string.data(), ':');
         if (!user_pw_end || !colon)
-            throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
 
         const bool has_pw = colon < user_pw_end;
         const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
         if (!host_end)
-            throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
 
         const char * has_db = strchr(full_string.data(), '#');
         const char * port_end = has_db ? has_db : address_end;
@@ -362,7 +362,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         }
 
         if (key.find('.') != String::npos)
-            throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cluster names with dots are not supported: '{}'", key);
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
@@ -396,7 +396,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     boost::range::remove_erase(config_keys, "secret");
 
     if (config_keys.empty())
-        throw Exception("No cluster elements (shard, node) specified in config at path " + config_prefix, ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
+        throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
 
     UInt32 current_shard_num = 1;
     for (const auto & key : config_keys)
@@ -485,7 +485,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     }
                 }
                 else
-                    throw Exception("Unknown element in config: " + replica_key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
             }
 
             Addresses shard_local_addresses;
@@ -529,13 +529,13 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             });
         }
         else
-            throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
 
         ++current_shard_num;
     }
 
     if (addresses_with_failover.empty())
-        throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "There must be either 'node' or 'shard' elements in config");
 
     initMisc();
 }
@@ -632,8 +632,7 @@ void Cluster::initMisc()
     for (const auto & shard_info : shards_info)
     {
         if (!shard_info.isLocal() && !shard_info.hasRemoteConnections())
-            throw Exception("Found shard without any specified connection",
-                ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
+            throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Found shard without any specified connection");
     }
 
     for (const auto & shard_info : shards_info)
@@ -672,7 +671,7 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
 Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
 {
     if (from.addresses_with_failover.empty())
-        throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
 
     UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
@@ -790,7 +789,7 @@ std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(s
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
 {
     if (!has_internal_replication)
-        throw Exception("internal_replication is not set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "internal_replication is not set");
 
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)

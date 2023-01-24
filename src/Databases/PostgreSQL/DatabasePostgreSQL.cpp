@@ -41,7 +41,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const String & metadata_path_,
         const ASTStorage * database_engine_define_,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration_,
+        const StoragePostgreSQL::Configuration & configuration_,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_)
     : IDatabase(dbname_)
@@ -258,7 +258,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
     const auto & create = create_query->as<ASTCreateQuery>();
 
     if (!create->attach)
-        throw Exception("PostgreSQL database engine does not support create table", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PostgreSQL database engine does not support create table");
 
     attachTable(local_context, table_name, storage, {});
 }

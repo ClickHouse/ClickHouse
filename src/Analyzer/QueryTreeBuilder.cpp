@@ -111,7 +111,7 @@ private:
 
     QueryTreeNodePtr buildJoinTree(const ASTPtr & tables_in_select_query, const ContextPtr & context) const;
 
-    ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, size_t start_child_index, const ContextPtr & context) const;
+    ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
 
     ASTPtr query;
     QueryTreeNodePtr query_tree_node;
@@ -144,7 +144,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(const ASTPtr & s
     else if (select_or_union_query->as<ASTSelectQuery>())
         query_node = buildSelectExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, context);
     else
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported", select_or_union_query->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported",
+                        select_or_union_query->formatForErrorMessage());
 
     return query_node;
 }
@@ -439,13 +440,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
-        auto column_transformers = buildColumnTransformers(expression, 0 /*start_child_index*/, context);
+        auto column_transformers = buildColumnTransformers(asterisk->transformers, context);
         result = std::make_shared<MatcherNode>(std::move(column_transformers));
     }
     else if (const auto * qualified_asterisk = expression->as<ASTQualifiedAsterisk>())
     {
-        auto & qualified_identifier = qualified_asterisk->children.at(0)->as<ASTTableIdentifier &>();
-        auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/, context);
+        auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
+        auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
@@ -543,7 +544,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * columns_regexp_matcher = expression->as<ASTColumnsRegexpMatcher>())
     {
-        auto column_transformers = buildColumnTransformers(expression, 0 /*start_child_index*/, context);
+        auto column_transformers = buildColumnTransformers(columns_regexp_matcher->transformers, context);
         result = std::make_shared<MatcherNode>(columns_regexp_matcher->getMatcher(), std::move(column_transformers));
     }
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
@@ -557,18 +558,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
-        auto column_transformers = buildColumnTransformers(expression, 0 /*start_child_index*/, context);
+        auto column_transformers = buildColumnTransformers(columns_list_matcher->transformers, context);
         result = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_regexp_matcher = expression->as<ASTQualifiedColumnsRegexpMatcher>())
     {
-        auto & qualified_identifier = qualified_columns_regexp_matcher->children.at(0)->as<ASTTableIdentifier &>();
-        auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/, context);
+        auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
+        auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getMatcher(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
-        auto & qualified_identifier = qualified_columns_list_matcher->children.at(0)->as<ASTTableIdentifier &>();
+        auto & qualified_identifier = qualified_columns_list_matcher->qualifier->as<ASTIdentifier &>();
 
         Identifiers column_list_identifiers;
         column_list_identifiers.reserve(qualified_columns_list_matcher->column_list->children.size());
@@ -579,7 +580,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
-        auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/, context);
+        auto column_transformers = buildColumnTransformers(qualified_columns_list_matcher->transformers, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
     }
     else
@@ -737,7 +738,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
             }
             else
             {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}", table_element.table_expression->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}",
+                                table_element.table_expression->formatForErrorMessage());
             }
         }
 
@@ -833,15 +835,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 }
 
 
-ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr & matcher_expression, size_t start_child_index, const ContextPtr & context) const
+ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const
 {
     ColumnTransformersNodes column_transformers;
-    size_t children_size = matcher_expression->children.size();
 
-    for (; start_child_index < children_size; ++start_child_index)
+    if (!matcher_expression)
+        return column_transformers;
+
+    for (const auto & child : matcher_expression->children)
     {
-        const auto & child = matcher_expression->children[start_child_index];
-
         if (auto * apply_transformer = child->as<ASTColumnsApplyTransformer>())
         {
             if (apply_transformer->lambda)

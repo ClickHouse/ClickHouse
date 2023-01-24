@@ -53,9 +53,10 @@ namespace
         if (!callOnIndexAndDataType<void>(type_index, call))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
-                " Actual 'range_min' and 'range_max' type is {}",
-                range_type->getName());
+                            "Dictionary structure type of 'range_min' and 'range_max' should "
+                            "be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
+                            " Actual 'range_min' and 'range_max' type is {}",
+                            range_type->getName());
         }
     }
 }
@@ -688,7 +689,9 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
         static constexpr size_t range_columns_size = 2;
 
         auto pipe = source_ptr->loadUpdatedAll();
-        mergeBlockWithPipe<dictionary_key_type>(
+
+        /// Use complex dictionary key type to count range columns as part of complex primary key during update
+        mergeBlockWithPipe<DictionaryKeyType::Complex>(
             dict_struct.getKeysSize() + range_columns_size,
             *update_field_loaded_block,
             std::move(pipe));

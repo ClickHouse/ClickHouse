@@ -407,9 +407,7 @@ def test_alter_policy(start_cluster, name, engine):
 
 
 def get_random_string(length):
-    return "".join(
-        random.choice(string.ascii_uppercase + string.digits) for _ in range(length)
-    )
+    return "randomPrintableASCII({})".format(length)
 
 
 def get_used_disks_for_table(node, table_name):
@@ -554,7 +552,7 @@ def test_max_data_part_size(start_cluster, name, engine):
 
         node1.query_with_retry(
             "INSERT INTO {} VALUES {}".format(
-                name, ",".join(["('" + x + "')" for x in data])
+                name, ",".join(["(" + x + ")" for x in data])
             )
         )
         used_disks = get_used_disks_for_table(node1, name)
@@ -605,7 +603,7 @@ def test_jbod_overflow(start_cluster, name, engine):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             node1.query_with_retry(
                 "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
+                    name, ",".join(["(" + x + ")" for x in data])
                 )
             )
 
@@ -619,7 +617,7 @@ def test_jbod_overflow(start_cluster, name, engine):
 
         node1.query_with_retry(
             "INSERT INTO {} VALUES {}".format(
-                name, ",".join(["('" + x + "')" for x in data])
+                name, ",".join(["(" + x + ")" for x in data])
             )
         )
 
@@ -684,7 +682,7 @@ def test_background_move(start_cluster, name, engine):
             # small jbod size is 40MB, so lets insert 5MB batch 5 times
             node1.query_with_retry(
                 "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
+                    name, ",".join(["(" + x + ")" for x in data])
                 )
             )
 
@@ -702,8 +700,9 @@ def test_background_move(start_cluster, name, engine):
         # first (oldest) part was moved to external
         assert used_disks[0] == "external"
 
+        node1.query("SYSTEM FLUSH LOGS")
         path = node1.query(
-            "SELECT path_on_disk FROM system.part_log WHERE table = '{}' AND event_type='MovePart' ORDER BY event_time LIMIT 1".format(
+            "SELECT path_on_disk FROM system.part_log WHERE table = '{}' AND event_type='MovePart' AND part_name = 'all_1_1_0'".format(
                 name
             )
         )
@@ -796,7 +795,7 @@ def test_start_stop_moves(start_cluster, name, engine):
             # jbod size is 40MB, so lets insert 5MB batch 7 times
             node1.query_with_retry(
                 "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
+                    name, ",".join(["(" + x + ")" for x in data])
                 )
             )
 
@@ -1310,7 +1309,7 @@ def test_detach_attach(start_cluster, name, engine):
             data.append(get_random_string(1024 * 1024))  # 1MB row
         node1.query_with_retry(
             "INSERT INTO {} VALUES {}".format(
-                name, ",".join(["('" + x + "')" for x in data])
+                name, ",".join(["(" + x + ")" for x in data])
             )
         )
 
@@ -1362,7 +1361,7 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
                 data.append(get_random_string(1024 * 1024))  # 1MB row
             node1.query_with_retry(
                 "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
+                    name, ",".join(["(" + x + ")" for x in data])
                 )
             )
 
@@ -1511,7 +1510,7 @@ def test_simple_replication_and_moves(start_cluster):
                     data.append(get_random_string(512 * 1024))  # 500KB value
                 node.query_with_retry(
                     "INSERT INTO replicated_table_for_moves VALUES {}".format(
-                        ",".join(["('" + x + "')" for x in data])
+                        ",".join(["(" + x + ")" for x in data])
                     )
                 )
 
@@ -1546,12 +1545,12 @@ def test_simple_replication_and_moves(start_cluster):
 
         node1.query_with_retry(
             "INSERT INTO replicated_table_for_moves VALUES {}".format(
-                ",".join(["('" + x + "')" for x in data])
+                ",".join(["(" + x + ")" for x in data])
             )
         )
         node2.query_with_retry(
             "INSERT INTO replicated_table_for_moves VALUES {}".format(
-                ",".join(["('" + x + "')" for x in data])
+                ",".join(["(" + x + ")" for x in data])
             )
         )
 
@@ -1589,7 +1588,7 @@ def test_download_appropriate_disk(start_cluster):
             data.append(get_random_string(1024 * 1024))  # 1MB value
         node1.query_with_retry(
             "INSERT INTO replicated_table_for_download VALUES {}".format(
-                ",".join(["('" + x + "')" for x in data])
+                ",".join(["(" + x + ")" for x in data])
             )
         )
 
@@ -1626,18 +1625,30 @@ def test_rename(start_cluster):
         """
         )
 
+        # We want to check that after inserts, some parts were moved to external disk
+        # and some parts are still on the main disk, but because of merge all parts
+        # might end up on external disk.
+        node1.query("SYSTEM STOP MERGES default.renaming_table")
+
+        # jbod1 disk is 40mb
         for _ in range(5):
             data = []
             for i in range(10):
                 data.append(get_random_string(1024 * 1024))  # 1MB value
             node1.query(
                 "INSERT INTO renaming_table VALUES {}".format(
-                    ",".join(["('" + x + "')" for x in data])
+                    ",".join(["(" + x + ")" for x in data])
                 )
             )
 
-        disks = get_used_disks_for_table(node1, "renaming_table")
-        assert len(disks) > 1
+        # data is moved in the background, so check with retries
+        num_try = 0
+        while get_used_disks_for_table(node1, "renaming_table") == 1:
+            time.sleep(1)
+            num_try += 1
+            if num_try == 20:
+                break
+        assert len(get_used_disks_for_table(node1, "renaming_table")) > 1
         assert node1.query("SELECT COUNT() FROM default.renaming_table") == "50\n"
 
         node1.query("RENAME TABLE default.renaming_table TO default.renaming_table1")
@@ -1673,6 +1684,8 @@ def test_freeze(start_cluster):
         """
         )
 
+        node1.query("SYSTEM STOP MERGES default.freezing_table")
+
         for _ in range(5):
             data = []
             dates = []
@@ -1681,7 +1694,7 @@ def test_freeze(start_cluster):
                 dates.append("toDate('2019-03-05')")
             node1.query(
                 "INSERT INTO freezing_table VALUES {}".format(
-                    ",".join(["(" + d + ", '" + s + "')" for d, s in zip(dates, data)])
+                    ",".join(["(" + d + ", " + s + ")" for d, s in zip(dates, data)])
                 )
             )
 
@@ -1725,7 +1738,7 @@ def test_kill_while_insert(start_cluster):
             data.append(get_random_string(1024 * 1024))  # 1MB value
         node1.query(
             "INSERT INTO {name} VALUES {}".format(
-                ",".join(["('" + s + "')" for s in data]), name=name
+                ",".join(["(" + s + ")" for s in data]), name=name
             )
         )
 

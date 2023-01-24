@@ -55,7 +55,7 @@ namespace JSONUtils
                 pos = find_first_symbols<'\\', '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
-                    throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
                 else if (pos == in.buffer().end())
                     continue;
 
@@ -76,7 +76,7 @@ namespace JSONUtils
                 pos = find_first_symbols<opening_bracket, closing_bracket, '\\', '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
-                    throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
                 else if (pos == in.buffer().end())
                     continue;
 
@@ -131,19 +131,21 @@ namespace JSONUtils
     {
         skipWhitespaceIfAny(in);
         assertChar('{', in);
+        skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
         String field;
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
-                skipComma(in);
+                assertChar(',', in);
             else
                 first = false;
 
             auto name = readFieldName(in);
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             names_and_types.emplace_back(name, type);
+            skipWhitespaceIfAny(in);
         }
 
         if (in.eof())
@@ -157,17 +159,19 @@ namespace JSONUtils
     {
         skipWhitespaceIfAny(in);
         assertChar('[', in);
+        skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
         String field;
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
-                skipComma(in);
+                assertChar(',', in);
             else
                 first = false;
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             types.push_back(std::move(type));
+            skipWhitespaceIfAny(in);
         }
 
         if (in.eof())
@@ -584,7 +588,9 @@ namespace JSONUtils
             auto header_type = header.getByName(name).type;
             if (header.has(name) && !type->equals(*header_type))
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA, "Type {} of column '{}' from metadata is not the same as type in header {}", type->getName(), name, header_type->getName());
+                                ErrorCodes::INCORRECT_DATA,
+                                "Type {} of column '{}' from metadata is not the same as type in header {}",
+                                type->getName(), name, header_type->getName());
         }
         return names_and_types;
     }

@@ -60,6 +60,9 @@ void ProxyV1Handler::run()
     // read port and "\r\n"
     if (!readWord(5, word, eol) || !eol)
         throw ParsingException("PROXY protocol violation", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+
+    if (!stack_data.forwarded_for.empty())
+        LOG_TRACE(log, "Forwarded client address from PROXY header: {}", stack_data.forwarded_for);
 }
 
 bool ProxyV1Handler::readWord(int max_len, std::string & word, bool & eol)
@@ -101,21 +104,21 @@ bool ProxyV1Handler::readWord(int max_len, std::string & word, bool & eol)
     }
     catch (const Poco::Net::NetException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), socket().peerAddress().toString());
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket ({}, {} ms)",
             socket().peerAddress().toString(),
-            socket().getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+            socket().getReceiveTimeout().totalMilliseconds());
     }
     catch (const Poco::IOException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), socket().peerAddress().toString());
     }
 
     if (n < 0)
-        throw NetException("Cannot read from socket (" + socket().peerAddress().toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+        throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket ({})", socket().peerAddress().toString());
 
     return false;
 }

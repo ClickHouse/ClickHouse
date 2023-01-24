@@ -145,7 +145,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
 static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
-    auto internal_type = std::make_shared<DataTypeUInt8>();
+    auto internal_type = DataTypeFactory::instance().get("Bool");
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -162,7 +162,7 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
         for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
             column_data.emplace_back(chunk.Value(bool_i));
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -386,7 +386,9 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         for (int64_t i = 0; i != chunk->length(); ++i)
         {
             if (data[i] < 0 || data[i] >= dict_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Index {} in Dictionary column is out of bounds, dictionary size is {}", Int64(data[i]), UInt64(dict_size));
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                                "Index {} in Dictionary column is out of bounds, dictionary size is {}",
+                                Int64(data[i]), UInt64(dict_size));
         }
 
         /// If dictionary type is not nullable and arrow dictionary contains default type
@@ -734,13 +736,15 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             }
 
             throw Exception(
-                ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported {} type '{}' of an input column '{}'. If it happens during schema inference and you want to skip columns with "
-                "unsupported types, you can enable setting input_format_{}_skip_columns_with_unsupported_types_in_schema_inference",
-                format_name,
-                arrow_column->type()->name(),
-                column_name,
-                boost::algorithm::to_lower_copy(format_name));
+                            ErrorCodes::UNKNOWN_TYPE,
+                            "Unsupported {} type '{}' of an input column '{}'. "
+                            "If it happens during schema inference and you want to skip columns with "
+                            "unsupported types, you can enable setting input_format_{}"
+                            "_skip_columns_with_unsupported_types_in_schema_inference",
+                            format_name,
+                            arrow_column->type()->name(),
+                            column_name,
+                            boost::algorithm::to_lower_copy(format_name));
         }
     }
 }

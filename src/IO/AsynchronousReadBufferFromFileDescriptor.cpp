@@ -81,10 +81,10 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
             auto result = prefetch_future.get();
+            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
             size = result.size;
             offset = result.offset;
             assert(offset < size || size == 0);
-            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
         prefetch_future = {};
@@ -108,8 +108,10 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     else
     {
         /// No pending request. Do synchronous read.
-
+        Stopwatch watch;
         auto [size, offset] = asyncReadInto(memory.data(), memory.size()).get();
+        ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
+
         file_offset_of_buffer_end += size;
 
         assert(offset <= size);
@@ -184,7 +186,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
     else
     {
-        throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence");
     }
 
     /// Position is unchanged.
@@ -230,7 +232,9 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     bytes_to_ignore = new_pos - seek_pos;
 
     if (bytes_to_ignore >= internal_buffer.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}) >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
+                        ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());
 
     return seek_pos;
 }
