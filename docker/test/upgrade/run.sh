@@ -29,12 +29,6 @@ function configure()
     export EXPORT_S3_STORAGE_POLICIES=1
     /usr/share/clickhouse-test/config/install.sh
 
-    # we mount tests folder from repo to /usr/share
-    ln -s /usr/share/clickhouse-test/ci/stress.py /usr/bin/stress
-    ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
-    ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/download_release_packages
-    ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
-
     # avoid too slow startup
     sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
@@ -241,6 +235,12 @@ mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/cli
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
+# we mount tests folder from repo to /usr/share
+ln -s /usr/share/clickhouse-test/ci/stress.py /usr/bin/stress
+ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
+ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/download_release_packages
+ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
+
 echo "Get previous release tag"
 previous_release_tag=$(dpkg --info package_folder/clickhouse-client*.deb | grep "Version: " | awk '{print $2}' | get_previous_release_tag)
 echo $previous_release_tag
@@ -294,8 +294,7 @@ else
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
 
-    # Install new package before running stress test because we should use new
-    # clickhouse-client and new clickhouse-test.
+    # Install new package before running stress test because we should use new clickhouse-client.
     #
     # But we should leave old binary in /usr/bin/ and debug symbols in
     # /usr/lib/debug/usr/bin (if any) for gdb and internal DWARF parser, so it
@@ -457,6 +456,14 @@ grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e
     || echo -e 'No OOM in dmesg\tOK' >> /test_output/test_results.tsv
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
+
+# If we failed to clone repo or download previous release packages,
+# we don't have any packages installed, but we need clickhouse-local
+# to be installed to create check_status.tsv.
+if ! command -v clickhouse-local &> /dev/null
+then
+    install_packages package_folder
+fi
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%'), rowNumberInAllBlocks() LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
