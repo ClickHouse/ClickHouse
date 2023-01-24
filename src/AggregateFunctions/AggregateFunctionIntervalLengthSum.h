@@ -117,7 +117,7 @@ struct AggregateFunctionIntervalLengthSumData
         readBinary(size, buf);
 
         if (unlikely(size > MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         segments.clear();
         segments.reserve(size);
