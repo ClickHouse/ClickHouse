@@ -337,7 +337,8 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     }
 
     if (!insert_query_present)
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file", table_name.empty() ? "" : " for table " + table_name);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
+                        table_name.empty() ? "" : " for table " + table_name);
 
     skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
 }

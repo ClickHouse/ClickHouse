@@ -143,7 +143,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
         || !checkChar('_', in)
         || !tryReadIntText(max_yyyymmdd, in))
     {
-        throw Exception("Unexpected part name: " + part_name, ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
     }
 
     const auto & date_lut = DateLUT::instance();
@@ -155,7 +155,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
     auto max_month = date_lut.toNumYYYYMM(max_date);
 
     if (min_month != max_month)
-        throw Exception("Part name " + part_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Part name {} contains different months", part_name);
 }
 
 

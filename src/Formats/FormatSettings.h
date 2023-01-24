@@ -125,6 +125,7 @@ struct FormatSettings
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
         String custom_delimiter;
+        bool try_detect_header = true;
     } csv;
 
     struct HiveText
@@ -144,6 +145,7 @@ struct FormatSettings
         std::string row_between_delimiter;
         std::string field_delimiter;
         EscapingRule escaping_rule = EscapingRule::Escaped;
+        bool try_detect_header = true;
     } custom;
 
     struct
@@ -253,6 +255,7 @@ struct FormatSettings
         bool enum_as_number = false;
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
+        bool try_detect_header = true;
     } tsv;
 
     struct

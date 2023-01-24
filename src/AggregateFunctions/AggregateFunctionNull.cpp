@@ -65,8 +65,8 @@ public:
         }
 
         if (!has_nullable_types)
-            throw Exception("Aggregate function combinator 'Null' requires at least one argument to be Nullable",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function combinator 'Null' "
+                            "requires at least one argument to be Nullable");
 
         if (has_null_types)
         {
