@@ -233,9 +233,9 @@ void MergeTreeBlockSizePredictor::startBlock()
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
 {
     if (columns.size() != sample_block.columns())
-        throw Exception("Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
-                        "Have " + toString(sample_block.columns()) + " in sample block "
-                        "and " + toString(columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
+                        "Have {} in sample block and {} columns in list",
+                        toString(sample_block.columns()), toString(columns.size()));
 
     if (!is_initialized_in_update)
     {
@@ -246,8 +246,8 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
     if (num_rows < block_size_rows)
     {
-        throw Exception("Updated block has less rows (" + toString(num_rows) + ") than previous one (" + toString(block_size_rows) + ")",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Updated block has less rows ({}) than previous one ({})",
+                        num_rows, block_size_rows);
     }
 
     size_t diff_rows = num_rows - block_size_rows;

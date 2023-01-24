@@ -75,8 +75,8 @@ public:
             }
         }
 
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-            ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Cannot compare {} with {}",
+            demangle(typeid(T).name()), demangle(typeid(U).name()));
     }
 };
 
@@ -142,8 +142,8 @@ public:
             }
         }
 
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-            ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Cannot compare {} with {}",
+            demangle(typeid(T).name()), demangle(typeid(U).name()));
     }
 };
 

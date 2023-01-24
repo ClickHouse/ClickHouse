@@ -119,6 +119,17 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
+QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
+{
+    planner.buildQueryPlanIfNeeded();
+    auto & query_plan = planner.getQueryPlan();
+
+    QueryPlanOptimizationSettings optimization_settings;
+    BuildQueryPipelineSettings build_pipeline_settings;
+
+    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+}
+
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
 {
     planner.addStorageLimits(storage_limits);

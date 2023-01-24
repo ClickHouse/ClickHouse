@@ -598,7 +598,7 @@ float ANNCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
     {
         return static_cast<float>(iter->int_literal.value());
     }
-    throw Exception("Wrong parsed AST in buildRPN\n", ErrorCodes::INCORRECT_QUERY);
+    throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong parsed AST in buildRPN\n");
 }
 
 }

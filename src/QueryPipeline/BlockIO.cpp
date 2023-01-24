@@ -47,6 +47,22 @@ BlockIO::~BlockIO()
     reset();
 }
 
+void BlockIO::onFinish()
+{
+    if (finish_callback)
+        finish_callback(pipeline);
+
+    pipeline.reset();
+}
+
+void BlockIO::onException()
+{
+    if (exception_callback)
+        exception_callback();
+
+    pipeline.reset();
+}
+
 void BlockIO::setAllDataSent() const
 {
     /// The following queries does not have process_list_entry:

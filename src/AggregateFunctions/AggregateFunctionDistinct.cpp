@@ -24,8 +24,8 @@ public:
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Incorrect number of arguments for aggregate function with " + getName() + " suffix",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
         return arguments;
     }

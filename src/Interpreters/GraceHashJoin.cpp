@@ -327,10 +327,11 @@ bool GraceHashJoin::addJoinedBlock(const Block & block, bool /*check_limits*/)
 bool GraceHashJoin::fitsInMemory() const
 {
     /// One row can't be split, avoid loop
-    if (hash_join->getTotalRowCount() < 2)
+    size_t total_row_count = hash_join->getTotalRowCount();
+    if (total_row_count < 2)
         return true;
 
-    return table_join->sizeLimits().softCheck(hash_join->getTotalRowCount(), hash_join->getTotalByteCount());
+    return table_join->sizeLimits().softCheck(total_row_count, hash_join->getTotalByteCount());
 }
 
 GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
@@ -346,7 +347,8 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets(size_t to_size)
     if (to_size > max_num_buckets)
     {
         throw Exception(ErrorCodes::LIMIT_EXCEEDED,
-            "Too many grace hash join buckets ({} > {}), consider increasing grace_hash_join_max_buckets or max_rows_in_join/max_bytes_in_join",
+            "Too many grace hash join buckets ({} > {}), "
+            "consider increasing grace_hash_join_max_buckets or max_rows_in_join/max_bytes_in_join",
             to_size, max_num_buckets);
     }
 
