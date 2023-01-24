@@ -81,10 +81,10 @@ off_t LimitSeekableReadBuffer::seek(off_t off, int whence)
     else if (whence == SEEK_CUR)
         new_position = current_position + off;
     else
-        throw Exception("Seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek expects SEEK_SET or SEEK_CUR as whence");
 
     if (new_position < 0 || new_position + min_offset > max_offset)
-        throw Exception("Seek shift out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek shift out of bounds");
 
     off_t position_change = new_position - current_position;
     if ((buffer().begin() <= pos + position_change) && (pos + position_change <= buffer().end()))

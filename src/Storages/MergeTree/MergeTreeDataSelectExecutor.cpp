@@ -171,9 +171,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
         if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
             && !metadata_for_reading->projections.empty())
-            throw Exception(
-                "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
-                ErrorCodes::PROJECTION_NOT_USED);
+            throw Exception(ErrorCodes::PROJECTION_NOT_USED,
+                            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
 
         return plan;
     }
@@ -520,14 +519,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         relative_sample_size.assign(sample_size_ratio->numerator, sample_size_ratio->denominator);
 
         if (relative_sample_size < 0)
-            throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative sample size");
 
         relative_sample_offset = 0;
         if (sample_offset_ratio)
             relative_sample_offset.assign(sample_offset_ratio->numerator, sample_offset_ratio->denominator);
 
         if (relative_sample_offset < 0)
-            throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative sample offset");
 
         /// Convert absolute value of the sampling (in form `SAMPLE 1000000` - how many rows to
         /// read) into the relative `SAMPLE 0.1` (how much data to read).
@@ -546,7 +545,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             relative_sample_size = 0;
 
         if (relative_sample_offset > 0 && RelativeSize(0) == relative_sample_size)
-            throw Exception("Sampling offset is incorrect because no sampling", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Sampling offset is incorrect because no sampling");
 
         if (relative_sample_offset > 1)
         {
@@ -628,10 +627,9 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         }
 
         if (size_of_universum == RelativeSize(0))
-            throw Exception(
-                "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
-                    + ". Must be one unsigned integer type",
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
+                sampling_column_type->getName());
 
         if (settings.parallel_replicas_count > 1)
         {
@@ -700,7 +698,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             {
                 if (!key_condition.addCondition(
                         sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable())))
-                    throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -718,7 +716,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             {
                 if (!key_condition.addCondition(
                         sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable())))
-                    throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -1993,7 +1991,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             {
                 auto result = temp_part_uuids.insert(part->uuid);
                 if (!result.second)
-                    throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a part with the same UUID on the same replica.");
             }
 
             selected_parts.push_back(part_or_projection);
@@ -2027,7 +2025,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         /// Second attempt didn't help, throw an exception
         if (!select_parts(parts))
-            throw Exception("Found duplicate UUIDs while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
+            throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
 }
 

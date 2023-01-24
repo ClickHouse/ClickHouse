@@ -52,7 +52,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))
-            throw Exception("Function " + getName() + " accepts one const string argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts one const string argument", getName());
         auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
         ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
         scalar = query_context->getScalar(scalar_name).getByPosition(0);

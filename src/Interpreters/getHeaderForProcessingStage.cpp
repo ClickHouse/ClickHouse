@@ -132,7 +132,7 @@ Block getHeaderForProcessingStage(
             return InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
     }
-    throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
 }
 
 }

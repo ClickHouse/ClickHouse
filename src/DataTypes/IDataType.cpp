@@ -68,12 +68,12 @@ ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 
 DataTypePtr IDataType::promoteNumericType() const
 {
-    throw Exception("Data type " + getName() + " can't be promoted.", ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED);
+    throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED, "Data type {} can't be promoted.", getName());
 }
 
 size_t IDataType::getSizeOfValueInMemory() const
 {
-    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value of type {} in memory is not of fixed size.", getName());
 }
 
 void IDataType::forEachSubcolumn(

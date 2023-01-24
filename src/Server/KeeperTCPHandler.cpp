@@ -269,12 +269,12 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
     if (!isHandShake(handshake_length))
-        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected handshake length received: {}", toString(handshake_length));
 
     Coordination::read(protocol_version, *in);
 
     if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -471,7 +471,7 @@ void KeeperTCPHandler::runImpl()
             }
 
             if (result.error)
-                throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Exception happened while reading from socket");
 
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
