@@ -161,8 +161,8 @@ namespace
 
             request.SetMultipartUpload(multipart_upload);
 
-            size_t max_retry = std::max(max_unexpected_write_error_retries, 1UL);
-            for (size_t i = 0; i < max_retry; ++i)
+            size_t max_retries = std::max(max_unexpected_write_error_retries, 1UL);
+            for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
                 if (for_disk_s3)
@@ -175,20 +175,19 @@ namespace
                     LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
                     break;
                 }
-                else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+
+                if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
                 {
                     /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
                     /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
                     LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
-                    /// will retry
+                    continue; /// will retry
                 }
-                else
-                {
-                    throw S3Exception(
-                        outcome.GetError().GetErrorType(),
-                        "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                        outcome.GetError().GetMessage(), dest_key, dest_bucket, fmt::join(part_tags.begin(), part_tags.end(), " "));
-                }
+
+                throw S3Exception(
+                    outcome.GetError().GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Tags: {}",
+                    outcome.GetError().GetMessage(), dest_key, dest_bucket, fmt::join(part_tags.begin(), part_tags.end(), " "));
             }
         }
 
@@ -461,8 +460,8 @@ namespace
 
         void processPutRequest(const Aws::S3::Model::PutObjectRequest & request)
         {
-            size_t max_retry = std::max(max_unexpected_write_error_retries, 1UL);
-            for (size_t i = 0; i < max_retry; ++i)
+            size_t max_retries = std::max(max_unexpected_write_error_retries, 1UL);
+            for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3PutObject);
                 if (for_disk_s3)
@@ -480,7 +479,8 @@ namespace
                         request.GetContentLength());
                     break;
                 }
-                else if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
+
+                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
                 {
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
                     LOG_INFO(
@@ -493,7 +493,8 @@ namespace
                     performMultipartUpload();
                     break;
                 }
-                else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+
+                if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
                 {
                     /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
                     LOG_INFO(
@@ -502,18 +503,16 @@ namespace
                         dest_bucket,
                         dest_key,
                         request.GetContentLength());
-                    /// will retry
+                    continue; /// will retry
                 }
-                else
-                {
-                    throw S3Exception(
-                        outcome.GetError().GetErrorType(),
-                        "Message: {}, Key: {}, Bucket: {}, Object size: {}",
-                        outcome.GetError().GetMessage(),
-                        dest_key,
-                        dest_bucket,
-                        request.GetContentLength());
-                }
+
+                throw S3Exception(
+                    outcome.GetError().GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Object size: {}",
+                    outcome.GetError().GetMessage(),
+                    dest_key,
+                    dest_bucket,
+                    request.GetContentLength());
             }
         }
 
@@ -626,8 +625,8 @@ namespace
 
         void processCopyRequest(const Aws::S3::Model::CopyObjectRequest & request)
         {
-            size_t max_retry = std::max(max_unexpected_write_error_retries, 1UL);
-            for (size_t i = 0; i < max_retry; ++i)
+            size_t max_retries = std::max(max_unexpected_write_error_retries, 1UL);
+            for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CopyObject);
                 if (for_disk_s3)
@@ -644,7 +643,8 @@ namespace
                         size);
                     break;
                 }
-                else if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
+
+                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
                 {
                     // Can't come here with MinIO, MinIO allows single part upload for large objects.
                     LOG_INFO(
@@ -657,7 +657,8 @@ namespace
                     performMultipartUploadCopy();
                     break;
                 }
-                else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+
+                if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
                 {
                     /// TODO: Is it true for copy requests?
                     /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
@@ -667,18 +668,16 @@ namespace
                         dest_bucket,
                         dest_key,
                         size);
-                    /// will retry
+                    continue; /// will retry
                 }
-                else
-                {
-                    throw S3Exception(
-                        outcome.GetError().GetErrorType(),
-                        "Message: {}, Key: {}, Bucket: {}, Object size: {}",
-                        outcome.GetError().GetMessage(),
-                        dest_key,
-                        dest_bucket,
-                        size);
-                }
+
+                throw S3Exception(
+                    outcome.GetError().GetErrorType(),
+                    "Message: {}, Key: {}, Bucket: {}, Object size: {}",
+                    outcome.GetError().GetMessage(),
+                    dest_key,
+                    dest_bucket,
+                    size);
             }
         }
 
