@@ -448,7 +448,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
         remove_or_detach_tables.erase(table_name);
         throw;
     }
-    table_iter->second.second->is_detached = true;
+    table_iter->second.second->is_dropped = true;
 }
 
 void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)

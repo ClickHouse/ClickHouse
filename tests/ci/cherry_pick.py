@@ -311,11 +311,13 @@ class Backport:
         logging.info("Active releases: %s", ", ".join(self.release_branches))
 
     def receive_prs_for_backport(self):
-        # The commit is the oldest open release branch's merge-base
-        since_commit = git_runner(
-            f"git merge-base {self.remote}/{self.release_branches[0]} "
-            f"{self.remote}/{self.default_branch}"
+        # The commits in the oldest open release branch
+        oldest_branch_commits = git_runner(
+            "git log --no-merges --format=%H --reverse "
+            f"{self.remote}/{self.default_branch}..{self.remote}/{self.release_branches[0]}"
         )
+        # The first commit is the one we are looking for
+        since_commit = oldest_branch_commits.split("\n", 1)[0]
         since_date = date.fromisoformat(
             git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
         )
