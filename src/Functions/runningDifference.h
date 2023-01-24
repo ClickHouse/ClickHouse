@@ -121,7 +121,7 @@ private:
         else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
-            throw Exception("Argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must have numeric type.", getName());
     }
 
 public:

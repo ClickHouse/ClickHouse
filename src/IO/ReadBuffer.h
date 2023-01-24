@@ -188,7 +188,8 @@ public:
     {
         auto read_bytes = read(to, n);
         if (n != read_bytes)
-            throw Exception("Cannot read all data. Bytes read: " + std::to_string(read_bytes) + ". Bytes expected: " + std::to_string(n) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
     }
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
@@ -217,7 +218,7 @@ public:
     /// Such as ReadBufferFromRemoteFSGather and AsynchronousReadIndirectBufferFromRemoteFS.
     virtual IAsynchronousReader::Result readInto(char * /*data*/, size_t /*size*/, size_t /*offset*/, size_t /*ignore*/)
     {
-        throw Exception("readInto not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readInto not implemented");
     }
 
 protected:
@@ -235,7 +236,7 @@ private:
 
     [[noreturn]] static void throwReadAfterEOF()
     {
-        throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
     }
 };
 

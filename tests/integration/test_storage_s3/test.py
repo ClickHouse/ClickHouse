@@ -1743,7 +1743,7 @@ def test_s3_list_objects_failure(started_cluster):
 
         get_query = """
             SELECT sleep({seconds}) FROM s3('http://resolver:8083/{bucket}/test_no_list_*', 'CSV', 'c1 UInt32')
-            SETTINGS s3_list_object_keys_size = 1, max_threads = {max_threads}, enable_s3_requests_logging = 1, input_format_parallel_parsing = 0
+            SETTINGS s3_list_object_keys_size = 1, max_threads = {max_threads}, enable_s3_requests_logging = 1
             """.format(
             bucket=bucket, seconds=random.random(), max_threads=random.randint(2, 20)
         )
