@@ -90,10 +90,10 @@ ReturnType parseDateTimeBestEffortImpl(
     const DateLUTImpl & utc_time_zone,
     DateTimeSubsecondPart * fractional)
 {
-    auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
+    auto on_error = []<typename T>(T && message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(message, code);
+            throw ParsingException(code, message);
         else
             return false;
     };
