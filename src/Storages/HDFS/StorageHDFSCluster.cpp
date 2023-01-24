@@ -51,8 +51,8 @@ StorageHDFSCluster::StorageHDFSCluster(
     , compression_method(compression_method_)
     , structure_argument_was_provided(structure_argument_was_provided_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
 
     StorageInMemoryMetadata storage_metadata;
 
