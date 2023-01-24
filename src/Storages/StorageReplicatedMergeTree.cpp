@@ -7355,7 +7355,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
         String out_reason;
         if (!merge_pred.canMergeSinglePart(part, &out_reason))
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: " + out_reason);
+            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", out_reason);
     }
 
     {
