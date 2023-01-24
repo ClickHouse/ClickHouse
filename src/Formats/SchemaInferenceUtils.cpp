@@ -451,7 +451,7 @@ namespace
         Float64 tmp_float;
         /// Check if it's just a number, and if so, don't try to infer Date from it,
         /// because we can interpret this number as a Date (for example 20000101 will be 2000-01-01)
-        /// and it will lead to inferring Date instead of simple Int64/Float64 in some cases.
+        /// and it will lead to inferring Date instead of simple Int64/UInt64 in some cases.
         if (tryReadFloatText(tmp_float, buf) && buf.eof())
             return false;
 
