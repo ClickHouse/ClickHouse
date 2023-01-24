@@ -5619,7 +5619,6 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         {
             auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
             resolveQueryJoinTreeNode(array_join_node.getTableExpression(), scope, expressions_visitor);
-            validateJoinTableExpressionWithoutAlias(join_tree_node, array_join_node.getTableExpression(), scope);
 
             std::unordered_set<String> array_join_column_names;
 
