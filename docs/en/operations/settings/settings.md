@@ -1300,6 +1300,81 @@ Possible values:
 
 Default value: `3`.
 
+## enable_experimental_query_result_cache {#enable-experimental-query-result-cache}
+
+If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## enable_experimental_query_result_cache_passive_usage {#enable-experimental-query-result-cache-passive-usage}
+
+If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## query_result_cache_store_results_of_queries_with_nondeterministic_functions {#query-result-cache-store-results-of-queries-with-nondeterministic-functions}
+
+If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
+## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
+
+Minimum number of times a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `0`
+
+## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
+
+Minimum duration in milliseconds a query needs to run for its result to be stored in the [query result cache](../query-result-cache.md).
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `0`
+
+## query_result_cache_ttl {#query-result-cache-ttl}
+
+After this time in seconds entries in the [query result cache](../query-result-cache.md) become stale.
+
+Possible values:
+
+- Positive integer >= 0.
+
+Default value: `60`
+
+## query_result_cache_share_between_users {#query-result-cache-share-between-users}
+
+If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) can be read by other users.
+It is not recommended to enable this setting due to security reasons.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `0`.
+
 ## insert_quorum {#settings-insert_quorum}
 
 Enables the quorum writes.
@@ -4323,6 +4398,12 @@ The number of lines to skip at the beginning of data in TSV input format.
 
 Default value: `0`.
 
+### input_format_tsv_detect_header {#input_format_tsv_detect_header}
+
+Automatically detect header with names and types in TSV format.
+
+Enabled by default.
+
 ### output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
 Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
@@ -4482,6 +4563,12 @@ Enabled by default.
 The number of lines to skip at the beginning of data in CSV input format.
 
 Default value: `0`.
+
+### input_format_csv_detect_header {#input_format_csv_detect_header}
+
+Automatically detect header with names and types in CSV format.
+
+Enabled by default.
 
 ### format_csv_null_representation {#format_csv_null_representation}
 
@@ -5056,6 +5143,12 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md/#format-customseparated) data format.
 
 Default value: `''`.
+
+### input_format_custom_detect_header {#input_format_custom_detect_header}
+
+Automatically detect header with names and types in CustomSeparated format.
+
+Enabled by default.
 
 ## Regexp format settings {#regexp-format-settings}
 

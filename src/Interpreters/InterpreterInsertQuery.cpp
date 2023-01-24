@@ -153,7 +153,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     for (const auto & current_name : names)
     {
         if (res.has(current_name))
-            throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} specified more than once", current_name);
 
         /// Column is not ordinary or ephemeral
         if (!table_sample_insertable.has(current_name))
@@ -162,13 +162,13 @@ Block InterpreterInsertQuery::getSampleBlock(
             if (table_sample_physical.has(current_name))
             {
                 if (!allow_materialized)
-                    throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.",
+                        current_name);
                 res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
             }
             else /// The table does not have a column with that name
-                throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column {} in table {}",
+                    current_name, table->getStorageID().getNameForLogs());
         }
         else
             res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
@@ -528,7 +528,7 @@ BlockIO InterpreterInsertQuery::execute()
         {
             for (const auto & column : metadata_snapshot->getColumns())
                 if (column.default_desc.kind == ColumnDefaultKind::Materialized && header.has(column.name))
-                    throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.", column.name);
         }
 
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));

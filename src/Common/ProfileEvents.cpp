@@ -53,6 +53,8 @@
     M(TableFunctionExecute, "Number of table function calls.") \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.") \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
+    M(QueryResultCacheHits, "Number of times a query result has been found in the query result cache (and query computation was avoided).") \
+    M(QueryResultCacheMisses, "Number of times a query result has not been found in the query result cache (and required query computation).") \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
@@ -369,7 +371,9 @@ The server successfully detected this situation and will download merged part fr
     M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)") \
     M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
     M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
+    M(RemoteFSPrefetchedBytes, "Number of bytes from prefecthed buffer") \
     M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
+    M(RemoteFSUnprefetchedBytes, "Number of bytes from unprefetched buffer") \
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
@@ -399,6 +403,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
     M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous remote reads.") \
+    M(SynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for synchronous remote reads.") \
     \
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \

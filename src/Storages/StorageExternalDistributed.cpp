@@ -233,7 +233,9 @@ void registerStorageExternalDistributed(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         if (engine_args.size() < 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine ExternalDistributed must have at least 2 arguments: engine_name, named_collection and/or description");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Engine ExternalDistributed must have at least 2 arguments: "
+                            "engine_name, named_collection and/or description");
 
         auto engine_name = checkAndGetLiteralArgument<String>(engine_args[0], "engine_name");
         StorageExternalDistributed::ExternalStorageEngine table_engine;
@@ -245,8 +247,9 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",
-                engine_name);
+                            "External storage engine {} is not supported for StorageExternalDistributed. "
+                            "Supported engines are: MySQL, PostgreSQL, URL",
+                            engine_name);
 
         ASTs inner_engine_args(engine_args.begin() + 1, engine_args.end());
         String cluster_description;
@@ -308,10 +311,9 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             else
             {
                 if (engine_args.size() != 6)
-                    throw Exception(
-                        "Storage ExternalDistributed requires 5 parameters: "
-                        "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                    "Storage ExternalDistributed requires 5 parameters: "
+                                    "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').");
 
                 cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
                 configuration.database = checkAndGetLiteralArgument<String>(engine_args[2], "database");

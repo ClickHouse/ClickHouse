@@ -15,7 +15,7 @@ CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
     if (keys.size() >= 8 * sizeof(mask))
-        throw Exception("Too many keys are used for CubeTransform.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many keys are used for CubeTransform.");
 }
 
 Chunk CubeTransform::generate()
