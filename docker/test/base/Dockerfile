@@ -9,6 +9,8 @@ RUN apt-get update \
         netbase \
         perl \
         pv \
+        ripgrep \
+        zstd \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)

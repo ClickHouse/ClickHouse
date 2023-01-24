@@ -107,7 +107,7 @@ public:
         if (it == sessions.end())
         {
             if (throw_if_not_found)
-                throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
+                throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session not found.");
 
             /// Create a new session from current context.
             auto context = Context::createCopy(global_context);
@@ -129,7 +129,7 @@ public:
             LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
-                throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
+                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session is locked by a concurrent client.");
             return {session, false};
         }
     }
@@ -311,7 +311,7 @@ void Session::authenticate(const String & user_name, const String & password, co
 void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_)
 {
     if (session_context)
-        throw Exception("If there is a session context it must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
 
     auto address = address_;
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
@@ -362,11 +362,11 @@ const ClientInfo & Session::getClientInfo() const
 ContextMutablePtr Session::makeSessionContext()
 {
     if (session_context)
-        throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context already exists");
     if (query_context_created)
-        throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
     LOG_DEBUG(log, "{} Creating session context with user_id: {}",
             toString(auth_id), toString(*user_id));
@@ -394,11 +394,11 @@ ContextMutablePtr Session::makeSessionContext()
 ContextMutablePtr Session::makeSessionContext(const String & session_name_, std::chrono::steady_clock::duration timeout_, bool session_check_)
 {
     if (session_context)
-        throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context already exists");
     if (query_context_created)
-        throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created before any query context");
     if (!user_id)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
     LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
             toString(auth_id), session_name_, toString(*user_id));
@@ -453,7 +453,7 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
 ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
-        throw Exception("Session context must be created after authentication", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
     bool from_session_context = static_cast<bool>(session_context);

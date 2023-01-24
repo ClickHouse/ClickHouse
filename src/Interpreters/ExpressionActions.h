@@ -111,7 +111,7 @@ public:
     std::string dumpActions() const;
     JSONBuilder::ItemPtr toTree() const;
 
-    static std::string getSmallestColumn(const NamesAndTypesList & columns);
+    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
 
     /// Check if column is always zero. True if it's definite, false if we can't say for sure.
     /// Call it only after subqueries for sets were executed.
@@ -260,7 +260,7 @@ struct ExpressionActionsChain : WithContext
         {
             if (allow_empty)
                 return {};
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
         }
 
         return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_dag;
@@ -269,7 +269,7 @@ struct ExpressionActionsChain : WithContext
     Step & getLastStep()
     {
         if (steps.empty())
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
 
         return *steps.back();
     }

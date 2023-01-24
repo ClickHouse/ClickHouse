@@ -60,7 +60,7 @@ bool BrotliReadBuffer::nextImpl()
 
         if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in->eof()))
         {
-            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
+            throw Exception(ErrorCodes::BROTLI_READ_FAILED, "brotli decode error");
         }
 
         out_capacity = internal_buffer.size();
@@ -83,13 +83,13 @@ bool BrotliReadBuffer::nextImpl()
         }
         else
         {
-            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
+            throw Exception(ErrorCodes::BROTLI_READ_FAILED, "brotli decode error");
         }
     }
 
     if (brotli->result == BROTLI_DECODER_RESULT_ERROR)
     {
-        throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
+        throw Exception(ErrorCodes::BROTLI_READ_FAILED, "brotli decode error");
     }
 
     return true;

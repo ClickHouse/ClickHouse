@@ -214,7 +214,7 @@ public:
 
             // Expect key and value arrays to be of same length
             if (keys_vec_size != values_vec_size)
-                throw Exception("Sizes of keys and values arrays do not match", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of keys and values arrays do not match");
 
             // Insert column values for all keys
             for (size_t i = 0; i < keys_vec_size; ++i)
@@ -428,10 +428,7 @@ public:
     }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return getNameImpl(); }
-
-private:
-    static String getNameImpl() { return Derived::getNameImpl(); }
+    String getName() const override { return Derived::getNameImpl(); }
 };
 
 template <typename T, bool overflow, bool tuple_argument>
@@ -557,7 +554,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compare AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }
@@ -598,7 +595,7 @@ public:
         return false;
     }
 
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }

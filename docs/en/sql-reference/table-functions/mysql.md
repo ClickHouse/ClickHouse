@@ -111,4 +111,3 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 
 -   [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
 -   [Using MySQL as a dictionary source](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
-

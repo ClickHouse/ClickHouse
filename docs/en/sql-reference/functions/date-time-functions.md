@@ -302,16 +302,23 @@ Returns the date.
 The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
 :::
 
+## toLastDayOfMonth
+
+Rounds a date, or date with time, to the last day of the month.
+Returns the date.
+
+Alias: `LAST_DAY`.
+
 If `toLastDayOfMonth` is called with an argument of type `Date` greater then 2149-05-31, the result will be calculated from the argument 2149-05-31 instead.
 
 ## toMonday
 
-Rounds down a date or date with time to the nearest Monday.
+Rounds down a date, or date with time, to the nearest Monday.
 Returns the date.
 
 ## toStartOfWeek(t\[,mode\])
 
-Rounds down a date or date with time to the nearest Sunday or Monday by mode.
+Rounds down a date, or date with time, to the nearest Sunday or Monday by mode.
 Returns the date.
 The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
 
@@ -410,43 +417,43 @@ Converts a date with time to a certain fixed date, while preserving the time.
 
 ## toRelativeYearNum
 
-Converts a date or date with time to the number of the year, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the year, starting from a certain fixed point in the past.
 
 ## toRelativeQuarterNum
 
-Converts a date or date with time to the number of the quarter, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the quarter, starting from a certain fixed point in the past.
 
 ## toRelativeMonthNum
 
-Converts a date or date with time to the number of the month, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the month, starting from a certain fixed point in the past.
 
 ## toRelativeWeekNum
 
-Converts a date or date with time to the number of the week, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the week, starting from a certain fixed point in the past.
 
 ## toRelativeDayNum
 
-Converts a date or date with time to the number of the day, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the day, starting from a certain fixed point in the past.
 
 ## toRelativeHourNum
 
-Converts a date or date with time to the number of the hour, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the hour, starting from a certain fixed point in the past.
 
 ## toRelativeMinuteNum
 
-Converts a date or date with time to the number of the minute, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the minute, starting from a certain fixed point in the past.
 
 ## toRelativeSecondNum
 
-Converts a date or date with time to the number of the second, starting from a certain fixed point in the past.
+Converts a date, or date with time, to the number of the second, starting from a certain fixed point in the past.
 
 ## toISOYear
 
-Converts a date or date with time to a UInt16 number containing the ISO Year number.
+Converts a date, or date with time, to a UInt16 number containing the ISO Year number.
 
 ## toISOWeek
 
-Converts a date or date with time to a UInt8 number containing the ISO Week number.
+Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
 
 ## toWeek(date\[,mode\])
 
@@ -799,7 +806,8 @@ Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
--   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
+-   `unit` — The type of interval to subtract. Note: The unit should be unquoted.
+
     Possible values:
 
     - `second`
@@ -1574,3 +1582,8 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
+
+## Related content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+

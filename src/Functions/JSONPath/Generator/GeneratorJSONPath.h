@@ -31,7 +31,7 @@ public:
         const auto * path = query_ptr->as<ASTJSONPath>();
         if (!path)
         {
-            throw Exception("Invalid path", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid path");
         }
         const auto * query = path->jsonpath_query;
 

@@ -53,8 +53,10 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         && format_settings_.custom.row_between_delimiter.empty())
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Input format CustomSeparatedWithNames(AndTypes) cannot work properly with enabled setting input_format_with_names_use_header, "
-                        "when format_custom_field_delimiter and format_custom_row_after_delimiter are the same and format_custom_row_between_delimiter is empty.");
+                        "Input format CustomSeparatedWithNames(AndTypes) cannot work properly with enabled setting "
+                        "input_format_with_names_use_header, when format_custom_field_delimiter and "
+                        "format_custom_row_after_delimiter are the same "
+                        "and format_custom_row_between_delimiter is empty.");
     }
 }
 

@@ -50,7 +50,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
     if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->parameters)
-            throw Exception("Data type cannot have multiple parenthesized parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Data type cannot have multiple parenthesized parameters.");
         return get(func->name, func->arguments);
     }
 
@@ -65,7 +65,7 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
             return get("Null", {});
     }
 
-    throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type.");
 }
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
@@ -106,35 +106,32 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
 void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
-            " a null constructor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
 
     String family_name_lowercase = Poco::toLower(family_name);
 
     if (isAlias(family_name) || isAlias(family_name_lowercase))
-        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is already registered as alias",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is already registered as alias", family_name);
 
     if (!data_types.emplace(family_name, creator).second)
-        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is not unique",
+            family_name);
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
-        throw Exception("DataTypeFactory: the case insensitive data type family name '" + family_name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
 }
 
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception("DataTypeFactory: the data type " + name + " has been provided "
-            " a null constructor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
+            name);
 
     registerDataType(name, [name, creator](const ASTPtr & ast)
     {
         if (ast)
-            throw Exception("Data type " + name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
     }, case_sensitiveness);
 }
@@ -188,9 +185,9 @@ const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String &
 
     auto hints = this->getHints(family_name);
     if (!hints.empty())
-        throw Exception("Unknown data type family: " + family_name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}. Maybe you meant: {}", family_name, toString(hints));
     else
-        throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 
 DataTypeFactory::DataTypeFactory()
@@ -208,11 +205,11 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
+    registerDataTypeIPv4andIPv6(*this);
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
-    registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainBool(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);

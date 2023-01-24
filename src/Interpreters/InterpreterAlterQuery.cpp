@@ -121,8 +121,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
             if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
-                throw Exception("Cannot MATERIALIZE TTL as there is no TTL set for table "
-                    + table->getStorageID().getNameForLogs(), ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}",
+                    table->getStorageID().getNameForLogs());
 
             mutation_commands.emplace_back(std::move(*mut_command));
         }
@@ -131,7 +131,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             live_view_commands.emplace_back(std::move(*live_view_command));
         }
         else
-            throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
@@ -147,7 +147,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext());
+        table->mutate(mutation_commands, getContext(), false);
     }
 
     if (!partition_commands.empty())
@@ -200,7 +200,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else
-            throw Exception("Wrong parameter type in ALTER DATABASE query", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER DATABASE query");
     }
 
     if (!alter_commands.empty())
@@ -451,7 +451,7 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
     {
         // Alter queries already have their target table inserted into `elem`.
         if (elem.query_tables.size() != 1)
-            throw Exception("Alter query should have target table recorded already", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Alter query should have target table recorded already");
 
         String prefix = *elem.query_tables.begin() + ".";
         for (const auto & child : alter.command_list->children)

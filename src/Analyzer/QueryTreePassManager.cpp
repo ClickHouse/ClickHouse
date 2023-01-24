@@ -1,5 +1,19 @@
+#include <memory>
 #include <Analyzer/QueryTreePassManager.h>
 
+#include <Common/Exception.h>
+
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
+#include <DataTypes/IDataType.h>
+
+#include <Interpreters/Context.h>
+
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -14,16 +28,11 @@
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
+#include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
-
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
-#include <Interpreters/Context.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Common/Exception.h>
+#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
+#include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+#include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
 namespace DB
 {
@@ -44,24 +53,6 @@ namespace
   */
 class ValidationChecker : public InDepthQueryTreeVisitor<ValidationChecker>
 {
-    String pass_name;
-
-    void visitColumn(ColumnNode * column) const
-    {
-        if (column->getColumnSourceOrNull() == nullptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column {} {} query tree node does not have valid source node after running {} pass",
-                column->getColumnName(), column->getColumnType(), pass_name);
-    }
-
-    void visitFunction(FunctionNode * function) const
-    {
-        if (!function->isResolved())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Function {} is not resolved after running {} pass",
-            function->dumpTree(), pass_name);
-    }
-
 public:
     explicit ValidationChecker(String pass_name_)
         : pass_name(std::move(pass_name_))
@@ -74,6 +65,57 @@ public:
         else if (auto * function = node->as<FunctionNode>())
             return visitFunction(function);
     }
+private:
+    void visitColumn(ColumnNode * column) const
+    {
+        if (column->getColumnSourceOrNull() == nullptr && column->getColumnName() != "__grouping_set")
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} {} query tree node does not have valid source node after running {} pass",
+                column->getColumnName(), column->getColumnType(), pass_name);
+    }
+
+    void visitFunction(FunctionNode * function) const
+    {
+        if (!function->isResolved())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {} is not resolved after running {} pass",
+                function->toAST()->formatForErrorMessage(), pass_name);
+
+        if (isNameOfInFunction(function->getFunctionName()))
+            return;
+
+        const auto & expected_argument_types = function->getArgumentTypes();
+        size_t expected_argument_types_size = expected_argument_types.size();
+        auto actual_argument_columns = function->getArgumentColumns();
+
+        if (expected_argument_types_size != actual_argument_columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {} expects {} arguments but has {} after running {} pass",
+                function->toAST()->formatForErrorMessage(),
+                expected_argument_types_size,
+                actual_argument_columns.size(),
+                pass_name);
+
+        for (size_t i = 0; i < expected_argument_types_size; ++i)
+        {
+            // Skip lambdas
+            if (WhichDataType(expected_argument_types[i]).isFunction())
+                continue;
+
+            if (!expected_argument_types[i]->equals(*actual_argument_columns[i].type))
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Function {} expects {} argument to have {} type but receives {} after running {} pass",
+                    function->toAST()->formatForErrorMessage(),
+                    i + 1,
+                    expected_argument_types[i]->getName(),
+                    actual_argument_columns[i].type->getName(),
+                    pass_name);
+            }
+        }
+    }
+
+    String pass_name;
 };
 #endif
 
@@ -87,11 +129,9 @@ public:
   * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
-  * TODO: Support GROUP BY functions of other keys elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
-  * TODO: Support setting optimize_redundant_functions_in_order_by.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
   * TODO: Support settings.optimize_or_like_chain.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
@@ -195,6 +235,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     if (settings.optimize_injective_functions_inside_uniq)
         manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
 
+    if (settings.optimize_group_by_function_keys)
+        manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
+
     if (settings.optimize_multiif_to_if)
         manager.addPass(std::make_unique<MultiIfToIfPass>());
 
@@ -202,6 +245,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.optimize_if_chain_to_multiif)
         manager.addPass(std::make_unique<IfChainToMultiIfPass>());
+
+    if (settings.optimize_redundant_functions_in_order_by)
+        manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
@@ -211,6 +257,10 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     if (settings.optimize_if_transform_strings_to_enum)
         manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
+
+    manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
+
+    manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
 }
 
 }

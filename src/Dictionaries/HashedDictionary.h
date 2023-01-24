@@ -26,14 +26,20 @@ namespace DB
 
 struct HashedDictionaryStorageConfiguration
 {
-    const bool preallocate;
+    const UInt64 shards;
+    const UInt64 shard_load_queue_backlog;
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
 };
 
-template <DictionaryKeyType dictionary_key_type, bool sparse>
+template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
+class ParallelDictionaryLoader;
+
+template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 class HashedDictionary final : public IDictionary
 {
+    friend class ParallelDictionaryLoader<dictionary_key_type, sparse, sharded>;
+
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
@@ -43,6 +49,7 @@ public:
         DictionarySourcePtr source_ptr_,
         const HashedDictionaryStorageConfiguration & configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
+    ~HashedDictionary() override;
 
     std::string getTypeName() const override
     {
@@ -76,7 +83,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
+        return std::make_shared<HashedDictionary<dictionary_key_type, sparse, sharded>>(
+            getDictionaryID(),
+            dict_struct,
+            source_ptr->clone(),
+            configuration,
+            update_field_loaded_block);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -156,6 +168,9 @@ private:
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
 
+    template <typename Value>
+    using CollectionsHolder = std::vector<CollectionType<Value>>;
+
     using NoAttributesCollectionType = std::conditional_t<sparse, NoAttributesCollectionTypeSparse, NoAttributesCollectionTypeNonSparse>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
@@ -166,34 +181,36 @@ private:
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
-            CollectionType<UInt8>,
-            CollectionType<UInt16>,
-            CollectionType<UInt32>,
-            CollectionType<UInt64>,
-            CollectionType<UInt128>,
-            CollectionType<UInt256>,
-            CollectionType<Int8>,
-            CollectionType<Int16>,
-            CollectionType<Int32>,
-            CollectionType<Int64>,
-            CollectionType<Int128>,
-            CollectionType<Int256>,
-            CollectionType<Decimal32>,
-            CollectionType<Decimal64>,
-            CollectionType<Decimal128>,
-            CollectionType<Decimal256>,
-            CollectionType<DateTime64>,
-            CollectionType<Float32>,
-            CollectionType<Float64>,
-            CollectionType<UUID>,
-            CollectionType<StringRef>,
-            CollectionType<Array>>
-            container;
+            CollectionsHolder<UInt8>,
+            CollectionsHolder<UInt16>,
+            CollectionsHolder<UInt32>,
+            CollectionsHolder<UInt64>,
+            CollectionsHolder<UInt128>,
+            CollectionsHolder<UInt256>,
+            CollectionsHolder<Int8>,
+            CollectionsHolder<Int16>,
+            CollectionsHolder<Int32>,
+            CollectionsHolder<Int64>,
+            CollectionsHolder<Int128>,
+            CollectionsHolder<Int256>,
+            CollectionsHolder<Decimal32>,
+            CollectionsHolder<Decimal64>,
+            CollectionsHolder<Decimal128>,
+            CollectionsHolder<Decimal256>,
+            CollectionsHolder<DateTime64>,
+            CollectionsHolder<Float32>,
+            CollectionsHolder<Float64>,
+            CollectionsHolder<UUID>,
+            CollectionsHolder<IPv4>,
+            CollectionsHolder<IPv6>,
+            CollectionsHolder<StringRef>,
+            CollectionsHolder<Array>>
+            containers;
     };
 
     void createAttributes();
 
-    void blockToAttributes(const Block & block);
+    void blockToAttributes(const Block & block, DictionaryKeysArenaHolder<dictionary_key_type> & arena_holder, UInt64 shard);
 
     void updateData();
 
@@ -202,6 +219,22 @@ private:
     void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
+
+    UInt64 getShard(UInt64 key) const
+    {
+        if constexpr (!sharded)
+            return 0;
+        /// NOTE: function here should not match with the DefaultHash<> since
+        /// it used for the HashMap/sparse_hash_map.
+        return intHashCRC32(key) % configuration.shards;
+    }
+
+    UInt64 getShard(StringRef key) const
+    {
+        if constexpr (!sharded)
+            return 0;
+        return StringRefHash()(key) % configuration.shards;
+    }
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
@@ -218,6 +251,8 @@ private:
 
     void resize(size_t added_rows);
 
+    Poco::Logger * log;
+
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryStorageConfiguration configuration;
@@ -226,21 +261,25 @@ private:
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
-    size_t element_count = 0;
+    std::atomic<size_t> element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    Arena string_arena;
-    NoAttributesCollectionType no_attributes_container;
+    std::vector<std::unique_ptr<Arena>> string_arenas;
+    std::vector<NoAttributesCollectionType> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
-extern template class HashedDictionary<DictionaryKeyType::Simple, false>;
-extern template class HashedDictionary<DictionaryKeyType::Simple, true>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ false, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ false, /* sharded= */ true>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ true, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ true, /* sharded= */ true>;
 
-extern template class HashedDictionary<DictionaryKeyType::Complex, false>;
-extern template class HashedDictionary<DictionaryKeyType::Complex, true>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ false, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ false, /* sharded= */ true>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ true, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ true, /* sharded= */ true>;
 
 }
