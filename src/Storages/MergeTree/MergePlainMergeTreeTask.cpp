@@ -29,7 +29,7 @@ void MergePlainMergeTreeTask::onCompleted()
 bool MergePlainMergeTreeTask::executeStep()
 {
     /// Metrics will be saved in the thread_group.
-    ScopedProfileEvents profile_events_scope(&profile_counters);
+    ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;

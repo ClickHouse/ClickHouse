@@ -7488,7 +7488,8 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
     {
         Stopwatch stopwatch;
         MutableDataPartPtr cloned_part;
-        ScopedProfileEvents profile_events_scope;
+        ProfileEventsScope profile_events_scope;
+
 
         auto write_part_log = [&](const ExecutionStatus & execution_status)
         {

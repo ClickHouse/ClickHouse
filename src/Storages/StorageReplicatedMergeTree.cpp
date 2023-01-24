@@ -1594,7 +1594,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     if (entry.type == LogEntry::ATTACH_PART)
     {
-        ScopedProfileEvents profile_events_scope;
+        ProfileEventsScope profile_events_scope;
 
         if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry))
         {
@@ -4009,7 +4009,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
-    ScopedProfileEvents profile_events_scope;
+    ProfileEventsScope profile_events_scope;
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
@@ -4247,7 +4247,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     Stopwatch stopwatch;
     MutableDataPartPtr part;
     DataPartsVector replaced_parts;
-    ScopedProfileEvents profile_events_scope;
+    ProfileEventsScope profile_events_scope;
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {

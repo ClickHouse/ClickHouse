@@ -31,7 +31,7 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
     /// Metrics will be saved in the local profile_counters.
-    ScopedProfileEvents profile_events_scope(&profile_counters);
+    ProfileEventsScope profile_events_scope(&profile_counters);
 
     std::exception_ptr saved_exception;
 

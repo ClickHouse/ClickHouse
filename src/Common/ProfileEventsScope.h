@@ -6,21 +6,20 @@
 namespace DB
 {
 
-
 /// Use specific performance counters for current thread in the current scope.
-class ScopedProfileEvents : private boost::noncopyable
+class ProfileEventsScope : private boost::noncopyable
 {
 public:
     /// Counters are owned by this object.
-    ScopedProfileEvents();
+    ProfileEventsScope();
 
-    /// Shared counters are stored outisde.
+    /// Shared counters are stored outside.
     /// Useful when we calculate metrics entering into some scope several times.
-    explicit ScopedProfileEvents(ProfileEvents::Counters * performance_counters_scope_);
+    explicit ProfileEventsScope(ProfileEvents::Counters * performance_counters_scope_);
 
     std::shared_ptr<ProfileEvents::Counters::Snapshot> getSnapshot();
 
-    ~ScopedProfileEvents();
+    ~ProfileEventsScope();
 
 private:
     /// If set, then performance_counters_scope is owned by this object.

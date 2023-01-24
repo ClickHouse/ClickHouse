@@ -65,7 +65,7 @@ void MutatePlainMergeTreeTask::prepare()
 bool MutatePlainMergeTreeTask::executeStep()
 {
     /// Metrics will be saved in the local profile_counters.
-    ScopedProfileEvents profile_events_scope(&profile_counters);
+    ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
