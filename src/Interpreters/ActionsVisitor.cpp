@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -38,6 +39,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTQueryParameter.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -53,6 +55,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
@@ -152,15 +155,15 @@ static Block createBlockFromCollection(const Collection & collection, const Data
         else
         {
             if (value.getType() != Field::Types::Tuple)
-                throw Exception("Invalid type in set. Expected tuple, got "
-                    + String(value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
+                    String(value.getTypeName()));
 
             const auto & tuple = value.template get<const Tuple &>();
             size_t tuple_size = tuple.size();
 
             if (tuple_size != columns_num)
-                throw Exception("Incorrect size of tuple in set: " + toString(tuple_size)
-                    + " instead of " + toString(columns_num), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
+                    tuple_size, columns_num);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
@@ -201,7 +204,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, C
         return convertFieldToType(value_raw.first, type, value_raw.second.get());
     }
     else
-        throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+        throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
 }
 
 static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
@@ -274,8 +277,8 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
             size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
             if (tuple_size != num_columns)
-                throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
-                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
+                    tuple_size, num_columns);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
@@ -302,7 +305,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
                     columns[i]->insert(tuple_values[i]);
         }
         else
-            throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+            throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set");
     }
 
     return header.cloneWithColumns(std::move(columns));
@@ -332,8 +335,8 @@ Block createBlockForSet(
 
     auto throw_unsupported_type = [](const auto & type)
     {
-        throw Exception("Unsupported value type at the right-side of IN: "
-            + type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported value type at the right-side of IN: {}.",
+            type->getName());
     };
 
     Block block;
@@ -403,16 +406,14 @@ Block createBlockForSet(
     {
         const auto * set_func = right_arg->as<ASTFunction>();
         if (!set_func || (set_func->name != "tuple" && set_func->name != "array"))
-            throw Exception("Incorrect type of 2nd argument for function 'in'"
-                            ". Must be subquery or set of elements with type " + left_arg_type->getName() + ".",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Incorrect type of 2nd argument for function 'in'. "
+                            "Must be subquery or set of elements with type {}.", left_arg_type->getName());
 
         elements_ast = set_func->arguments;
     }
     else
-        throw Exception("Invalid types for IN function: "
-                        + left_arg_type->getName() + " and " + right_arg_type->getName() + ".",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid types for IN function: {} and {}.",
+                        left_arg_type->getName(), right_arg_type->getName());
 
     return createBlockFromAST(elements_ast, set_element_types, context);
 }
@@ -427,7 +428,7 @@ SetPtr makeExplicitSet(
     const IAST & args = *node->arguments;
 
     if (args.children.size() != 2)
-        throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments passed to function in");
 
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
@@ -488,7 +489,7 @@ public:
     {
         bool inserted = map.emplace(node->result_name, node).second;
         if (!inserted)
-            throw Exception("Column '" + node->result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' already exists", node->result_name);
 
         index.push_back(node);
     }
@@ -506,7 +507,7 @@ public:
     {
         const auto * node = tryGetNode(name);
         if (!node)
-            throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", name);
 
         return *node;
     }
@@ -535,7 +536,8 @@ ActionsMatcher::Data::Data(
     bool only_consts_,
     bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
-    bool build_expression_with_window_functions_)
+    bool build_expression_with_window_functions_,
+    bool is_create_parameterized_view_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -549,6 +551,7 @@ ActionsMatcher::Data::Data(
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
+    , is_create_parameterized_view(is_create_parameterized_view_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
@@ -613,7 +616,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
             return i;
     }
 
-    throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: {}", name);
 }
 
 void ScopeStack::addColumn(ColumnWithTypeAndName column)
@@ -648,8 +651,8 @@ void ScopeStack::addArrayJoin(const std::string & source_name, std::string resul
 
     const auto * source_node = stack.front().index->tryGetNode(source_name);
     if (!source_node)
-        throw Exception("Expression with arrayJoin cannot depend on lambda argument: " + source_name,
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin cannot depend on lambda argument: {}",
+                        source_name);
 
     const auto & node = stack.front().actions_dag->addArrayJoin(*source_node, std::move(result_name));
     stack.front().index->addNode(&node);
@@ -762,8 +765,8 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
         return NameAndTypePair(child_column_name, node->result_type);
 
     if (!data.only_consts)
-        throw Exception("Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
-                        ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: {}; there are columns: {}",
+            child_column_name, data.actions_stack.dumpNames());
 
     return {};
 }
@@ -882,13 +885,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
 
     if (node.name == "lambda")
-        throw Exception("Unexpected lambda expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
 
     /// Function arrayJoin.
     if (node.name == "arrayJoin")
     {
         if (node.arguments->children.size() != 1)
-            throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "arrayJoin requires exactly 1 argument");
 
         ASTPtr arg = node.arguments->children.at(0);
         visit(arg, data);
@@ -907,7 +910,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (arguments_size == 0)
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
         if (arguments_size > 64)
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                            "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
         auto keys_info = data.aggregation_keys_info;
         auto aggregation_keys_number = keys_info.aggregation_keys.size();
 
@@ -1120,16 +1124,17 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
             const auto * function = child->as<ASTFunction>();
             const auto * identifier = child->as<ASTTableIdentifier>();
+            const auto * query_parameter = child->as<ASTQueryParameter>();
             if (function && function->name == "lambda")
             {
                 /// If the argument is a lambda expression, just remember its approximate type.
                 if (function->arguments->children.size() != 2)
-                    throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
 
                 const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
 
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
-                    throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
 
                 has_lambda_arguments = true;
                 argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
@@ -1200,6 +1205,15 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 argument_types.push_back(column.type);
                 argument_names.push_back(column.name);
             }
+            else if (data.is_create_parameterized_view && query_parameter)
+            {
+                const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
+                ColumnWithTypeAndName column(data_type,query_parameter->getColumnName());
+                data.addColumn(column);
+
+                argument_types.push_back(data_type);
+                argument_names.push_back(query_parameter->name);
+            }
             else
             {
                 /// If the argument is not a lambda expression, call it recursively and find out its type.
@@ -1239,7 +1253,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     {
                         auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[j]);
                         if (!opt_arg_name)
-                            throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "lambda argument declarations must be identifiers");
 
                         lambda_arguments.emplace_back(*opt_arg_name, lambda_type->getArgumentTypes()[j]);
                     }

@@ -3,6 +3,7 @@
 # pylint: disable=too-many-return-statements
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
+# pylint: disable=anomalous-backslash-in-string
 
 import enum
 from queue import Full
@@ -232,17 +233,20 @@ def need_retry(args, stdout, stderr, total_time):
 
 
 def get_processlist(args):
-    if args.replicated_database:
-        return clickhouse_execute_json(
-            args,
-            """
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE query NOT LIKE '%system.processes%'
-        """,
-        )
-    else:
-        return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+    try:
+        if args.replicated_database:
+            return clickhouse_execute_json(
+                args,
+                """
+            SELECT materialize((hostName(), tcpPort())) as host, *
+            FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
+            WHERE query NOT LIKE '%system.processes%'
+            """,
+            )
+        else:
+            return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+    except Exception as e:
+        return "Failed to get processlist: " + str(e)
 
 
 def get_transactions_list(args):
@@ -1544,8 +1548,11 @@ def check_server_started(args):
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionError, http.client.ImproperConnectionState):
-            print(".", end="")
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            if args.hung_check:
+                print("Connection error, will retry: ", str(e))
+            else:
+                print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
@@ -1811,6 +1818,57 @@ def reportCoverage(args):
         """
     )
 
+def reportLogStats(args):
+    query = """
+        WITH
+            120 AS mins,
+            (
+                SELECT (count(), sum(length(message)))
+                FROM system.text_log
+                WHERE (now() - toIntervalMinute(mins)) < event_time
+            ) AS total
+        SELECT
+            count() AS count,
+            round(count / (total.1), 3) AS `count_%`,
+            formatReadableSize(sum(length(message))) AS size,
+            round(sum(length(message)) / (total.2), 3) AS `size_%`,
+            countDistinct(logger_name) AS uniq_loggers,
+            countDistinct(thread_id) AS uniq_threads,
+            groupArrayDistinct(toString(level)) AS levels,
+            round(sum(query_id = '') / count, 3) AS `background_%`,
+            message_format_string
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(mins)) < event_time
+        GROUP BY message_format_string
+        ORDER BY count DESC
+        LIMIT 100
+        FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode()
+    print("\nTop patterns of log messages:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        WITH
+            120 AS mins
+        SELECT
+            count() AS count,
+            substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
+            substr(any(message), 1, 256) as runtime_message,
+            any((extract(source_file, '\/[a-zA-Z0-9_]+\.[a-z]+'), source_line)) as line 
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
+        GROUP BY pattern
+        ORDER BY count DESC
+        LIMIT 50
+        FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode()
+    print("\nTop messages without format string (fmt::runtime):\n")
+    print(value)
+    print("\n")
+
 
 def main(args):
     global server_died
@@ -1820,8 +1878,7 @@ def main(args):
     global restarted_tests
 
     if not check_server_started(args):
-        msg = "Server is not responding. Cannot execute 'SELECT 1' query. \
-            If you are using split build, you have to specify -c option."
+        msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
             pid = get_server_pid()
@@ -1946,6 +2003,9 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    if args.report_logs_stats:
+        reportLogStats(args)
+
     if args.report_coverage and not reportCoverage(args):
         exit_code.value = 1
 
@@ -1953,19 +2013,22 @@ def main(args):
 
 
 def find_binary(name):
-    if os.path.exists(name) and os.access(name, os.X_OK):
-        return True
+    if os.access(name, os.X_OK):
+        return name
     paths = os.environ.get("PATH").split(":")
     for path in paths:
-        if os.access(os.path.join(path, name), os.X_OK):
-            return True
+        bin_path = os.path.join(path, name)
+        if os.access(bin_path, os.X_OK):
+            return bin_path
 
     # maybe it wasn't in PATH
-    if os.access(os.path.join("/usr/local/bin", name), os.X_OK):
-        return True
-    if os.access(os.path.join("/usr/bin", name), os.X_OK):
-        return True
-    return False
+    bin_path = os.path.join("/usr/local/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+    bin_path = os.path.join("/usr/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+    return None
 
 
 def get_additional_client_options(args):
@@ -2005,15 +2068,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "-b",
         "--binary",
-        default="clickhouse",
-        help="Path to clickhouse (if monolithic build, clickhouse-server otherwise) "
-        "binary or name of binary in PATH",
+        default=find_binary("clickhouse"),
+        help="Path to clickhouse binary or name of binary in PATH",
     )
 
     parser.add_argument(
         "-c",
         "--client",
-        help="Path to clickhouse-client (if split build, useless otherwise) binary of "
+        help="Path to clickhouse-client, this option is useless"
         "name of binary in PATH",
     )
 
@@ -2235,6 +2297,12 @@ if __name__ == "__main__":
         default=False,
         help="Check what high-level server components were covered by tests",
     )
+    parser.add_argument(
+        "--report-logs-stats",
+        action="store_true",
+        default=False,
+        help="Report statistics about log messages",
+    )
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
@@ -2277,18 +2345,13 @@ if __name__ == "__main__":
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:
-        if find_binary(args.binary + "-client"):
-            args.client = args.binary + "-client"
-
-            print("Using " + args.client + " as client program")
-        elif find_binary(args.binary):
+        client_bin = find_binary(args.binary + "-client")
+        if client_bin is not None:
+            args.client = client_bin
+            print("Using {args.client} as client program")
+        elif args.binary:
             args.client = args.binary + " client"
-
-            print(
-                "Using "
-                + args.client
-                + " as client program (expecting monolithic build)"
-            )
+            print(f"Using {args.client} as client program (expecting monolithic build)")
         else:
             print(
                 "No 'clickhouse' or 'clickhouse-client' client binary found",

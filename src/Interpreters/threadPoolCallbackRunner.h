@@ -10,16 +10,16 @@ namespace DB
 {
 
 /// High-order function to run callbacks (functions with 'void()' signature) somewhere asynchronously.
-template <typename Result>
-using ThreadPoolCallbackRunner = std::function<std::future<Result>(std::function<Result()> &&, size_t priority)>;
+template <typename Result, typename Callback = std::function<Result()>>
+using ThreadPoolCallbackRunner = std::function<std::future<Result>(Callback &&, int64_t priority)>;
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrow()'.
-template <typename Result>
-ThreadPoolCallbackRunner<Result> threadPoolCallbackRunner(ThreadPool & pool, const std::string & thread_name)
+template <typename Result, typename Callback = std::function<Result()>>
+ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool & pool, const std::string & thread_name)
 {
-    return [pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](std::function<Result()> && callback, size_t priority) mutable -> std::future<Result>
+    return [pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](Callback && callback, int64_t priority) mutable -> std::future<Result>
     {
-        auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, callback = std::move(callback)]() -> Result
+        auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, callback = std::move(callback)]() mutable -> Result
         {
             if (thread_group)
                 CurrentThread::attachTo(thread_group);
@@ -37,10 +37,17 @@ ThreadPoolCallbackRunner<Result> threadPoolCallbackRunner(ThreadPool & pool, con
         auto future = task->get_future();
 
         /// ThreadPool is using "bigger is higher priority" instead of "smaller is more priority".
-        pool->scheduleOrThrow([task]{ (*task)(); }, -priority);
+        pool->scheduleOrThrow([task = std::move(task)]{ (*task)(); }, -priority);
 
         return future;
     };
+}
+
+template <typename Result, typename T>
+std::future<Result> scheduleFromThreadPool(T && task, ThreadPool & pool, const std::string & thread_name, int64_t priority = 0)
+{
+    auto schedule = threadPoolCallbackRunner<Result, T>(pool, thread_name);
+    return schedule(std::move(task), priority);
 }
 
 }

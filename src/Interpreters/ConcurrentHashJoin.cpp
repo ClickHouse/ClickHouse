@@ -167,7 +167,8 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
+                    table_join->kind(), table_join->strictness());
 }
 
 static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)

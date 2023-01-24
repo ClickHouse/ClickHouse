@@ -33,7 +33,7 @@ public:
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
-            throw Exception("Normalized AST is too deep. Maximum: " + toString(data.settings.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+            throw Exception(ErrorCodes::TOO_DEEP_AST, "Normalized AST is too deep. Maximum: {}", data.settings.max_ast_depth);
         ++data.level;
     }
 
@@ -83,7 +83,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name());
     if (!data.allow_self_aliases && current_alias == node.name())
-        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias", backQuote(current_alias), backQuote(node.name()));
+        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias",
+                        backQuote(current_alias), backQuote(node.name()));
 
     if (it_alias != data.aliases.end() && current_alias != node.name())
     {
@@ -101,7 +102,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
         if (current_asts.contains(alias_node.get()) /// We have loop of multiple aliases
             || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
-            throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
+            throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic aliases");
 
         /// Let's replace it with the corresponding tree node.
         if (!node_alias.empty() && node_alias != our_alias_or_name)
@@ -129,6 +130,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         }
     }
 }
+
 
 void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
@@ -177,7 +179,7 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         if (func_node->tryGetQueryArgument())
         {
             if (func_node->name != "view")
-                throw Exception("Query argument can only be used in the `view` TableFunction", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Query argument can only be used in the `view` TableFunction");
             /// Don't go into query argument.
             return;
         }
@@ -265,7 +267,10 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     else if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
-        throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+    {
+        if (!data.is_create_parameterized_view)
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Query parameter {} was not set", backQuote(node_param->name));
+    }
     else if (auto * node_function = ast->as<ASTFunction>())
         if (node_function->parameters)
             visit(node_function->parameters, data);

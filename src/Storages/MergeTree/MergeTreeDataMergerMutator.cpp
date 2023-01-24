@@ -294,10 +294,13 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         parts_ranges.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
-        if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
-            && part->info.min_block <= (*prev_part)->info.max_block)
+        if (prev_part)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
+            if (part->info.contains((*prev_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part->name, (*prev_part)->name);
+
+            if (!part->info.isDisjoint((*prev_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
         }
 
         prev_part = &part;
@@ -370,7 +373,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)
-            throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge selector returned only one part to merge");
 
         if (parts_to_merge.empty())
         {
@@ -628,11 +631,11 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     {
         for (size_t i = 0; i < parts.size(); ++i)
             if (parts[i]->name != replaced_parts[i]->name)
-                throw Exception("Unexpected part removed when adding " + new_data_part->name + ": " + replaced_parts[i]->name
-                    + " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected part removed when adding {}: {} instead of {}",
+                    new_data_part->name, replaced_parts[i]->name, parts[i]->name);
     }
 
-    LOG_TRACE(log, "Merged {} parts: [{}, {}] -> []", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
+    LOG_TRACE(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
     return new_data_part;
 }
 

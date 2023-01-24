@@ -8,7 +8,6 @@
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Throttler_fwd.h>
-#include <Storages/HeaderCollection.h>
 
 #include <IO/S3Common.h>
 
@@ -36,6 +35,7 @@ struct S3Settings
             size_t max_part_number = 10000;
             size_t max_single_part_upload_size = 32 * 1024 * 1024;
             size_t max_single_operation_copy_size = 5ULL * 1024 * 1024 * 1024;
+            String storage_class_name;
 
             void updateFromSettings(const Settings & settings) { updateFromSettingsImpl(settings, true); }
             void validate();
@@ -63,6 +63,7 @@ struct S3Settings
         size_t max_connections = 1024;
         bool check_objects_after_upload = false;
         size_t max_unexpected_write_error_retries = 4;
+        size_t list_object_keys_size = 1000;
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
 

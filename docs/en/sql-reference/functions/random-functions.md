@@ -589,4 +589,5 @@ Result:
 └───────────────────────────────────────┘
 ```
 
-
+## Related content
+- Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

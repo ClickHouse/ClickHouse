@@ -14,8 +14,10 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
+#include <Common/NamedCollections/NamedCollections.h>
 
 namespace DB
 {
@@ -99,7 +101,7 @@ Pipe StorageMeiliSearch::read(
             auto str = el->getColumnName();
             auto it = find(str.begin(), str.end(), '=');
             if (it == str.end())
-                throw Exception("meiliMatch function must have parameters of the form \'key=value\'", ErrorCodes::BAD_QUERY_PARAMETER);
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "meiliMatch function must have parameters of the form \'key=value\'");
 
             String key(str.begin() + 1, it);
             String value(it + 1, str.end() - 1);
@@ -127,13 +129,13 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
 
 MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
+        validateNamedCollection(*named_collection, {"url", "index"}, {"key"});
 
-        String url = common_configuration.addresses_expr;
-        String index = common_configuration.table;
-        String key = common_configuration.password;
+        String url = named_collection->get<String>("url");
+        String index = named_collection->get<String>("index");
+        String key = named_collection->getOrDefault<String>("key", "");
 
         if (url.empty() || index.empty())
         {

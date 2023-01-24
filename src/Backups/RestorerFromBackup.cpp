@@ -145,7 +145,7 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 
 void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
     if (restore_coordination)

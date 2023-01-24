@@ -1073,6 +1073,9 @@
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+
+        <!-- example of using a different storage policy for a system table -->
+        <!-- storage_policy>local_ssd</storage_policy -->
     </query_log>
 
     <!-- Trace log. Stores stack traces collected by query profilers.
@@ -1450,6 +1453,14 @@
     </rocksdb>
     -->
 
+    <!-- Configuration for the query result cache -->
+    <!-- <query_result_cache> -->
+    <!--     <size>1073741824</size> -->
+    <!--     <max_entries>1024</max_entries> -->
+    <!--     <max_entry_size>1048576</max_entry_size> -->
+    <!--     <max_entry_records>30000000</max_entry_records> -->
+    <!-- </query_result_cache> -->
+
     <!-- Uncomment if enable merge tree metadata cache -->
     <!--merge_tree_metadata_cache>
         <lru_cache_size>268435456</lru_cache_size>
@@ -1463,5 +1474,9 @@
          if the user has access to these tables.
          I don't recommend to change this setting.
     <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
+    -->
+
+    <!-- On Linux systems this can control the behavior of OOM killer.
+    <oom_score>-1000</oom_score>
     -->
 </clickhouse>

@@ -251,9 +251,9 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
     : column_holder(std::move(holder)), is_nullable(is_nullable_), reverse_index(numSpecialValues(is_nullable_), 0)
 {
     if (column_holder->size() < numSpecialValues())
-        throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Too small holder column for ColumnUnique.");
     if (isColumnNullable(*column_holder))
-        throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Holder column for ColumnUnique can't be nullable.");
 
     reverse_index.setColumn(getRawColumnPtr());
     createNullMask();
@@ -276,7 +276,7 @@ void ColumnUnique<ColumnType>::createNullMask()
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
         }
         else
-            throw Exception("Null mask for ColumnUnique is already created.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null mask for ColumnUnique is already created.");
     }
 }
 
@@ -286,7 +286,7 @@ void ColumnUnique<ColumnType>::updateNullMask()
     if (is_nullable)
     {
         if (!nested_null_mask)
-            throw Exception("Null mask for ColumnUnique is was not created.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null mask for ColumnUnique is was not created.");
 
         size_t size = getRawColumnPtr()->size();
 
@@ -323,7 +323,7 @@ template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::getNullValueIndex() const
 {
     if (!is_nullable)
-        throw Exception("ColumnUnique can't contain null values.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnUnique can't contain null values.");
 
     return 0;
 }
@@ -338,7 +338,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 
         [[noreturn]] static void throwUnsupported()
         {
-            throw Exception("Unsupported field type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported field type");
         }
 
         [[noreturn]] void operator() (const Null &) { throwUnsupported(); }
@@ -355,6 +355,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         void operator() (const Int128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const Int256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const UUID & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv4 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv6 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const Float64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const DecimalField<Decimal32> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
         void operator() (const DecimalField<Decimal64> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
@@ -455,7 +457,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
 template <typename ColumnType>
 const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
 {
-    throw Exception("Method skipSerializedInArena is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", this->getName());
 }
 
 template <typename ColumnType>
@@ -488,9 +490,8 @@ static void checkIndexes(const ColumnVector<IndexType> & indexes, size_t max_dic
     {
         if (data[i] >= max_dictionary_size)
         {
-            throw Exception("Found index " + toString(data[i]) + " at position " + toString(i)
-                            + " which is grated or equal than dictionary size " + toString(max_dictionary_size),
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is grated or equal "
+                            "than dictionary size {}", toString(data[i]), toString(i), toString(max_dictionary_size));
         }
     }
 }
@@ -520,8 +521,8 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         if (next_position > std::numeric_limits<IndexType>::max())
         {
             if (sizeof(SuperiorIndexType) == sizeof(IndexType))
-                throw Exception("Can't find superior index type for type " + demangle(typeid(IndexType).name()),
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find superior index type for type {}",
+                                demangle(typeid(IndexType).name()));
 
             auto expanded_column = ColumnVector<SuperiorIndexType>::create(length);
             auto & expanded_data = expanded_column->getData();
@@ -550,8 +551,8 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         src_column = typeid_cast<const ColumnType *>(&src);
 
     if (src_column == nullptr)
-        throw Exception("Invalid column type for ColumnUnique::insertRangeFrom. Expected " + column_holder->getName() +
-                        ", got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Invalid column type for ColumnUnique::insertRangeFrom. "
+                        "Expected {}, got {}", column_holder->getName(), src.getName());
 
     auto column = getRawColumnPtr();
 
@@ -628,7 +629,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn &
     if (!positions_column)
         positions_column = call_for_type(UInt64());
     if (!positions_column)
-        throw Exception("Can't find index type for ColumnUnique", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find index type for ColumnUnique");
 
     updateNullMask();
 
@@ -645,7 +646,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     auto overflowed_keys = column_holder->cloneEmpty();
     auto overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
     if (!overflowed_keys_ptr)
-        throw Exception("Invalid keys type for ColumnUnique.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid keys type for ColumnUnique.");
 
     auto call_for_type = [this, &src, start, length, overflowed_keys_ptr, max_dictionary_size](auto x) -> MutableColumnPtr
     {
@@ -674,7 +675,7 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     if (!positions_column)
         positions_column = call_for_type(UInt64());
     if (!positions_column)
-        throw Exception("Can't find index type for ColumnUnique", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find index type for ColumnUnique");
 
     updateNullMask();
 
