@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/groupbitmapand
 sidebar_position: 129
 ---
 

@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
-#include <Common/assert_cast.h>
 
 #if USE_HIVE
 
@@ -32,17 +31,12 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 HiveTextRowInputFormat::HiveTextRowInputFormat(
     const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(
-        header_, *buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, format_settings_)), buf(std::move(buf_))
+        header_, *buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(std::move(buf_), format_settings_))
 {
 }
 
-void HiveTextRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
-}
-
-HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_)
-    : CSVFormatReader(buf_, format_settings_), buf(&buf_), input_field_names(format_settings_.hive_text.input_field_names)
+HiveTextFormatReader::HiveTextFormatReader(std::unique_ptr<PeekableReadBuffer> buf_, const FormatSettings & format_settings_)
+    : CSVFormatReader(*buf_, format_settings_), buf(std::move(buf_)), input_field_names(format_settings_.hive_text.input_field_names)
 {
 }
 
@@ -59,12 +53,6 @@ std::vector<String> HiveTextFormatReader::readTypes()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
 }
 
-void HiveTextFormatReader::setReadBuffer(ReadBuffer & buf_)
-{
-    buf = assert_cast<PeekableReadBuffer *>(&buf_);
-    CSVFormatReader::setReadBuffer(buf_);
-}
-
 void registerInputFormatHiveText(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -78,8 +66,8 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine(
         "HiveText",
-        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t> {
-            return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows);
+        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size) -> std::pair<bool, size_t> {
+            return fileSegmentationEngineCSVImpl(in, memory, min_chunk_size, 0);
         });
 }
 

@@ -1,9 +1,5 @@
-from email.errors import HeaderParseError
 import logging
 import os
-import csv
-import shutil
-import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -23,21 +19,6 @@ S3_DATA = [
 
 def create_buckets_s3(cluster):
     minio = cluster.minio_client
-
-    for file_number in range(100):
-        file_name = f"data/generated/file_{file_number}.csv"
-        os.makedirs(os.path.join(SCRIPT_DIR, "data/generated/"), exist_ok=True)
-        S3_DATA.append(file_name)
-        with open(os.path.join(SCRIPT_DIR, file_name), "w+", encoding="utf-8") as f:
-            # a String, b UInt64
-            data = []
-
-            for number in range(100):
-                data.append([str(number) * 10, number])
-
-            writer = csv.writer(f)
-            writer.writerows(data)
-
     for file in S3_DATA:
         minio.fput_object(
             bucket_name=cluster.minio_bucket,
@@ -80,7 +61,6 @@ def started_cluster():
 
         yield cluster
     finally:
-        shutil.rmtree(os.path.join(SCRIPT_DIR, "data/generated/"))
         cluster.shutdown()
 
 
@@ -231,42 +211,73 @@ def test_ambiguous_join(started_cluster):
     assert "AMBIGUOUS_COLUMN_NAME" not in result
 
 
-def test_skip_unavailable_shards(started_cluster):
-    node = started_cluster.instances["s0_0_0"]
-    result = node.query(
+def test_distributed_insert_select(started_cluster):
+    first_replica_first_shard = started_cluster.instances["s0_0_0"]
+    second_replica_first_shard = started_cluster.instances["s0_0_1"]
+    first_replica_second_shard = started_cluster.instances["s0_1_0"]
+
+    first_replica_first_shard.query(
         """
-    SELECT count(*) from s3Cluster(
-        'cluster_non_existent_port',
-        'http://minio1:9001/root/data/clickhouse/part1.csv',
-        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
-    SETTINGS skip_unavailable_shards = 1
-    """
+    CREATE TABLE insert_select_local ON CLUSTER 'cluster_simple' (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select', '{replica}')
+    ORDER BY (a, b);
+        """
     )
 
-    assert result == "10\n"
-
-
-def test_unskip_unavailable_shards(started_cluster):
-    node = started_cluster.instances["s0_0_0"]
-    error = node.query_and_get_error(
+    first_replica_first_shard.query(
         """
-    SELECT count(*) from s3Cluster(
-        'cluster_non_existent_port',
-        'http://minio1:9001/root/data/clickhouse/part1.csv',
-        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
-    """
+    CREATE TABLE insert_select_distributed ON CLUSTER 'cluster_simple' as insert_select_local
+    ENGINE = Distributed('cluster_simple', default, insert_select_local, b % 2);
+        """
     )
 
-    assert "NETWORK_ERROR" in error
+    for file_number in range(100):
+        first_replica_first_shard.query(
+            """
+        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
+        SELECT repeat('{}', 10), number from numbers(100);
+            """.format(
+                file_number, file_number
+            )
+        )
+
+    first_replica_first_shard.query(
+        """
+    INSERT INTO insert_select_distributed SELECT * FROM s3Cluster(
+        'cluster_simple',
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
+    ) SETTINGS parallel_distributed_insert_select=1;
+        """
+    )
+
+    for line in (
+        first_replica_first_shard.query("""SELECT * FROM insert_select_local;""")
+        .strip()
+        .split("\n")
+    ):
+        _, b = line.split()
+        assert int(b) % 2 == 0
+
+    for line in (
+        second_replica_first_shard.query("""SELECT * FROM insert_select_local;""")
+        .strip()
+        .split("\n")
+    ):
+        _, b = line.split()
+        assert int(b) % 2 == 0
+
+    for line in (
+        first_replica_second_shard.query("""SELECT * FROM insert_select_local;""")
+        .strip()
+        .split("\n")
+    ):
+        _, b = line.split()
+        assert int(b) % 2 == 1
 
 
 def test_distributed_insert_select_with_replicated(started_cluster):
     first_replica_first_shard = started_cluster.instances["s0_0_0"]
     second_replica_first_shard = started_cluster.instances["s0_0_1"]
-
-    first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard' SYNC;"""
-    )
 
     first_replica_first_shard.query(
         """
@@ -288,41 +299,36 @@ def test_distributed_insert_select_with_replicated(started_cluster):
             """
         )
 
+    for file_number in range(100):
+        first_replica_first_shard.query(
+            """
+        INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
+        SELECT repeat('{}', 10), number from numbers(100);
+            """.format(
+                file_number, file_number
+            )
+        )
+
     first_replica_first_shard.query(
         """
     INSERT INTO insert_select_replicated_local SELECT * FROM s3Cluster(
         'first_shard',
-        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
+        'http://minio1:9001/root/data/generated_replicated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
     ) SETTINGS parallel_distributed_insert_select=1;
         """
     )
 
-    for replica in [first_replica_first_shard, second_replica_first_shard]:
-        replica.query(
-            """
-            SYSTEM FLUSH LOGS;
-            """
-        )
-
-    assert (
-        int(
-            second_replica_first_shard.query(
-                """SELECT count(*) FROM system.query_log WHERE not is_initial_query and query ilike '%s3Cluster%';"""
-            ).strip()
-        )
-        != 0
+    first = int(
+        first_replica_first_shard.query(
+            """SELECT count(*) FROM insert_select_replicated_local"""
+        ).strip()
+    )
+    second = int(
+        second_replica_first_shard.query(
+            """SELECT count(*) FROM insert_select_replicated_local"""
+        ).strip()
     )
 
-    # Check whether we inserted at least something
-    assert (
-        int(
-            second_replica_first_shard.query(
-                """SELECT count(*) FROM insert_select_replicated_local;"""
-            ).strip()
-        )
-        != 0
-    )
-
-    first_replica_first_shard.query(
-        """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard' SYNC;"""
-    )
+    assert first != 0
+    assert second != 0
+    assert first + second == 100 * 100

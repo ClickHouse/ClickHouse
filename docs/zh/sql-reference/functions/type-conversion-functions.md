@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/functions/type-conversion-functions
 sidebar_position: 38
 sidebar_label: 类型转换函数
 ---
@@ -635,3 +634,5 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
 ```
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

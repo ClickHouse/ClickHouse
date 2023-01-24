@@ -20,7 +20,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_is_object_id{"IS_OBJECT_ID"};
     ParserLiteral default_parser;
     ParserArrayOfLiterals array_literals_parser;
-    ParserExpression expression_parser;
+    ParserTernaryOperatorExpression expression_parser;
 
     /// mandatory attribute name
     ASTPtr name;

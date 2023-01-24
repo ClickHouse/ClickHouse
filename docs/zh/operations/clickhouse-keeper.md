@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/clickhouse-keeper
 sidebar_position: 66
 sidebar_label: ClickHouse Keeper
 ---
@@ -322,3 +321,5 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 ```
 
 4. 将快照复制到配置了“keeper”的ClickHouse服务器节点，或者启动ClickHouse keeper而不是ZooKeeper。快照必须在所有节点上持久保存，否则，空节点可能更快，其中一个节点可能成为leader.
+
+[Original article](https://clickhouse.com/docs/en/operations/clickhouse-keeper/) <!--hide-->

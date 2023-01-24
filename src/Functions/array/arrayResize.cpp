@@ -39,26 +39,25 @@ public:
         const size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), number_of_arguments);
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(number_of_arguments) + ", should be 2 or 3",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (arguments[0]->onlyNull())
             return arguments[0];
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First argument for function {} must be an array but it has type {}.",
-                            getName(), arguments[0]->getName());
+            throw Exception("First argument for function " + getName() + " must be an array but it has type "
+                            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (WhichDataType(array_type->getNestedType()).isNothing())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} cannot resize {}", getName(), array_type->getName());
+            throw Exception("Function " + getName() + " cannot resize " + array_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isInteger(removeNullable(arguments[1])) && !arguments[1]->onlyNull())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Argument {} for function {} must be integer but it has type {}.",
-                            toString(1), getName(), arguments[1]->getName());
+            throw Exception(
+                    "Argument " + toString(1) + " for function " + getName() + " must be integer but it has type "
+                    + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (number_of_arguments == 2)
             return arguments[0];
@@ -106,7 +105,7 @@ public:
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             array_source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
+            throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
 
         bool is_appended_const = false;

@@ -9,7 +9,7 @@ Sum before DETACH PARTITION:
 Sum after DETACH PARTITION:
 0
 system.detached_parts after DETACH PARTITION:
-default	not_partitioned	all	all_1_2_1		1	2	1
+default	not_partitioned	all	all_1_2_1	default		1	2	1
 *** Partitioned by week ***
 Parts before OPTIMIZE:
 1999-12-27	19991227_1_1_0

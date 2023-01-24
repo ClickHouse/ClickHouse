@@ -30,7 +30,7 @@ struct BitBoolMaskOrImpl
         if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
             // Should be a logical error, but this function is callable from SQL.
             // Need to investigate this.
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only UInt8 type is supported by __bitBoolMaskOr.");
+            throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskOr.", ErrorCodes::BAD_ARGUMENTS);
 
         auto left_bits = littleBits<A>(left);
         auto right_bits = littleBits<B>(right);

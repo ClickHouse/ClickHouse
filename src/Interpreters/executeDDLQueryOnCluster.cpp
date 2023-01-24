@@ -55,8 +55,6 @@ bool isSupportedAlterType(int type)
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
-    OpenTelemetry::SpanHolder span(__FUNCTION__);
-
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
 
@@ -68,18 +66,18 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     auto * query = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
     if (!query)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed execution is not supported for such DDL queries");
+        throw Exception("Distributed execution is not supported for such DDL queries", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     if (!context->getSettingsRef().allow_distributed_ddl)
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the user");
+        throw Exception("Distributed DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->children)
         {
             if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
+                throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -90,8 +88,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         cluster = context->getCluster(query->cluster);
     }
 
-    span.addAttribute("clickhouse.cluster", query->cluster);
-
     /// TODO: support per-cluster grant
     context->checkAccess(AccessType::CLUSTER);
 
@@ -100,7 +96,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// Enumerate hosts which will be used to send query.
     auto addresses = cluster->filterAddressesByShardOrReplica(params.only_shard_num, params.only_replica_num);
     if (addresses.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts defined to execute distributed DDL query");
+        throw Exception("No hosts defined to execute distributed DDL query", ErrorCodes::LOGICAL_ERROR);
 
     std::vector<HostID> hosts;
     hosts.reserve(addresses.size());
@@ -133,7 +129,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         assert(use_local_default_database || !host_default_databases.empty());
 
         if (use_local_default_database && !host_default_databases.empty())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mixed local default DB and shard default DB in DDL query");
+            throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
 
         if (use_local_default_database)
         {
@@ -168,7 +164,6 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
-    entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker.enqueueQuery(entry);
 
     return getDistributedDDLStatus(node_path, entry, context);

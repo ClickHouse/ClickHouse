@@ -110,7 +110,7 @@ bool SquashingTransform::isEnoughSize(const Block & block)
         if (!rows)
             rows = column->size();
         else if (rows != column->size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Sizes of columns doesn't match");
+            throw Exception("Sizes of columns doesn't match", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         bytes += column->byteSize();
     }

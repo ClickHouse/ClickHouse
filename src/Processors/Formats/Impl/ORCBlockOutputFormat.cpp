@@ -59,12 +59,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt8:
-        {
-            if (isBool(type))
-                return orc::createPrimitiveType(orc::TypeKind::BOOLEAN);
-            return orc::createPrimitiveType(orc::TypeKind::BYTE);
-        }
+        case TypeIndex::UInt8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             return orc::createPrimitiveType(orc::TypeKind::BYTE);
@@ -153,7 +148,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         }
         default:
         {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
+            throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 }
@@ -258,8 +253,8 @@ void ORCBlockOutputFormat::writeDateTimes(
         }
 
         timestamp_orc_column.notNull[i] = 1;
-        timestamp_orc_column.data[i] = static_cast<int64_t>(get_seconds(timestamp_column.getElement(i)));
-        timestamp_orc_column.nanoseconds[i] = static_cast<int64_t>(get_nanoseconds(timestamp_column.getElement(i)));
+        timestamp_orc_column.data[i] = get_seconds(timestamp_column.getElement(i));
+        timestamp_orc_column.nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
     }
     timestamp_orc_column.numElements = timestamp_column.size();
 }
@@ -462,7 +457,7 @@ void ORCBlockOutputFormat::writeColumn(
             break;
         }
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
+            throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
     }
 }
 
@@ -520,11 +515,6 @@ void ORCBlockOutputFormat::finalizeImpl()
     writer->close();
 }
 
-void ORCBlockOutputFormat::resetFormatterImpl()
-{
-    writer.reset();
-}
-
 void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
@@ -541,6 +531,7 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
+            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);

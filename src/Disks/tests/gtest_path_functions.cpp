@@ -3,7 +3,7 @@
 #include <Disks/IDisk.h>
 
 
-TEST(DiskPathTest, parentPath)
+TEST(DiskTest, parentPath)
 {
     EXPECT_EQ("", DB::parentPath("test_dir/"));
     EXPECT_EQ("test_dir/", DB::parentPath("test_dir/nested_dir/"));
@@ -11,7 +11,7 @@ TEST(DiskPathTest, parentPath)
 }
 
 
-TEST(DiskPathTest, fileName)
+TEST(DiskTest, fileName)
 {
     EXPECT_EQ("test_file", DB::fileName("test_file"));
     EXPECT_EQ("nested_file", DB::fileName("test_dir/nested_file"));

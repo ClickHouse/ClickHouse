@@ -109,7 +109,7 @@ namespace DB
                     readDateTimeText(time, in);
                     if (time < 0)
                         time = 0;
-                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+                    assert_cast<ColumnUInt32 &>(column).insertValue(time);
                     break;
                 }
                 case ValueType::vtUUID:
@@ -159,7 +159,7 @@ namespace DB
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Too low keys in request to source: {}, expected 2 or more",
-                        keys_array.size());
+                        DB::toString(keys_array.size()));
                 }
 
                 if (num_rows + keys_array.size() - 1 > max_block_size)

@@ -7,7 +7,7 @@ namespace DB
 {
 
 JSONCompactColumnsBlockOutputFormat::JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_, format_settings_.json.validate_utf8), column_names(header_.getNames())
+    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_), column_names(header_.getNames())
 {
 }
 
@@ -32,6 +32,7 @@ void registerOutputFormatJSONCompactColumns(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompactColumns", [](
         WriteBuffer & buf,
         const Block & sample,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         return std::make_shared<JSONCompactColumnsBlockOutputFormat>(buf, sample, format_settings);

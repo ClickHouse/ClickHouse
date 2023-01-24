@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupbitxor
 sidebar_position: 127
 ---
 

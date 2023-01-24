@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -22,7 +22,7 @@ struct S3ObjectStorageSettings;
 
 std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
-std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, const S3ObjectStorageSettings & settings);
+std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
 }
 

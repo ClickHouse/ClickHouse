@@ -50,7 +50,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        size_t num_streams) override
+        unsigned num_streams) override
     {
         return getNested()->watch(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
@@ -63,7 +63,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override
+        unsigned num_streams) override
     {
         return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
@@ -132,7 +132,7 @@ public:
         return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
     }
 
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override { getNested()->mutate(commands, context, force_wait); }
+    void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 

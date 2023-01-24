@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/array-functions
----
 # 数组函数 {#shu-zu-han-shu}
 
 ## empty {#empty函数}
@@ -117,7 +114,7 @@ SELECT notEmpty([1,2]);
 
 ## range(end), range(\[start, \] end \[, step\]) {#range}
 
-返回一个以`step`作为增量步长的从`start`到`end - 1`的整形数字数组， 支持类型包括[`UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`](../data-types/int-uint.md)。
+返回一个以`step`作为增量步长的从`start`到`end - 1`的`UInt`类型数字数组。
 
 **语法**
 ``` sql
@@ -126,30 +123,31 @@ range([start, ] end [, step])
 
 **参数**
 
--   `start` — 数组的第一个元素。可选项，如果设置了`step`时同样需要`start`，默认值为：0。
--   `end` — 计数到`end`结束，但不包括`end`，必填项。
--   `step` — 确定数组中每个元素之间的增量步长。可选项，默认值为：1。
+-   `start` — 数组的第一个元素。可选项，如果设置了`step`时同样需要`start`，默认值为：0，类型为[UInt](../data-types/int-uint.md)。
+-   `end` — 计数到`end`结束，但不包括`end`，必填项，类型为[UInt](../data-types/int-uint.md)。
+-   `step` — 确定数组中每个元素之间的增量步长。可选项，默认值为：1，类型为[UInt](../data-types/int-uint.md)。
 
 **返回值**
 
--   以`step`作为增量步长的从`start`到`end - 1`的数字数组。
+-   以`step`作为增量步长的从`start`到`end - 1`的`UInt`类型数字数组。
 
 **注意事项**
 
--   所有参数`start`、`end`、`step`必须属于以下几种类型之一：[`UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`](../data-types/int-uint.md)。结果数组的元素数据类型为所有入参类型的最小超类，也必须属于以上几种类型之一。
+-   所有参数必须是正值：`start`、`end`、`step`，类型均为`UInt`，结果数组的元素与此相同。
 -   如果查询结果的数组总长度超过[function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block)指定的元素数，将会抛出异常。
+
 
 **示例**
 
 查询语句:
 ``` sql
-SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);
+SELECT range(5), range(1, 5), range(1, 5, 2);
 ```
 结果:
 ```txt
-┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┬─range(-1, 5, 2)─┐
-│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │ [-1,1,3]        │
-└─────────────┴─────────────┴────────────────┴─────────────────┘
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
+└─────────────┴─────────────┴────────────────┘
 ```
 
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
@@ -1694,3 +1692,5 @@ SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as r
 │ 6   │ Float64                                                                                  │
 └─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/array_functions/) <!--hide-->

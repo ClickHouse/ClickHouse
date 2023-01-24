@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/postgresql
 sidebar_position: 42
 sidebar_label: postgresql
 ---
@@ -130,7 +129,6 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 -   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
--   [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+-   [Using PostgreSQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-## Related content
-- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->

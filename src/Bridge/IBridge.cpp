@@ -8,7 +8,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
-#include "config.h"
+#include <Common/config.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <IO/ReadHelpers.h>
@@ -61,8 +61,14 @@ namespace
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, Poco::Logger * log)
     {
         auto address = makeSocketAddress(host, port, log);
+#if POCO_VERSION < 0x01080000
+        socket.bind(address, /* reuseAddress = */ true);
+#else
         socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ false);
+#endif
+
         socket.listen(/* backlog = */ 64);
+
         return address;
     }
 }
@@ -160,7 +166,7 @@ void IBridge::initialize(Application & self)
     hostname = config().getString("listen-host", "127.0.0.1");
     port = config().getUInt("http-port");
     if (port > 0xFFFF)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range 'http-port': {}", port);
+        throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);
@@ -173,7 +179,7 @@ void IBridge::initialize(Application & self)
     limit.rlim_max = limit.rlim_cur = gb;
     if (setrlimit(RLIMIT_RSS, &limit))
         LOG_WARNING(log, "Unable to set maximum RSS to 1GB: {} (current rlim_cur={}, rlim_max={})",
-                    errnoToString(), limit.rlim_cur, limit.rlim_max);
+                    errnoToString(errno), limit.rlim_cur, limit.rlim_max);
 
     if (!getrlimit(RLIMIT_RSS, &limit))
         LOG_INFO(log, "RSS limit: cur={}, max={}", limit.rlim_cur, limit.rlim_max);
@@ -230,7 +236,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
 
     auto server = HTTPServer(
-        std::make_shared<HTTPContext>(context),
+        context,
         getHandlerFactoryPtr(context),
         server_pool,
         socket,

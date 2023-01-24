@@ -3,7 +3,6 @@
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/StorageS3Settings.h>
-#include <IO/HTTPHeaderEntries.h>
 
 
 namespace DB
@@ -45,6 +44,12 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
     bool replace_query = false;
     String on_duplicate_clause;
 };
+
+struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
+{
+    String options;
+};
+
 
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
@@ -103,7 +108,7 @@ struct URLBasedDataSourceConfiguration
     String user;
     String password;
 
-    HTTPHeaderEntries headers;
+    std::vector<std::pair<String, Field>> headers;
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
@@ -111,8 +116,8 @@ struct URLBasedDataSourceConfiguration
 
 struct StorageS3Configuration : URLBasedDataSourceConfiguration
 {
-    S3::AuthSettings auth_settings;
-    S3Settings::RequestSettings request_settings;
+    S3Settings::AuthSettings auth_settings;
+    S3Settings::ReadWriteSettings rw_settings;
 };
 
 
@@ -126,6 +131,8 @@ struct URLBasedDataSourceConfig
     URLBasedDataSourceConfiguration configuration;
     StorageSpecificArgs specific_args;
 };
+
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);

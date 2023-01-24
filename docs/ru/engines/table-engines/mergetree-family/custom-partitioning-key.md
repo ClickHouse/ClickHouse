@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/mergetree-family/custom-partitioning-key
 sidebar_position: 32
 sidebar_label: "Произвольный ключ партиционирования"
 ---
@@ -134,3 +133,4 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 Для реплицируемых таблиц, набор кусков нельзя менять в любом случае.
 
 ClickHouse позволяет производить различные манипуляции с кусками: удалять, копировать из одной таблицы в другую или создавать их резервные копии. Подробнее см. в разделе [Манипуляции с партициями и кусками](../../../sql-reference/statements/alter/partition.md).
+

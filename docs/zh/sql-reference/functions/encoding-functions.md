@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/encoding-functions
----
 # 编码函数 {#bian-ma-han-shu}
 
 ## char {#char}
@@ -181,7 +178,7 @@ unhex(arg)
 
 **参数**
 
--   `arg` — 包含任意数量的十六进制数字的字符串。类型为：[String](../../sql-reference/data-types/string.md)，[FixedString](../../sql-reference/data-types/fixedstring.md)。
+-   `arg` — 包含任意数量的十六进制数字的字符串。类型为：[String](../../sql-reference/data-types/string.md)。
 
 支持大写和小写字母A-F。十六进制数字的数量不必是偶数。如果是奇数，则最后一位数被解释为00-0F字节的低位。如果参数字符串包含除十六进制数字以外的任何内容，则返回一些实现定义的结果（不抛出异常）。对于数字参数， unhex()不执行 hex(N) 的倒数。
 
@@ -437,3 +434,6 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
 ```
+
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/encoding_functions/) <!--hide-->

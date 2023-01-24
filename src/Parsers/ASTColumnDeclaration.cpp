@@ -2,7 +2,6 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
-#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -79,7 +78,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     if (default_expression)
     {
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "");
-        if (!ephemeral_default)
+        if (default_specifier != "EPHEMERAL" || !default_expression->as<ASTLiteral>()->value.isNull())
         {
             settings.ostr << ' ';
             default_expression->formatImpl(settings, state, frame);

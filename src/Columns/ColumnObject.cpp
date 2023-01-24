@@ -12,7 +12,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 
 namespace DB
 {
@@ -664,20 +663,20 @@ size_t ColumnObject::allocatedBytes() const
     return res;
 }
 
-void ColumnObject::forEachSubcolumn(ColumnCallback callback) const
+void ColumnObject::forEachSubcolumn(ColumnCallback callback)
 {
-    for (const auto & entry : subcolumns)
-        for (const auto & part : entry->data.data)
+    for (auto & entry : subcolumns)
+        for (auto & part : entry->data.data)
             callback(part);
 }
 
-void ColumnObject::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnObject::forEachSubcolumnRecursively(ColumnCallback callback)
 {
-    for (const auto & entry : subcolumns)
+    for (auto & entry : subcolumns)
     {
-        for (const auto & part : entry->data.data)
+        for (auto & part : entry->data.data)
         {
-            callback(*part);
+            callback(part);
             part->forEachSubcolumnRecursively(callback);
         }
     }
@@ -732,8 +731,8 @@ void ColumnObject::get(size_t n, Field & res) const
 {
     assert(n < size());
     res = Object();
-    auto & object = res.get<Object &>();
 
+    auto & object = res.get<Object &>();
     for (const auto & entry : subcolumns)
     {
         auto it = object.try_emplace(entry->path.getPath()).first;
@@ -744,6 +743,7 @@ void ColumnObject::get(size_t n, Field & res) const
 void ColumnObject::insertFrom(const IColumn & src, size_t n)
 {
     insert(src[n]);
+    finalize();
 }
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -791,8 +791,9 @@ MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
 {
     if (!isFinalized())
     {
-        auto finalized = cloneFinalized();
+        auto finalized = IColumn::mutate(getPtr());
         auto & finalized_object = assert_cast<ColumnObject &>(*finalized);
+        finalized_object.finalize();
         return finalized_object.applyForSubcolumns(std::forward<Func>(func));
     }
 
@@ -832,44 +833,6 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
         return ColumnObject::create(is_nullable);
 
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.cloneResized(new_size); });
-}
-
-void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
-{
-    res.resize(num_rows);
-    std::iota(res.begin(), res.end(), 0);
-}
-
-void ColumnObject::compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                                 PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-                                 int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnObject>(assert_cast<const ColumnObject &>(rhs), rhs_row_num, row_indexes,
-                                        compare_results, direction, nan_direction_hint);
-}
-
-void ColumnObject::getExtremes(Field & min, Field & max) const
-{
-    if (num_rows == 0)
-    {
-        min = Object();
-        max = Object();
-    }
-    else
-    {
-        get(0, min);
-        get(0, max);
-    }
-}
-
-MutableColumns ColumnObject::scatter(ColumnIndex num_columns, const Selector & selector) const
-{
-    return scatterImpl<ColumnObject>(num_columns, selector);
-}
-
-void ColumnObject::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const

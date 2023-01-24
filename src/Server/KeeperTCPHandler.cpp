@@ -126,8 +126,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                /// TODO: use epoll_pwait() for more precise timers
-                rc = epoll_wait(epollfd, evout, 2, static_cast<int>(remaining_time.totalMilliseconds()));
+                rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
                 if (rc < 0 && errno == EINTR)
                 {
                     Poco::Timestamp end;
@@ -157,7 +156,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = ::poll(poll_buf, 2, static_cast<int>(remaining_time.totalMilliseconds()));
+                rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
                 if (rc < 0 && errno == POCO_EINTR)
                 {
                     Poco::Timestamp end;
@@ -269,12 +268,12 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
     if (!isHandShake(handshake_length))
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected handshake length received: {}", toString(handshake_length));
+        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(protocol_version, *in);
 
     if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
+        throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -326,7 +325,6 @@ void KeeperTCPHandler::runImpl()
     int32_t four_letter_cmd = header;
     if (!isHandShake(four_letter_cmd))
     {
-        connected.store(true, std::memory_order_relaxed);
         tryExecuteFourLetterWordCmd(four_letter_cmd);
         return;
     }
@@ -382,7 +380,7 @@ void KeeperTCPHandler::runImpl()
                 response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
+        [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
@@ -397,7 +395,6 @@ void KeeperTCPHandler::runImpl()
     };
 
     session_stopwatch.start();
-    connected.store(true, std::memory_order_release);
     bool close_received = false;
 
     try
@@ -471,7 +468,7 @@ void KeeperTCPHandler::runImpl()
             }
 
             if (result.error)
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Exception happened while reading from socket");
+                throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
 
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
@@ -587,9 +584,6 @@ KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
-    if (!connected.load(std::memory_order_acquire))
-        return;
-
     auto & stats = getConnectionStats();
 
     writeText(' ', buf);

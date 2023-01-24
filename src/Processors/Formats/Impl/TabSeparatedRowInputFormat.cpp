@@ -25,10 +25,11 @@ namespace ErrorCodes
 static void checkForCarriageReturn(ReadBuffer & in)
 {
     if (!in.eof() && (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r')))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
+        throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
-            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.");
+            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
+            ErrorCodes::INCORRECT_DATA);
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
@@ -239,7 +240,7 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 
 void TabSeparatedFormatReader::skipPrefixBeforeHeader()
 {
-    for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
         readRow();
 }
 
@@ -267,7 +268,7 @@ DataTypes TabSeparatedSchemaReader::readRowAndGetDataTypes()
         return {};
 
     auto fields = reader.readRow();
-    return tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
 }
 
 void registerInputFormatTabSeparated(FormatFactory & factory)
@@ -301,17 +302,14 @@ void registerTSVSchemaReader(FormatFactory & factory)
             {
                 return std::make_shared<TabSeparatedSchemaReader>(buf, with_names, with_types, is_raw, settings);
             });
-            if (!with_types)
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
             {
-                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names, is_raw](const FormatSettings & settings)
-                {
-                    String result = getAdditionalFormatInfoByEscapingRule(
-                        settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
-                    if (!with_names)
-                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
-                    return result;
-                });
-            }
+                String result = getAdditionalFormatInfoByEscapingRule(
+                    settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
+                if (!with_names)
+                    result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
+                return result;
+            });
         };
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
@@ -319,14 +317,11 @@ void registerTSVSchemaReader(FormatFactory & factory)
     }
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, bool is_raw, size_t min_bytes, size_t min_rows, size_t max_rows)
+static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, bool is_raw, size_t min_rows)
 {
     bool need_more_data = true;
     char * pos = in.position();
     size_t number_of_rows = 0;
-
-    if (max_rows && (max_rows < min_rows))
-        max_rows = min_rows;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
@@ -336,8 +331,9 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
 
         if (pos > in.buffer().end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        else if (pos == in.buffer().end())
+            throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+
+        if (pos == in.buffer().end())
             continue;
 
         if (!is_raw && *pos == '\\')
@@ -345,25 +341,15 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             ++pos;
             if (loadAtPosition(in, memory, pos))
                 ++pos;
-            continue;
         }
-
-        ++number_of_rows;
-        if ((number_of_rows >= min_rows)
-            && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
-            need_more_data = false;
-
-        if (*pos == '\n')
+        else if (*pos == '\n' || *pos == '\r')
         {
+            if (*pos == '\n')
+                ++number_of_rows;
+
+            if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size) && number_of_rows >= min_rows)
+                need_more_data = false;
             ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\r')
-                ++pos;
-        }
-        else if (*pos == '\r')
-        {
-            ++pos;
-            if (loadAtPosition(in, memory, pos) && *pos == '\n')
-                ++pos;
         }
     }
 
@@ -379,9 +365,9 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
             size_t min_rows = 1 + static_cast<int>(with_names) + static_cast<int>(with_types);
-            factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
             {
-                return fileSegmentationEngineTabSeparatedImpl(in, memory, is_raw, min_bytes, min_rows, max_rows);
+                return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);
             });
         };
 
@@ -392,9 +378,12 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
     }
 
     // We can use the same segmentation engine for TSKV.
-    factory.registerFileSegmentationEngine("TSKV", [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+    factory.registerFileSegmentationEngine("TSKV", [](
+        ReadBuffer & in,
+        DB::Memory<> & memory,
+        size_t min_chunk_size)
     {
-        return fileSegmentationEngineTabSeparatedImpl(in, memory, false, min_bytes, 1, max_rows);
+        return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, false, 1);
     });
 }
 

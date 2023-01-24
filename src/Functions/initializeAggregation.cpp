@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -55,14 +56,14 @@ private:
 DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
-            getName(), arguments.size());
+        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+            + toString(arguments.size()) + ", should be at least 2.",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!aggregate_function_name_column)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
-            "name of aggregate function.", getName());
+        throw Exception("First argument for function " + getName() + " must be constant string: name of aggregate function.",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     DataTypes argument_types(arguments.size() - 1);
     for (size_t i = 1, size = arguments.size(); i < size; ++i)
@@ -75,7 +76,8 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
         String aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
 
         if (aggregate_function_name_with_params.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument for function {} (name of aggregate function) cannot be empty.", getName());
+            throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",
+                ErrorCodes::BAD_ARGUMENTS);
 
         String aggregate_function_name;
         Array params_row;
@@ -86,7 +88,7 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
     }
 
-    return aggregate_function->getResultType();
+    return aggregate_function->getReturnType();
 }
 
 
@@ -111,6 +113,13 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
     MutableColumnPtr result_holder = result_type->createColumn();
     IColumn & res_col = *result_holder;
+
+    /// AggregateFunction's states should be inserted into column using specific way
+    auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
+
+    if (!res_col_aggregate_function && agg_func.isState())
+        throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
+                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     PODArray<AggregateDataPtr> places(input_rows_count);
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -142,9 +151,10 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)
-        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-        /// correctly if result contains AggregateFunction's states
-        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+        if (!res_col_aggregate_function)
+            agg_func.insertResultInto(places[i], res_col, arena.get());
+        else
+            res_col_aggregate_function->insertFrom(places[i]);
     return result_holder;
 }
 

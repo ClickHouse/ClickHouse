@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/explain
 sidebar_position: 39
 sidebar_label: EXPLAIN
 ---
@@ -413,3 +412,5 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/statements/explain/) <!--hide-->

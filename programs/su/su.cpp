@@ -65,7 +65,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
         }
 
         if (gid == 0 && getgid() != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group has id 0, but dropping privileges to gid 0 does not make sense");
+            throw Exception("Group has id 0, but dropping privileges to gid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
 
         if (0 != setgid(gid))
             throwFromErrno(fmt::format("Cannot do 'setgid' to user ({})", arg_gid), ErrorCodes::SYSTEM_ERROR);
@@ -90,7 +90,7 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
         }
 
         if (uid == 0 && getuid() != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "User has id 0, but dropping privileges to uid 0 does not make sense");
+            throw Exception("User has id 0, but dropping privileges to uid 0 does not make sense", ErrorCodes::BAD_ARGUMENTS);
 
         if (0 != setuid(uid))
             throwFromErrno(fmt::format("Cannot do 'setuid' to user ({})", arg_uid), ErrorCodes::SYSTEM_ERROR);
@@ -108,7 +108,7 @@ try
     if (argc < 3)
     {
         std::cout << "Usage: ./clickhouse su user:group ..." << std::endl;
-        exit(0); // NOLINT(concurrency-mt-unsafe)
+        exit(0);
     }
 
     std::string_view user_and_group = argv[1];

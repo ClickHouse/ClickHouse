@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/parts
----
 # system.parts {#system_tables-parts}
 
 此系统表包含 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 表分区的相关信息。
@@ -75,7 +72,7 @@ slug: /zh/operations/system-tables/parts
 
 -   `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – 为主键值保留的内存量（以字节为单位）。
 
--   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – 显示分区数据备份存在的标志。1，备份存在。0，备份不存在。更多细节，见 [FREEZE PARTITION](../../sql-reference/statements/alter/partition.mdx#alter_freeze-partition)。
+-   `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – 显示分区数据备份存在的标志。1，备份存在。0，备份不存在。更多细节，见 [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)。
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) – 数据库的名称。
 
@@ -166,3 +163,5 @@ move_ttl_info.max:                     []
 
 -   [MergeTree(合并树)家族](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [列和表的 TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/parts) <!--hide-->

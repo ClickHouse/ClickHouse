@@ -23,8 +23,7 @@ bool MarkRange::operator<(const MarkRange & rhs) const
 
     if (is_intersection)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Intersecting mark ranges are not allowed, it "
-                        "is a bug! First range ({}, {}), second range ({}, {})", begin, end, rhs.begin, rhs.end);
+        "Intersecting mark ranges are not allowed, it is a bug! First range ({}, {}), second range ({}, {})", begin, end, rhs.begin, rhs.end);
 
     return begin < rhs.begin && end <= rhs.begin;
 }
@@ -35,18 +34,6 @@ size_t getLastMark(const MarkRanges & ranges)
     for (const auto & mark_range : ranges)
         current_task_last_mark = std::max(current_task_last_mark, mark_range.end);
     return current_task_last_mark;
-}
-
-std::string toString(const MarkRanges & ranges)
-{
-    std::string result;
-    for (const auto & mark_range : ranges)
-    {
-        if (!result.empty())
-            result += ", ";
-        result += "(" + std::to_string(mark_range.begin) + ", " + std::to_string(mark_range.end) + ")";
-    }
-    return result;
 }
 
 }

@@ -201,7 +201,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
     static const auto LEADING_ZEROES_BIT_LENGTH = DATA_BIT_LENGTH - 1;
 
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not aligned to {}", source_size, sizeof(T));
+        throw Exception("Cannot compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
     const char * dest_start = dest;
     const char * dest_end = dest + dest_size;
@@ -259,7 +259,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     writer.flush();
 
-    return static_cast<UInt32>((dest - dest_start) + (writer.count() + 7) / 8);
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename T>
@@ -316,10 +316,11 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
                 && curr_xored_info.data_bits == 0
                 && curr_xored_info.trailing_zero_bits == 0)
             {
-                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress gorilla-encoded data: corrupted input data.");
+                throw Exception("Cannot decompress gorilla-encoded data: corrupted input data.",
+                        ErrorCodes::CANNOT_DECOMPRESS);
             }
 
-            xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
+            xored_data = reader.readBits(curr_xored_info.data_bits);
             xored_data <<= curr_xored_info.trailing_zero_bits;
             curr_value = prev_value ^ xored_data;
         }
@@ -343,7 +344,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
             column_type->getName());
 }
 
@@ -409,17 +410,17 @@ UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 sourc
 void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_size = source[0];
 
     if (bytes_size == 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
@@ -447,7 +448,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
         if (arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla does not accept any arguments");
+            throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
 
         UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);

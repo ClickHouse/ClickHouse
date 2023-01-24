@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/settings/constraints-on-settings
 sidebar_position: 62
 sidebar_label: "Ограничения на изменение настроек"
 ---
@@ -71,3 +70,4 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 ```
 
 **Примечание:** профиль с именем `default` обрабатывается специальным образом: все ограничения на изменение настроек из этого профиля становятся дефолтными и влияют на всех пользователей, кроме тех, где эти ограничения явно переопределены.
+

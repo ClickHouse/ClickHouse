@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class IColumn;
+
 struct SettingChange
 {
     String name;

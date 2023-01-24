@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/avg
 sidebar_position: 5
 ---
 
@@ -63,3 +62,5 @@ Result:
 │    nan │
 └────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->

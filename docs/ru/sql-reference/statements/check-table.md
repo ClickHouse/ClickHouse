@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/check-table
 sidebar_position: 41
-sidebar_label: CHECK TABLE
+sidebar_label: CHECK
 ---
 
 # CHECK TABLE Statement {#check-table}
@@ -67,3 +66,5 @@ CHECK TABLE test_table;
 2.  Установите значение параметра [max_threads](../../operations/settings/settings.md#settings-max_threads) в 1. Это нужно для того, чтобы выполнить следующий запрос в одном потоке. Установить значение параметра можно через запрос: `SET max_threads = 1`.
 3.  Выполните запрос `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. В результате неповрежденные данные будут скопированы в другую таблицу. Обратите внимание, будут скопированы только те данные, которые следуют до поврежденного участка.
 4.  Перезапустите `clickhouse-client`, чтобы вернуть предыдущее значение параметра `max_threads`.
+
+

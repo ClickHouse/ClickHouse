@@ -229,8 +229,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         {
             if (user_provided_snapshot.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Using a user-defined replication slot must "
-                                "be provided with a snapshot from EXPORT SNAPSHOT when the slot is created."
+                                "Using a user-defined replication slot must be provided with a snapshot from EXPORT SNAPSHOT when the slot is created."
                                 "Pass it to `materialized_postgresql_snapshot` setting");
             snapshot_name = user_provided_snapshot;
         }
@@ -322,13 +321,13 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             nested_storages,
             (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
 
-    replication_handler_initialized = true;
-
     consumer_task->activateAndSchedule();
     cleanup_task->activateAndSchedule();
 
     /// Do not rely anymore on saved storage pointers.
     materialized_storages.clear();
+
+    replication_handler_initialized = true;
 }
 
 

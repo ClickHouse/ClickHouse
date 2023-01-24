@@ -38,7 +38,7 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        explicit GregorianDate(is_integer auto modified_julian_day);
+        explicit GregorianDate(is_integer auto mjd);
 
         /** Convert to Modified Julian Day. The type T is an integral type
           * which should be at least 32 bits wide, and should preferably
@@ -89,8 +89,7 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        template <is_integer DayT>
-        explicit OrdinalDate(DayT modified_julian_day);
+        explicit OrdinalDate(is_integer auto mjd);
 
         /** Convert to Modified Julian Day. The type T is an integral
           * type which should be at least 32 bits wide, and should
@@ -219,9 +218,13 @@ namespace gd
     {
         char c;
         if (!in.read(c))
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected a digit at the end of stream");
+            throw Exception(
+                "Cannot parse input: expected a digit at the end of stream",
+                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
         else if (c < '0' || c > '9')
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot read input: expected a digit but got something else");
+            throw Exception(
+                "Cannot read input: expected a digit but got something else",
+                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
         else
             return c - '0';
     }
@@ -250,13 +253,13 @@ namespace DB
         assertEOF(in);
 
         if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > gd::monthLength(gd::is_leap_year(year_), month_))
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date: {}", toString());
+            throw Exception("Invalid date: " + toString(), ErrorCodes::CANNOT_PARSE_DATE);
     }
 
     template <typename YearT>
-    GregorianDate<YearT>::GregorianDate(is_integer auto modified_julian_day)
+    GregorianDate<YearT>::GregorianDate(is_integer auto mjd)
     {
-        const OrdinalDate<YearT> ord(modified_julian_day);
+        const OrdinalDate<YearT> ord(mjd);
         const MonthDay md(gd::is_leap_year(ord.year()), ord.dayOfYear());
         year_       = ord.year();
         month_      = md.month();
@@ -319,29 +322,16 @@ namespace DB
     {
         if (day_of_year < 1 || day_of_year > (gd::is_leap_year(year) ? 366 : 365))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ordinal date: {}-{}", toString(year), toString(day_of_year));
+            throw Exception(
+                "Invalid ordinal date: " + toString(year) + "-" + toString(day_of_year),
+                ErrorCodes::LOGICAL_ERROR);
         }
     }
 
     template <typename YearT>
-    template <is_integer DayT>
-    OrdinalDate<YearT>::OrdinalDate(DayT modified_julian_day)
+    OrdinalDate<YearT>::OrdinalDate(is_integer auto mjd)
     {
-        /// This function supports day number from -678941 to 2973119 (which represent 0000-01-01 and 9999-12-31 respectively).
-
-        if constexpr (is_signed_v<DayT> && std::numeric_limits<DayT>::lowest() < -678941)
-            if (modified_julian_day < -678941)
-                throw Exception(
-                    ErrorCodes::CANNOT_FORMAT_DATETIME,
-                    "Value cannot be represented as date because it's out of range");
-
-        if constexpr (std::numeric_limits<DayT>::max() > 2973119)
-            if (modified_julian_day > 2973119)
-                throw Exception(
-                    ErrorCodes::CANNOT_FORMAT_DATETIME,
-                    "Value cannot be represented as date because it's out of range");
-
-        const auto a         = modified_julian_day + 678575;
+        const auto a         = mjd + 678575;
         const auto quad_cent = gd::div(a, 146097);
         const auto b         = gd::mod(a, 146097);
         const auto cent      = gd::min(gd::div(b, 36524), 3);
@@ -349,9 +339,8 @@ namespace DB
         const auto quad      = gd::div(c, 1461);
         const auto d         = gd::mod(c, 1461);
         const auto y         = gd::min(gd::div(d, 365), 3);
-
         day_of_year_ = d - y * 365 + 1;
-        year_ = static_cast<YearT>(quad_cent * 400 + cent * 100 + quad * 4 + y + 1);
+        year_      = quad_cent * 400 + cent * 100 + quad * 4 + y + 1;
     }
 
     template <typename YearT>

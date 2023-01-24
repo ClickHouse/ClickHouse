@@ -22,7 +22,7 @@ uint64_t getThreadId()
 #if defined(OS_ANDROID)
         current_tid = gettid();
 #elif defined(OS_LINUX)
-        current_tid = static_cast<uint64_t>(syscall(SYS_gettid)); /// This call is always successful. - man gettid
+        current_tid = syscall(SYS_gettid); /// This call is always successful. - man gettid
 #elif defined(OS_FREEBSD)
         current_tid = pthread_getthreadid_np();
 #elif defined(OS_SUNOS)

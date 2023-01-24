@@ -5,7 +5,6 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -15,7 +14,6 @@ class AggregatedChunkInfo : public ChunkInfo
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
-    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
 
 using AggregatorList = std::list<Aggregator>;
@@ -98,10 +96,6 @@ struct ManyAggregatedData
                     pool->trySchedule(
                         [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachQueryIfNotDetached();
-                            );
                             if (thread_group)
                                 CurrentThread::attachToIfDetached(thread_group);
 

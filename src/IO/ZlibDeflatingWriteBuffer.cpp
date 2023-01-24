@@ -40,7 +40,7 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
 #pragma GCC diagnostic pop
 
     if (rc != Z_OK)
-        throw Exception(ErrorCodes::ZLIB_DEFLATE_FAILED, "deflateInit2 failed: {}; zlib version: {}", zError(rc), ZLIB_VERSION);
+        throw Exception(std::string("deflateInit2 failed: ") + zError(rc) + "; zlib version: " + ZLIB_VERSION, ErrorCodes::ZLIB_DEFLATE_FAILED);
 }
 
 void ZlibDeflatingWriteBuffer::nextImpl()
@@ -49,7 +49,7 @@ void ZlibDeflatingWriteBuffer::nextImpl()
         return;
 
     zstr.next_in = reinterpret_cast<unsigned char *>(working_buffer.begin());
-    zstr.avail_in = static_cast<unsigned>(offset());
+    zstr.avail_in = offset();
 
     try
     {
@@ -57,7 +57,7 @@ void ZlibDeflatingWriteBuffer::nextImpl()
         {
             out->nextIfAtEnd();
             zstr.next_out = reinterpret_cast<unsigned char *>(out->position());
-            zstr.avail_out = static_cast<unsigned>(out->buffer().end() - out->position());
+            zstr.avail_out = out->buffer().end() - out->position();
 
             int rc = deflate(&zstr, Z_NO_FLUSH);
             out->position() = out->buffer().end() - zstr.avail_out;
@@ -96,7 +96,7 @@ void ZlibDeflatingWriteBuffer::finalizeBefore()
     {
         out->nextIfAtEnd();
         zstr.next_out = reinterpret_cast<unsigned char *>(out->position());
-        zstr.avail_out = static_cast<unsigned>(out->buffer().end() - out->position());
+        zstr.avail_out = out->buffer().end() - out->position();
 
         int rc = deflate(&zstr, Z_FULL_FLUSH);
         out->position() = out->buffer().end() - zstr.avail_out;
@@ -110,7 +110,7 @@ void ZlibDeflatingWriteBuffer::finalizeBefore()
     {
         out->nextIfAtEnd();
         zstr.next_out = reinterpret_cast<unsigned char *>(out->position());
-        zstr.avail_out = static_cast<unsigned>(out->buffer().end() - out->position());
+        zstr.avail_out = out->buffer().end() - out->position();
 
         int rc = deflate(&zstr, Z_FINISH);
         out->position() = out->buffer().end() - zstr.avail_out;

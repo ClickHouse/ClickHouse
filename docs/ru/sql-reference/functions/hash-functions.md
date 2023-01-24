@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/hash-functions
 sidebar_position: 50
 sidebar_label: "Функции хэширования"
 ---

@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -7,14 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
 #include <base/sleep.h>
-#include <Common/ProfileEvents.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event RemoteReadThrottlerBytes;
-    extern const Event RemoteReadThrottlerSleepMicroseconds;
-}
 
 namespace DB
 {
@@ -36,7 +29,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     size_t max_single_download_retries_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size, nullptr, 0)
+    : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
     , blob_container_client(blob_container_client_)
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
@@ -98,7 +91,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         {
             bytes_read = data_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), to_read_bytes);
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+                read_settings.remote_throttler->add(bytes_read);
             break;
         }
         catch (const Azure::Storage::StorageException & e)
@@ -127,13 +120,13 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
 {
     if (initialized)
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek is allowed only before first read attempt from the buffer.");
+        throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (whence != SEEK_SET)
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (offset_ < 0)
-        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
+        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
     offset = offset_;
 

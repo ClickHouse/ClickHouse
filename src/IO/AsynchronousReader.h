@@ -4,7 +4,6 @@
 #include <optional>
 #include <memory>
 #include <future>
-#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -19,7 +18,7 @@ namespace DB
   * For example, this interface may not suffice if you want to serve 10 000 000 of 4 KiB requests per second.
   * This interface is fairly limited.
   */
-class IAsynchronousReader : private boost::noncopyable
+class IAsynchronousReader
 {
 public:
     /// For local filesystems, the file descriptor is simply integer
@@ -61,8 +60,6 @@ public:
         /// offset
         /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
-
-        operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.
@@ -70,8 +67,6 @@ public:
     /// or destroy the whole reader before destroying the buffer for request.
     /// The method can be called concurrently from multiple threads.
     virtual std::future<Result> submit(Request request) = 0;
-
-    virtual void wait() = 0;
 
     /// Destructor must wait for all not completed request and ignore the results.
     /// It may also cancel the requests.

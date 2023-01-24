@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <!--
   NOTE: User and query level settings are set up in "users.xml" file.
   If you have accidentally specified user-level settings here, server won't start.
