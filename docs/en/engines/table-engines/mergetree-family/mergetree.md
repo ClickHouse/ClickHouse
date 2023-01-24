@@ -40,8 +40,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
-    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2,
+    INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
+    INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
     ...
     PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
     PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
@@ -359,12 +359,14 @@ ClickHouse uses this logic not only for days of the month sequences, but for any
 The index declaration is in the columns section of the `CREATE` query.
 
 ``` sql
-INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
+INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value]
 ```
 
 For tables from the `*MergeTree` family, data skipping indices can be specified.
 
 These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (the size of the granule is specified using the `index_granularity` setting in the table engine). Then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where the `where` query cannot be satisfied.
+
+The `GRANULARITY` clause can be omitted, the default value of `granularity_value` is 1.
 
 **Example**
 
@@ -390,40 +392,47 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 ### Available Types of Indices {#available-types-of-indices}
 
-####   `minmax`
+#### MinMax
 
 Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
 
-####   `set(max_rows)`
+Syntax: `minmax`
+
+#### Set
 
 Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means “no limits”). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
 
-####   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+Syntax: `set(max_rows)`
 
-Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with datatypes: [String](/docs/en/sql-reference/data-types/string.md), [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) and [Map](/docs/en/sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
+#### Bloom Filter
+
+Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns. An optional `false_positive` parameter with possible values between 0 and 1 specifies the probability of receiving a false positive response from the filter. Default value: 0.025. Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`. For the `Map` data type, the client can specify if the index should be created for keys or values using [mapKeys](/docs/en/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/docs/en/sql-reference/functions/tuple-map-functions.md/#mapvalues) function.
+
+Syntax: `bloom_filter([false_positive])`
+
+#### N-gram Bloom Filter
+
+Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all n-grams from a block of data. Only works with datatypes: [String](/docs/en/sql-reference/data-types/string.md), [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) and [Map](/docs/en/sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
+
+Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
 - `n` — ngram size,
 - `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
 - `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
 - `random_seed` — The seed for Bloom filter hash functions.
 
-####   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+#### Token Bloom Filter
 
 The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
-####   `bloom_filter([false_positive])` — Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+#### Special-purpose
 
-Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID`, `Map`.
+- An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
-For `Map` data type client can specify if index should be created for keys or values using [mapKeys](/docs/en/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/docs/en/sql-reference/functions/tuple-map-functions.md/#mapvalues) function.
-
-There are also special-purpose and experimental indexes to support approximate nearest neighbor (ANN) queries. See [here](annindexes.md) for details.
-
-The following functions can use the filter: [equals](/docs/en/sql-reference/functions/comparison-functions.md), [notEquals](/docs/en/sql-reference/functions/comparison-functions.md), [in](/docs/en/sql-reference/functions/in-functions), [notIn](/docs/en/sql-reference/functions/in-functions), [has](/docs/en/sql-reference/functions/array-functions#hasarr-elem), [hasAny](/docs/en/sql-reference/functions/array-functions#hasany), [hasAll](/docs/en/sql-reference/functions/array-functions#hasall).
-
-Example of index creation for `Map` data type
+## Example of index creation for Map data type
 
 ```
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter GRANULARITY 1
@@ -483,9 +492,6 @@ For example:
     -   `NOT startsWith(s, 'test')`
 :::
 
-
-## Approximate Nearest Neighbor Search Indexes [experimental] {#table_engines-ANNIndex}
-In addition to skip indices, there are also [Approximate Nearest Neighbor Search Indexes](/docs/en/engines/table-engines/mergetree-family/annindexes.md).
 
 ## Projections {#projections}
 Projections are like [materialized views](/docs/en/sql-reference/statements/create/view.md/#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.

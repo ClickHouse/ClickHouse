@@ -89,7 +89,9 @@ inline HadoopSnappyDecoder::Status HadoopSnappyDecoder::readCompressedLength(siz
     {
         auto status = readLength(avail_in, next_in, &compressed_length);
         if (unlikely(compressed_length > 0 && static_cast<size_t>(compressed_length) > sizeof(buffer)))
-            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Too large snappy compressed block. buffer size: {}, compressed block size: {}", sizeof(buffer), compressed_length);
+            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                            "Too large snappy compressed block. buffer size: {}, compressed block size: {}",
+                            sizeof(buffer), compressed_length);
         return status;
     }
     return Status::OK;
