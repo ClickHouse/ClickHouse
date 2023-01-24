@@ -242,8 +242,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
-                throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
-                    + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}. It is a bug.",
+                    new_part->name);
         }
 
         {
@@ -298,8 +298,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
     else
     {
-        throw Exception("Compression codec have to be specified for part on disk, empty for" + new_part->name
-                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for{}. "
+                "It is a bug.", new_part->name);
     }
 
     {

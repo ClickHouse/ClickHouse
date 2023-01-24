@@ -127,7 +127,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         getName());
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
     auto & args = args_func.at(0)->children;
 

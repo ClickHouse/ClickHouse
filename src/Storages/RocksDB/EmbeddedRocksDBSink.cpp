@@ -51,12 +51,12 @@ void EmbeddedRocksDBSink::consume(Chunk chunk)
         }
         status = batch.Put(wb_key.str(), wb_value.str());
         if (!status.ok())
-            throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
     }
 
     status = storage.rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
     if (!status.ok())
-        throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 }
 
 }

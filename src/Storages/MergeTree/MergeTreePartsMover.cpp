@@ -205,7 +205,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 MergeTreeMutableDataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part) const
 {
     if (moves_blocker.isCancelled())
-        throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
     auto settings = data->getSettings();
     auto part = moving_part.part;
@@ -253,7 +253,7 @@ MergeTreeMutableDataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEn
 void MergeTreePartsMover::swapClonedPart(const MergeTreeMutableDataPartPtr & cloned_part) const
 {
     if (moves_blocker.isCancelled())
-        throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
     auto active_part = data->getActiveContainingPart(cloned_part->name);
 

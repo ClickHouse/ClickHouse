@@ -218,13 +218,13 @@ public:
         else if (whence == SEEK_CUR)
             new_pos = off + current_pos;
         else
-            throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
 
         if (new_pos == current_pos)
             return current_pos; /// The position is the same.
 
         if (new_pos < 0)
-            throw Exception("Seek position is out of bound", ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bound");
 
         off_t working_buffer_start_pos = current_pos - offset();
         off_t working_buffer_end_pos = current_pos + available();
@@ -241,7 +241,7 @@ public:
         /// Check that the new position is now beyond the end of the file.
         const auto & file_info = handle.getFileInfo();
         if (new_pos > static_cast<off_t>(file_info.uncompressed_size))
-            throw Exception("Seek position is out of bound", ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bound");
 
         if (file_info.compression_method == MZ_COMPRESS_METHOD_STORE)
         {
@@ -489,7 +489,7 @@ std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(const String 
 std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(std::unique_ptr<FileEnumerator> enumerator)
 {
     if (!dynamic_cast<FileEnumeratorImpl *>(enumerator.get()))
-        throw Exception("Wrong enumerator passed to readFile()", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong enumerator passed to readFile()");
     auto enumerator_impl = std::unique_ptr<FileEnumeratorImpl>(static_cast<FileEnumeratorImpl *>(enumerator.release()));
     auto handle = std::move(*enumerator_impl).releaseHandle();
     return std::make_unique<ReadBufferFromZipArchive>(std::move(handle));
@@ -498,7 +498,7 @@ std::unique_ptr<ReadBufferFromFileBase> ZipArchiveReader::readFile(std::unique_p
 std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::nextFile(std::unique_ptr<ReadBuffer> read_buffer)
 {
     if (!dynamic_cast<ReadBufferFromZipArchive *>(read_buffer.get()))
-        throw Exception("Wrong ReadBuffer passed to nextFile()", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong ReadBuffer passed to nextFile()");
     auto read_buffer_from_zip = std::unique_ptr<ReadBufferFromZipArchive>(static_cast<ReadBufferFromZipArchive *>(read_buffer.release()));
     auto handle = std::move(*read_buffer_from_zip).releaseHandle();
     if (!handle.nextFile())
