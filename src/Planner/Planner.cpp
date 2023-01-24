@@ -958,6 +958,17 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 {
 }
 
+Planner::Planner(const QueryTreeNodePtr & query_tree_,
+    const SelectQueryOptions & select_query_options_,
+    PlannerContextPtr planner_context_,
+    PlannerConfiguration planner_configuration_)
+    : query_tree(query_tree_)
+    , select_query_options(select_query_options_)
+    , planner_context(std::move(planner_context_))
+    , planner_configuration(std::move(planner_configuration_))
+{
+}
+
 void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
