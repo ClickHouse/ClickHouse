@@ -70,7 +70,6 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/Token.cpp"
     "${HDFS3_SOURCE_DIR}/client/PacketPool.cpp"
     "${HDFS3_SOURCE_DIR}/client/OutputStream.cpp"
-    "${HDFS3_SOURCE_DIR}/client/DataReader.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcChannelKey.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcProtocolInfo.cpp"
     "${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp"
