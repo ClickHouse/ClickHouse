@@ -113,7 +113,7 @@ k = 1 + parts_count_in_partition - parts_to_delay_insert
 delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
 ```
 
-Starting version 23.1 formula has been changed to:
+Starting from version 23.1 formula has been changed to:
 ```code
 allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert + 1
 parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
