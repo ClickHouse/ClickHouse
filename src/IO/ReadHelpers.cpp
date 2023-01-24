@@ -491,8 +491,8 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-template <typename Vector>
-void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+template <typename Vector, bool parse_complex_escape_sequence>
+void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -508,9 +508,31 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
             return;
 
         if (*buf.position() == '\\')
-            parseComplexEscapeSequence(s, buf);
+        {
+            if constexpr (parse_complex_escape_sequence)
+            {
+                parseComplexEscapeSequence(s, buf);
+            }
+            else
+            {
+                s.push_back(*buf.position());
+                ++buf.position();
+                if (!buf.eof())
+                {
+                    s.push_back(*buf.position());
+                    ++buf.position();
+                }
+            }
+        }
     }
 }
+
+template <typename Vector>
+void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+{
+    readEscapedStringIntoImpl<Vector, true>(s, buf);
+}
+
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
@@ -665,7 +687,7 @@ concept WithResize = requires (T value)
     { value.size() } -> std::integral<>;
 };
 
-template <typename Vector>
+template <typename Vector, bool include_quotes>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     /// Empty string
@@ -682,6 +704,9 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
     if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
     {
+        if constexpr (include_quotes)
+            s.push_back(maybe_quote);
+
         ++buf.position();
 
         /// The quoted case. We are looking for the next quotation mark.
@@ -698,8 +723,12 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (!buf.hasPendingData())
                 continue;
 
+            if constexpr (include_quotes)
+                s.push_back(maybe_quote);
+
             /// Now there is a quotation mark under the cursor. Is there any following?
             ++buf.position();
+
             if (buf.eof())
                 return;
 
@@ -829,20 +858,7 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     s.clear();
-    bool add_quote = false;
-    char quote = '\'';
-
-    if (!buf.eof() && (*buf.position() == '\'' || *buf.position() == '"'))
-    {
-        quote = *buf.position();
-        s.push_back(quote);
-        add_quote = true;
-    }
-
-    readCSVStringInto(s, buf, settings);
-
-    if (add_quote)
-        s.push_back(quote);
+    readCSVStringInto<String, true>(s, buf, settings);
 }
 
 void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
@@ -1681,6 +1697,12 @@ void readJSONField(String & s, ReadBuffer & buf)
     s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueInto(s, buf, parse_func);
+}
+
+void readTSVField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringIntoImpl<String, false>(s, buf);
 }
 
 }
