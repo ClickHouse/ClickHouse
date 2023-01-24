@@ -511,7 +511,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
-    if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY)
+    if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY && !joined_tables.tablesWithColumns().empty())
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, joined_tables.tablesWithColumns().front().table, *context))
         {
@@ -526,6 +526,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 settings.parallel_replicas_custom_key_filter_type,
                 *storage,
                 context);
+        }
+        else if (settings.parallel_replica_offset > 0)
+        {
+            LOG_DEBUG(
+                log,
+                "Will use no data on this replica because parallel replicas processing with custom_key has been requested"
+                " (setting 'max_parallel_replicas') but the table does not have custom_key defined for it (settings `parallel_replicas_custom_key`)");
+            parallel_replicas_custom_filter_ast = std::make_shared<ASTLiteral>(false);
         }
     }
 
