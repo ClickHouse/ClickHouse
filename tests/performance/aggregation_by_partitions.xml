@@ -1,11 +1,11 @@
 <test>
     <settings>
-        <allow_aggregate_partitions_independently>1</allow_aggregate_partitions_independently>
-        <force_aggregate_partitions_independently>1</force_aggregate_partitions_independently>
+        <!-- will enable in a subsequent PR -->
+        <!-- <allow_aggregate_partitions_independently>1</allow_aggregate_partitions_independently> -->
+        <!-- <force_aggregate_partitions_independently>1</force_aggregate_partitions_independently> -->
+        <!-- <max_number_of_partitions_for_independent_aggregation>256</max_number_of_partitions_for_independent_aggregation> -->
         <max_memory_usage>0</max_memory_usage>
-        <max_number_of_partitions_for_independent_aggregation>256</max_number_of_partitions_for_independent_aggregation>
         <max_partitions_per_insert_block>256</max_partitions_per_insert_block>
-        <max_threads>16</max_threads>
     </settings>
 
     <substitutions>
@@ -35,11 +35,11 @@
         </substitution>
     </substitutions>
 
-    <create_query>create table t_{size}_{partitions}(a UInt64) engine=MergeTree order by a partition by a % {partitions}</create_query>
+    <create_query>create table t_{size}_{partitions}(a UInt64) engine=MergeTree order by a partition by sipHash64(a) % {partitions}</create_query>
 
     <fill_query>insert into t_{size}_{partitions} select * from numbers_mt({size})</fill_query>
 
-    <!-- <fill_query>optimize table t_{size}_{partitions} final</fill_query> -->
+    <fill_query>optimize table t_{size}_{partitions} final</fill_query>
 
     <query>select a from t_{size}_{partitions} group by a format Null</query>
 
