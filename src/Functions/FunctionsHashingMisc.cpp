@@ -2,11 +2,7 @@
 
 #include <Functions/FunctionFactory.h>
 
-/// FunctionsHashing are separated into files:
-///  - FunctionsHashing.cpp,
-///  - FunctionsHashingInt.cpp,
-///  - FunctionsHashingMurmur.cpp
-///  - FunctionsHashingSSL.cpp
+/// FunctionsHashing instantiations are separated into files FunctionsHashing*.cpp
 /// to better parallelize the build procedure and avoid MSan build failure
 /// due to excessive resource consumption.
 
