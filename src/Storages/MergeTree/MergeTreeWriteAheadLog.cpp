@@ -193,7 +193,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(
             }
             else
             {
-                throw Exception("Unknown action type: " + toString(static_cast<UInt8>(action_type)), ErrorCodes::CORRUPTED_DATA);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown action type: {}", toString(static_cast<UInt8>(action_type)));
             }
         }
         catch (const Exception & e)
@@ -356,8 +356,9 @@ void MergeTreeWriteAheadLog::ActionMetadata::read(ReadBuffer & meta_in)
 {
     readIntBinary(min_compatible_version, meta_in);
     if (min_compatible_version > WAL_VERSION)
-        throw Exception("WAL metadata version " + toString(min_compatible_version)
-                        + " is not compatible with this ClickHouse version", ErrorCodes::UNKNOWN_FORMAT_VERSION);
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+                        "WAL metadata version {} is not compatible with this ClickHouse version",
+                        toString(min_compatible_version));
 
     size_t metadata_size;
     readVarUInt(metadata_size, meta_in);

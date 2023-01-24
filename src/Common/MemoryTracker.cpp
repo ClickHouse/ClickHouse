@@ -261,14 +261,16 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
-                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                    "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
-                    description ? " " : "",
-                    description ? description : "",
-                    formatReadableSizeWithBinarySuffix(will_be),
-                    size,
-                    formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    toDescription(overcommit_result));
+                                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                                    "Memory limit{}{} exceeded: "
+                                    "would use {} (attempt to allocate chunk of {} bytes), maximum: {}. "
+                                    "OvercommitTracker decision: {}.",
+                                    description ? " " : "",
+                                    description ? description : "",
+                                    formatReadableSizeWithBinarySuffix(will_be),
+                                    size,
+                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                    toDescription(overcommit_result));
             }
             else
             {

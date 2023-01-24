@@ -9,13 +9,22 @@ namespace DB
 class NetException : public Exception
 {
 public:
-    NetException(const std::string & msg, int code) : Exception(msg, code) {}
+    template<typename T, typename = std::enable_if_t<std::is_convertible_v<T, String>>>
+    NetException(int code, T && message) : Exception(std::forward<T>(message), code)
+    {
+        message_format_string = tryGetStaticFormatString(message);
+    }
+
+    template<> NetException(int code, const String & message) : Exception(message, code) {}
+    template<> NetException(int code, String & message) : Exception(message, code) {}
+    template<> NetException(int code, String && message) : Exception(std::move(message), code) {}
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
-    NetException(int code, fmt::format_string<Args...> fmt, Args &&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    NetException(int code, FormatStringHelper<Args...> fmt, Args &&... args)
+        : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
     {
+        message_format_string = fmt.message_format_string;
     }
 
     NetException * clone() const override { return new NetException(*this); }

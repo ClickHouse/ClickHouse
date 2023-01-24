@@ -157,8 +157,8 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         {
             const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
             if (!column_array)
-                throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
+                                column->getName(), from_type->getName());
 
             const auto & nested_from = from_array_type->getNestedType();
             const auto & nested_to = to_array_type->getNestedType();
@@ -175,8 +175,8 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         {
             const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
             if (!column_tuple)
-                throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
-                                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
+                                column->getName(), from_type->getName());
 
             auto columns = column_tuple->getColumns();
             const auto & from_elements = from_tuple_type->getElements();
@@ -202,7 +202,7 @@ ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & 
         }
     }
 
-    throw Exception("Cannot convert: " + from_type->getName() + " to " + to_type->getName(), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert: {} to {}", from_type->getName(), to_type->getName());
 }
 
 }

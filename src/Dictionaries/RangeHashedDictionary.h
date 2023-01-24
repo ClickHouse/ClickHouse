@@ -305,9 +305,10 @@ namespace
         if (!callOnIndexAndDataType<void>(type_index, call))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
-                " Actual 'range_min' and 'range_max' type is {}",
-                range_type->getName());
+                            "Dictionary structure type of 'range_min' and 'range_max' should "
+                            "be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
+                            " Actual 'range_min' and 'range_max' type is {}",
+                            range_type->getName());
         }
     }
 }
