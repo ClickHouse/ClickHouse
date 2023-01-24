@@ -3805,6 +3805,7 @@ Possible values:
 
 Default value: `0`.
 
-!!! note "Warning"
-    Use this setting only for backward compatibility if your use cases depend on old syntax.
+:::note
+Use this setting only for backward compatibility if your use cases depend on old syntax.
+:::
 
