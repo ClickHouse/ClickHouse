@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
+#include <boost/algorithm/string/join.hpp>
 
 #include "config.h"
 
@@ -205,7 +206,7 @@ struct ExpressionActionsChain : WithContext
 
         std::string dump() const override
         {
-            return actions_dag->dumpDAG();
+            return actions_dag->dumpDAG() + "additional_input: " + boost::algorithm::join(additional_input, ", ") + "\n";
         }
     };
 

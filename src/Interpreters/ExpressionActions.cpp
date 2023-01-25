@@ -16,8 +16,11 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <unordered_map>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+#include "Core/Names.h"
+#include "DataTypes/Serializations/ISerialization.h"
 #include <Core/SettingsEnums.h>
 
 
@@ -965,19 +968,49 @@ void ExpressionActionsChain::finalize()
                 }
             }
         }
+
         steps[i]->finalize(required_names);
+//std::cerr
+//        << "FINALIZE " << i << " " << boost::algorithm::join(required_names, ", ") << "\n"
+//        << steps[i]->dump()
+//        << "\n\n";
     }
 
     /// Adding the ejection of unnecessary columns to the beginning of each step.
     for (size_t i = 1; i < steps.size(); ++i)
     {
-        size_t columns_from_previous = steps[i - 1]->getResultColumns().size();
+        std::unordered_map<String, DataTypePtr> columns_from_previous;
+        for (const auto & it : steps[i - 1]->getResultColumns())
+            columns_from_previous[it.name] = it.type;
+
+//std::cerr
+//    << "STEP " << i << "\n"
+//    << "prev result (" << columns_from_previous.size() << ")\n"
+//    << steps[i]->dump() << "\n"
+//    << "required: " << steps[i]->getRequiredColumns().toString() << "\n";
 
         /// If unnecessary columns are formed at the output of the previous step, we'll add them to the beginning of this step.
         /// Except when we drop all the columns and lose the number of rows in the block.
-        if (!steps[i]->getResultColumns().empty()
-            && columns_from_previous > steps[i]->getRequiredColumns().size())
-            steps[i]->prependProjectInput();
+        if (steps[i]->getResultColumns().empty())
+            continue;
+
+        NameSet result_columns;
+        for (const auto & it : steps[i]->getResultColumns())
+            result_columns.insert(it.name);
+
+        for (const auto & it : steps[i]->getRequiredColumns())
+            columns_from_previous.erase(it.name);
+
+        /// Explicitly remove unused columns from the previous step.
+        for (const auto & column : columns_from_previous)
+        {
+            if (typeid_cast<ExpressionActionsStep *>(steps[i].get()))
+            {
+//                std::cerr << "removed: " << column.first << "\n";
+                /// Add the column to input and don't add it to the output.
+                steps[i]->actions()->addInput(column.first, column.second);
+            }
+        }
     }
 }
 

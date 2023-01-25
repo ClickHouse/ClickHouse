@@ -857,9 +857,13 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         if (analysis_result.prewhere_info)
         {
-            header = analysis_result.prewhere_info->prewhere_steps.back().actions->updateHeader(header);
-            if (analysis_result.prewhere_info->prewhere_steps.back().remove_prewhere_column)
-                header.erase(analysis_result.prewhere_info->prewhere_steps.back().column_name);
+            for (const auto & prewhere_step : analysis_result.prewhere_info->prewhere_steps)
+            {
+                if (prewhere_step.actions)
+                    header = prewhere_step.actions->updateHeader(header);
+                if (prewhere_step.remove_prewhere_column)
+                    header.erase(prewhere_step.column_name);
+            }
         }
         return header;
     }

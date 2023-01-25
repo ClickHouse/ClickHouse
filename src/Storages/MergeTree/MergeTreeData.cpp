@@ -6476,7 +6476,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             }
 
             required_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
-*/
+//*/
+            return false;
         }
 
         bool match = true;
@@ -6634,7 +6635,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             return;
 
 // TODO:
-/*        if (minmax_count_projection_candidate->prewhere_info)
+/*
+        if (minmax_count_projection_candidate->prewhere_info)
         {
             const auto & prewhere_info = minmax_count_projection_candidate->prewhere_info;
 
@@ -6650,7 +6652,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             if (prewhere_info->remove_prewhere_column)
                 query_info.minmax_count_projection_block.erase(prewhere_info->prewhere_column_name);
         }
-*/
+//*/
         if (normal_parts.empty())
         {
             selected_candidate = &*minmax_count_projection_candidate;

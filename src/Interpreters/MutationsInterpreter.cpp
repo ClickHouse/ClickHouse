@@ -1173,6 +1173,9 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 {
     for (const Stage & stage : prepared_stages)
     {
+
+//std::cerr << "addStreamsForLaterStages: " << stage.expressions_chain.dumpChain() << "\n\n\n";
+
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];

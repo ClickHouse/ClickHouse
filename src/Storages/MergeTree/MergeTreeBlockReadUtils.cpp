@@ -325,12 +325,18 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         for (const auto & step : prewhere_info->prewhere_steps)
         {
             Names all_pre_column_names = step.actions->getRequiredColumnsNames();
+            Names new_pre_column_names;
+
+            /// Filter out names that are not physical columns (those can be results calculated by previous steps)
+            for (const auto & name : all_pre_column_names)
+                if (storage_snapshot->tryGetColumn(options, name))
+                    new_pre_column_names.push_back(name);
 
             injectRequiredColumns(
-                data_part_info_for_reader, storage_snapshot, with_subcolumns, all_pre_column_names);
+                data_part_info_for_reader, storage_snapshot, with_subcolumns, new_pre_column_names);
 
             Names pre_column_names;
-            for (const auto & name : all_pre_column_names)
+            for (const auto & name : new_pre_column_names)
             {
                 if (pre_name_set.contains(name))
                     continue;
@@ -344,6 +350,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                     post_column_names.push_back(name);
 
             column_names = post_column_names;
+
+//std::cerr << "PRE: " << boost::algorithm::join(pre_column_names, ", ") << "\n";
 
             result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
         }

@@ -1017,6 +1017,9 @@ std::string ActionsDAG::dumpDAG() const
         out << ' ' << map[node];
     out << '\n';
 
+    out << "Project input: " << project_input << '\n'
+        << "Projected output: " << projected_output << '\n';
+
     return out.str();
 }
 
