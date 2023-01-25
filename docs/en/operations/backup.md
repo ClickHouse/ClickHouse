@@ -375,7 +375,7 @@ Configure your ClickHouse server by adding a disk of type `s3_plain`.  Here is a
             <!-- NOTE: backup_disk_s3_plain is used to write backups to -->
             <backup_disk_s3_plain>
                 <type>s3_plain</type>
-                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/</endpoint>
+                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/</endpoint>
                 <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
                 <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
@@ -383,8 +383,8 @@ Configure your ClickHouse server by adding a disk of type `s3_plain`.  Here is a
             <!-- NOTE: s3_ro_backup is used to read from when the backup is attached -->
             <s3_ro_backup>
                 <type>s3_plain</type>
-                <!-- NOTE: /25Jan23/ is a name of BACKUP -->
-                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/25Jan23/</endpoint>
+                <!-- NOTE: /backup_25Jan23/ is a name of BACKUP -->
+                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/backup_25Jan23/</endpoint>
                 <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
                 <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
@@ -396,33 +396,6 @@ Configure your ClickHouse server by adding a disk of type `s3_plain`.  Here is a
                 <volumes>
                     <main>
                         <disk>s3_ro_backup</disk>
-                    </main>
-                </volumes>
-            </s3_backup>
-        </policies>
-    </storage_configuration>
-    <backups>
-        <allowed_disk>backup_disk_s3_plain</allowed_disk>
-    </backups>
-</clickhouse>
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <backup_disk_s3_plain>
-                <type>s3_plain</type>
-                <!-- highlight-start -->
-                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/table_xyz/</endpoint>
-                <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
-                <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
-                <!-- highlight-end -->
-                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
-            </backup_disk_s3_plain>
-        </disks>
-        <policies>
-            <s3_backup>
-                <volumes>
-                    <main>
-                        <disk>backup_disk_s3_plain</disk>
                     </main>
                 </volumes>
             </s3_backup>
