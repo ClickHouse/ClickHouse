@@ -33,7 +33,7 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments.", getName());
 
     ASTs & args = args_func.at(0)->children;
 
@@ -41,19 +41,18 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
         return;
 
     if (args.size() > 4)
-        throw Exception("Table function '" + getName() + "' requires at most four arguments: "
-                        " structure, [random_seed, max_string_length, max_array_length].",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Table function '{}' requires at most four arguments: "
+                        " structure, [random_seed, max_string_length, max_array_length].", getName());
 
     // All the arguments must be literals.
     for (const auto & arg : args)
     {
         if (!arg->as<const ASTLiteral>())
         {
-            throw Exception(fmt::format(
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "All arguments of table function '{}' must be literals. "
-                "Got '{}' instead", getName(), arg->formatForErrorMessage()),
-                ErrorCodes::BAD_ARGUMENTS);
+                "Got '{}' instead", getName(), arg->formatForErrorMessage());
         }
     }
 

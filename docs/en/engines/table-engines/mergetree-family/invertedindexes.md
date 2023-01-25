@@ -43,12 +43,12 @@ To use the index, no special functions or syntax are required. Typical string se
 examples, consider:
 
 ```sql
-SELECT * from tab WHERE s == 'Hello World;;
+SELECT * from tab WHERE s == 'Hello World;
 SELECT * from tab WHERE s IN (‘Hello’, ‘World’);
 SELECT * from tab WHERE s LIKE ‘%Hello%’;
 SELECT * from tab WHERE multiSearchAny(s, ‘Hello’, ‘World’);
 SELECT * from tab WHERE hasToken(s, ‘Hello’);
-SELECT * from tab WHERE multiSearchAll(s, [‘Hello’, ‘World’])
+SELECT * from tab WHERE multiSearchAll(s, [‘Hello’, ‘World’]);
 ```
 
 The inverted index also works on columns of type `Array(String)`, `Array(FixedString)`, `Map(String)` and `Map(String)`.

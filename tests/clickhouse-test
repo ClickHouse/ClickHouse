@@ -1844,7 +1844,7 @@ def reportLogStats(args):
         LIMIT 100
         FORMAT TSVWithNamesAndTypes
     """
-    value = clickhouse_execute(args, query).decode()
+    value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop patterns of log messages:\n")
     print(value)
     print("\n")
@@ -1856,7 +1856,7 @@ def reportLogStats(args):
             count() AS count,
             substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
             substr(any(message), 1, 256) as runtime_message,
-            any((extract(source_file, '\/[a-zA-Z0-9_]+\.[a-z]+'), source_line)) as line 
+            any((extract(source_file, '\/[a-zA-Z0-9_]+\.[a-z]+'), source_line)) as line
         FROM system.text_log
         WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
         GROUP BY pattern
@@ -1864,7 +1864,7 @@ def reportLogStats(args):
         LIMIT 50
         FORMAT TSVWithNamesAndTypes
     """
-    value = clickhouse_execute(args, query).decode()
+    value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop messages without format string (fmt::runtime):\n")
     print(value)
     print("\n")
