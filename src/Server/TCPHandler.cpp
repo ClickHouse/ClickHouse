@@ -1945,6 +1945,7 @@ void TCPHandler::run()
     {
         // Enable thread cancellation
         Cancelable cancelable;
+        UNUSED(cancelable);
 
         runImpl();
 
