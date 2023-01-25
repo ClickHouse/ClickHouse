@@ -32,7 +32,9 @@ namespace DB
         std::unordered_set<std::string> resolve_v6(const std::string & ip) override;
 
     private:
-        void wait();
+        bool wait();
+
+        void cancel_requests();
 
         void resolve(const std::string & ip, std::unordered_set<std::string> & response);
 
@@ -48,7 +50,7 @@ namespace DB
 
         ares_channel channel;
 
-        static std::mutex mutex;
+        [[maybe_unused]] static std::mutex mutex;
     };
 }
 
