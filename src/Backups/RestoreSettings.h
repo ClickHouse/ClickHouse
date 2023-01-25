@@ -123,9 +123,9 @@ struct RestoreSettings
     String coordination_zk_path;
 
     /// Internal, should not be specified by user.
-    /// UUID of the backup. If it's not set it will be generated randomly.
+    /// UUID of the restore. If it's not set it will be generated randomly.
     /// This is used to validate internal restores when allow_concurrent_restores is turned off
-    std::optional<UUID> backup_uuid;
+    std::optional<UUID> restore_uuid;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
