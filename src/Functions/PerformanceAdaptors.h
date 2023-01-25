@@ -207,8 +207,8 @@ public:
     ColumnPtr selectAndExecute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (implementations.empty())
-            throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",
-                            ErrorCodes::NO_SUITABLE_FUNCTION_IMPLEMENTATION);
+            throw Exception(ErrorCodes::NO_SUITABLE_FUNCTION_IMPLEMENTATION,
+                            "There are no available implementations for function " "TODO(dakovalkov): add name");
 
         /// Statistics shouldn't rely on small columns.
         bool considerable = (input_rows_count > 1000);

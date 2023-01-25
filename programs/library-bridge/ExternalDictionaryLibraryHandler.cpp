@@ -32,7 +32,7 @@ ExternalDictionaryLibraryHandler::ExternalDictionaryLibraryHandler(
     if (lib_new)
         lib_data = lib_new(&settings_holder->strings, ExternalDictionaryLibraryAPI::log);
     else
-        throw Exception("Method extDict_libNew failed", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Method extDict_libNew failed");
 }
 
 
@@ -173,22 +173,21 @@ Block ExternalDictionaryLibraryHandler::loadKeys(const Columns & key_columns)
 Block ExternalDictionaryLibraryHandler::dataToBlock(ExternalDictionaryLibraryAPI::RawClickHouseLibraryTable data)
 {
     if (!data)
-        throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "LibraryDictionarySource: No data returned");
 
     const auto * columns_received = static_cast<const ExternalDictionaryLibraryAPI::Table *>(data);
     if (columns_received->error_code)
-        throw Exception(
-            "LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " " + (columns_received->error_string ? columns_received->error_string : ""),
-            ErrorCodes::EXTERNAL_LIBRARY_ERROR);
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "LibraryDictionarySource: Returned error: {} {}",
+            std::to_string(columns_received->error_code), (columns_received->error_string ? columns_received->error_string : ""));
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
 
     for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
     {
         if (columns.size() != columns_received->data[col_n].size)
-            throw Exception(
-                "LibraryDictionarySource: Returned unexpected number of columns: " + std::to_string(columns_received->data[col_n].size) + ", must be " + std::to_string(columns.size()),
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "LibraryDictionarySource: "
+                "Returned unexpected number of columns: {}, must be {}",
+                columns_received->data[col_n].size, columns.size());
 
         for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
         {
