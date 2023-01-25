@@ -8,7 +8,7 @@ endif()
 set(RDKAFKA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
 
 set(SRCS
-  "${RDKAFKA_SOURCE_DIR}/cJSON.c"
+#  "${RDKAFKA_SOURCE_DIR}/cJSON.c"    # see below
   "${RDKAFKA_SOURCE_DIR}/crc32c.c"
 #  "${RDKAFKA_SOURCE_DIR}/lz4.c"      # WITH_LZ4_EXT
 #  "${RDKAFKA_SOURCE_DIR}/lz4frame.c" # WITH_LZ4_EXT
@@ -118,8 +118,10 @@ endif()
 
 add_library(_rdkafka ${SRCS})
 add_library(ch_contrib::rdkafka ALIAS _rdkafka)
-
 target_compile_options(_rdkafka PRIVATE -fno-sanitize=undefined)
+
+add_library(_rdkafka_cjson ${RDKAFKA_SOURCE_DIR}/cJSON.c)
+target_compile_definitions(_rdkafka_cjson PRIVATE -DCJSON_HIDE_SYMBOLS)
 
 # target_include_directories(_rdkafka SYSTEM PUBLIC include)
 target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include") # for "librdkafka/rdkafka.h"
@@ -131,6 +133,7 @@ target_link_libraries(_rdkafka
     ch_contrib::zlib
     ch_contrib::zstd
     OpenSSL::Crypto OpenSSL::SSL
+    _rdkafka_cjson
 )
 if(WITH_SASL_CYRUS)
     target_link_libraries(_rdkafka PRIVATE ch_contrib::sasl2)
