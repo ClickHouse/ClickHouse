@@ -251,7 +251,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 -   `Initial Parts` — количество кусков до применения индекса.
 -   `Selected Parts` — количество кусков после применения индекса.
 -   `Initial Granules` — количество гранул до применения индекса.
--   `Selected Granulesis` — количество гранул после применения индекса.
+-   `Selected Granules` — количество гранул после применения индекса.
 
 Пример:
 
