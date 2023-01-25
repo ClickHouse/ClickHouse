@@ -190,7 +190,7 @@ namespace DB
                 pollfd[i].events = POLLRDNORM | POLLIN;
             }
 
-            if(pollfd[i].events)
+            if (pollfd[i].events)
             {
                 number_of_sockets_to_poll++;
             }
