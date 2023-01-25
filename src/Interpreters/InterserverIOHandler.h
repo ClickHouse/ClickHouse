@@ -7,11 +7,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ActionBlocker.h>
+#include <Common/SharedMutex.h>
 #include <base/types.h>
 
 #include <atomic>
 #include <map>
-#include <shared_mutex>
 #include <utility>
 
 namespace zkutil
@@ -43,7 +43,7 @@ public:
 
     /// You need to stop the data transfer if blocker is activated.
     ActionBlocker blocker;
-    std::shared_mutex rwlock;
+    SharedMutex rwlock;
 };
 
 using InterserverIOEndpointPtr = std::shared_ptr<InterserverIOEndpoint>;
