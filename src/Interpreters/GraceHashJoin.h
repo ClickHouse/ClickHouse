@@ -95,8 +95,10 @@ private:
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addJoinedBlockImpl(Block block);
 
-    /// Check that @join satisifes limits on rows/bytes in @table_join.
-    bool fitsInMemory() const;
+    /// Check that join satisfies limits on rows/bytes in table_join.
+    bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
+    bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
+    bool hasMemoryOverflow(const BlocksList & blocks) const;
 
     /// Create new bucket at the end of @destination.
     void addBucket(Buckets & destination);
@@ -113,6 +115,9 @@ private:
 
     size_t getNumBuckets() const;
     Buckets getCurrentBuckets() const;
+
+    /// Structure block to store in the HashJoin according to sample_block.
+    Block prepareRightBlock(const Block & block);
 
     Poco::Logger * log;
     ContextPtr context;
@@ -136,6 +141,7 @@ private:
     mutable std::mutex current_bucket_mutex;
 
     InMemoryJoinPtr hash_join;
+    Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
 };
 

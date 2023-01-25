@@ -529,6 +529,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 second.
 E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
 
+For an alternative to `age`, see function `date\_diff`.
 
 **Syntax**
 
@@ -600,8 +601,12 @@ Result:
 
 ## date\_diff
 
-Returns the count of the specified `unit` boundaries crossed between the `startdate` and `enddate`.
-The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for day unit (see [toRelativeDayNum](#torelativedaynum)), 1 month for month unit (see [toRelativeMonthNum](#torelativemonthnum)), 1 year for year unit (see [toRelativeYearNum](#torelativeyearnum)).
+Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
+The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for unit `day` (see [toRelativeDayNum](#torelativedaynum)), 1 month for unit `month` (see [toRelativeMonthNum](#torelativemonthnum)) and 1 year for unit `year` (see [toRelativeYearNum](#torelativeyearnum)).
+
+If unit `week` was specified, `date\_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
+
+For an alternative to `date\_diff`, see function `age`.
 
 **Syntax**
 
@@ -1582,3 +1587,8 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
+
+## Related content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+

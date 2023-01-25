@@ -103,7 +103,7 @@ private:
                     auto index = decoder.decodeUnionIndex();
                     if (index >= actions.size())
                     {
-                        throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
                     }
                     actions[index].execute(columns, decoder, ext);
                     break;

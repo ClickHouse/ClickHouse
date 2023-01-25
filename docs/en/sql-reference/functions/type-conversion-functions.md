@@ -1402,6 +1402,8 @@ The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
 
 ```sql
 toUnixTimestamp64Milli(value)
+toUnixTimestamp64Micro(value)
+toUnixTimestamp64Nano(value)
 ```
 
 **Arguments**
@@ -1455,7 +1457,9 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 **Syntax**
 
 ``` sql
-fromUnixTimestamp64Milli(value [, ti])
+fromUnixTimestamp64Milli(value [, timezone])
+fromUnixTimestamp64Micro(value [, timezone])
+fromUnixTimestamp64Nano(value [, timezone])
 ```
 
 **Arguments**
