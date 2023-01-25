@@ -408,14 +408,14 @@ struct TableExpressionData
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
-    bool hasFullIdentifierName(IdentifierView identifier) const
+    bool hasFullIdentifierName(IdentifierView identifier_view) const
     {
-        return column_name_to_column_node.contains(std::string_view(identifier.getFullName()));
+        return column_name_to_column_node.contains(identifier_view.getFullName());
     }
 
-    bool canBindIdentifier(IdentifierView identifier) const
+    bool canBindIdentifier(IdentifierView identifier_view) const
     {
-        return column_identifier_first_parts.contains(std::string_view(identifier.at(0)));
+        return column_identifier_first_parts.contains(identifier_view.at(0));
     }
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
@@ -2130,7 +2130,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
             compound_expression_from_error_message += compound_expression_source;
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
             "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
             expression_identifier,
             nested_path,
