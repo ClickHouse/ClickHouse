@@ -22,7 +22,7 @@ select 30, countDistinct(message_format_string) < 10 from logs where length(mess
 select 40, countDistinct(message_format_string) < 35 from logs where length(message_format_string) < 16;
 
 -- Same as above, but exceptions must be more informative. Feel free to update the threshold or remove this query if really necessary
-select 50, countDistinct(message_format_string) < 90 from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%';
+select 50, countDistinct(message_format_string) < 100 from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%';
 
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold

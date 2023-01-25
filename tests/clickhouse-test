@@ -1882,6 +1882,26 @@ def reportLogStats(args):
     print(value)
     print("\n")
 
+    query = """
+        WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue', 'Creating set.',
+              'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}', 'Found part {}', 'Loaded queue',
+              'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.', 'Request URI: {}',
+              'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
+              'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}'
+        ) AS known_short_messages
+        SELECT count() AS c, message_format_string, any(message)
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(120)) < event_time
+            AND (length(message_format_string) < 16
+                OR (length(message_format_string) < 16 AND message ilike '%DB::Exception%'))
+            AND message_format_string NOT IN known_short_messages
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 50
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop short messages:\n")
+    print(value)
+    print("\n")
+
 
 def main(args):
     global server_died
