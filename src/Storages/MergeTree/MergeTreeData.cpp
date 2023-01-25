@@ -2787,10 +2787,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     if (commands.hasInvertedIndex(new_metadata, getContext()) && !settings.allow_experimental_inverted_index)
-    {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')");
-    }
+                "Experimental Inverted Index feature is not enabled (turn on setting 'allow_experimental_inverted_index')");
+
     commands.apply(new_metadata, getContext());
 
     /// Set of columns that shouldn't be altered.

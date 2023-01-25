@@ -230,6 +230,7 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
+/// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
 bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
     std::shared_ptr<MergeTreeIndexGranuleFullText> granule
