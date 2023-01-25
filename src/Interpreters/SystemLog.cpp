@@ -136,17 +136,15 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (config.has(config_prefix + ".engine"))
     {
         if (config.has(config_prefix + ".partition_by"))
-            throw Exception("If 'engine' is specified for system table, "
-                "PARTITION BY parameters should be specified directly inside 'engine' and 'partition_by' setting doesn't make sense",
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "If 'engine' is specified for system table, PARTITION BY parameters should "
+                            "be specified directly inside 'engine' and 'partition_by' setting doesn't make sense");
         if (config.has(config_prefix + ".ttl"))
-            throw Exception("If 'engine' is specified for system table, "
-                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, "
+                            "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense");
         if (config.has(config_prefix + ".storage_policy"))
-            throw Exception("If 'engine' is specified for system table, SETTINGS storage_policy = '...' "
-                            "should be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "If 'engine' is specified for system table, SETTINGS storage_policy = '...' "
+                            "should be specified directly inside 'engine' and 'storage_policy' setting doesn't make sense");
         engine = config.getString(config_prefix + ".engine");
     }
     else

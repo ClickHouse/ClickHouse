@@ -126,10 +126,10 @@ public:
         std::lock_guard lock{mutex};
         if (!registered_prefixes.empty())
         {
-            throw Exception(
-                "Setting " + String{setting_name} + " is neither a builtin setting nor started with the prefix '"
-                    + boost::algorithm::join(registered_prefixes, "' or '") + "' registered for user-defined settings",
-                ErrorCodes::UNKNOWN_SETTING);
+            throw Exception(ErrorCodes::UNKNOWN_SETTING,
+                            "Setting {} is neither a builtin setting nor started with the prefix '{}"
+                            "' registered for user-defined settings",
+                            String{setting_name}, boost::algorithm::join(registered_prefixes, "' or '"));
         }
         else
             BaseSettingsHelpers::throwSettingNotFound(setting_name);
@@ -450,7 +450,7 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
             addReplicatedStorage(name, zookeeper_path, get_zookeeper_function, allow_backup);
         }
         else
-            throw Exception("Unknown storage type '" + type + "' at " + prefix + " in config", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown storage type '{}' at {} in config", type, prefix);
     }
 }
 
