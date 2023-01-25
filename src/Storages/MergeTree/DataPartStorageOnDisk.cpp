@@ -735,10 +735,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
     size_t buf_size,
     const WriteSettings & settings)
 {
-    if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings, /* autocommit = */ false);
-
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings);
+    return writeFile(name, buf_size, WriteMode::Rewrite, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
@@ -749,6 +746,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
 {
     if (transaction)
         return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
+
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 
