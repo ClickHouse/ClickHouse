@@ -175,6 +175,7 @@ if (ENABLE_NLP)
 endif()
 
 add_contrib (sqlite-cmake sqlite-amalgamation)
+add_contrib (duckdb-cmake duckdb-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)

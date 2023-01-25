@@ -56,6 +56,10 @@ void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
 void registerTableFunctionSQLite(TableFunctionFactory & factory);
 #endif
 
+#if USE_DUCKDB
+void registerTableFunctionDuckDB(TableFunctionFactory & factory);
+#endif
+
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
 void registerTableFunctionFormat(TableFunctionFactory & factory);

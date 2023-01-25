@@ -330,3 +330,6 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/duckdb-amalgamation"]
+	path = contrib/duckdb-amalgamation
+	url = https://github.com/evillique/duckdb-amalgamation.git

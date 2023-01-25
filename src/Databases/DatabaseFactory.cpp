@@ -49,6 +49,10 @@
 #include <Databases/SQLite/DatabaseSQLite.h>
 #endif
 
+#if USE_DUCKDB
+#include <Databases/DuckDB/DatabaseDuckDB.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -133,13 +137,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "DuckDB"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
 
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "DuckDB"};
 
     static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
@@ -463,6 +467,22 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
         return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
+    }
+#endif
+
+#if USE_DUCKDB
+    else if (engine_name == "DuckDB")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception("DuckDB database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
+
+        const auto & arguments = engine->arguments->children;
+
+        String database_path = safeGetLiteralValue<String>(arguments[0], "DuckDB");
+
+        return std::make_shared<DatabaseDuckDB>(context, engine_define, create.attach, database_path);
     }
 #endif
 

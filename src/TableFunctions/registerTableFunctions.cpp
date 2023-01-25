@@ -60,6 +60,9 @@ void registerTableFunctions()
     registerTableFunctionSQLite(factory);
 #endif
 
+#if USE_DUCKDB
+    registerTableFunctionDuckDB(factory);
+#endif
     registerTableFunctionDictionary(factory);
 
     registerTableFunctionFormat(factory);

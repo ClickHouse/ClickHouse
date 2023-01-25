@@ -94,6 +94,10 @@ if (TARGET ch_contrib::sqlite)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
 
+if (TARGET ch_contrib::duckdb)
+    add_headers_and_sources(dbms Databases/DuckDB)
+endif()
+
 if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
@@ -507,6 +511,10 @@ endif()
 
 if (TARGET ch_contrib::sqlite)
     dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
+endif()
+
+if (TARGET ch_contrib::duckdb)
+    dbms_target_link_libraries(PUBLIC ch_contrib::duckdb)
 endif()
 
 if (TARGET ch_contrib::msgpack)

@@ -194,6 +194,7 @@ enum class AccessType
     M(MYSQL, "", GLOBAL, SOURCES) \
     M(POSTGRES, "", GLOBAL, SOURCES) \
     M(SQLITE, "", GLOBAL, SOURCES) \
+    M(DUCKDB,"", GLOBAL, SOURCES) \
     M(ODBC, "", GLOBAL, SOURCES) \
     M(JDBC, "", GLOBAL, SOURCES) \
     M(HDFS, "", GLOBAL, SOURCES) \
