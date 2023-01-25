@@ -11,13 +11,15 @@ namespace ErrorCodes
 }
 
 ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
-    std::unique_ptr<WriteBuffer> out_,
+    std::unique_ptr<WriteBufferFromFile> out_,
     int compression_level,
+    bool append_to_existing_file_,
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
     : BufferWithOwnMemory(buf_size, existing_memory, alignment)
     , out(std::move(out_))
+    , append_to_existing_file(append_to_existing_file_)
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
@@ -40,6 +42,12 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
     input.src = reinterpret_cast<unsigned char *>(working_buffer.begin());
     input.size = offset();
     input.pos = 0;
+
+    if (first_write && append_to_existing_file && isNeedToAddEmptyBlock())
+    {
+        addEmptyBlock();
+        first_write = false;
+    }
 
     try
     {
@@ -145,7 +153,6 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
             output.pos = out->offset();
         }
     }
-    out->position() = out->buffer().begin() + output.pos;
 }
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()
@@ -171,23 +178,23 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
     }
 }
 
-void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock(WriteBuffer & write_buffer)
+void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 {
     /// HACK: https://github.com/facebook/zstd/issues/2090#issuecomment-620158967
 
-    if (write_buffer.buffer().size() - write_buffer.offset() < ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size())
-        write_buffer.next();
+    if (out->buffer().size() - out->offset() < ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size())
+        out->next();
 
-    std::memcpy(write_buffer.buffer().begin() + write_buffer.offset(),
+    std::memcpy(out->buffer().begin() + out->offset(),
                 ZSTD_CORRECT_TERMINATION_LAST_BLOCK.data(), ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size());
 
-    write_buffer.position() = write_buffer.buffer().begin() + write_buffer.offset() + ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size();
+    out->position() = out->buffer().begin() + out->offset() + ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size();
 }
 
 
-bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock(const std::string & file_name)
+bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
 {
-    ReadBufferFromFile reader(file_name);
+    ReadBufferFromFile reader(out->getFileName());
     auto fsize = reader.getFileSize();
     if (fsize > 3)
     {
@@ -205,7 +212,7 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock(const std::string
         throw Exception(
             ErrorCodes::ZSTD_ENCODER_FAILED,
             "Trying to write to non-empty file '{}' with tiny size {}. It can lead to data corruption",
-            file_name, fsize);
+            out->getFileName(), fsize);
     }
     return false;
 }

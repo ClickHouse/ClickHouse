@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include "IO/WriteBufferFromFile.h"
 
 
 namespace DB
@@ -94,7 +95,6 @@ public:
         uint64_t rotate_interval_,
         uint64_t max_log_file_size_)
         : existing_changelogs(existing_changelogs_)
-        , memory_buf(std::make_unique<WriteBufferMemory>(memory))
         , compress_logs(compress_logs_)
         , force_fsync(force_fsync_)
         , rotate_interval(rotate_interval_)
@@ -102,14 +102,6 @@ public:
         , changelogs_dir(changelogs_dir_)
         , log(&Poco::Logger::get("Changelog"))
     {
-        if (compress_logs)
-        {
-            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(memory_buf), /* compression level = */ 3);
-        }
-        else
-        {
-            /// no compression, only memory buffer
-        }
     }
 
     void setFile(ChangelogFileDescriptionPtr file_description, WriteMode mode)
@@ -124,9 +116,9 @@ public:
                     file_description->expectedEntriesCountInLog());
 
             // we have a file we need to finalize first
-            if (file_buf && prealloc_done)
+            if (tryGetFileBuffer() && prealloc_done)
             {
-                finalizeCurrentFile(/*final*/ false);
+                finalizeCurrentFile();
 
                 assert(current_file_description);
                 // if we wrote at least 1 log in the log file we can rename the file to reflect correctly the
@@ -151,12 +143,8 @@ public:
             last_index_written.reset();
             current_file_description = std::move(file_description);
 
-            // try fixing ZstdStream for the file if we are appending to some old file
-            if (compress_logs && mode == WriteMode::Append && ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock(current_file_description->path))
-            {
-                ZstdDeflatingAppendableWriteBuffer::addEmptyBlock(*file_buf);
-                flush();
-            }
+            if (compress_logs)
+                compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(file_buf), /* compression level = */ 3, /* append_to_existing_file_ = */ mode == WriteMode::Append);
 
             prealloc_done = false;
         }
@@ -167,15 +155,26 @@ public:
         }
     }
 
-    bool isFileSet() const { return file_buf != nullptr; }
+    bool isFileSet() const { return tryGetFileBuffer() != nullptr; }
 
 
     bool appendRecord(ChangelogRecord && record)
     {
+        const auto * file_buffer = tryGetFileBuffer();
+        assert(file_buffer && current_file_description);
         const bool log_is_complete = record.header.index - getStartIndex() == current_file_description->expectedEntriesCountInLog();
 
         if (log_is_complete)
             rotate(record.header.index);
+
+        // writing at least 1 log is requirement - we don't want empty log files
+        const bool log_too_big = record.header.index != getStartIndex() && max_log_file_size != 0 &&  initial_file_size + file_buffer->count() > total_bytes_available;
+
+        if (log_too_big)
+        {
+            LOG_TRACE(log, "Log file reached maximum allowed size ({} bytes), creating new log file", max_log_file_size);
+            rotate(record.header.index);
+        }
 
         if (!prealloc_done) [[unlikely]]
         {
@@ -185,62 +184,25 @@ public:
                 return false;
         }
 
-        const auto write_record = [&]
+        auto & write_buffer = getBuffer();
+        writeIntBinary(computeRecordChecksum(record), write_buffer);
+
+        writeIntBinary(record.header.version, write_buffer);
+
+        writeIntBinary(record.header.index, write_buffer);
+        writeIntBinary(record.header.term, write_buffer);
+        writeIntBinary(record.header.value_type, write_buffer);
+        writeIntBinary(record.header.blob_size, write_buffer);
+
+        if (record.header.blob_size != 0)
+            write_buffer.write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
+
+        if (compressed_buffer)
         {
-            writeIntBinary(computeRecordChecksum(record), getBuffer());
-
-            writeIntBinary(record.header.version, getBuffer());
-
-            writeIntBinary(record.header.index, getBuffer());
-            writeIntBinary(record.header.term, getBuffer());
-            writeIntBinary(record.header.value_type, getBuffer());
-            writeIntBinary(record.header.blob_size, getBuffer());
-
-            if (record.header.blob_size != 0)
-                getBuffer().write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
-
-            if (compressed_buffer)
-            {
-                /// Flush compressed data to WriteBufferMemory working_buffer
-                compressed_buffer->next();
-            }
-        };
-
-        // write record to an in-memory block
-        write_record();
-
-        const auto get_memory_buffer = [&]() -> WriteBufferMemory &
-        {
-            return compressed_buffer ? dynamic_cast<WriteBufferMemory &>(*compressed_buffer->getNestedBuffer()) : *memory_buf;
-        };
-
-        // if the file is too big, rotate
-        if (last_index_written.has_value() && max_log_file_size != 0 && total_bytes_written + get_memory_buffer().valuesWritten() > total_bytes_available)
-        {
-            LOG_TRACE(log, "Log file reached maximum allowed size ({} bytes), creating new log file", max_log_file_size);
-            rotate(record.header.index);
-
-            // we need to preallocate space on disk for the new file
-            tryPreallocateForFile();
-            if (!prealloc_done)
-                return false;
-
-            // if we use compression we need to write again to the buffer because it's a new one
-            if (compress_logs)
-                write_record();
+            /// Flush compressed data to file buffer
+            compressed_buffer->next();
         }
 
-        // after possible rotation, we don't check if we have enough space
-        // because writing at least 1 log is requirement - we don't want empty log files
-
-        auto & cur_memory_buf = get_memory_buffer();
-
-        // write the in-memory block to file
-        file_buf->write(memory.raw_data(), cur_memory_buf.valuesWritten());
-
-        total_bytes_written += cur_memory_buf.valuesWritten();
-
-        cur_memory_buf.restart();
         last_index_written = record.header.index;
 
         return true;
@@ -248,9 +210,10 @@ public:
 
     void flush()
     {
+        auto * file_buffer = tryGetFileBuffer();
         /// Fsync file system if needed
-        if (force_fsync && file_buf)
-            file_buf->sync();
+        if (file_buffer && force_fsync)
+            file_buffer->sync();
     }
 
     uint64_t getStartIndex() const
@@ -286,62 +249,74 @@ public:
 
     void finalize()
     {
-        if (file_buf && prealloc_done)
-            finalizeCurrentFile(/*final*/ true);
+        if (isFileSet() && prealloc_done)
+            finalizeCurrentFile();
     }
 
 private:
 
-    void finalizeCurrentFile(bool final)
+    void finalizeCurrentFile()
     {
-        assert(file_buf && prealloc_done);
+        const auto * file_buffer = tryGetFileBuffer();
+        assert(file_buffer && prealloc_done);
 
         assert(current_file_description);
         // compact can delete the file and we don't need to do anything
-        if (!current_file_description->deleted)
+        if (current_file_description->deleted)
         {
-            // finish the stream on disk if needed (finalize will write to in-memory block)
-            if (compress_logs)
-            {
-                if (ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock(current_file_description->path))
-                {
-                    ZstdDeflatingAppendableWriteBuffer::addEmptyBlock(*file_buf);
-                    assert(max_log_file_size == 0 || memory.size() < total_bytes_available - total_bytes_written);
-                    total_bytes_written += ZstdDeflatingAppendableWriteBuffer::ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size();
-                }
-            }
-
-            flush();
-
-            if (max_log_file_size != 0)
-                ftruncate(file_buf->getFD(), total_bytes_written);
-        }
-        else
-        {
-            LOG_WARNING(log, "Log {} is already deleted", file_buf->getFileName());
+            LOG_WARNING(log, "Log {} is already deleted", file_buffer->getFileName());
+            return;
         }
 
         if (compress_logs)
-        {
-            WriteBufferMemory & cur_memory_buf
-                = dynamic_cast<WriteBufferMemory &>(*compressed_buffer->getNestedBuffer());
+            compressed_buffer->finalize();
 
-            // so finalize can be done
-            cur_memory_buf.restart();
+        flush();
+
+        if (max_log_file_size != 0)
+            ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
+
+        if (compress_logs)
             compressed_buffer.reset();
-
-            if (!final)
-                compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::make_unique<WriteBufferMemory>(memory), /* compression level = */ 3);
-        }
-
-        file_buf.reset();
+        else
+            file_buf.reset();
     }
 
     WriteBuffer & getBuffer()
     {
         if (compressed_buffer)
             return *compressed_buffer;
-        return *memory_buf;
+
+        if (file_buf)
+            return *file_buf;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writter wasn't initialized for any file");
+    } 
+
+    WriteBufferFromFile & getFileBuffer()
+    {
+        auto * file_buffer = tryGetFileBuffer();
+
+        if (!file_buffer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writter wasn't initialized for any file");
+
+        return *file_buffer;
+    }
+
+    const WriteBufferFromFile * tryGetFileBuffer() const
+    {
+        return const_cast<ChangelogWriter *>(this)->tryGetFileBuffer();
+    }
+
+    WriteBufferFromFile * tryGetFileBuffer()
+    {
+        if (compressed_buffer)
+            return dynamic_cast<WriteBufferFromFile *>(compressed_buffer->getNestedBuffer());
+
+        if (file_buf)
+            return file_buf.get();
+
+        return nullptr;
     }
 
     void tryPreallocateForFile()
@@ -349,15 +324,16 @@ private:
         if (max_log_file_size == 0)
         {
             total_bytes_available = 0;
-            total_bytes_written = 0;
+            initial_file_size = 0;
             prealloc_done = true;
             return;
         }
 
+        const auto & file_buffer = getFileBuffer();
         bool fallocate_ok = false;
 #ifdef OS_LINUX
         {
-            int res = fallocate(file_buf->getFD(), FALLOC_FL_KEEP_SIZE, 0, max_log_file_size);
+            int res = fallocate(file_buffer.getFD(), FALLOC_FL_KEEP_SIZE, 0, 2 * max_log_file_size);
             if (res == ENOSPC)
             {
                 LOG_FATAL(log, "Failed to allocate enough space on disk for logs");
@@ -370,34 +346,23 @@ private:
 
         struct stat buf;
         {
-            [[maybe_unused]] int res = fstat(file_buf->getFD(), &buf);
+            [[maybe_unused]] int res = fstat(file_buffer.getFD(), &buf);
             assert(res == 0);
         }
 
-        total_bytes_written = buf.st_size;
+        initial_file_size = buf.st_size;
         // if fallocate passed, we know exact allocated bytes on disk which can be larger than the max_log_file_size
         total_bytes_available = fallocate_ok ? buf.st_blocks * 512 : max_log_file_size;
-
-        // always leave space for last termination block
-        if (compress_logs)
-            total_bytes_available -= ZstdDeflatingAppendableWriteBuffer::ZSTD_CORRECT_TERMINATION_LAST_BLOCK.size();
 
         prealloc_done = true;
     }
 
     std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs;
 
-    using MemoryBuffer = PODArray<UInt8>;
-    using WriteBufferMemory = WriteBufferFromVector<MemoryBuffer>;
-    MemoryBuffer memory;
-    // we write everything to memory buffer to see how many bytes are required
-    // when we have that information we can try to write to the disk
-    std::unique_ptr<WriteBufferMemory> memory_buf;
-
     ChangelogFileDescriptionPtr current_file_description{nullptr};
     std::unique_ptr<WriteBufferFromFile> file_buf;
     std::optional<uint64_t> last_index_written;
-    size_t total_bytes_written{0};
+    size_t initial_file_size{0};
     size_t total_bytes_available{0};
 
     std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
