@@ -252,7 +252,6 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         if (checker.check(regex))
         {
             complex_regexp_nodes.push_back(node);
-            LOG_INFO(logger, "Found complex regexp {} in the config. This will slow down the queries", regex);
         }
         else
         {
