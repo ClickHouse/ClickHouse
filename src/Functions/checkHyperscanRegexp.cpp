@@ -17,12 +17,12 @@ void checkHyperscanRegexp(const std::vector<std::string_view> & regexps, size_t 
         for (const auto & regexp : regexps)
         {
             if (max_hyperscan_regexp_length > 0 && regexp.size() > max_hyperscan_regexp_length)
-                throw Exception("Regexp length too large", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Regexp length too large");
             total_regexp_length += regexp.size();
         }
 
         if (max_hyperscan_regexp_total_length > 0 && total_regexp_length > max_hyperscan_regexp_total_length)
-            throw Exception("Total regexp lengths too large", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Total regexp lengths too large");
     }
 }
 

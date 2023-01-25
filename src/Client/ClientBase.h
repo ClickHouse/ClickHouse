@@ -70,7 +70,7 @@ protected:
 
     virtual bool processWithFuzzing(const String &)
     {
-        throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
     virtual void connect() = 0;

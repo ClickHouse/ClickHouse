@@ -994,7 +994,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 {
     if (entry.hosts.empty())
-        throw Exception("Empty host list in a distributed DDL task", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");
 
     auto zookeeper = getAndSetZooKeeper();
 

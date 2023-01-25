@@ -66,8 +66,8 @@ public:
     SharedChunkPtr alloc(Chunk & chunk)
     {
         if (free_chunks.empty())
-            throw Exception("Not enough space in SharedChunkAllocator. "
-                            "Chunks allocated: " + std::to_string(chunks.size()), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough space in SharedChunkAllocator. Chunks allocated: {}",
+                            chunks.size());
 
         auto pos = free_chunks.back();
         free_chunks.pop_back();
