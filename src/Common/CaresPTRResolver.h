@@ -50,7 +50,7 @@ namespace DB
 
         ares_channel channel;
 
-        [[maybe_unused]] static std::mutex mutex;
+        static std::mutex mutex;
     };
 }
 
