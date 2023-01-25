@@ -16,7 +16,7 @@ if(NOT AWK_PROGRAM)
 endif()
 
 if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
-    set(USE_BORINGSSL 1)
+    add_compile_definitions(USE_BORINGSSL=1)
 endif ()
 
 set(KRB5_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/krb5/src")
