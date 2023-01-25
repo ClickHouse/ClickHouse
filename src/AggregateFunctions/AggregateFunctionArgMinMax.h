@@ -52,8 +52,9 @@ public:
         , serialization_val(type_val->getDefaultSerialization())
     {
         if (!type_val->isComparable())
-            throw Exception("Illegal type " + type_val->getName() + " of second argument of aggregate function " + getName()
-                + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of "
+                            "aggregate function {} because the values of that data type are not comparable",
+                            type_val->getName(), getName());
     }
 
     String getName() const override

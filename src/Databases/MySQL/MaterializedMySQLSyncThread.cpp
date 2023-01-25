@@ -322,12 +322,11 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
     {
         if (e.errnum() == ER_ACCESS_DENIED_ERROR
             || e.errnum() == ER_DBACCESS_DENIED_ERROR)
-            throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
-                            "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
-                            "and SELECT PRIVILEGE on Database " + mysql_database_name
-                            , ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
+            throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
+                            "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                            "and SELECT PRIVILEGE on Database {}", mysql_database_name);
         else if (e.errnum() == ER_BAD_DB_ERROR)
-            throw Exception("Unknown database '" + mysql_database_name + "' on MySQL", ErrorCodes::UNKNOWN_DATABASE);
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}' on MySQL", mysql_database_name);
         else
             throw;
     }
@@ -495,7 +494,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
             if (connection.isNull())
             {
                 if (settings->max_wait_time_when_mysql_unavailable < 0)
-                    throw Exception("Unable to connect to MySQL", ErrorCodes::UNKNOWN_EXCEPTION);
+                    throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unable to connect to MySQL");
                 sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
                 continue;
             }
@@ -687,7 +686,7 @@ static void writeFieldsToColumn(
                         casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
-                        throw Exception("LOGICAL ERROR: it is a bug.", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: it is a bug.");
                 }
             }
         }
@@ -720,7 +719,7 @@ static void writeFieldsToColumn(
             }
         }
         else
-            throw Exception("Unsupported data type from MySQL.", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported data type from MySQL.");
     }
 }
 
@@ -752,7 +751,7 @@ static inline bool differenceSortingKeys(const Tuple & row_old_data, const Tuple
 static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t version, const std::vector<size_t> & sorting_columns_index)
 {
     if (rows_data.size() % 2 != 0)
-        throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: It is a bug.");
 
     size_t prev_bytes = buffer.bytes();
     std::vector<bool> writeable_rows_mask(rows_data.size());

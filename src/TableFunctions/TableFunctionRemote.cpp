@@ -145,7 +145,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
             {
                 if (!get_string_literal(*args[arg_num], cluster_description))
-                    throw Exception("Hosts pattern must be string literal (in single quotes).", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hosts pattern must be string literal (in single quotes).");
             }
         }
 
@@ -243,7 +243,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 
         if (names.empty())
-            throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard list is empty after parsing first argument");
 
         auto maybe_secure_port = context->getTCPPortSecure();
 
@@ -276,7 +276,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     }
 
     if (!remote_table_function_ptr && configuration.table.empty())
-        throw Exception("The name of remote table cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of remote table cannot be empty");
 
     remote_table_id.database_name = configuration.database;
     remote_table_id.table_name = configuration.table;

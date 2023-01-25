@@ -1000,7 +1000,7 @@ private:
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
-                throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
 
             /// Saving the result of the loading.
             {
@@ -1440,7 +1440,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.object && (!check_no_errors || !result.exception))
         return;
     if (result.status == ExternalLoader::Status::LOADING)
-        throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' is still loading", type_name, result.name);
     if (result.exception)
     {
         // Exception is shared for multiple threads.
@@ -1466,9 +1466,9 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         }
     }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
-        throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", type_name, result.name);
     if (result.status == ExternalLoader::Status::NOT_LOADED)
-        throw Exception(type_name + " '" + result.name + "' not tried to load", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not tried to load", type_name, result.name);
 }
 
 void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,

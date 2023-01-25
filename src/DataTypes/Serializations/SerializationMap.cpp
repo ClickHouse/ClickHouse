@@ -131,7 +131,7 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
                 if (*istr.position() == ',')
                     ++istr.position();
                 else
-                    throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
+                    throw Exception(ErrorCodes::CANNOT_READ_MAP_FROM_TEXT, "Cannot read Map from text");
             }
 
             first = false;

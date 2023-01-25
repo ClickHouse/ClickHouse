@@ -102,7 +102,9 @@ void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
-            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
+                            "The Transfer-Encoding is not chunked and there "
+                            "is no Content-Length header for POST request");
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus(status));
@@ -135,7 +137,7 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         String file_path = fs::weakly_canonical(user_files_absolute_path / file_name);
 
         if (!fs::exists(file_path))
-            throw Exception("Invalid file name " + file_path + " for static HTTPHandler. ", ErrorCodes::INCORRECT_FILE_NAME);
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid file name {} for static HTTPHandler. ", file_path);
 
         ReadBufferFromFile in(file_path);
         copyData(in, out);
@@ -143,8 +145,9 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
     else if (startsWith(response_expression, config_prefix))
     {
         if (response_expression.size() <= config_prefix.size())
-            throw Exception( "Static handling rule handler must contain a complete configuration path, for example: config://config_key",
-                ErrorCodes::INVALID_CONFIG_PARAMETER);
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Static handling rule handler must contain a complete configuration path, for example: "
+                            "config://config_key");
 
         const auto & config_path = response_expression.substr(config_prefix.size(), response_expression.size() - config_prefix.size());
         writeString(server.config().getRawString(config_path, "Ok.\n"), out);
