@@ -16,29 +16,6 @@
 
 namespace Poco { class Logger; }
 
-/// Extract format string from a string literal and constructs consteval fmt::format_string
-template <typename... Args>
-struct FormatStringHelperImpl
-{
-    std::string_view message_format_string;
-    fmt::format_string<Args...> fmt_str;
-    template<typename T>
-    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str))
-    {
-        formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
-    }
-    template<typename T>
-    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
-
-    PreformattedMessage format(Args && ...args) const
-    {
-        return PreformattedMessage{fmt::format(fmt_str, std::forward<Args...>(args)...), message_format_string};
-    }
-};
-
-template <typename... Args>
-using FormatStringHelper = FormatStringHelperImpl<std::type_identity_t<Args>...>;
-
 namespace DB
 {
 
@@ -51,7 +28,12 @@ public:
 
     Exception() = default;
 
-    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.message), code)
+    Exception(const PreformattedMessage & msg, int code): Exception(msg.text, code)
+    {
+        message_format_string = msg.format_string;
+    }
+
+    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.text), code)
     {
         message_format_string = msg.format_string;
     }
