@@ -11,7 +11,7 @@ Allows `SELECT` queries to be performed on data that is stored on a remote Mongo
 **Syntax**
 
 ``` sql
-mongodb(host:port, database, collection, user, password [, options])
+mongodb(host:port, database, collection, user, password, structure [, options])
 ```
 
 **Arguments**
