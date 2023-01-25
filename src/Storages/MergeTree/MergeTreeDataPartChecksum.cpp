@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 
 
 namespace DB
@@ -43,17 +44,20 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
         throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Checksum mismatch for file {} in data part", name);
 }
 
-void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & path) const
+void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    if (!disk->exists(path))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fullPath(disk, path));
-    if (disk->isDirectory(path))
-        // This is a projection, no need to check its size.
+    if (!storage.exists(name))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
+
+    // This is a projection, no need to check its size.
+    if (storage.isDirectory(name))
         return;
-    UInt64 size = disk->getFileSize(path);
+
+    UInt64 size = storage.getFileSize(name);
     if (size != file_size)
-        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "{} has unexpected size: {} instead of {}",
-                        fullPath(disk, path), size, file_size);
+        throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+            "{} has unexpected size: {} instead of {}",
+            fs::path(storage.getRelativePath()) / name, size, file_size);
 }
 
 
@@ -79,12 +83,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     }
 }
 
-void MergeTreeDataPartChecksums::checkSizes(const DiskPtr & disk, const String & path) const
+void MergeTreeDataPartChecksums::checkSizes(const IDataPartStorage & storage) const
 {
     for (const auto & it : files)
     {
         const String & name = it.first;
-        it.second.checkSize(disk, path + name);
+        it.second.checkSize(storage, name);
     }
 }
 

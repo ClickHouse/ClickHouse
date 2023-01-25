@@ -17,16 +17,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-MergeTreeDataPartWide::MergeTreeDataPartWide(
-       MergeTreeData & storage_,
-        const String & name_,
-        const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Wide, parent_part_)
-{
-}
-
 MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,

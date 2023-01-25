@@ -165,8 +165,16 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     out << '\n';
 
-    if (new_part_type != MergeTreeDataPartType::Wide && new_part_type != MergeTreeDataPartType::Unknown)
-        out << "part_type: " << new_part_type.toString() << "\n";
+    using PartType = MergeTreeDataPartType;
+    using StorageType = MergeTreeDataPartStorageType;
+
+    auto part_type = new_part_format.part_type;
+    if (part_type != PartType::Wide && part_type != PartType::Unknown)
+        out << "part_type: " << part_type.toString() << "\n";
+
+    auto storage_type = new_part_format.storage_type;
+    if (storage_type != StorageType::Full && storage_type != StorageType::Unknown)
+        out << "storage_type: " << storage_type.toString() << "\n";
 
     if (quorum)
         out << "quorum: " << quorum << '\n';
@@ -342,13 +350,21 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     if (checkString("part_type: ", in))
     {
-        String part_type_str;
         in >> type_str;
-        new_part_type.fromString(type_str);
+        new_part_format.part_type.fromString(type_str);
         in >> "\n";
     }
     else
-        new_part_type = MergeTreeDataPartType::Wide;
+        new_part_format.part_type = MergeTreeDataPartType::Wide;
+
+    if (checkString("storage_type: ", in))
+    {
+        in >> type_str;
+        new_part_format.storage_type.fromString(type_str);
+        in >> "\n";
+    }
+    else
+        new_part_format.storage_type = MergeTreeDataPartStorageType::Full;
 
     /// Optional field.
     if (!in.eof())

@@ -1128,7 +1128,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
             future_part->name = part->getNewName(new_part_info);
-            future_part->type = part->getType();
+            future_part->part_format = part->getFormat();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
@@ -1988,8 +1988,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             }
             catch (const Exception & ex)
             {
-                results.emplace_back(part->name, false,
-                    "Check of part finished with error: '" + ex.message() + "'");
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
             }
         }
         else

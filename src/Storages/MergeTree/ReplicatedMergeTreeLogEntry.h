@@ -88,7 +88,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
-    MergeTreeDataPartType new_part_type;
+    MergeTreeDataPartFormat new_part_format;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
     UUID new_part_uuid = UUIDHelpers::Nil;
