@@ -1254,7 +1254,7 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)
-                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+                    throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
 

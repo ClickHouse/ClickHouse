@@ -268,8 +268,10 @@ getColumnsForNewDataPart(
                 /// should it's previous version should be dropped or removed
                 if (renamed_columns_to_from.contains(it->name) && !was_renamed && !was_removed)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Incorrect mutation commands, trying to rename column {} to {}, but part {} already has column {}", renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "Incorrect mutation commands, trying to rename column {} to {}, "
+                                    "but part {} already has column {}",
+                                    renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
 
                 /// Column was renamed and no other column renamed to it's name
                 /// or column is dropped.
@@ -1178,7 +1180,7 @@ private:
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
 
         if (!ctx->mutating_pipeline_builder.initialized())
-            throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot mutate part columns with uninitialized mutations stream. It's a bug");
 
         QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
 
@@ -1531,7 +1533,7 @@ bool MutateTask::prepare()
 
     if (ctx->future_part->parts.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to mutate {} parts, not one. "
-            "This is a bug.", toString(ctx->future_part->parts.size()));
+            "This is a bug.", ctx->future_part->parts.size());
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
 

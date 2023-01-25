@@ -78,7 +78,7 @@ void DuplicateOrderByFromSubqueriesData::visit(ASTSelectQuery & select_query, AS
         {
             auto * ast = child->as<ASTOrderByElement>();
             if (!ast || ast->children.empty())
-                throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
 
             if (ast->with_fill)
                 return;
