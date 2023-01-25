@@ -1197,10 +1197,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
             else if (!command.if_exists)
             {
-                constexpr auto message_format = "Wrong column name. Cannot find column {} to drop";
-                String exception_message = fmt::format(message_format, backQuote(command.column_name));
-                all_columns.appendHintsMessage(exception_message, command.column_name);
-                throw Exception(PreformattedMessage{exception_message, message_format}, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                 auto message = PreformattedMessage::create(
+                    "Wrong column name. Cannot find column {} to drop", backQuote(command.column_name));
+                all_columns.appendHintsMessage(message.text, command.column_name);
+                throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
             }
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
@@ -1209,10 +1209,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    constexpr auto message_format = "Wrong column name. Cannot find column {} to comment";
-                    String exception_message = fmt::format(message_format, backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(PreformattedMessage{exception_message, message_format}, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    auto message = PreformattedMessage::create(
+                        "Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(message.text, command.column_name);
+                    throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
             }
         }
@@ -1246,10 +1246,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    constexpr auto message_format = "Wrong column name. Cannot find column {} to rename";
-                    String exception_message = fmt::format(message_format, backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(PreformattedMessage{exception_message, message_format}, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    auto message = PreformattedMessage::create(
+                       "Wrong column name. Cannot find column {} to rename", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(message.text, command.column_name);
+                    throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
                 else
                     continue;

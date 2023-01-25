@@ -2,14 +2,44 @@
 #include <base/defines.h>
 #include <fmt/format.h>
 
+struct PreformattedMessage;
+consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);
+template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x);
+
+/// Extract format string from a string literal and constructs consteval fmt::format_string
+template <typename... Args>
+struct FormatStringHelperImpl
+{
+    std::string_view message_format_string;
+    fmt::format_string<Args...> fmt_str;
+    template<typename T>
+    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str))
+    {
+        formatStringCheckArgsNumImpl(message_format_string, sizeof...(Args));
+    }
+    template<typename T>
+    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
+
+    PreformattedMessage format(Args && ...args) const;
+};
+
+template <typename... Args>
+using FormatStringHelper = FormatStringHelperImpl<std::type_identity_t<Args>...>;
+
 /// Saves a format string for already formatted message
 struct PreformattedMessage
 {
-    std::string message;
+    std::string text;
     std::string_view format_string;
 
-    operator const std::string & () const { return message; }
-    operator std::string () && { return std::move(message); }
+    template <typename... Args>
+    static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args)
+    {
+        return fmt.format(std::forward<Args>(args)...);
+    }
+
+    operator const std::string & () const { return text; }
+    operator std::string () && { return std::move(text); }
     operator fmt::format_string<> () const { UNREACHABLE(); }
 };
 

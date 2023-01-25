@@ -4366,12 +4366,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            std::string error_message = fmt::format("Aggregate function with name '{}' does not exists. In scope {}",
-               function_name,
-               scope.scope_node->formatASTForErrorMessage());
-
-            AggregateFunctionFactory::instance().appendHintsMessage(error_message, function_name);
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, error_message);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exists. In scope {}{}",
+                            function_name, scope.scope_node->formatASTForErrorMessage(),
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
         }
 
         if (!function_lambda_arguments_indexes.empty())

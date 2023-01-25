@@ -1861,7 +1861,7 @@ def reportLogStats(args):
         WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
         GROUP BY pattern
         ORDER BY count DESC
-        LIMIT 50
+        LIMIT 30
         FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
@@ -1870,12 +1870,12 @@ def reportLogStats(args):
     print("\n")
 
     query = """
-        SELECT message_format_string, count(), any(message) AS any_message
+        SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
         FROM system.text_log
         WHERE (now() - toIntervalMinute(120)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
         AND (message NOT LIKE concat('%Exception: ', s, '%'))
-        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20
+        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop messages that does not match its format string:\n")
@@ -1885,17 +1885,17 @@ def reportLogStats(args):
     query = """
         WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue', 'Creating set.',
               'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}', 'Found part {}', 'Loaded queue',
-              'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.', 'Request URI: {}',
-              'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
+              'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
+              'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
               'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}'
         ) AS known_short_messages
-        SELECT count() AS c, message_format_string, any(message)
+        SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
         WHERE (now() - toIntervalMinute(120)) < event_time
             AND (length(message_format_string) < 16
                 OR (length(message_format_string) < 16 AND message ilike '%DB::Exception%'))
             AND message_format_string NOT IN known_short_messages
-        GROUP BY message_format_string ORDER BY c DESC LIMIT 50
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 30 FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")
