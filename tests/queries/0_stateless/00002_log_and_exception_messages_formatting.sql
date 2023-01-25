@@ -48,7 +48,11 @@ select 120, count() < 3 from (select count() / (select count() from logs) as fre
 select 130, count() < 10 from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.05);
 
 -- Each message matches its pattern (returns 0 rows)
-select 140, message_format_string, any(message) from logs where message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
-                                                     and message not like ('Code: %Exception: '||s||'%') group by message_format_string;
+-- FIXME maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
+select 140, message_format_string, any_message from (
+    select message_format_string, any(message) as any_message from logs
+    where message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
+    and message not like ('%Exception: '||s||'%') group by message_format_string
+) where any_message not like '%Poco::Exception%';
 
 drop table logs;
