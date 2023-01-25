@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <utility>
 #include "IO/WriteBufferFromFileDecorator.h"
@@ -215,7 +215,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
+        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
         {
             store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
@@ -276,15 +276,13 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         auto & stream = *skip_indices_streams[i];
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
-        GinIndexStorePtr store = nullptr;
-        if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
+        GinIndexStorePtr store;
+        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
         {
             String stream_name = index_helper->getFileName();
             auto it = gin_index_stores.find(stream_name);
-            if (it == gin_index_stores.cend())
-            {
+            if (it == gin_index_stores.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Index '{}' does not exist", stream_name);
-            }
             store = it->second;
         }
 
@@ -401,9 +399,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
             stream->sync();
     }
     for (auto & store: gin_index_stores)
-    {
         store.second->finalize();
-    }
     gin_index_stores.clear();
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
