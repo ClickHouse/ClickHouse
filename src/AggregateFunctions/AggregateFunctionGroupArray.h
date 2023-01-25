@@ -282,10 +282,10 @@ public:
         readVarUInt(size, buf);
 
         if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         if (limit_num_elems && unlikely(size > max_elems))
-            throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
 
         auto & value = this->data(place).value;
 
@@ -613,10 +613,10 @@ public:
             return;
 
         if (unlikely(elems > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         if (limit_num_elems && unlikely(elems > max_elems))
-            throw Exception("Too large array size, it should not exceed " + toString(max_elems), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size, it should not exceed {}", max_elems);
 
         auto & value = data(place).value;
 

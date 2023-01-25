@@ -84,7 +84,7 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
     ss << major(sb.st_dev) << ":" << minor(sb.st_dev);
     return ss.str();
 #else
-    throw DB::Exception("The function getDeviceId is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getDeviceId is supported on Linux only");
 #endif
 }
 
@@ -125,7 +125,7 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
         return BlockDeviceType::UNKNOWN;
     }
 #else
-    throw DB::Exception("The function getDeviceType is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getDeviceType is supported on Linux only");
 #endif
 }
 
@@ -148,7 +148,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
         return static_cast<UInt64>(-1);
     }
 #else
-    throw DB::Exception("The function getDeviceType is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getDeviceType is supported on Linux only");
 #endif
 }
 
@@ -156,7 +156,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
 std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 {
     if (absolute_path.is_relative())
-        throw Exception("Path is relative. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is relative. It's a bug.");
 
     absolute_path = std::filesystem::canonical(absolute_path);
 
@@ -192,7 +192,7 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 #if defined(OS_LINUX)
     FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
-        throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
+        throw DB::Exception(ErrorCodes::SYSTEM_ERROR, "Cannot open /etc/mtab to get name of filesystem");
     mntent fs_info;
     constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
     std::vector<char> buf(buf_size);
@@ -200,10 +200,10 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
         ;
     endmntent(mounted_filesystems);
     if (fs_info.mnt_dir != mount_point)
-        throw DB::Exception("Cannot find name of filesystem by mount point " + mount_point, ErrorCodes::SYSTEM_ERROR);
+        throw DB::Exception(ErrorCodes::SYSTEM_ERROR, "Cannot find name of filesystem by mount point {}", mount_point);
     return fs_info.mnt_fsname;
 #else
-    throw DB::Exception("The function getFilesystemName is supported on Linux only", ErrorCodes::NOT_IMPLEMENTED);
+    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getFilesystemName is supported on Linux only");
 #endif
 }
 
