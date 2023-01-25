@@ -76,7 +76,15 @@ void buildScatterSelector(
         if (inserted)
         {
             if (max_parts && partitions_count >= max_parts)
-                throw Exception("Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).", ErrorCodes::TOO_MANY_PARTS);
+                throw Exception(ErrorCodes::TOO_MANY_PARTS,
+                                "Too many partitions for single INSERT block (more than {}). "
+                                "The limit is controlled by 'max_partitions_per_insert_block' setting. "
+                                "Large number of partitions is a common misconception. "
+                                "It will lead to severe negative performance impact, including slow server startup, "
+                                "slow INSERT queries and slow SELECT queries. Recommended total number of partitions "
+                                "for a table is under 1000..10000. Please note, that partitioning is not intended "
+                                "to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). "
+                                "Partitions are intended for data manipulation (DROP PARTITION, etc).", max_parts);
 
             partition_num_to_first_row.push_back(i);
             it->getMapped() = partitions_count;
@@ -129,10 +137,10 @@ void updateTTL(
             ttl_info.update(column_const->getValue<UInt32>());
         }
         else
-            throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
     }
     else
-        throw Exception("Unexpected type of result TTL column", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
@@ -309,13 +317,13 @@ Block MergeTreeDataWriter::mergeBlock(
 
     /// Check that after first merge merging_algorithm is waiting for data from input 0.
     if (status.required_source != 0)
-        throw Exception("Logical error: required source after the first merge is not 0.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0.");
 
     status = merging_algorithm->merge();
 
     /// Check that merge is finished.
     if (!status.is_finished)
-        throw Exception("Logical error: merge is not finished after the second merge.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: merge is not finished after the second merge.");
 
     /// Merged Block is sorted and we don't need to use permutation anymore
     permutation = nullptr;
@@ -364,7 +372,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         auto max_month = date_lut.toNumYYYYMM(max_date);
 
         if (min_month != max_month)
-            throw Exception("Logical error: part spans more than one month.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: part spans more than one month.");
 
         part_name = new_part_info.getPartNameV0(min_date, max_date);
     }

@@ -318,8 +318,8 @@ namespace
             size_t dst_tuple_size = type_tuple.getElements().size();
 
             if (src_tuple_size != dst_tuple_size)
-                throw Exception(fmt::format("Bad size of tuple. Expected size: {}, actual size: {}.",
-                    std::to_string(src_tuple_size), std::to_string(dst_tuple_size)), ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple. Expected size: {}, actual size: {}.",
+                    src_tuple_size, dst_tuple_size);
 
             for (size_t i = 0; i < src_tuple_size; ++i)
             {
@@ -454,8 +454,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
-            throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
-                                ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Template for column {} already exists and it was not evaluated yet",
+                                std::to_string(column_idx));
         std::exception_ptr exception;
         try
         {
@@ -497,7 +497,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             {
                 buf->rollbackToCheckpoint();
                 size_t len = const_cast<char *>((*token_iterator)->begin) - buf->position();
-                throw Exception("Cannot deduce template of expression: " + std::string(buf->position(), len), ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot deduce template of expression: {}", std::string(buf->position(), len));
             }
         }
         /// Continue parsing without template
@@ -505,7 +505,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
 
     if (!format_settings.values.interpret_expressions)
-        throw Exception("Interpreting expressions is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Interpreting expressions is disabled");
 
     /// Try to evaluate single expression if other parsers don't work
     buf->position() = const_cast<char *>((*token_iterator)->begin);
@@ -528,10 +528,9 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             return false;
         }
         buf->rollbackToCheckpoint();
-        throw Exception{"Cannot insert NULL value into a column of type '" + type.getName() + "'"
-                        + " at: " +
-                        String(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())),
-                        ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at: {}",
+                        type.getName(), String(buf->position(),
+                        std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
     column.insert(value);
@@ -593,12 +592,12 @@ void ValuesBlockInputFormat::readSuffix()
         ++buf->position();
         skipWhitespaceIfAny(*buf);
         if (buf->hasUnreadData())
-            throw Exception("Cannot read data after semicolon", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
         return;
     }
 
     if (buf->hasUnreadData())
-        throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
 void ValuesBlockInputFormat::resetParser()

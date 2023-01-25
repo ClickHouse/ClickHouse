@@ -51,8 +51,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
         if (fout == nullptr)
         {
-            throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
-                ErrorCodes::CANNOT_OPEN_FILE);
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Unable to open HDFS file: {} error: {}",
+                path, std::string(hdfsGetLastError()));
         }
     }
 
@@ -66,8 +66,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         int bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
         if (bytes_written < 0)
-            throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
-                ErrorCodes::NETWORK_ERROR);
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {} {}", hdfs_uri, std::string(hdfsGetLastError()));
 
         if (write_settings.remote_throttler)
             write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);

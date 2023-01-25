@@ -174,8 +174,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
     if (future_merged_part->name != entry.new_part_name)
     {
-        throw Exception("Future merged part name " + backQuote(future_merged_part->name) + " differs from part name in log entry: "
-            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
+            backQuote(future_merged_part->name), backQuote(entry.new_part_name));
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
