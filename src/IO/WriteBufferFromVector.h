@@ -61,13 +61,6 @@ public:
         finalized = false;
     }
 
-    size_t valuesWritten()
-    {
-        return ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
-            + sizeof(ValueType) - 1)  /// Align up.
-            / sizeof(ValueType);
-    }
-
     ~WriteBufferFromVector() override
     {
         finalize();
@@ -76,7 +69,10 @@ public:
 private:
     void finalizeImpl() override
     {
-        vector.resize(valuesWritten());
+        vector.resize(
+            ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
+                + sizeof(ValueType) - 1)  /// Align up.
+            / sizeof(ValueType));
 
         /// Prevent further writes.
         set(nullptr, 0);

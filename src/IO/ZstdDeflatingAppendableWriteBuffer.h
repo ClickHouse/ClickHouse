@@ -29,8 +29,9 @@ public:
     static inline constexpr ZSTDLastBlock ZSTD_CORRECT_TERMINATION_LAST_BLOCK = {0x01, 0x00, 0x00};
 
     ZstdDeflatingAppendableWriteBuffer(
-        std::unique_ptr<WriteBuffer> out_,
+        std::unique_ptr<WriteBufferFromFile> out_,
         int compression_level,
+        bool append_to_existing_file_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
@@ -44,13 +45,6 @@ public:
     }
 
     WriteBuffer * getNestedBuffer() { return out.get(); }
-
-    /// Read three last bytes from non-empty compressed file and compares them with
-    /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
-    static bool isNeedToAddEmptyBlock(const std::string & file_name);
-
-    /// Adding zstd empty block (ZSTD_CORRECT_TERMINATION_LAST_BLOCK) to out.working_buffer
-    static void addEmptyBlock(WriteBuffer & write_buffer);
 
 private:
     /// NOTE: will fill compressed data to the out.working_buffer, but will not call out.next method until the buffer is full
@@ -67,12 +61,21 @@ private:
     void finalizeAfter();
     void finalizeZstd();
 
-    std::unique_ptr<WriteBuffer> out;
+    /// Read three last bytes from non-empty compressed file and compares them with
+    /// ZSTD_CORRECT_TERMINATION_LAST_BLOCK.
+    bool isNeedToAddEmptyBlock();
 
+    /// Adding zstd empty block (ZSTD_CORRECT_TERMINATION_LAST_BLOCK) to out.working_buffer
+    void addEmptyBlock();
+
+    std::unique_ptr<WriteBufferFromFile> out;
+
+    bool append_to_existing_file = false;
     ZSTD_CCtx * cctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
-    bool first_write{true};
+    /// Flipped on the first nextImpl call
+    bool first_write = true;
 };
 
 }
