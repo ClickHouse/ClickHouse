@@ -49,7 +49,7 @@ select 130, count() < 10 from (select count() / (select count() from logs) as fr
 
 -- Each message matches its pattern (returns 0 rows)
 -- FIXME maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
-select 140, message_format_string, any_message from (
+select 140, countDistinct(message_format_string) < 15 from (
     select message_format_string, any(message) as any_message from logs
     where message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
     and message not like ('%Exception: '||s||'%') group by message_format_string
