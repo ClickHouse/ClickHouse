@@ -84,7 +84,7 @@ struct ArrayDifferenceImpl
                 }
                 else
                 {
-                    dst[pos] = static_cast<Result>(curr) - static_cast<Result>(prev);
+                    dst[pos] = curr - prev;
                 }
 
                 prev = curr;
@@ -155,7 +155,7 @@ struct ArrayDifferenceImpl
 struct NameArrayDifference { static constexpr auto name = "arrayDifference"; };
 using FunctionArrayDifference = FunctionArrayMapped<ArrayDifferenceImpl, NameArrayDifference>;
 
-REGISTER_FUNCTION(ArrayDifference)
+void registerFunctionArrayDifference(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayDifference>();
 }

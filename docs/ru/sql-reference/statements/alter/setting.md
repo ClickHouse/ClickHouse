@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/alter/setting
-sidebar_position: 38
-sidebar_label: SETTING
+toc_priority: 38
+toc_title: SETTING
 ---
 
 # Изменение настроек таблицы {#table_settings_manipulations}
@@ -15,9 +14,9 @@ sidebar_label: SETTING
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 
-    :::note "Примечание"
+!!! note "Примечание"
     Эти запросы могут применяться только к таблицам на движке [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
-    :::
+
 
 ## MODIFY SETTING {#alter_modify_setting}
 

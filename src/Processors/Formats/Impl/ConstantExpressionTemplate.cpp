@@ -418,13 +418,12 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     return res;
 }
 
-bool ConstantExpressionTemplate::parseExpression(
-    ReadBuffer & istr, const TokenIterator & token_iterator, const FormatSettings & format_settings, const Settings & settings)
+bool ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const FormatSettings & format_settings, const Settings & settings)
 {
     size_t cur_column = 0;
     try
     {
-        if (tryParseExpression(istr, token_iterator, format_settings, cur_column, settings))
+        if (tryParseExpression(istr, format_settings, cur_column, settings))
         {
             ++rows_count;
             return true;
@@ -446,12 +445,7 @@ bool ConstantExpressionTemplate::parseExpression(
     return false;
 }
 
-bool ConstantExpressionTemplate::tryParseExpression(
-    ReadBuffer & istr,
-    const TokenIterator & token_iterator,
-    const FormatSettings & format_settings,
-    size_t & cur_column,
-    const Settings & settings)
+bool ConstantExpressionTemplate::tryParseExpression(ReadBuffer & istr, const FormatSettings & format_settings, size_t & cur_column, const Settings & settings)
 {
     size_t cur_token = 0;
     size_t num_columns = structure->literals.columns();
@@ -470,7 +464,7 @@ bool ConstantExpressionTemplate::tryParseExpression(
         const DataTypePtr & type = structure->literals.getByPosition(cur_column).type;
         if (format_settings.values.accurate_types_of_literals && !structure->special_parser[cur_column].useDefaultParser())
         {
-            if (!parseLiteralAndAssertType(istr, token_iterator, type.get(), cur_column, settings))
+            if (!parseLiteralAndAssertType(istr, type.get(), cur_column, settings))
                 return false;
         }
         else
@@ -488,8 +482,7 @@ bool ConstantExpressionTemplate::tryParseExpression(
     return true;
 }
 
-bool ConstantExpressionTemplate::parseLiteralAndAssertType(
-    ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * complex_type, size_t column_idx, const Settings & settings)
+bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * complex_type, size_t column_idx, const Settings & settings)
 {
     using Type = Field::Types::Which;
 
@@ -504,12 +497,12 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
 
     if (type_info.is_array || type_info.is_tuple || type_info.is_map)
     {
+        /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth));
-        while (iterator->begin < istr.position())
-            ++iterator;
+        Tokens tokens_number(istr.position(), istr.buffer().end());
+        IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
         if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))

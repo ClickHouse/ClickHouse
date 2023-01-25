@@ -8,7 +8,20 @@ HTML_BASE_TEST_TEMPLATE = """
 <!DOCTYPE html>
 <html>
   <style>
-body {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }}
+@font-face {{
+    font-family:'Yandex Sans Display Web';
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+    font-weight:400;
+    font-style:normal;
+    font-stretch:normal
+}}
+
+body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
 h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
 td {{ white-space: pre; font-family: Monospace, Courier New; }}
@@ -16,6 +29,7 @@ border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0,
 a {{ color: #06F; text-decoration: none; }}
 a:hover, a:active {{ color: #F40; text-decoration: underline; }}
 table {{ border: 0; }}
+.main {{ margin-left: 10%; }}
 p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 th {{ cursor: pointer; }}
 .failed {{ cursor: pointer; }}
@@ -34,7 +48,6 @@ th {{ cursor: pointer; }}
 <a href="{commit_url}">Commit</a>
 {additional_urls}
 <a href="{task_url}">Task (github actions)</a>
-<a href="{job_url}">Job (github actions)</a>
 </p>
 {test_part}
 </body>
@@ -82,17 +95,6 @@ HTML_TEST_PART = """
 BASE_HEADERS = ["Test name", "Test status"]
 
 
-class ReportColorTheme:
-    class ReportColor:
-        yellow = "#FFB400"
-        red = "#F00"
-        green = "#0A0"
-        blue = "#00B4FF"
-
-    default = (ReportColor.green, ReportColor.red, ReportColor.yellow)
-    bugfixcheck = (ReportColor.yellow, ReportColor.blue, ReportColor.blue)
-
-
 def _format_header(header, branch_name, branch_url=None):
     result = " ".join([w.capitalize() for w in header.split(" ")])
     result = result.replace("Clickhouse", "ClickHouse")
@@ -101,26 +103,20 @@ def _format_header(header, branch_name, branch_url=None):
         result = "ClickHouse " + result
     result += " for "
     if branch_url:
-        result += f'<a href="{branch_url}">{branch_name}</a>'
+        result += '<a href="{url}">{name}</a>'.format(url=branch_url, name=branch_name)
     else:
         result += branch_name
     return result
 
 
-def _get_status_style(status, colortheme=None):
-    ok_statuses = ("OK", "success", "PASSED")
-    fail_statuses = ("FAIL", "failure", "error", "FAILED", "Timeout")
-
-    if colortheme is None:
-        colortheme = ReportColorTheme.default
-
+def _get_status_style(status):
     style = "font-weight: bold;"
-    if status in ok_statuses:
-        style += f"color: {colortheme[0]};"
-    elif status in fail_statuses:
-        style += f"color: {colortheme[1]};"
+    if status in ("OK", "success", "PASSED"):
+        style += "color: #0A0;"
+    elif status in ("FAIL", "failure", "error", "FAILED", "Timeout"):
+        style += "color: #F00;"
     else:
-        style += f"color: {colortheme[2]};"
+        style += "color: #FFB400;"
     return style
 
 
@@ -140,7 +136,9 @@ def _get_html_url(url):
     if isinstance(url, tuple):
         href, name = url[0], _get_html_url_name(url)
     if href and name:
-        return f'<a href="{href}">{_get_html_url_name(url)}</a>'
+        return '<a href="{href}">{name}</a>'.format(
+            href=href, name=_get_html_url_name(url)
+        )
     return ""
 
 
@@ -149,13 +147,11 @@ def create_test_html_report(
     test_result,
     raw_log_url,
     task_url,
-    job_url,
     branch_url,
     branch_name,
     commit_url,
     additional_urls=None,
     with_raw_logs=False,
-    statuscolors=None,
 ):
     if additional_urls is None:
         additional_urls = []
@@ -165,11 +161,6 @@ def create_test_html_report(
         num_fails = 0
         has_test_time = False
         has_test_logs = False
-
-        if with_raw_logs:
-            # Display entires with logs at the top (they correspond to failed tests)
-            test_result.sort(key=lambda result: len(result) <= 3)
-
         for result in test_result:
             test_name = result[0]
             test_status = result[1]
@@ -189,7 +180,7 @@ def create_test_html_report(
             if is_fail and with_raw_logs and test_logs is not None:
                 row = '<tr class="failed">'
             row += "<td>" + test_name + "</td>"
-            style = _get_status_style(test_status, colortheme=statuscolors)
+            style = _get_status_style(test_status)
 
             # Allow to quickly scroll to the first failure.
             is_fail_id = ""
@@ -197,7 +188,13 @@ def create_test_html_report(
                 num_fails = num_fails + 1
                 is_fail_id = 'id="fail' + str(num_fails) + '" '
 
-            row += f'<td {is_fail_id}style="{style}">{test_status}</td>'
+            row += (
+                "<td "
+                + is_fail_id
+                + 'style="{}">'.format(style)
+                + test_status
+                + "</td>"
+            )
 
             if test_time is not None:
                 row += "<td>" + test_time + "</td>"
@@ -221,8 +218,8 @@ def create_test_html_report(
         if has_test_logs and not with_raw_logs:
             headers.append("Logs")
 
-        headers_html = "".join(["<th>" + h + "</th>" for h in headers])
-        test_part = HTML_TEST_PART.format(headers=headers_html, rows=rows_part)
+        headers = "".join(["<th>" + h + "</th>" for h in headers])
+        test_part = HTML_TEST_PART.format(headers=headers, rows=rows_part)
     else:
         test_part = ""
 
@@ -230,17 +227,12 @@ def create_test_html_report(
         [_get_html_url(url) for url in sorted(additional_urls, key=_get_html_url_name)]
     )
 
-    raw_log_name = os.path.basename(raw_log_url)
-    if "?" in raw_log_name:
-        raw_log_name = raw_log_name.split("?")[0]
-
     result = HTML_BASE_TEST_TEMPLATE.format(
         title=_format_header(header, branch_name),
         header=_format_header(header, branch_name, branch_url),
-        raw_log_name=raw_log_name,
+        raw_log_name=os.path.basename(raw_log_url),
         raw_log_url=raw_log_url,
         task_url=task_url,
-        job_url=job_url,
         test_part=test_part,
         branch_name=branch_name,
         commit_url=commit_url,
@@ -254,7 +246,20 @@ HTML_BASE_BUILD_TEMPLATE = """
 <html>
 <head>
   <style>
-body {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }}
+@font-face {{
+    font-family:'Yandex Sans Display Web';
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+    font-weight:400;
+    font-style:normal;
+    font-stretch:normal
+}}
+
+body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
 h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
 border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
@@ -275,6 +280,8 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Compiler</th>
 <th>Build type</th>
 <th>Sanitizer</th>
+<th>Bundled</th>
+<th>Splitted</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -308,31 +315,34 @@ def create_build_html_report(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"
-        row += f"<td>{build_result.compiler}</td>"
+        row += "<td>{}</td>".format(build_result.compiler)
         if build_result.build_type:
-            row += f"<td>{build_result.build_type}</td>"
+            row += "<td>{}</td>".format(build_result.build_type)
         else:
-            row += "<td>relwithdebuginfo</td>"
+            row += "<td>{}</td>".format("relwithdebuginfo")
         if build_result.sanitizer:
-            row += f"<td>{build_result.sanitizer}</td>"
+            row += "<td>{}</td>".format(build_result.sanitizer)
         else:
-            row += "<td>none</td>"
+            row += "<td>{}</td>".format("none")
+
+        row += "<td>{}</td>".format(build_result.bundled)
+        row += "<td>{}</td>".format(build_result.splitted)
 
         if build_result.status:
             style = _get_status_style(build_result.status)
-            row += f'<td style="{style}">{build_result.status}</td>'
+            row += '<td style="{}">{}</td>'.format(style, build_result.status)
         else:
             style = _get_status_style("error")
-            row += f'<td style="{style}">error</td>'
+            row += '<td style="{}">{}</td>'.format(style, "error")
 
-        row += f'<td><a href="{build_log_url}">link</a></td>'
+        row += '<td><a href="{}">link</a></td>'.format(build_log_url)
 
         if build_result.elapsed_seconds:
             delta = datetime.timedelta(seconds=build_result.elapsed_seconds)
         else:
-            delta = "unknown"  # type: ignore
+            delta = "unknown"
 
-        row += f"<td>{delta}</td>"
+        row += "<td>{}</td>".format(str(delta))
 
         links = ""
         link_separator = "<br/>"
@@ -344,7 +354,7 @@ def create_build_html_report(
                 links += link_separator
             if links:
                 links = links[: -len(link_separator)]
-            row += f"<td>{links}</td>"
+            row += "<td>{}</td>".format(links)
 
         row += "</tr>"
         rows += row

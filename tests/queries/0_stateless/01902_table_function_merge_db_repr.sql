@@ -62,11 +62,6 @@ SHOW CREATE TABLE 01902_db.t_merge_1;
 SELECT 'SELECT _database, _table, n FROM merge(currentDatabase(), ^t) ORDER BY _database, _table, n';
 SELECT _database, _table, n FROM merge(currentDatabase(), '^t') ORDER BY _database, _table, n;
 
---fuzzed LOGICAL_ERROR
-CREATE TABLE 01902_db.t4 (n Date) ENGINE=MergeTree ORDER BY n;
-INSERT INTO 01902_db.t4   SELECT * FROM numbers(10);
-SELECT NULL FROM 01902_db.t_merge WHERE n ORDER BY _table DESC; -- {serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER}
-
 DROP DATABASE 01902_db;
 DROP DATABASE 01902_db1;
 DROP DATABASE 01902_db2;

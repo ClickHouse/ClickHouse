@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/simplelinearregression
-sidebar_position: 220
+toc_priority: 220
 ---
 
 # simpleLinearRegression {#simplelinearregression}

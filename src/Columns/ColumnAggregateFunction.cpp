@@ -146,22 +146,22 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     /// insertResultInto may invalidate states, so we must unshare ownership of them
     column_aggregate_func.ensureOwnership();
 
-    MutableColumnPtr res = func->getResultType()->createColumn();
+    MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());
 
     /// If there are references to states in final column, we must hold their ownership
     /// by holding arenas and source.
 
-    auto callback = [&](IColumn & subcolumn)
+    auto callback = [&](auto & subcolumn)
     {
-        if (auto * aggregate_subcolumn = typeid_cast<ColumnAggregateFunction *>(&subcolumn))
+        if (auto * aggregate_subcolumn = typeid_cast<ColumnAggregateFunction *>(subcolumn.get()))
         {
             aggregate_subcolumn->foreign_arenas = concatArenas(column_aggregate_func.foreign_arenas, column_aggregate_func.my_arena);
             aggregate_subcolumn->src = column_aggregate_func.getPtr();
         }
     };
 
-    callback(*res);
+    callback(res);
     res->forEachSubcolumnRecursively(callback);
 
     for (auto * val : data)
@@ -279,7 +279,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 
         size_t end = start + length;
         for (size_t i = start; i < end; ++i)
-            insertFromWithOwnership(from, i);
+            insertFrom(from, i);
     }
     else
     {
@@ -448,24 +448,19 @@ void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
     data.push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
 
-void ColumnAggregateFunction::insertFromWithOwnership(const IColumn & from, size_t n)
+void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
 {
     /// Must create new state of aggregate function and take ownership of it,
     ///  because ownership of states of aggregate function cannot be shared for individual rows,
     ///  (only as a whole, see comment above).
-    /// ensureOwnership() will execute in insertDefault()
+    ensureOwnership();
     insertDefault();
     insertMergeFrom(from, n);
 }
 
-void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
-{
-    insertRangeFrom(from, n, 1);
-}
-
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
-    /// ensureOwnership() will execute in insertDefault()
+    ensureOwnership();
     insertDefault();
     insertMergeFrom(place);
 }
@@ -612,7 +607,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     size_t num_rows = size();
 
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / num_columns * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = double(num_rows) / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)

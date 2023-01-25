@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/statements/select/except
-sidebar_label: EXCEPT
+toc_title: EXCEPT
 ---
 
 # Секция EXCEPT {#except-clause}

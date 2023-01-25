@@ -11,7 +11,7 @@ struct SettingChange;
 class SettingsChanges;
 
 /// Pushdown SETTINGS clause that goes after FORMAT to the SELECT query:
-/// (since settings after FORMAT parsed separately not in the ParserSelectQuery but in ParserQueryWithOutput)
+/// (since settings after FORMAT parsed separatelly not in the ParserSelectQuery but in ParserQueryWithOutput)
 ///
 ///     SELECT 1                             FORMAT Null SETTINGS max_block_size = 1 ->
 ///     SELECT 1 SETTINGS max_block_size = 1 FORMAT Null SETTINGS max_block_size = 1

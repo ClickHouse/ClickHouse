@@ -1,7 +1,6 @@
 ---
-slug: /zh/engines/table-engines/integrations/rabbitmq
-sidebar_position: 10
-sidebar_label: RabbitMQ
+toc_priority: 10
+toc_title: RabbitMQ
 ---
 
 # RabbitMQ 引擎 {#rabbitmq-engine}

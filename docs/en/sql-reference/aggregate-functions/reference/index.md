@@ -1,11 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/
 toc_folder_title: Reference
-sidebar_position: 36
+toc_priority: 36
 toc_hidden: true
 ---
 
-# List of Aggregate Functions
+# List of Aggregate Functions {#aggregate-functions-reference}
 
 Standard aggregate functions:
 
@@ -32,7 +31,6 @@ ClickHouse-specific aggregate functions:
 -   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
 -   [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 -   [groupArray](../../../sql-reference/aggregate-functions/reference/grouparray.md)
--   [groupArrayLast](../../../sql-reference/aggregate-functions/reference/grouparraylast.md)
 -   [groupUniqArray](../../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
 -   [groupArrayInsertAt](../../../sql-reference/aggregate-functions/reference/grouparrayinsertat.md)
 -   [groupArrayMovingAvg](../../../sql-reference/aggregate-functions/reference/grouparraymovingavg.md)

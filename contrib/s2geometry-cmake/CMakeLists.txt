@@ -149,3 +149,7 @@ target_link_libraries(_s2 PRIVATE
 
 target_include_directories(_s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")
 target_include_directories(_s2 SYSTEM PUBLIC "${ABSL_SOURCE_DIR}")
+
+if(M_LIBRARY)
+    target_link_libraries(_s2 PRIVATE ${M_LIBRARY})
+endif()

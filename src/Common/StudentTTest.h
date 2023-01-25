@@ -31,7 +31,7 @@ private:
 
         double avg() const
         {
-            return sum / static_cast<double>(size);
+            return sum / size;
         }
 
         double var() const

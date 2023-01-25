@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings
+# Tags: long
 
 set -e
 
@@ -19,11 +19,11 @@ function pack_unpack_compare()
 
     ${CLICKHOUSE_CLIENT} --query "CREATE TABLE buf_00385 ENGINE = Memory AS $1"
     local res_orig
-    res_orig=$(${CLICKHOUSE_CLIENT} --max_block_size=65505 --max_threads=1 --query "SELECT $TABLE_HASH FROM buf_00385")
+    res_orig=$(${CLICKHOUSE_CLIENT} --max_threads=1 --query "SELECT $TABLE_HASH FROM buf_00385")
 
     ${CLICKHOUSE_CLIENT} --max_threads=1 --query "CREATE TABLE buf_file ENGINE = File($3) AS SELECT * FROM buf_00385"
     local res_db_file
-    res_db_file=$(${CLICKHOUSE_CLIENT} --max_block_size=65505 --max_threads=1 --query "SELECT $TABLE_HASH FROM buf_file")
+    res_db_file=$(${CLICKHOUSE_CLIENT} --max_threads=1 --query "SELECT $TABLE_HASH FROM buf_file")
 
     ${CLICKHOUSE_CLIENT} --max_threads=1 --query "SELECT * FROM buf_00385 FORMAT $3" > "$buf_file"
     local res_ch_local1

@@ -1,9 +1,9 @@
-#include "config.h"
+#include "config_core.h"
 
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserRenameQuery.h>
@@ -11,7 +11,6 @@
 #if USE_MYSQL
 #    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
-#    include <Parsers/MySQL/ASTDropQuery.h>
 #endif
 
 namespace DB
@@ -44,7 +43,7 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     if (external_ddl_query->from->name == "MySQL")
     {
 #if USE_MYSQL
-        MySQLParser::ParserDropQuery p_drop_query;
+        ParserDropQuery p_drop_query;
         ParserRenameQuery p_rename_query;
         MySQLParser::ParserAlterQuery p_alter_query;
         MySQLParser::ParserCreateQuery p_create_query;

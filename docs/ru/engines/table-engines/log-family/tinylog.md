@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/log-family/tinylog
-sidebar_position: 34
-sidebar_label: TinyLog
+toc_priority: 34
+toc_title: TinyLog
 ---
 
 # TinyLog {#tinylog}

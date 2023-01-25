@@ -1,4 +1,9 @@
 <test>
+    <preconditions>
+        <table_exists>hits_10m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
     <settings><optimize_aggregation_in_order>1</optimize_aggregation_in_order></settings>
 
     <substitutions>

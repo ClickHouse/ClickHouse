@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/SymbolIndex.h>
 #include <Columns/ColumnString.h>
@@ -94,7 +94,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(AddressToSymbol)
+void registerFunctionAddressToSymbol(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAddressToSymbol>();
 }

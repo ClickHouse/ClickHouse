@@ -1,0 +1,1 @@
+../../../en/sql-reference/data-types/date32.md

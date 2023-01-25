@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/quotas
----
-# quotas
+# system.quotas {#system_tables-quotas}
 
 Contains information about [quotas](../../operations/system-tables/quotas.md).
 

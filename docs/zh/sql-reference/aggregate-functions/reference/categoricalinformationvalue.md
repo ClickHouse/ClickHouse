@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/categoricalinformationvalue
-sidebar_position: 250
+toc_priority: 250
 ---
 
 # categoricalInformationValue {#categoricalinformationvalue}

@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/roles
----
-# roles
+# system.roles {#system_tables-roles}
 
 Contains information about configured [roles](../../operations/access-rights.md#role-management).
 

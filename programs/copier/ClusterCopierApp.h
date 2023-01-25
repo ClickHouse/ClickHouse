@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Util/ServerApplication.h>
-#include <Daemon/BaseDaemon.h>
+#include <daemon/BaseDaemon.h>
 
 #include "ClusterCopier.h"
 

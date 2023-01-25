@@ -181,7 +181,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(GeohashesInBox)
+void registerFunctionGeohashesInBox(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGeohashesInBox>();
 }

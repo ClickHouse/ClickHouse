@@ -38,43 +38,24 @@ def execute_with_background(node, sql, background_sql, background_times, wait_ti
         time.sleep(1)
     else:
         assert False, "there are unknown background queries: {}".format(r)
-
-    query_results = []
     for _ in range(background_times):
-        query_results.append(node.get_query_request(background_sql, stdin=""))
-
-    query_results.append(node.get_query_request(sql, stdin=""))
-    return query_results
+        node.get_query_request(background_sql, stdin="")
+    time.sleep(0.5)  # wait background to start.
+    return node.query(sql, stdin="")
 
 
 def common_pattern(node, query_kind, restricted_sql, normal_sql, limit, wait_times):
-    query_results = execute_with_background(
-        node, restricted_sql, restricted_sql, limit, wait_times
-    )
-
-    errors = [query_result.get_answer_and_error()[1] for query_result in query_results]
-    assert (
-        sum(1 for e in errors if f"Too many simultaneous {query_kind} queries" in e)
-        == 1
-    ), f"Expected exactly 1 query to fail because of too many simultaneous queries, got errors: {errors}"
-
-    def assert_all_queries_passed(query_resuts):
-        errors = [
-            query_result.get_answer_and_error()[1] for query_result in query_results
-        ]
-        assert all(
-            len(e) == 0 for e in errors
-        ), f"Expected for all queries to pass, got errors: {errors}"
+    # restriction is working
+    with pytest.raises(
+        Exception, match=r".*Too many simultaneous {} queries.*".format(query_kind)
+    ):
+        execute_with_background(node, restricted_sql, restricted_sql, limit, wait_times)
 
     # different query kind is independent
-    query_results = execute_with_background(
-        node, normal_sql, restricted_sql, limit, wait_times
-    )
-    assert_all_queries_passed(query_results)
+    execute_with_background(node, normal_sql, restricted_sql, limit, wait_times)
 
     # normal
-    query_results = execute_with_background(node, restricted_sql, "", 0, wait_times)
-    assert_all_queries_passed(query_results)
+    execute_with_background(node, restricted_sql, "", 0, wait_times)
 
 
 def test_select(started_cluster):

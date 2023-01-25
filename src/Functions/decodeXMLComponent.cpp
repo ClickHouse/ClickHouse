@@ -231,7 +231,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(DecodeXMLComponent)
+void registerFunctionDecodeXMLComponent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDecodeXMLComponent>();
 }

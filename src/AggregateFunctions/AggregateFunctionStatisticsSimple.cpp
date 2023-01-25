@@ -24,7 +24,7 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
     assertUnary(name, argument_types);
 
     AggregateFunctionPtr res;
-    const DataTypePtr & data_type = argument_types[0];
+    DataTypePtr data_type = argument_types[0];
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<FunctionTemplate>(*data_type, *data_type, argument_types));
     else

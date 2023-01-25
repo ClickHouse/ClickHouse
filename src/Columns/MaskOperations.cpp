@@ -22,8 +22,8 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
     if (mask.size() < data.size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-    ssize_t from = data.size() - 1;
-    ssize_t index = mask.size() - 1;
+    int from = data.size() - 1;
+    int index = mask.size() - 1;
     data.resize(mask.size());
     while (index >= 0)
     {
@@ -83,20 +83,9 @@ size_t extractMaskNumericImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    if constexpr (!column_is_short)
-    {
-        if (data.size() != mask.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
-    }
-
     size_t ones_count = 0;
     size_t data_index = 0;
-
-    size_t mask_size = mask.size();
-    size_t data_size = data.size();
-
-    size_t i = 0;
-    for (; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask.size(); ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
@@ -119,7 +108,7 @@ size_t extractMaskNumericImpl(
                 (*nulls)[i] = 1;
         }
         else
-            value = static_cast<bool>(data[index]);
+            value = !!data[index];
 
         if constexpr (inverted)
             value = !value;
@@ -129,13 +118,6 @@ size_t extractMaskNumericImpl(
 
         mask[i] = value;
     }
-
-    if constexpr (column_is_short)
-    {
-        if (data_index != data_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
-    }
-
     return ones_count;
 }
 
@@ -317,7 +299,7 @@ int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)
     for (size_t i = 0; i != arguments.size(); ++i)
     {
         if (checkAndGetShortCircuitArgument(arguments[i].column))
-            last_short_circuit_argument_index = static_cast<int>(i);
+            last_short_circuit_argument_index = i;
     }
 
     return last_short_circuit_argument_index;
@@ -335,3 +317,4 @@ void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
 }
 
 }
+

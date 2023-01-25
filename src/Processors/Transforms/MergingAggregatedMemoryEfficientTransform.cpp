@@ -1,11 +1,9 @@
-#include <limits>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/sortBlock.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -248,9 +246,6 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
 
 void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
 {
-    if (!chunk.hasRows())
-        return;
-
     const auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in GroupingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
@@ -306,9 +301,8 @@ void GroupingAggregatedTransform::work()
 }
 
 
-MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
-    AggregatingTransformParamsPtr params_, const SortDescription & required_sort_description_)
-    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_)), required_sort_description(required_sort_description_)
+MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(AggregatingTransformParamsPtr params_)
+    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_))
 {
     setInputNotNeededAfterRead(true);
 }
@@ -358,14 +352,9 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     auto res_info = std::make_shared<AggregatedChunkInfo>();
     res_info->is_overflows = chunks_to_merge->is_overflows;
     res_info->bucket_num = chunks_to_merge->bucket_num;
-    res_info->chunk_num = chunks_to_merge->chunk_num;
     chunk.setChunkInfo(std::move(res_info));
 
     auto block = params->aggregator.mergeBlocks(blocks_list, params->final);
-
-    if (!required_sort_description.empty())
-        sortBlock(block, required_sort_description);
-
     size_t num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
@@ -375,7 +364,7 @@ SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, Aggre
     : IProcessor(InputPorts(num_inputs_, params_->getHeader()), {params_->getHeader()})
     , num_inputs(num_inputs_)
     , params(std::move(params_))
-    , last_bucket_number(num_inputs, std::numeric_limits<Int32>::min())
+    , last_bucket_number(num_inputs, -1)
     , is_input_finished(num_inputs, false)
 {
 }
@@ -470,13 +459,7 @@ IProcessor::Status SortingAggregatedTransform::prepare()
             continue;
         }
 
-        /// We want to keep not more than `num_inputs` buckets in memory (and there will be only a single chunk with the given `bucket_id`).
-        const bool bucket_from_this_input_still_in_memory = chunks.contains(last_bucket_number[input_num]);
-        if (bucket_from_this_input_still_in_memory)
-        {
-            all_finished = false;
-            continue;
-        }
+        //all_finished = false;
 
         in->setNeeded();
 

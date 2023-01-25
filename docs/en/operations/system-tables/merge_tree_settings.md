@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/merge_tree_settings
-title: merge_tree_settings
----
+# system.merge_tree_settings {#system-merge_tree_settings}
 
 Contains information about settings for `MergeTree` tables.
 

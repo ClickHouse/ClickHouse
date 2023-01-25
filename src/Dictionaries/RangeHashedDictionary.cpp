@@ -15,6 +15,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
+#include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySource.h>
 
 
@@ -103,7 +104,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
 
     /// Cast range column to storage type
     Columns modified_key_columns = key_columns;
-    const ColumnPtr & range_storage_column = key_columns.back();
+    auto range_storage_column = key_columns.back();
     ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types.back(), ""};
     modified_key_columns.back() = castColumnAccurate(column_to_cast, dict_struct.range_min->type);
 
@@ -150,7 +151,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t row, StringRef value, bool is_null)
+                    [&](size_t row, const StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -160,7 +161,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
-                    [&](size_t, StringRef value, bool)
+                    [&](size_t, const StringRef value, bool)
                     {
                         out->insertData(value.data, value.size);
                     },
@@ -254,7 +255,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, true>(
                     attribute,
                     key_to_index,
-                    [&](size_t row, StringRef value, bool is_null)
+                    [&](size_t row, const StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -263,7 +264,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnInternal(
                 getItemsInternalImpl<ValueType, false>(
                     attribute,
                     key_to_index,
-                    [&](size_t, StringRef value, bool)
+                    [&](size_t, const StringRef value, bool)
                     {
                         out->insertData(value.data, value.size);
                     });
@@ -313,7 +314,7 @@ ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type>::hasKeys(const Colum
     }
 
     /// Cast range column to storage type
-    const ColumnPtr & range_storage_column = key_columns.back();
+    auto range_storage_column = key_columns.back();
     ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types.back(), ""};
     auto range_column_updated = castColumnAccurate(column_to_cast, dict_struct.range_min->type);
     auto key_columns_copy = key_columns;
@@ -512,7 +513,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
     size_t keys_found = 0;
 
-    const ColumnPtr & range_column = key_columns.back();
+    auto range_column = key_columns.back();
     auto key_columns_copy = key_columns;
     key_columns_copy.pop_back();
 
@@ -879,7 +880,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & a
         }
         else
         {
-            value_to_insert = static_cast<ValueType>(value.get<ValueType>());
+            value_to_insert = value.get<ValueType>();
         }
 
         container.back() = value_to_insert;
@@ -983,7 +984,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         Columns result;
         result.reserve(attribute_names_size);
 
-        const ColumnPtr & key_column = key_columns.back();
+        auto key_column = key_columns.back();
 
         const auto * key_to_index_column = typeid_cast<const ColumnUInt64 *>(key_column.get());
         if (!key_to_index_column)
@@ -1004,7 +1005,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         return result;
     };
 
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(
+    auto coordinator = DictionarySourceCoordinator::create(
         dictionary,
         column_names,
         std::move(key_columns),
@@ -1016,7 +1017,91 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
     return result;
 }
 
-template class RangeHashedDictionary<DictionaryKeyType::Simple>;
-template class RangeHashedDictionary<DictionaryKeyType::Complex>;
+template <DictionaryKeyType dictionary_key_type>
+static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
+                            const DictionaryStructure & dict_struct,
+                            const Poco::Util::AbstractConfiguration & config,
+                            const std::string & config_prefix,
+                            DictionarySourcePtr source_ptr)
+{
+    static constexpr auto layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "range_hashed" : "complex_key_range_hashed";
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        if (dict_struct.key)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");
+    }
+    else
+    {
+        if (dict_struct.id)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for dictionary of layout 'complex_key_range_hashed'");
+    }
+
+    if (!dict_struct.range_min || !dict_struct.range_max)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{}: dictionary of layout '{}' requires .structure.range_min and .structure.range_max",
+            full_name,
+            layout_name);
+
+    const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
+    const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
+    const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+
+    String dictionary_layout_prefix = config_prefix + ".layout." + layout_name;
+    const bool convert_null_range_bound_to_open = config.getBool(dictionary_layout_prefix + ".convert_null_range_bound_to_open", true);
+    String range_lookup_strategy = config.getString(dictionary_layout_prefix + ".range_lookup_strategy", "min");
+    RangeHashedDictionaryLookupStrategy lookup_strategy = RangeHashedDictionaryLookupStrategy::min;
+
+    if (range_lookup_strategy == "min")
+        lookup_strategy = RangeHashedDictionaryLookupStrategy::min;
+    else if (range_lookup_strategy == "max")
+        lookup_strategy = RangeHashedDictionaryLookupStrategy::max;
+
+    RangeHashedDictionaryConfiguration configuration
+    {
+        .convert_null_range_bound_to_open = convert_null_range_bound_to_open,
+        .lookup_strategy = lookup_strategy,
+        .require_nonempty = require_nonempty
+    };
+
+    DictionaryPtr result = std::make_unique<RangeHashedDictionary<dictionary_key_type>>(
+        dict_id,
+        dict_struct,
+        std::move(source_ptr),
+        dict_lifetime,
+        configuration);
+
+    return result;
+}
+
+void registerDictionaryRangeHashed(DictionaryFactory & factory)
+{
+    auto create_layout_simple = [=](const std::string & full_name,
+                             const DictionaryStructure & dict_struct,
+                             const Poco::Util::AbstractConfiguration & config,
+                             const std::string & config_prefix,
+                             DictionarySourcePtr source_ptr,
+                             ContextPtr /* global_context */,
+                             bool /*created_from_ddl*/) -> DictionaryPtr
+    {
+        return createRangeHashedDictionary<DictionaryKeyType::Simple>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+    };
+
+    factory.registerLayout("range_hashed", create_layout_simple, false);
+
+    auto create_layout_complex = [=](const std::string & full_name,
+                             const DictionaryStructure & dict_struct,
+                             const Poco::Util::AbstractConfiguration & config,
+                             const std::string & config_prefix,
+                             DictionarySourcePtr source_ptr,
+                             ContextPtr /* context */,
+                             bool /*created_from_ddl*/) -> DictionaryPtr
+    {
+        return createRangeHashedDictionary<DictionaryKeyType::Complex>(full_name, dict_struct, config, config_prefix, std::move(source_ptr));
+    };
+
+    factory.registerLayout("complex_key_range_hashed", create_layout_complex, true);
+}
 
 }

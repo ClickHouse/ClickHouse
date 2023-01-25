@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/LineAsStringRowInputFormat.h>
-#include <Formats/newLineSegmentationEngine.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/ColumnString.h>
@@ -62,12 +62,6 @@ void registerInputFormatLineAsString(FormatFactory & factory)
         return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
     });
 }
-
-void registerFileSegmentationEngineLineAsString(FormatFactory & factory)
-{
-    factory.registerFileSegmentationEngine("LineAsString", &newLineFileSegmentationEngine);
-}
-
 
 void registerLineAsStringSchemaReader(FormatFactory & factory)
 {

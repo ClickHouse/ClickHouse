@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
+
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/NullSource.h>
@@ -13,20 +15,10 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull final : public IStorage
+class StorageNull final : public shared_ptr_helper<StorageNull>, public IStorage
 {
+    friend struct shared_ptr_helper<StorageNull>;
 public:
-    StorageNull(
-        const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
-        : IStorage(table_id_)
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_description_);
-        storage_metadata.setConstraints(constraints_);
-        storage_metadata.setComment(comment);
-        setInMemoryMetadata(storage_metadata);
-    }
-
     std::string getName() const override { return "Null"; }
 
     Pipe read(
@@ -35,8 +27,8 @@ public:
         SelectQueryInfo &,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
+        size_t,
+        unsigned) override
     {
         return Pipe(
             std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
@@ -62,6 +54,19 @@ public:
         return {0};
     }
 
+private:
+
+protected:
+    StorageNull(
+        const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
+        : IStorage(table_id_)
+    {
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_description_);
+        storage_metadata.setConstraints(constraints_);
+        storage_metadata.setComment(comment);
+        setInMemoryMetadata(storage_metadata);
+    }
 };
 
 }

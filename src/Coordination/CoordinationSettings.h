@@ -29,17 +29,14 @@ struct Settings;
     M(UInt64, reserved_log_items, 100000, "How many log items to store (don't remove during compaction)", 0) \
     M(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
     M(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
-    M(Milliseconds, shutdown_timeout, 5000, "How much time we will wait until RAFT shutdown", 0) \
-    M(Milliseconds, session_shutdown_timeout, 10000, "How much time we will wait until sessions are closed during shutdown", 0) \
-    M(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
+    M(Milliseconds, shutdown_timeout, 5000, "How many time we will until RAFT shutdown", 0) \
+    M(Milliseconds, startup_timeout, 180000, "How many time we will until RAFT to start", 0) \
     M(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
     M(UInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
     M(UInt64, snapshots_to_keep, 3, "How many compressed snapshots to keep on disk", 0) \
     M(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
-    M(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    M(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
-    M(UInt64, max_requests_quick_batch_size, 10, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
+    M(UInt64, max_requests_batch_size, 100, "Max size of batch in requests count before it will be sent to RAFT", 0) \
     M(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
     M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0) \
@@ -71,7 +68,7 @@ struct KeeperConfigurationAndSettings
     int tcp_port;
     int tcp_port_secure;
 
-    String four_letter_word_allow_list;
+    String four_letter_word_white_list;
 
     String super_digest;
 
@@ -80,7 +77,6 @@ struct KeeperConfigurationAndSettings
 
     String log_storage_path;
     String snapshot_storage_path;
-    String state_file_path;
 
     void dump(WriteBufferFromOwnString & buf) const;
     static std::shared_ptr<KeeperConfigurationAndSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
@@ -88,7 +84,6 @@ struct KeeperConfigurationAndSettings
 private:
     static String getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
     static String getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
-    static String getStateFilePathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
 };
 
 using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;

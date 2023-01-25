@@ -4,7 +4,6 @@
 #include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <boost/algorithm/string/trim.hpp>
 
 namespace DB
 {
@@ -63,14 +62,13 @@ public:
     time_t initial_query_start_time{};
     Decimal64 initial_query_start_time_microseconds{};
 
-    /// OpenTelemetry trace context we received from client, or which we are going to send to server.
-    OpenTelemetry::TracingContext client_trace_context;
+    // OpenTelemetry trace context we received from client, or which we are going
+    // to send to server.
+    OpenTelemetryTraceContext client_trace_context;
 
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
-    bool is_secure = false;
-    String certificate;
 
     /// For tcp
     String os_user;
@@ -94,7 +92,7 @@ public:
     String http_user_agent;
     String http_referer;
 
-    /// For mysql and postgresql
+    /// For mysql
     UInt64 connection_id = 0;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
@@ -102,14 +100,6 @@ public:
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
-    String getLastForwardedFor() const
-    {
-        if (forwarded_for.empty())
-            return {};
-        String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
-        boost::trim(last);
-        return last;
-    }
 
     /// Common
     String quota_key;

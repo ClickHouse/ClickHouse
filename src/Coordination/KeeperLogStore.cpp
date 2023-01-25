@@ -109,39 +109,13 @@ uint64_t KeeperLogStore::size() const
 void KeeperLogStore::end_of_append_batch(uint64_t /*start_index*/, uint64_t /*count*/)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.flushAsync();
+    changelog.flush();
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange() const
 {
     std::lock_guard lock(changelog_lock);
     return changelog.getLatestConfigChange();
-}
-
-void KeeperLogStore::shutdownChangelog()
-{
-    std::lock_guard lock(changelog_lock);
-    changelog.shutdown();
-}
-
-bool KeeperLogStore::flushChangelogAndShutdown()
-{
-    std::lock_guard lock(changelog_lock);
-    changelog.flush();
-    changelog.shutdown();
-    return true;
-}
-
-uint64_t KeeperLogStore::last_durable_index()
-{
-    std::lock_guard lock(changelog_lock);
-    return changelog.lastDurableIndex();
-}
-
-void KeeperLogStore::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server)
-{
-    std::lock_guard lock(changelog_lock);
-    return changelog.setRaftServer(raft_server);
 }
 
 }

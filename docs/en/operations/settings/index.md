@@ -1,11 +1,10 @@
 ---
-sidebar_label: Settings
-sidebar_position: 51
-slug: /en/operations/settings/
-pagination_next: en/operations/settings/settings
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: Introduction
 ---
 
-# Settings Overview
+# Settings {#session-settings-intro}
 
 There are multiple ways to make all the settings described in this section of documentation.
 
@@ -26,7 +25,7 @@ Ways to configure settings, in order of priority:
 
     -   When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
     -   When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
-    -   Make settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query) clause of the SELECT query. The setting value is applied only to that query and is reset to default or previous value after the query is executed.
+    -   Make settings in the [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select) clause of the SELECT query. The setting value is applied only to that query and is reset to default or previous value after the query is executed.
 
 Settings that can only be made in the server config file are not covered in this section.
 

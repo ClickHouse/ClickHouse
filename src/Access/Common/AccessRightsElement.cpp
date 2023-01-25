@@ -81,7 +81,7 @@ namespace
         }
 
         bool need_comma = false;
-        for (std::string_view keyword : keywords)
+        for (const std::string_view & keyword : keywords)
         {
             if (need_comma)
                 result.append(", ");
@@ -145,18 +145,18 @@ namespace
 }
 
 
-AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_)
+AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_)
     : access_flags(access_flags_), database(database_), any_database(false)
 {
 }
 
-AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, std::string_view database_, std::string_view table_)
+AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_)
     : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false)
 {
 }
 
 AccessRightsElement::AccessRightsElement(
-    AccessFlags access_flags_, std::string_view database_, std::string_view table_, std::string_view column_)
+    AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const std::string_view & column_)
     : access_flags(access_flags_)
     , database(database_)
     , table(table_)
@@ -169,8 +169,8 @@ AccessRightsElement::AccessRightsElement(
 
 AccessRightsElement::AccessRightsElement(
     AccessFlags access_flags_,
-    std::string_view database_,
-    std::string_view table_,
+    const std::string_view & database_,
+    const std::string_view & table_,
     const std::vector<std::string_view> & columns_)
     : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false), any_column(false)
 {
@@ -180,7 +180,7 @@ AccessRightsElement::AccessRightsElement(
 }
 
 AccessRightsElement::AccessRightsElement(
-    AccessFlags access_flags_, std::string_view database_, std::string_view table_, const Strings & columns_)
+    AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const Strings & columns_)
     : access_flags(access_flags_)
     , database(database_)
     , table(table_)

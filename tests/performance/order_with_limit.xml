@@ -1,4 +1,9 @@
 <test>
+    <tags>
+        <tag>sorting</tag>
+        <tag>comparison</tag>
+    </tags>
+
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 10 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 100 FORMAT Null</query>
     <query>SELECT number AS n FROM numbers_mt(200000000) ORDER BY n DESC LIMIT 1500 FORMAT Null</query>

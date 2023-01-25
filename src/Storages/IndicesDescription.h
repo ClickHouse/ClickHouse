@@ -74,6 +74,7 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<1, Indi
     /// Return common expression for all stored indices
     ExpressionActionsPtr getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const;
 
+public:
     Names getAllRegisteredNames() const override;
 };
 

@@ -62,17 +62,7 @@ struct StudentTTestData : public TTestMoments<Float64>
         /// t-statistic
         Float64 t_stat = (mean_x - mean_y) / sqrt(std_err2);
 
-        if (isNaN(t_stat))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resulted t-statistics is NaN");
-
-        auto student = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
-        Float64 pvalue = 0;
-        if (t_stat > 0)
-            pvalue = 2 * boost::math::cdf<Float64>(student, -t_stat);
-        else
-            pvalue = 2 * boost::math::cdf<Float64>(student, t_stat);
-
-        return {t_stat, pvalue};
+        return {t_stat, getPValue(degrees_of_freedom, t_stat * t_stat)};
     }
 };
 

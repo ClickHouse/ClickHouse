@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/table-functions/url
-sidebar_position: 41
-sidebar_label: url
+toc_priority: 41
+toc_title: url
 ---
 
 # url {#url}
@@ -13,7 +12,7 @@ sidebar_label: url
 **Синтаксис**
 
 ``` sql
-url(URL [,format] [,structure])
+url(URL, format, structure)
 ```
 
 **Параметры**

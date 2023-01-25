@@ -3,14 +3,13 @@ DROP TABLE IF EXISTS nullable_key_without_final_mark;
 DROP TABLE IF EXISTS nullable_minmax_index;
 
 SET max_threads = 1;
-SET optimize_read_in_order=0;
 
 CREATE TABLE nullable_key (k Nullable(int), v int) ENGINE MergeTree ORDER BY k SETTINGS allow_nullable_key = 1, index_granularity = 1;
 
 INSERT INTO nullable_key SELECT number * 2, number * 3 FROM numbers(10);
 INSERT INTO nullable_key SELECT NULL, -number FROM numbers(3);
 
-SELECT * FROM nullable_key ORDER BY k, v;
+SELECT * FROM nullable_key ORDER BY k;
 
 SET force_primary_key = 1;
 SET max_rows_to_read = 3;
@@ -47,7 +46,7 @@ INSERT INTO nullable_minmax_index VALUES (1, 1), (2, 2), (3, 2), (2, 1); -- [1, 
 INSERT INTO nullable_minmax_index VALUES (2, NULL), (3, NULL); -- [+Inf, +Inf]
 
 SET force_primary_key = 0;
-SELECT * FROM nullable_minmax_index ORDER BY k, v;
+SELECT * FROM nullable_minmax_index ORDER BY k;
 SET max_rows_to_read = 6;
 SELECT * FROM nullable_minmax_index WHERE v IS NULL;
 SET max_rows_to_read = 8;

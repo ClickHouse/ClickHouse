@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantiletdigestweighted
-sidebar_position: 208
+toc_priority: 208
 ---
 
 # quantileTDigestWeighted {#quantiletdigestweighted}

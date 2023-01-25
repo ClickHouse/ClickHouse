@@ -1,17 +1,16 @@
 ---
-slug: /en/sql-reference/functions/other-functions
-sidebar_position: 67
-sidebar_label: Other
+toc_priority: 67
+toc_title: Other
 ---
 
-# Other Functions
+# Other Functions {#other-functions}
 
-## hostName()
+## hostName() {#hostname}
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## getMacro
+## getMacro {#getmacro}
 
 Gets a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
@@ -68,7 +67,7 @@ WHERE macro = 'test';
 └───────┴──────────────┘
 ```
 
-## FQDN
+## FQDN {#fqdn}
 
 Returns the fully qualified domain name.
 
@@ -102,7 +101,7 @@ Result:
 └─────────────────────────────────┘
 ```
 
-## basename
+## basename {#basename}
 
 Extracts the trailing part of a string after the last slash or backslash. This function if often used to extract the filename from a path.
 
@@ -156,7 +155,7 @@ SELECT 'some-file-name' AS a, basename(a)
 └────────────────┴────────────────────────────┘
 ```
 
-## visibleWidth(x)
+## visibleWidth(x) {#visiblewidthx}
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
 This function is used by the system for implementing Pretty formats.
@@ -173,18 +172,18 @@ SELECT visibleWidth(NULL)
 └────────────────────┘
 ```
 
-## toTypeName(x)
+## toTypeName(x) {#totypenamex}
 
 Returns a string containing the type name of the passed argument.
 
 If `NULL` is passed to the function as input, then it returns the `Nullable(Nothing)` type, which corresponds to an internal `NULL` representation in ClickHouse.
 
-## blockSize()
+## blockSize() {#function-blocksize}
 
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
-## byteSize
+## byteSize {#function-bytesize}
 
 Returns estimation of uncompressed byte size of its arguments in memory.
 
@@ -281,30 +280,30 @@ Result:
 └────────────────────────────┘
 ```
 
-## materialize(x)
+## materialize(x) {#materializex}
 
 Turns a constant into a full column containing just one value.
 In ClickHouse, full columns and constants are represented differently in memory. Functions work differently for constant arguments and normal arguments (different code is executed), although the result is almost always the same. This function is for debugging this behavior.
 
-## ignore(…)
+## ignore(…) {#ignore}
 
 Accepts any arguments, including `NULL`. Always returns 0.
 However, the argument is still evaluated. This can be used for benchmarks.
 
-## sleep(seconds)
+## sleep(seconds) {#sleepseconds}
 
 Sleeps ‘seconds’ seconds on each data block. You can specify an integer or a floating-point number.
 
-## sleepEachRow(seconds)
+## sleepEachRow(seconds) {#sleepeachrowseconds}
 
 Sleeps ‘seconds’ seconds on each row. You can specify an integer or a floating-point number.
 
-## currentDatabase()
+## currentDatabase() {#currentdatabase}
 
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
-## currentUser()
+## currentUser() {#other-function-currentuser}
 
 Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
 
@@ -337,7 +336,7 @@ Result:
 └───────────────┘
 ```
 
-## isConstant
+## isConstant {#is-constant}
 
 Checks whether the argument is a constant expression.
 
@@ -406,15 +405,15 @@ Result:
 └────────────────────┘
 ```
 
-## isFinite(x)
+## isFinite(x) {#isfinitex}
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
 
-## isInfinite(x)
+## isInfinite(x) {#isinfinitex}
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infinite, otherwise 0. Note that 0 is returned for a NaN.
 
-## ifNotFinite
+## ifNotFinite {#ifnotfinite}
 
 Checks whether floating point value is finite.
 
@@ -446,17 +445,17 @@ Result:
 
 You can get similar result by using [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
-## isNaN(x)
+## isNaN(x) {#isnanx}
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is a NaN, otherwise 0.
 
-## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
+## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’) {#hascolumnintablehostname-username-password-database-table-column}
 
 Accepts constant strings: database name, table name, and column name. Returns a UInt8 constant expression equal to 1 if there is a column, otherwise 0. If the hostname parameter is set, the test will run on a remote server.
 The function throws an exception if the table does not exist.
 For elements in a nested data structure, the function checks for the existence of a column. For the nested data structure itself, the function returns 0.
 
-## bar
+## bar {#function-bar}
 
 Allows building a unicode-art diagram.
 
@@ -511,12 +510,12 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-## transform
+## transform {#transform}
 
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-### transform(x, array_from, array_to, default)
+### transform(x, array_from, array_to, default) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -558,7 +557,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array_from, array_to)
+### transform(x, array_from, array_to) {#transformx-array-from-array-to}
 
 Differs from the first variation in that the ‘default’ argument is omitted.
 If the ‘x’ value is equal to one of the elements in the ‘array_from’ array, it returns the matching element (that is numbered the same) from the ‘array_to’ array. Otherwise, it returns ‘x’.
@@ -571,7 +570,7 @@ Example:
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -593,28 +592,7 @@ LIMIT 10
 └────────────────┴─────────┘
 ```
 
-## formatReadableDecimalSize(x)
-
-Accepts the size (number of bytes). Returns a rounded size with a suffix (KB, MB, etc.) as a string.
-
-Example:
-
-``` sql
-SELECT
-    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
-    formatReadableDecimalSize(filesize_bytes) AS filesize
-```
-
-``` text
-┌─filesize_bytes─┬─filesize───┐
-│              1 │ 1.00 B     │
-│           1024 │ 1.02 KB   │
-│        1048576 │ 1.05 MB   │
-│      192851925 │ 192.85 MB │
-└────────────────┴────────────┘
-```
-
-## formatReadableSize(x)
+## formatReadableSize(x) {#formatreadablesizex}
 
 Accepts the size (number of bytes). Returns a rounded size with a suffix (KiB, MiB, etc.) as a string.
 
@@ -635,7 +613,7 @@ SELECT
 └────────────────┴────────────┘
 ```
 
-## formatReadableQuantity(x)
+## formatReadableQuantity(x) {#formatreadablequantityx}
 
 Accepts the number. Returns a rounded number with a suffix (thousand, million, billion, etc.) as a string.
 
@@ -658,7 +636,7 @@ SELECT
 └────────────────┴───────────────────┘
 ```
 
-## formatReadableTimeDelta
+## formatReadableTimeDelta {#formatreadabletimedelta}
 
 Accepts the time delta in seconds. Returns a time delta with (year, month, day, hour, minute, second) as a string.
 
@@ -703,84 +681,43 @@ SELECT
 └────────────┴─────────────────────────────────────────────────────────────────┘
 ```
 
-## parseTimeDelta
-
-Parse a sequence of numbers followed by something resembling a time unit.
-
-**Syntax**
-
-```sql
-parseTimeDelta(timestr)
-```
-
-**Arguments**
-
--   `timestr` — A sequence of numbers followed by something resembling a time unit.
-
-
-**Returned value**
-
--   A floating-point number with the number of seconds.
-
-**Example**
-
-```sql
-SELECT parseTimeDelta('11s+22min')
-```
-
-```text
-┌─parseTimeDelta('11s+22min')─┐
-│                        1331 │
-└─────────────────────────────┘
-```
-
-```sql
-SELECT parseTimeDelta('1yr2mo')
-```
-
-```text
-┌─parseTimeDelta('1yr2mo')─┐
-│                 36806400 │
-└──────────────────────────┘
-```
-
-## least(a, b)
+## least(a, b) {#leasta-b}
 
 Returns the smallest value from a and b.
 
-## greatest(a, b)
+## greatest(a, b) {#greatesta-b}
 
 Returns the largest value of a and b.
 
-## uptime()
+## uptime() {#uptime}
 
 Returns the server’s uptime in seconds.
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## version()
+## version() {#version}
 
 Returns the version of the server as a string.
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
-## buildId()
+## buildId() {#buildid}
 
 Returns the build ID generated by a compiler for the running ClickHouse server binary.
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 
-## blockNumber
+## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.
 
-## rowNumberInBlock
+## rowNumberInBlock {#function-rownumberinblock}
 
 Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
-## rowNumberInAllBlocks()
+## rowNumberInAllBlocks() {#rownumberinallblocks}
 
 Returns the ordinal number of the row in the data block. This function only considers the affected data blocks.
 
-## neighbor
+## neighbor {#neighbor}
 
 The window function that provides access to a row at a specified offset which comes before or after the current row of a given column.
 
@@ -792,9 +729,8 @@ neighbor(column, offset[, default_value])
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
-:::warning    
-It can reach the neighbor rows only inside the currently processed data block.
-:::
+!!! warning "Warning"
+    It can reach the neighbor rows only inside the currently processed data block.
 
 The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
 To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
@@ -897,14 +833,13 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x)
+## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
-:::warning    
-It can reach the previous row only inside the currently processed data block.
-:::
+!!! warning "Warning"
+    It can reach the previous row only inside the currently processed data block.
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 
@@ -975,20 +910,20 @@ WHERE diff != 1
 └────────┴──────┘
 ```
 
-## runningDifferenceStartingWithFirstValue
+## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
 Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
-## runningConcurrency
+## runningConcurrency {#runningconcurrency}
 
 Calculates the number of concurrent events.
 Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type.
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
-:::warning    
-Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception. Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
-:::
+!!! warning "Warning"
+    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
+    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
 
 **Syntax**
 
@@ -1037,19 +972,19 @@ Result:
 └────────────┴────────────────────────────────┘
 ```
 
-## MACNumToString(num)
+## MACNumToString(num) {#macnumtostringnum}
 
 Accepts a UInt64 number. Interprets it as a MAC address in big endian. Returns a string containing the corresponding MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form).
 
-## MACStringToNum(s)
+## MACStringToNum(s) {#macstringtonums}
 
 The inverse function of MACNumToString. If the MAC address has an invalid format, it returns 0.
 
-## MACStringToOUI(s)
+## MACStringToOUI(s) {#macstringtoouis}
 
 Accepts a MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form). Returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
 
-## getSizeOfEnumType
+## getSizeOfEnumType {#getsizeofenumtype}
 
 Returns the number of fields in [Enum](../../sql-reference/data-types/enum.md).
 
@@ -1078,7 +1013,7 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 └───┘
 ```
 
-## blockSerializedSize
+## blockSerializedSize {#blockserializedsize}
 
 Returns size on disk (without taking into account compression).
 
@@ -1110,7 +1045,7 @@ Result:
 └───┘
 ```
 
-## toColumnTypeName
+## toColumnTypeName {#tocolumntypename}
 
 Returns the name of the class that represents the data type of the column in RAM.
 
@@ -1150,7 +1085,7 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 
 The example shows that the `DateTime` data type is stored in memory as `Const(UInt32)`.
 
-## dumpColumnStructure
+## dumpColumnStructure {#dumpcolumnstructure}
 
 Outputs a detailed description of data structures in RAM
 
@@ -1178,7 +1113,7 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## defaultValueOfArgumentType
+## defaultValueOfArgumentType {#defaultvalueofargumenttype}
 
 Outputs the default value for the data type.
 
@@ -1220,7 +1155,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
-## defaultValueOfTypeName
+## defaultValueOfTypeName {#defaultvalueoftypename}
 
 Outputs the default value for given type name.
 
@@ -1262,7 +1197,7 @@ SELECT defaultValueOfTypeName('Nullable(Int8)')
 └──────────────────────────────────────────┘
 ```
 
-## indexHint
+## indexHint {#indexhint}
 The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
 
 But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
@@ -1365,7 +1300,7 @@ Result:
 └────────────┴─────────┘
 ```
 
-## replicate
+## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
 
@@ -1402,7 +1337,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## filesystemAvailable
+## filesystemAvailable {#filesystemavailable}
 
 Returns amount of remaining space on the filesystem where the files of the databases located. It is always smaller than total free space ([filesystemFree](#filesystemfree)) because some space is reserved for OS.
 
@@ -1434,7 +1369,7 @@ Result:
 └─────────────────┴────────┘
 ```
 
-## filesystemFree
+## filesystemFree {#filesystemfree}
 
 Returns total amount of the free space on the filesystem where the files of the databases located. See also `filesystemAvailable`
 
@@ -1466,7 +1401,7 @@ Result:
 └────────────┴────────┘
 ```
 
-## filesystemCapacity
+## filesystemCapacity {#filesystemcapacity}
 
 Returns the capacity of the filesystem in bytes. For evaluation, the [path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) to the data directory must be configured.
 
@@ -1498,7 +1433,7 @@ Result:
 └───────────┴────────┘
 ```
 
-## initializeAggregation
+## initializeAggregation {#initializeaggregation}
 
 Calculates result of aggregate function based on single value. It is intended to use this function to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) or use initialized aggregates as default values.
 
@@ -1570,7 +1505,7 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 **See Also**
 -   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
 
-## finalizeAggregation
+## finalizeAggregation {#function-finalizeaggregation}
 
 Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
 
@@ -1670,13 +1605,12 @@ Result:
 -   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
 -   [initializeAggregation](#initializeaggregation)
 
-## runningAccumulate
+## runningAccumulate {#runningaccumulate}
 
 Accumulates states of an aggregate function for each row of a data block.
 
-:::warning    
-The state is reset for each new data block.
-:::
+!!! warning "Warning"
+    The state is reset for each new data block.
 
 **Syntax**
 
@@ -1776,7 +1710,7 @@ Result:
 
 As you can see, `runningAccumulate` merges states for each group of rows separately.
 
-## joinGet
+## joinGet {#joinget}
 
 The function lets you extract data from the table the same way as from a [dictionary](../../sql-reference/dictionaries/index.md).
 
@@ -1839,54 +1773,15 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
+## modelEvaluate(model_name, …) {#function-modelevaluate}
 
-Evaluate external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learing.
-Accepts a path to a catboost model and model arguments (features). Returns Float64.
+Evaluate external model.
+Accepts a model name and model arguments. Returns Float64.
 
-``` sql
-SELECT feat1, ..., feat_n, catboostEvaluate('/path/to/model.bin', feat_1, ..., feat_n) AS prediction
-FROM data_table
-```
-
-**Prerequisites**
-
-1. Build the catboost evaluation library
-
-Before evaluating catboost models, the `libcatboostmodel.<so|dylib>` library must be made available. See [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) how to compile it.
-
-Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse configuration:
-
-``` xml
-<clickhouse>
-...
-    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
-...
-</clickhouse>
-```
-
-For security and isolation reasons, the model evaluation does not run in the server process but in the clickhouse-library-bridge process.
-At the first execution of `catboostEvaluate()`, the server starts the library bridge process if it is not running already. Both processes
-communicate using a HTTP interface. By default, port `9012` is used. A different port can be specified as follows - this is useful if port
-`9012` is already assigned to a different service.
-
-``` xml
-<library_bridge>
-    <port>9019</port>
-</library_bridge>
-```
-
-2. Train a catboost model using libcatboost
-
-See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
-
-## throwIf(x\[, message\[, error_code\]\])
+## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
 
 Throw an exception if the argument is non zero.
-`message` - is an optional parameter: a constant string providing a custom error message
-`error_code` - is an optional parameter: a constant integer providing a custom error code
-
-To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throwif` must be enabled.
+custom_message - is an optional parameter: a constant string, provides an error message
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1897,7 +1792,7 @@ SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
 Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 ```
 
-## identity
+## identity {#identity}
 
 Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer does not look inside `identity` functions. Also constant folding is not applied too.
 
@@ -1923,7 +1818,7 @@ Result:
 └──────────────┘
 ```
 
-## randomPrintableASCII
+## randomPrintableASCII {#randomascii}
 
 Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
 
@@ -1959,7 +1854,7 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
-## randomString
+## randomString {#randomstring}
 
 Generates a binary string of the specified length filled with random bytes (including zero bytes).
 
@@ -2007,7 +1902,7 @@ len: 30
 -   [randomPrintableASCII](../../sql-reference/functions/other-functions.md#randomascii)
 
 
-## randomFixedString
+## randomFixedString {#randomfixedstring}
 
 Generates a binary string of the specified length filled with random bytes (including zero bytes).
 
@@ -2044,7 +1939,7 @@ Result:
 
 ```
 
-## randomStringUTF8
+## randomStringUTF8 {#randomstringutf8}
 
 Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
 
@@ -2081,7 +1976,7 @@ Result:
 
 ```
 
-## getSetting
+## getSetting {#getSetting}
 
 Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
 
@@ -2116,7 +2011,7 @@ SELECT getSetting('custom_a');
 
 -   [Custom Settings](../../operations/settings/index.md#custom_settings)
 
-## isDecimalOverflow
+## isDecimalOverflow {#is-decimal-overflow}
 
 Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is out of its (or specified) precision.
 
@@ -2153,7 +2048,7 @@ Result:
 1	1	1	1
 ```
 
-## countDigits
+## countDigits {#count-digits}
 
 Returns number of decimal digits you need to represent the value.
 
@@ -2173,9 +2068,8 @@ Number of digits.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-:::note    
-For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
-:::
+ !!! note "Note"
+    For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#is-decimal-overflow).
 
 **Example**
 
@@ -2193,7 +2087,7 @@ Result:
 10	10	19	19	39	39
 ```
 
-## errorCodeToName
+## errorCodeToName {#error-code-to-name}
 
 **Returned value**
 
@@ -2213,7 +2107,7 @@ Result:
 UNSUPPORTED_METHOD
 ```
 
-## tcpPort
+## tcpPort {#tcpPort}
 
 Returns [native interface](../../interfaces/tcp.md) TCP port number listened by this server.
 If it is executed in the context of a distributed table, then it generates a normal column, otherwise it produces a constant value.
@@ -2254,7 +2148,7 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
-## currentProfiles
+## currentProfiles {#current-profiles}
 
 Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
 
@@ -2272,7 +2166,7 @@ currentProfiles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-## enabledProfiles
+## enabledProfiles {#enabled-profiles}
 
  Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#current-profiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
 
@@ -2288,7 +2182,7 @@ enabledProfiles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-## defaultProfiles
+## defaultProfiles {#default-profiles}
 
 Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
 
@@ -2304,7 +2198,7 @@ defaultProfiles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-## currentRoles
+## currentRoles {#current-roles}
 
 Returns the names of the roles which are current for the current user. The current roles can be changed by the [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) statement. If the `SET ROLE` statement was not used, the function `currentRoles` returns the same as `defaultRoles`.
 
@@ -2320,7 +2214,7 @@ currentRoles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-## enabledRoles
+## enabledRoles {#enabled-roles}
 
 Returns the names of the current roles and the roles, granted to some of the current roles.
 
@@ -2336,7 +2230,7 @@ enabledRoles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-## defaultRoles
+## defaultRoles {#default-roles}
 
 Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
 
@@ -2352,7 +2246,7 @@ defaultRoles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
-## getServerPort
+## getServerPort {#getserverport}
 
 Returns the number of the server port. When the port is not used by the server, throws an exception.
 
@@ -2399,7 +2293,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## queryID
+## queryID {#query-id}
 
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 
@@ -2435,7 +2329,7 @@ Result:
 └─────────┘
 ```
 
-## initialQueryID
+## initialQueryID {#initial-query-id}
 
 Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
 
@@ -2471,7 +2365,7 @@ Result:
 └─────────┘
 ```
 
-## shardNum
+## shardNum {#shard-num}
 
 Returns the index of a shard which processes a part of data for a distributed query. Indices are started from `1`.
 If a query is not distributed then constant value `0` is returned.
@@ -2513,7 +2407,7 @@ Result:
 
 -   [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
 
-## shardCount
+## shardCount {#shard-count}
 
 Returns the total number of shards for a distributed query.
 If a query is not distributed then constant value `0` is returned.
@@ -2534,7 +2428,7 @@ Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 - [shardNum()](#shard-num) function example also contains `shardCount()` function call.
 
-## getOSKernelVersion
+## getOSKernelVersion {#getoskernelversion}
 
 Returns a string with the current OS kernel version.
 
@@ -2570,7 +2464,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## zookeeperSessionUptime
+## zookeeperSessionUptime {#zookeepersessionuptime}
 
 Returns the uptime of the current ZooKeeper session in seconds.
 

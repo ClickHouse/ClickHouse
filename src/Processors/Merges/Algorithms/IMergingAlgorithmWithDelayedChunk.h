@@ -10,10 +10,12 @@ namespace DB
 class IMergingAlgorithmWithDelayedChunk : public IMergingAlgorithm
 {
 public:
-    IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_);
+    IMergingAlgorithmWithDelayedChunk(
+        size_t num_inputs,
+        SortDescription description_);
 
 protected:
-    SortingQueue<SortCursor> queue;
+    SortingHeap<SortCursor> queue;
     SortDescription description;
 
     /// Previous row. May refer to last_chunk_sort_columns or row from source_chunks.
@@ -26,8 +28,6 @@ protected:
     bool skipLastRowFor(size_t input_number) const { return current_inputs[input_number].skip_last_row; }
 
 private:
-    Block header;
-
     /// Inputs currently being merged.
     Inputs current_inputs;
     SortCursorImpls cursors;
