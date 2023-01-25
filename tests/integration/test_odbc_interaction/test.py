@@ -630,7 +630,6 @@ def test_no_connection_pooling(started_cluster):
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
-    cursor.execute("truncate table clickhouse.test_table")
     cursor.execute(
         "insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')"
     )
@@ -651,6 +650,7 @@ def test_no_connection_pooling(started_cluster):
     assert "" == node1.exec_in_container(
         ["ss", "-H", "dport", "5432"], privileged=True, user="root"
     )
+    cursor.execute("truncate table clickhouse.test_table")
 
 
 def test_postgres_insert(started_cluster):
