@@ -41,7 +41,7 @@ public:
     CompressedReadBufferBase * compressed_data_buffer;
 
 private:
-    size_t getRightOffset(size_t right_mark_non_included);
+    size_t getRightOffset(size_t right_mark);
 
     DiskPtr disk;
     std::string path_prefix;
