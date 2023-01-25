@@ -99,7 +99,9 @@ QueryTreeNodePtr ColumnNode::cloneImpl() const
 
 ASTPtr ColumnNode::toASTImpl() const
 {
-    return std::make_shared<ASTIdentifier>(column.name);
+    auto column_name_identifier = Identifier(column.name);
+    auto column_name_identifier_parts = column_name_identifier.getParts();
+    return std::make_shared<ASTIdentifier>(std::move(column_name_identifier_parts));
 }
 
 }
