@@ -53,7 +53,7 @@ If you want to get the same result as output by the md5sum utility, use lower(he
 
 ## sipHash64
 
-Produces a 64-bit [SipHash](https://131002.net/siphash/) hash value.
+Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
 ```sql
 sipHash64(par1,...)
@@ -90,7 +90,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash128
 
-Produces a 128-bit [SipHash](https://131002.net/siphash/) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
+Produces a 128-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
 
 **Syntax**
 
