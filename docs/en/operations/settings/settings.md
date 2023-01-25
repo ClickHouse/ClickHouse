@@ -3767,7 +3767,7 @@ Possible values:
 
 Default value: 2.
 
-### compatibility {#compatibility}
+## compatibility {#compatibility}
 
 The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
 
@@ -3781,7 +3781,7 @@ Disabled by default.
 In ClickHouse Cloud the compatibility setting must be set by ClickHouse Cloud support.  Please [open a case](https://clickhouse.cloud/support) to have it set.
 :::
 
-### allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
 
