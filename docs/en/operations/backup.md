@@ -374,25 +374,31 @@ Configure your ClickHouse server by adding a disk of type `s3_plain`.  Here is a
         <disks>
             <backup_disk_s3_plain>
                 <type>s3_plain</type>
+                <!-- highlight-start -->
                 <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/</endpoint>
                 <access_key_id>Your AWS Access Key</access_key_id>
                 <secret_access_key>Your AWS Secret Key</secret_access_key>
+                <!-- highlight-end -->
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </backup_disk_s3_plain>
             <s3_backup_compact>
                 <type>s3_plain</type>
+                <!-- highlight-start -->
                 <!-- NOTE: /backup_compact/ is a name of BACKUP -->
                 <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/backup_compact/</endpoint>
                 <access_key_id>Your AWS Access Key</access_key_id>
                 <secret_access_key>Your AWS Secret Key</secret_access_key>
+                <!-- highlight-end -->
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </s3_backup_compact>
             <s3_backup_wide>
                 <type>s3_plain</type>
+                <!-- highlight-start -->
                 <!-- NOTE: /backup_wide/ is a name of BACKUP -->
                 <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/backup_wide/</endpoint>
                 <access_key_id>Your AWS Access Key</access_key_id>
                 <secret_access_key>Your AWS Secret Key</secret_access_key>
+                <!-- highlight-end -->
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </s3_backup_wide>
         </disks>
