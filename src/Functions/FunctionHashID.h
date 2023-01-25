@@ -162,8 +162,8 @@ public:
             return col_res;
         }
         else
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function hashid", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function hashid",
+                arguments[0].column->getName());
     }
 };
 

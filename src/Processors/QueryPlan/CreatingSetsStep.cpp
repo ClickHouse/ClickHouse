@@ -77,7 +77,7 @@ void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 {
     if (input_streams_.empty())
-        throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
 
     input_streams = std::move(input_streams_);
     output_stream = input_streams.front();
@@ -91,7 +91,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
-        throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
 
     auto main_pipeline = std::move(pipelines.front());
     if (pipelines.size() == 1)

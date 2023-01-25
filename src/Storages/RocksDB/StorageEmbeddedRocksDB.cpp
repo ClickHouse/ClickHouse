@@ -140,8 +140,8 @@ public:
 
         if (!iterator->status().ok())
         {
-            throw Exception("Engine " + getName() + " got error while seeking key value data: " + iterator->status().ToString(),
-                ErrorCodes::ROCKSDB_ERROR);
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Engine {} got error while seeking key value data: {}",
+                getName(), iterator->status().ToString());
         }
         Block block = sample_block.cloneWithColumns(std::move(columns));
         return Chunk(block.getColumns(), block.rows());
@@ -261,12 +261,12 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
                 column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
                 auto status = batch.Delete(wb_key.str());
                 if (!status.ok())
-                    throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
             }
 
             auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
             if (!status.ok())
-                throw Exception("RocksDB write error: " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
         }
 
         return;
@@ -458,8 +458,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto engine_args = args.engine_args;
     if (engine_args.size() > 3)
     {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} requires at most 3 parameters. ({} given). Correct usage: EmbeddedRocksDB([ttl, rocksdb_dir, read_only])",
-            args.engine_name, engine_args.size());
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Engine {} requires at most 3 parameters. "
+                        "({} given). Correct usage: EmbeddedRocksDB([ttl, rocksdb_dir, read_only])",
+                        args.engine_name, engine_args.size());
     }
 
     Int32 ttl{0};
@@ -477,13 +479,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setConstraints(args.constraints);
 
     if (!args.storage_def->primary_key)
-        throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
 
     metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
     {
-        throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
     return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
