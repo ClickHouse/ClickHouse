@@ -254,6 +254,16 @@ private:
                 auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
                 if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                     return false;
+
+                /// sum*() on Floats depends on order
+                /// but currently there is no way to specify property `is_order_dependent` for combination of aggregating function and data type
+                /// so, we check explicitly for sum*() functions with Floats here
+                const auto aggregate_function = aggregate.function;
+                const String & func_name = aggregate_function->getName();
+                if ((func_name == "sum" || func_name == "sumCount" || func_name == "sumWithOverflow" || func_name == "sumKahan")
+                    && aggregate_function->getArgumentTypes().size() == 1
+                    && WhichDataType(aggregate_function->getArgumentTypes().front()).isFloat())
+                    return false;
             }
             return true;
         }
