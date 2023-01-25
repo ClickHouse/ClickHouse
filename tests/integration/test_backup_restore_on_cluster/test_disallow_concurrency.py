@@ -148,10 +148,14 @@ def test_concurrent_backups_on_different_nodes():
 
     backup_name = new_backup_name()
 
-    nodes[1].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
+    id = (
+        nodes[1]
+        .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
+        .split("\t")[0]
+    )
     assert_eq_with_retry(
         nodes[1],
-        f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP'",
+        f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
         "CREATING_BACKUP",
     )
     assert "Concurrent backups not supported" in nodes[2].query_and_get_error(

@@ -98,11 +98,11 @@ DatabaseReplicated::DatabaseReplicated(
     , tables_metadata_digest(0)
 {
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
-        throw Exception("ZooKeeper path, shard and replica names must be non-empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path, shard and replica names must be non-empty");
     if (shard_name.find('/') != std::string::npos || replica_name.find('/') != std::string::npos)
-        throw Exception("Shard and replica names should not contain '/'", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '/'");
     if (shard_name.find('|') != std::string::npos || replica_name.find('|') != std::string::npos)
-        throw Exception("Shard and replica names should not contain '|'", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -271,7 +271,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
     {
         if (!getContext()->hasZooKeeper())
         {
-            throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
         }
 
         auto current_zookeeper = getContext()->getZooKeeper();
@@ -593,8 +593,10 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                     LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
                 else
                     throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                    "It's not allowed to specify explicit zookeeper_path and replica_name for ReplicatedMergeTree arguments in Replicated database. "
-                                    "If you really want to specify them explicitly, enable setting database_replicated_allow_replicated_engine_arguments.");
+                                    "It's not allowed to specify explicit zookeeper_path and replica_name "
+                                    "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
+                                    "specify them explicitly, enable setting "
+                                    "database_replicated_allow_replicated_engine_arguments.");
             }
 
             if (maybe_shard_macros && maybe_replica_macros)
@@ -621,7 +623,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
         for (const auto & command : query_alter->command_list->children)
         {
             if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
-                throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }
 
