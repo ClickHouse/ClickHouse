@@ -1336,7 +1336,7 @@ DESC format(JSONEachRow, $$
 └──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings.md#date_time_input_format)
+Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings-formats.md#date_time_input_format)
 
 ### input_format_try_infer_dates
 
