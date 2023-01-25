@@ -77,12 +77,15 @@ class ITokenExtractorHelper : public ITokenExtractor
     {
         size_t cur = 0;
         String token;
+
         while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
             bloom_filter.add(token.c_str(), token.size());
     }
+
     void stringToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
+
         size_t cur = 0;
         size_t token_start = 0;
         size_t token_len = 0;
@@ -94,6 +97,7 @@ class ITokenExtractorHelper : public ITokenExtractor
     void stringPaddedToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
+
         size_t cur = 0;
         size_t token_start = 0;
         size_t token_len = 0;
@@ -105,8 +109,10 @@ class ITokenExtractorHelper : public ITokenExtractor
     void stringLikeToGinFilter(const char * data, size_t length, GinFilter & gin_filter) const override
     {
         gin_filter.setQueryString(data, length);
+
         size_t cur = 0;
         String token;
+
         while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
             gin_filter.addTerm(token.c_str(), token.size());
     }
