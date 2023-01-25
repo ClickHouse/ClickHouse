@@ -111,7 +111,7 @@ public:
                     sliceFromRightConstantOffsetBounded(
                         source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
                 else
-                    throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
+                    throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
                 sliceDynamicOffsetBounded(source, StringSink(*col_res, input_rows_count), *column_start, *column_length);
@@ -154,9 +154,8 @@ public:
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
                                 length_value, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
             else
-                throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
         }
         else
         {
@@ -173,9 +172,8 @@ public:
                 return executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
                                 length_value, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
             else
-                throw Exception(
-                    "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
         }
     }
 };

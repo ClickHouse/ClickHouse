@@ -1042,9 +1042,10 @@ public:
             default:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Node {} with type {} is not supported by query analyzer. Supported nodes are query, union, identifier, constant, column, function, list.",
-                    node->formatASTForErrorMessage(),
-                    node->getNodeTypeName());
+                                "Node {} with type {} is not supported by query analyzer. "
+                                "Supported nodes are query, union, identifier, constant, column, function, list.",
+                                node->formatASTForErrorMessage(),
+                                node->getNodeTypeName());
             }
         }
     }
@@ -1980,10 +1981,11 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
         table_expression_node_type == QueryTreeNodeType::QUERY ||
         table_expression_node_type == QueryTreeNodeType::UNION)
         throw Exception(ErrorCodes::ALIAS_REQUIRED,
-            "JOIN {} no alias for subquery or table function {}. In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
-            join_node->formatASTForErrorMessage(),
-            table_expression_node->formatASTForErrorMessage(),
-            scope.scope_node->formatASTForErrorMessage());
+                        "JOIN {} no alias for subquery or table function {}. "
+                        "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
+                        join_node->formatASTForErrorMessage(),
+                        table_expression_node->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
 }
 
 std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
@@ -4485,12 +4487,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             size_t function_data_type_arguments_size = function_data_type_argument_types.size();
             if (function_data_type_arguments_size != lambda_arguments_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function '{}' function data type for lambda argument with index {} arguments size mismatch. Actual {}. Expected {}. In scope {}",
-                    function_name,
-                    function_data_type_arguments_size,
-                    lambda_arguments_size,
-                    argument_types[function_lambda_argument_index]->getName(),
-                    scope.scope_node->formatASTForErrorMessage());
+                                "Function '{}"
+                                "' function data type for lambda argument with index {} arguments size mismatch. "
+                                "Actual {}. Expected {}. In scope {}",
+                                function_name,
+                                function_data_type_arguments_size,
+                                lambda_arguments_size,
+                                argument_types[function_lambda_argument_index]->getName(),
+                                scope.scope_node->formatASTForErrorMessage());
 
             QueryTreeNodes lambda_arguments;
             lambda_arguments.reserve(lambda_arguments_size);
@@ -5684,10 +5688,12 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     auto result_right_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node.getRightTableExpression(), scope);
                     if (!result_right_table_expression)
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "JOIN {} using identifier '{}' cannot be resolved from right table expression. In scope {}",
-                            join_node.formatASTForErrorMessage(),
-                            identifier_full_name,
-                            scope.scope_node->formatASTForErrorMessage());
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                                        "JOIN {} using identifier '{}' cannot "
+                                        "be resolved from right table expression. In scope {}",
+                                        join_node.formatASTForErrorMessage(),
+                                        identifier_full_name,
+                                        scope.scope_node->formatASTForErrorMessage());
 
                     DataTypePtr common_type = tryGetLeastSupertype(DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()});
 

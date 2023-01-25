@@ -6,6 +6,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Common/SharedMutex.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -17,7 +18,6 @@
 #include <memory>
 #include <mutex>
 #include <set>
-#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
@@ -58,7 +58,7 @@ public:
 
     DDLGuard(
         Map & map_,
-        std::shared_mutex & db_mutex_,
+        SharedMutex & db_mutex_,
         std::unique_lock<std::mutex> guards_lock_,
         const String & elem,
         const String & database_name);
@@ -69,7 +69,7 @@ public:
 
 private:
     Map & map;
-    std::shared_mutex & db_mutex;
+    SharedMutex & db_mutex;
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
@@ -142,7 +142,7 @@ public:
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
-    std::unique_lock<std::shared_mutex> getExclusiveDDLGuardForDatabase(const String & database);
+    std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
 
     void assertDatabaseExists(const String & database_name) const;
@@ -298,7 +298,7 @@ private:
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
     /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
-    using DatabaseGuard = std::pair<DDLGuard::Map, std::shared_mutex>;
+    using DatabaseGuard = std::pair<DDLGuard::Map, SharedMutex>;
     using DDLGuards = std::map<String, DatabaseGuard>;
     DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.

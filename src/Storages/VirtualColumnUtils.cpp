@@ -132,7 +132,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
 {
     if (block.rows() == 0)
-        throw Exception("Cannot prepare filter with empty block", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot prepare filter with empty block");
 
     /// Take the first row of the input block to build a constant block
     auto columns = block.getColumns();
