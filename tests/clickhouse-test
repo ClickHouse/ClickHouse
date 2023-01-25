@@ -2017,7 +2017,10 @@ def main(args):
         print("All tests have finished.")
 
     if args.report_logs_stats:
-        reportLogStats(args)
+        try:
+            reportLogStats(args)
+        except Exception as e:
+            print(f"Failed to get stats about log messages: {e}")
 
     if args.report_coverage and not reportCoverage(args):
         exit_code.value = 1
