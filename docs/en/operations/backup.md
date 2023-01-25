@@ -7,6 +7,7 @@ slug: /en/operations/backup
 - [Backup to a local disk](#backup-to-a-local-disk)
 - [Configuring backup/restore to use an S3 endpoint](#configuring-backuprestore-to-use-an-s3-endpoint)
 - [Backup/restore using an S3 disk](#backuprestore-using-an-s3-disk)
+- [Use Backup and Attach to create a read-only table](#use-backup-and-attach-to-create-a-read-only-table)
 - [Alternatives](#alternatives)
 
 ## Command summary
@@ -355,6 +356,151 @@ But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
 - It has excessive API calls
 :::
+
+## Use Backup and Attach to create a read-only table
+
+Backups can be written to S3 and then attached as read-only tables with these caveats:
+- The database must be of type `ordinary`
+- The table must have `ENGINE` of type `MergeTree`
+- There can be no Materialized Views associated with the table
+
+### Add a storage configuration
+
+Configure your ClickHouse server by adding a disk of type `s3_plain`.  Here is an example configuration.  Substitute your `endpoint`, `access_key_id`, and `secret_access_key` on the lines highlighted:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- NOTE: backup_disk_s3_plain is used to write backups to -->
+            <backup_disk_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/</endpoint>
+                <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
+                <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </backup_disk_s3_plain>
+            <!-- NOTE: s3_ro_backup is used to read from when the backup is attached -->
+            <s3_ro_backup>
+                <type>s3_plain</type>
+                <!-- NOTE: /25Jan23/ is a name of BACKUP -->
+                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/25Jan23/</endpoint>
+                <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
+                <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </s3_ro_backup>
+        </disks>
+        <policies>
+            <!-- NOTE: using storage policy s3_backup allows s3_ro_backup to be attached -->
+            <s3_backup>
+                <volumes>
+                    <main>
+                        <disk>s3_ro_backup</disk>
+                    </main>
+                </volumes>
+            </s3_backup>
+        </policies>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backup_disk_s3_plain</allowed_disk>
+    </backups>
+</clickhouse>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backup_disk_s3_plain>
+                <type>s3_plain</type>
+                <!-- highlight-start -->
+                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/table_xyz/</endpoint>
+                <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
+                <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
+                <!-- highlight-end -->
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </backup_disk_s3_plain>
+        </disks>
+        <policies>
+            <s3_backup>
+                <volumes>
+                    <main>
+                        <disk>backup_disk_s3_plain</disk>
+                    </main>
+                </volumes>
+            </s3_backup>
+        </policies>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backup_disk_s3_plain</allowed_disk>
+    </backups>
+</clickhouse>
+```
+
+### Create a database of type ordinary
+
+Enable the use of ordinary databases:
+```sql
+set allow_deprecated_database_ordinary=1;
+```
+
+Create the database:
+```sql
+create database ordinary_db engine=Ordinary;
+```
+
+### Create a table
+
+This will create a table in the `ordinary_db` database that has five partitions:
+- there are 100 rows, with two columns `part` and `key`
+- `key` is set to the value provided by the function `numbers(100)`
+- `part` is set to the value `number % 5`
+- the table is partitioned on the column `part`
+
+```sql
+CREATE TABLE ordinary_db.table_name
+ENGINE = MergeTree
+PARTITION BY part
+ORDER BY key AS
+SELECT
+    number % 5 AS part,
+    number AS key
+FROM numbers(100)
+```
+
+### Backup the table to S3
+This example uses the `s3_plain` destination [configured above](#add-a-storage-configuration).
+```sql
+BACKUP TABLE ordinary_db.table_name TO Disk('backup_disk_s3_plain', 'backup_25Jan23') SETTINGS deduplicate_files = 0
+```
+```response
+┌─id───────────────────────────────────┬─status─────────┐
+│ 6b323487-87be-40f6-99ac-3d049221b98a │ BACKUP_CREATED │
+└──────────────────────────────────────┴────────────────┘
+
+1 row in set. Elapsed: 5.698 sec.
+```
+
+### Examine the way data is stored in S3
+
+Navigate to the bucket and locate the folder for the backup, in the example it is named `backup_25Jan23`.
+
+![folder contents in S3](@site/docs/en/operations/images/backup-for-RO-attach-one-partition.png)
+
+### Drop the table
+```sql
+drop table ordinary_db.table_name;
+```
+
+### Attach the backup
+```sql
+ATTACH TABLE ordinary_db.table_name
+(
+    `part` UInt8,
+    `key` UInt64
+)
+ENGINE = MergeTree
+PARTITION BY part
+ORDER BY key
+SETTINGS storage_policy = 's3_backup'
+```
 
 ## Alternatives
 
