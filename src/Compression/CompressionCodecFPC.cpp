@@ -123,11 +123,12 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
             const auto * literal = arguments->children.front()->as<ASTLiteral>();
             if (!literal)
-                throw Exception("FPC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec argument must be integer");
 
             level = literal->value.safeGet<UInt8>();
             if (level < 1 || level > CompressionCodecFPC::MAX_COMPRESSION_LEVEL)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec level must be between {} and {}", 1, static_cast<int>(CompressionCodecFPC::MAX_COMPRESSION_LEVEL));
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "FPC codec level must be between {} and {}",
+                                1, static_cast<int>(CompressionCodecFPC::MAX_COMPRESSION_LEVEL));
         }
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
@@ -459,19 +460,19 @@ UInt32 CompressionCodecFPC::doCompressData(const char * source, UInt32 source_si
         default:
             break;
     }
-    throw Exception("Cannot compress. File has incorrect float width", ErrorCodes::CANNOT_COMPRESS);
+    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress. File has incorrect float width");
 }
 
 void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < HEADER_SIZE)
-        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
 
     auto compressed_data = std::as_bytes(std::span(source, source_size));
     auto compressed_float_width = std::to_integer<UInt8>(compressed_data[0]);
     auto compressed_level = std::to_integer<UInt8>(compressed_data[1]);
     if (compressed_level == 0 || compressed_level > MAX_COMPRESSION_LEVEL)
-        throw Exception("Cannot decompress. File has incorrect level", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect level");
 
     auto destination = std::as_writable_bytes(std::span(dest, uncompressed_size));
     auto src = compressed_data.subspan(HEADER_SIZE);
@@ -484,7 +485,7 @@ void CompressionCodecFPC::doDecompressData(const char * source, UInt32 source_si
             FPCOperation<UInt32>(destination, compressed_level).decode(src, uncompressed_size);
             break;
         default:
-            throw Exception("Cannot decompress. File has incorrect float width", ErrorCodes::CANNOT_DECOMPRESS);
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has incorrect float width");
     }
 }
 

@@ -122,7 +122,7 @@ struct StorageKafkaInterceptors
             return thread_status_ptr.get() == current_thread;
         });
         if (it == self->thread_statuses.end())
-            throw Exception("No thread status for this librdkafka thread.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread status for this librdkafka thread.");
 
         self->thread_statuses.erase(it);
 
@@ -298,7 +298,8 @@ Pipe StorageKafka::read(
         return {};
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
@@ -334,7 +335,7 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     ProfileEvents::increment(ProfileEvents::KafkaWrites);
 
     if (topics.size() > 1)
-        throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't write to Kafka table with multiple topics!");
 
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
@@ -673,7 +674,7 @@ bool StorageKafka::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
@@ -858,25 +859,28 @@ void registerStorageKafka(StorageFactory & factory)
         if (!args.getLocalContext()->getSettingsRef().kafka_disable_num_consumers_limit && num_consumers > max_consumers)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of consumers can not be bigger than {}. "
-                            "A single consumer can read any number of partitions. Extra consumers are relatively expensive, "
-                            "and using a lot of them can lead to high memory and CPU usage. To achieve better performance "
+                            "A single consumer can read any number of partitions. "
+                            "Extra consumers are relatively expensive, "
+                            "and using a lot of them can lead to high memory and CPU usage. "
+                            "To achieve better performance "
                             "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
-                            "and ensure you have enough threads in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
+                            "and ensure you have enough threads "
+                            "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
                             "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)
         {
-            throw Exception("Number of consumers can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
         }
 
         if (kafka_settings->kafka_max_block_size.changed && kafka_settings->kafka_max_block_size.value < 1)
         {
-            throw Exception("kafka_max_block_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_max_block_size can not be lower than 1");
         }
 
         if (kafka_settings->kafka_poll_max_batch_size.changed && kafka_settings->kafka_poll_max_batch_size.value < 1)
         {
-            throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
         }
 
         return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);

@@ -470,6 +470,9 @@ The `set` index can be used with all functions. Function subsets for other index
 | [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
 | hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+| hasTokenOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+| hasTokenCaseInsensitive                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+| hasTokenCaseInsensitiveOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 

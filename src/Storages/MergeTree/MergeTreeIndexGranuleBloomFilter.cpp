@@ -43,7 +43,7 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
         : total_rows(total_rows_), bits_per_row(bits_per_row_), hash_functions(hash_functions_)
 {
     if (granule_index_blocks_.empty() || !total_rows)
-        throw Exception("LOGICAL ERROR: granule_index_blocks empty or total_rows is zero.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: granule_index_blocks empty or total_rows is zero.");
 
     assertGranuleBlocksStructure(granule_index_blocks_);
 
@@ -52,7 +52,7 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
         Block granule_index_block = granule_index_blocks_[index];
 
         if (unlikely(!granule_index_block || !granule_index_block.rows()))
-            throw Exception("LOGICAL ERROR: granule_index_block is empty.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: granule_index_block is empty.");
 
         if (index == 0)
         {
