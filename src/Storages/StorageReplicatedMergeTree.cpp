@@ -7908,9 +7908,18 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 {
     std::lock_guard lock(table_shared_id_mutex);
 
-    /// Can happen if table was partially initialized before drop by DatabaseCatalog
-    if (table_shared_id == UUIDHelpers::Nil)
-        createTableSharedID();
+    /// If we has metadata or, we don't know about metadata -- try to create shared ID
+    /// Otherwise table is already dropped, doesn't make sense to do anything with shared ID
+    if (has_metadata_in_zookeeper.value_or(true))
+    {
+        /// Can happen if table was partially initialized before drop by DatabaseCatalog
+        if (table_shared_id == UUIDHelpers::Nil)
+            createTableSharedID();
+    }
+    else
+    {
+        return toString(UUIDHelpers::Nil);
+    }
 
     return toString(table_shared_id);
 }
@@ -8101,6 +8110,13 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
+    auto shared_id = getTableSharedID();
+    if (shared_id == toString(UUIDHelpers::Nil))
+    {
+        LOG_TRACE(log, "Part {} blobs can be removed, because table {} comletely dropped", part.name, getStorageID().getNameForLogs());
+        return std::make_pair(true, NameSet{});
+    }
+
     /// If part is temporary refcount file may be absent
     if (part.getDataPartStorage().exists(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK))
     {
@@ -8140,7 +8156,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
 
     return unlockSharedDataByID(
-        part.getUniqueId(), getTableSharedID(), part.name, replica_name,
+        part.getUniqueId(), shared_id, part.name, replica_name,
         part.getDataPartStorage().getDiskType(), zookeeper, *getSettings(), log, zookeeper_path, format_version);
 }
 
