@@ -1,13 +1,24 @@
 #include <memory>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Common/typeid_cast.h>
-#include "Processors/QueryPlan/ExpressionStep.h"
+#include <Common/logger_useful.h>
 
 namespace DB::QueryPlanOptimizations
 {
+
+// template <typename... T>
+// FMT_NODISCARD FMT_INLINE auto format(format_string<T...> fmt, T&&... args)
+constexpr bool debug_logging_enabled = true;
+
+template <typename... Args>
+void logDebug(const char * format, Args &&... args)
+{
+    if constexpr (debug_logging_enabled)
+    {
+        LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), format, args...);
+    }
+}
 
 static std::set<std::string_view> getDistinctColumns(const DistinctStep * distinct)
 {
@@ -30,7 +41,7 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
     /// check if it is preliminary distinct node
     QueryPlan::Node * distinct_node = nullptr;
     DistinctStep * distinct_step = typeid_cast<DistinctStep *>(parent_node->children.front()->step.get());
-    if (!distinct_step || !distinct_step->isPreliminary())
+    if (!distinct_step)
         return 0;
 
     distinct_node = parent_node->children.front();
@@ -47,7 +58,16 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
     if (!inner_distinct_step)
         return 0;
 
-    if (getDistinctColumns(inner_distinct_step) != getDistinctColumns(inner_distinct_step))
+    /// possible cases (outer distinct -> inner distinct):
+    /// final -> preliminary => do nothing
+    /// preliminary -> final => try remove preliminary
+    /// final -> final => try remove final
+    /// preliminary -> preliminary => logical error?
+    if (inner_distinct_step->isPreliminary())
+        return 0;
+
+    /// try to remove outer distinct step
+    if (getDistinctColumns(distinct_step) != getDistinctColumns(inner_distinct_step))
         return 0;
 
     chassert(!distinct_node->children.empty());
