@@ -88,6 +88,38 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
+## sipHash64Keyed
+
+Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that it takes the key as an argument instead of using a fixed value.
+
+**Syntax**
+
+```sql
+sipHash64Keyed((k0, k1), par1,...)
+```
+
+**Arguments**
+
+Same as [sipHash64](#hash_functions-siphash64), but the first argument is a tuple of two UInt64 values representing the key.
+
+**Returned value**
+
+A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
+```
+
+```response
+┌─────────────SipHash─┬─type───┐
+│ 8017656310194184311 │ UInt64 │
+└─────────────────────┴────────┘
+```
+
 ## sipHash128
 
 Produces a 128-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
@@ -122,6 +154,41 @@ Result:
 ┌─hex(sipHash128('foo', '', 3))────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
+```
+
+## sipHash128Keyed
+
+Produces a 128-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
+Differs from [sipHash128](#hash_functions-siphash128) in that it takes the key as an argument instead of using a fixed value.
+
+**Syntax**
+
+```sql
+sipHash128Keyed((k0, k1), par1,...)
+```
+
+**Arguments**
+
+Same as [sipHash128](#hash_functions-siphash128), but the first argument is a tuple of two UInt64 values representing the key.
+
+**Returned value**
+
+A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912),'foo', '\x01', 3));
+```
+
+Result:
+
+```response
+┌─hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
+│ B8467F65C8B4CFD9A5F8BD733917D9BF                                              │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## cityHash64
