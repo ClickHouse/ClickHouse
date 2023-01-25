@@ -1455,6 +1455,17 @@ See also:
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
+## insert_keeper_max_retries
+
+This setting sets a maximum number of attempts that ClickHouse Keeper (or ZooKeeper) will attempt to retry an
+insert operation. The default value is 0 which means Keeper will retry an indefinite number of times.
+
+Possible values:
+
+- 0 or a positive integer
+
+Default value: 0
+
 ## insert_deduplicate {#settings-insert-deduplicate}
 
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
@@ -2954,19 +2965,9 @@ Possible values:
 
 Default value: `0`.
 
-## s3_truncate_on_insert 
+## s3_truncate_on_insert
 
-Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists. 
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## hdfs_truncate_on_insert 
-
-Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists. 
+Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -2974,11 +2975,21 @@ Possible values:
 
 Default value: `0`.
 
-## engine_file_allow_create_multiple_files 
+## hdfs_truncate_on_insert
+
+Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## engine_file_allow_create_multiple_files
 
 Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
 
-`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc. 
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -2986,11 +2997,11 @@ Possible values:
 
 Default value: `0`.
 
-## s3_create_new_file_on_insert 
+## s3_create_new_file_on_insert
 
 Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
 
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3002,7 +3013,7 @@ Default value: `0`.
 
 Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
 
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
