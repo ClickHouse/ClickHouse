@@ -242,7 +242,7 @@ ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/downlo
 ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
 echo "Get previous release tag"
-previous_release_tag=$(dpkg --info package_folder/clickhouse-client*.deb | grep "Version: " | awk '{print $2}' | get_previous_release_tag)
+previous_release_tag=$(dpkg --info package_folder/clickhouse-client*.deb | grep "Version: " | awk '{print $2}' | cut -f1 -d'+' | get_previous_release_tag)
 echo $previous_release_tag
 
 echo "Clone previous release repository"
@@ -293,24 +293,7 @@ else
     start
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
-
-    # Install new package before running stress test because we should use new clickhouse-client.
-    #
-    # But we should leave old binary in /usr/bin/ and debug symbols in
-    # /usr/lib/debug/usr/bin (if any) for gdb and internal DWARF parser, so it
-    # will print sane stacktraces and also to avoid possible crashes.
-    #
-    # FIXME: those files can be extracted directly from debian package, but
-    # actually better solution will be to use different PATH instead of playing
-    # games with files from packages.
-    mv /usr/bin/clickhouse previous_release_package_folder/
-    mv /usr/lib/debug/usr/bin/clickhouse.debug previous_release_package_folder/
-    install_packages package_folder
-    mv /usr/bin/clickhouse package_folder/
-    mv /usr/lib/debug/usr/bin/clickhouse.debug package_folder/
-    mv previous_release_package_folder/clickhouse /usr/bin/
-    mv previous_release_package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
-
+    
     mkdir tmp_stress_output
 
     stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
@@ -330,9 +313,8 @@ else
     stop 300
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
 
-    # Start new server
-    mv package_folder/clickhouse /usr/bin/
-    mv package_folder/clickhouse.debug /usr/lib/debug/usr/bin/clickhouse.debug
+    # Install and start new server
+    install_packages package_folder
     # Disable fault injections on start (we don't test them here, and it can lead to tons of requests in case of huge number of tables).
     export ZOOKEEPER_FAULT_INJECTION=0
     configure
