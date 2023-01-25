@@ -18,7 +18,7 @@ cat > "$yaml" <<EOL
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Andriod'
+  name: 'Android'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'
@@ -56,7 +56,7 @@ cat > "$yaml" <<EOL
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Andriod'
+  name: 'Android'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'

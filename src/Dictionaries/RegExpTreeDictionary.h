@@ -149,7 +149,9 @@ private:
         const std::unordered_map<String, const DictionaryAttribute &> & attributes) const;
 
     struct RegexTreeNode;
-    using RegexTreeNodePtr = std::unique_ptr<RegexTreeNode>;
+    using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
+
+    std::vector<RegexTreeNodePtr> complex_regexp_nodes;
 
     std::map<UInt64, RegexTreeNodePtr> regex_nodes;
     std::unordered_map<UInt64, UInt64> topology_order;

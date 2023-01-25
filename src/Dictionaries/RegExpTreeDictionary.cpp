@@ -1,3 +1,4 @@
+#include <exception>
 #include <optional>
 #include <string_view>
 
@@ -86,8 +87,15 @@ struct RegExpTreeDictionary::RegexTreeNode
     UInt64      parent_id;
     std::string regex;
     re2_st::RE2 searcher;
+
     RegexTreeNode(UInt64 id_, UInt64 parent_id_, const String & regex_, const re2_st::RE2::Options & regexp_options):
         id(id_), parent_id(parent_id_), regex(regex_), searcher(regex_, regexp_options) {}
+
+    bool match(const char * haystack, size_t size) const
+    {
+        return searcher.Match(haystack, 0, size, re2_st::RE2::Anchor::UNANCHORED, nullptr, 0);
+    }
+
     struct AttributeValue
     {
         Field field;
@@ -142,6 +150,52 @@ void RegExpTreeDictionary::calculateBytesAllocated()
     bytes_allocated += 2 * sizeof(UInt64) * topology_order.size();
 }
 
+namespace
+{
+    /// hyper scan is not good at processing regex containing {0, 200}
+    /// This will make re compilation slow and failed. So we select this heavy regular expressions and
+    /// process it with re2.
+    struct ComplexRegexChecker
+    {
+        re2_st::RE2 searcher;
+        ComplexRegexChecker() : searcher(R"(\{([\d]+),([\d]+)\})") {}
+
+        static bool isFigureLargerThanFifty(const String & str)
+        try
+        {
+            auto number = std::stoi(str);
+            return number > 50;
+        }
+        catch (std::exception &)
+        {
+            return false;
+        }
+
+        bool check(const String & data) const
+        {
+
+            re2_st::StringPiece haystack(data.data(), data.size());
+            re2_st::StringPiece matches[10];
+            size_t start_pos = 0;
+            while (start_pos < data.size())
+            {
+                if (searcher.Match(haystack, start_pos, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10))
+                {
+                    const auto & match = matches[0];
+                    start_pos += match.length();
+                    const auto & match1 = matches[1];
+                    const auto & match2 = matches[2];
+                    if (isFigureLargerThanFifty(match1.ToString()) || isFigureLargerThanFifty(match2.ToString()))
+                        return true;
+                }
+                else
+                    break;
+            }
+            return false;
+        }
+    };
+}
+
 void RegExpTreeDictionary::initRegexNodes(Block & block)
 {
     auto id_column = block.getByName(kId).column;
@@ -149,6 +203,8 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
     auto regex_column = block.getByName(kRegExp).column;
     auto keys_column = block.getByName(kKeys).column;
     auto values_column = block.getByName(kValues).column;
+
+    ComplexRegexChecker checker;
 
     size_t size = block.rows();
     for (size_t i = 0; i < size; i++)
@@ -163,12 +219,10 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         if (id == 0)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are invalid id {}", id);
 
-        regexps.push_back(regex);
-        regexp_ids.push_back(id);
 
         re2_st::RE2::Options regexp_options;
         regexp_options.set_log_errors(false);
-        RegexTreeNodePtr node = std::make_unique<RegexTreeNode>(id, parent_id, regex, regexp_options);
+        RegexTreeNodePtr node = std::make_shared<RegexTreeNode>(id, parent_id, regex, regexp_options);
 
         int num_captures = std::min(node->searcher.NumberOfCapturingGroups() + 1, 10);
 
@@ -194,7 +248,17 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
                 }
             }
         }
-        regex_nodes.emplace(id, std::move(node));
+        regex_nodes.emplace(id, node);
+        if (checker.check(regex))
+        {
+            complex_regexp_nodes.push_back(node);
+            LOG_INFO(logger, "Found complex regexp {} in the config. This will slow down the queries", regex);
+        }
+        else
+        {
+            regexps.push_back(regex);
+            regexp_ids.push_back(id);
+        }
     }
 }
 
@@ -245,6 +309,7 @@ void RegExpTreeDictionary::loadData()
         initGraph();
         if (regexps.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
+        LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", regexps.size(), complex_regexp_nodes.size());
         #if USE_VECTORSCAN
         try
         {
@@ -287,12 +352,15 @@ RegExpTreeDictionary::RegExpTreeDictionary(
     calculateBytesAllocated();
 }
 
-String processBackRefs(const String & data, const re2_st::RE2 & searcher, const std::vector<StringPiece> & pieces)
+std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 & searcher, const std::vector<StringPiece> & pieces)
 {
     re2_st::StringPiece haystack(data.data(), data.size());
     re2_st::StringPiece matches[10];
     String result;
     searcher.Match(haystack, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
+    /// if the pattern is a single '$1' but fails to match, we would use the default value.
+    if (pieces.size() == 1 && pieces[0].ref_num >= 0 && pieces[0].ref_num < 9 && matches[pieces[0].ref_num].empty())
+        return std::make_pair(result, true);
     for (const auto & item : pieces)
     {
         if (item.ref_num >= 0 && item.ref_num < 10)
@@ -300,7 +368,7 @@ String processBackRefs(const String & data, const re2_st::RE2 & searcher, const 
         else
             result += item.literal;
     }
-    return result;
+    return std::make_pair(result, false);
 }
 
 // walk towards root and collect attributes.
@@ -323,8 +391,9 @@ bool RegExpTreeDictionary::setAttributes(
             continue;
         if (value.containsBackRefs())
         {
-            String updated_str = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
-            attributes_to_set[name] = parseStringToField(updated_str, attributes.at(name).type);
+            auto [updated_str, use_default] = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
+            if (!use_default)
+                attributes_to_set[name] = parseStringToField(updated_str, attributes.at(name).type);
         }
         else
             attributes_to_set[name] = value.field;
@@ -352,12 +421,19 @@ namespace
         MatchContext(const std::vector<UInt64> & regexp_ids_, const std::unordered_map<UInt64, UInt64> & topology_order_)
             : regexp_ids(regexp_ids_), topology_order(topology_order_) {}
 
-        void insert(unsigned int id)
+        void insertIdx(unsigned int idx)
         {
-            UInt64 idx = regexp_ids[id-1];
-            UInt64 topological_order = topology_order.at(idx);
-            matched_idx_set.emplace(idx);
-            matched_idx_sorted_list.push_back(std::make_pair(topological_order, idx));
+            UInt64 node_id = regexp_ids[idx-1];
+            UInt64 topological_order = topology_order.at(node_id);
+            matched_idx_set.emplace(node_id);
+            matched_idx_sorted_list.push_back(std::make_pair(topological_order, node_id));
+        }
+
+        void insertNodeID(UInt64 id)
+        {
+            UInt64 topological_order = topology_order.at(id);
+            matched_idx_set.emplace(id);
+            matched_idx_sorted_list.push_back(std::make_pair(topological_order, id));
         }
 
         void sort()
@@ -406,7 +482,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
                     unsigned int /* flags */,
                     void * context) -> int
     {
-        static_cast<MatchContext *>(context)->insert(id);
+        static_cast<MatchContext *>(context)->insertIdx(id);
         return 0;
     };
 
@@ -430,13 +506,25 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
         if (err != HS_SUCCESS)
             throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
 
+        if (!match_result.matched_idx_set.empty())
+        {
+            for (const auto & node_ptr : complex_regexp_nodes)
+            {
+                if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
+                {
+                    match_result.insertNodeID(node_ptr->id);
+                    break;
+                }
+            }
+        }
+
         match_result.sort();
 
         // Walk through the regex tree util all attributes are set;
         std::unordered_map<String, Field> attributes_to_set;
         std::unordered_set<UInt64> visited_nodes;
 
-        // check if it is a valid id
+        // Some node matches but its parents cannot match. In this case we must regard this node unmatched.
         auto is_invalid = [&](UInt64 id)
         {
             while (id)
@@ -466,7 +554,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
             if (attributes_to_set.contains(name))
                 continue;
 
-            /// TODO: default value might be a back-reference, that is useful in lib ua-core
             DefaultValueProvider default_value(attr.null_value, defaults.at(name));
             columns[name]->insert(default_value.getDefaultValue(key_idx));
         }
