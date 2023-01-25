@@ -57,7 +57,7 @@ public:
 
     size_t getMarkSizeInBytes(size_t columns_num = 1) const;
 
-    static std::optional<std::string> getMarksExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
+    static std::optional<MarkType> getMarksTypeFromFilesystem(const IDataPartStorage & data_part_storage);
 };
 
 constexpr inline auto getNonAdaptiveMrkSizeWide() { return sizeof(UInt64) * 2; }
