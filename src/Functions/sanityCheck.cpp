@@ -10,8 +10,11 @@
 #include "Databases/DatabaseMemory.h"
 #include "Interpreters/Context.h"
 #include "Interpreters/Context_fwd.h"
+#include "Interpreters/InDepthNodeVisitor.h"
 #include "Interpreters/InterpreterCreateQuery.h"
 #include "Interpreters/InterpreterInsertQuery.h"
+#include "Interpreters/InterpreterSelectWithUnionQuery.h"
+#include "Interpreters/executeQuery.h"
 #include "Parsers/ASTColumnDeclaration.h"
 #include "Parsers/ASTCreateQuery.h"
 #include "Parsers/ASTFunction.h"
@@ -21,7 +24,9 @@
 #include "Parsers/ASTTablesInSelectQuery.h"
 #include "Parsers/IAST.h"
 #include "Parsers/ParserDataType.h"
+#include "Processors/Chunk.h"
 #include "Processors/Executors/CompletedPipelineExecutor.h"
+#include "Processors/Executors/PullingPipelineExecutor.h"
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -38,24 +43,24 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
-class FunctionSanityCheck : public IFunction
+class FunctionCreateMultipleTables : public IFunction
 {
 public:
-    static constexpr auto name = "sanityCheck";
+    static constexpr auto name = "createMultipleTables";
 
     static FunctionPtr create(ContextPtr context)
     {
-        auto fn = std::make_shared<FunctionSanityCheck>();
-        fn->context = Context::createCopy(context);
-        fn->context->setSetting("allow_experimental_object_type", 1);
-        fn->context->setSetting("allow_suspicious_low_cardinality_types", 1);
-        fn->context->setSetting("allow_experimental_annoy_index", 1);
-        //fn->context->setSetting("allow_nullable_key", 1);
+        auto fn = std::make_shared<FunctionCreateMultipleTables>();
+        fn->cur_context = Context::createCopy(context);
+        fn->cur_context->setSetting("allow_experimental_object_type", 1);
+        fn->cur_context->setSetting("allow_suspicious_low_cardinality_types", 1);
+        fn->cur_context->setSetting("allow_experimental_annoy_index", 1);
+        fn->cur_context->setSetting("allow_deprecated_database_ordinary", 1);
         return fn;
     }
 
 
-    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Get the name of the function.
@@ -71,41 +76,16 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType lhs(arguments[0].type);
-
-        if (!lhs.isString())
+        WhichDataType lhs_uuid(arguments[0].type.get());
+        if (!lhs_uuid.isUUID())
             throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First agrument (query) of function {} is expected to be string but got {}",
+                "First agrument (uuid) of function {} is expected to be UUID but got {}",
                 getName(), arguments[0].type->getName());
 
-        if (!arguments[1].column)
-            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second agrument (table schema) of function {} is expected to be constant",
-                getName());
-
-
-        const auto * rhs_arr = typeid_cast<const DataTypeArray *>(arguments[1].type.get());
-        if (!rhs_arr)
-            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second agrument (table schema) of function {} is expected to be array(tuple(UUID, string)) but got {}",
-                getName(), arguments[1].type->getName());
-
-        const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(rhs_arr->getNestedType().get());
-        if (rhs_tuple == nullptr || rhs_tuple->getElements().size() != 2)
-            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second agrument (table schema) of function {} is expected to be array(tuple(UUID, string)) but got {}",
-                getName(), arguments[1].type->getName());
-
-        WhichDataType rhs_str(rhs_tuple->getElement(1).get());
+        WhichDataType rhs_str(arguments[1].type.get());
         if (!rhs_str.isString())
             throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second agrument (table schema) of function {} is expected to be array(tuple(UUID, string)) but got {}",
-                getName(), arguments[1].type->getName());
-
-        WhichDataType rhs_uuid(rhs_tuple->getElement(0).get());
-        if (!rhs_uuid.isUUID())
-            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second agrument (table schema) of function {} is expected to be array(tuple(UUID, string)) but got {}",
+                "Second agrument (table schema) of function {} is expected to be String but got {}",
                 getName(), arguments[1].type->getName());
 
         return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt32>()});
@@ -116,53 +96,52 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        const auto * col_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
-        if (!col_const)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column const, got {}", arguments[1].column->getName());
-
-        auto internal = col_const->getDataColumnPtr();
-        const auto * col_arr = typeid_cast<const ColumnArray *>(internal.get());
-        if (!col_arr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column arr, got {}", internal->getName());
-
-        const auto & offsets = col_arr->getOffsets();
-
-        const auto * col_tuple = typeid_cast<const ColumnTuple *>(col_arr->getDataPtr().get());
-        if (!col_tuple)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column tuple, got {}", col_arr->getDataPtr()->getName());
-
-        const auto * col_uuid =  typeid_cast<const ColumnUUID *>(col_tuple->getColumnPtr(0).get());
-        const auto * col_string = typeid_cast<const ColumnString *>(col_tuple->getColumnPtr(1).get());
+        const auto * col_uuid =  typeid_cast<const ColumnUUID *>(arguments[0].column.get());
+        const auto * col_string = typeid_cast<const ColumnString *>(arguments[1].column.get());
         if (!col_uuid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column string, got {}", col_tuple->getColumnPtr(0)->getName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column string, got {}", arguments[0].column->getName());
         if (!col_string)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column string, got {}", col_tuple->getColumnPtr(1)->getName());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column string, got {}", arguments[1].column->getName());
 
-        std::unordered_map<std::string, std::shared_ptr<DatabaseMemory>> databases;
+        std::unordered_set<std::string> databases;
 
+        auto * log = &Poco::Logger::get("createMultipleTables");
 
+        auto res_err = ColumnUInt32::create();
+        auto res_message = ColumnString::create();
 
-        auto * log = &Poco::Logger::get("FunctionSanityCheck");
+        auto context = Context::createCopy(cur_context);
 
-        size_t size = offsets[0];
+        size_t size = input_rows_count;
         for (size_t ps = 0; ps < size; ++ps)
         {
+            UUID uuid = col_uuid->getData()[ps];
+            String database_name = "db_" + toString(uuid);
+
+
+            if (!databases.contains(database_name))
+            {
+
+                String create_db_query = "create database if not exists `" + database_name + "` engine = Ordinary";
+                auto io = executeQuery(create_db_query, context, true);
+
+                // CompletedPipelineExecutor executor(io.pipeline);
+                // executor.execute();
+
+                databases.emplace(database_name);
+            }
+
+            context->setCurrentDatabase(database_name);
+            auto query = col_string->getDataAt(ps);
+            if (query.size == 0)
+            {
+                res_err->getData().emplace_back(0);
+                res_message->insertDefault();
+                continue;
+            }
+
             try
             {
-                UUID uuid = col_uuid->getData()[ps];
-                String database_name = "db_" + toString(uuid);
-                if (!databases.contains(database_name))
-                {
-                    auto db = std::make_shared<DatabaseMemory>(database_name, context);
-                    DatabaseCatalog::instance().attachDatabase(database_name, db);
-                    databases.emplace(database_name, db);
-                }
-
-                context->setCurrentDatabase(database_name);
-
-                auto query = col_string->getDataAt(ps);
-                if (query.size == 0)
-                    continue;
                 ParserQuery parser(query.data + query.size, false);
 
                 /// TODO: parser should fail early when max_query_size limit is reached.
@@ -217,7 +196,7 @@ public:
                         if (!col_ast->default_specifier.empty())
                         {
                             auto kind = columnDefaultKindFromString(col_ast->default_specifier);
-                            if (!(kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized))
+                            if (kind != ColumnDefaultKind::Default)
                                 continue;
                         }
 
@@ -242,7 +221,7 @@ public:
                     std::string ins_query = "insert into table t select * from generateRandom('a', 42, 1, 1) limit 1 settings allow_experimental_object_type = 1, allow_suspicious_low_cardinality_types = 1, allow_experimental_annoy_index = 1, max_block_size = 1";
                     ASTPtr ins_ast = parseQuery(parser, ins_query.data(), ins_query.data() + ins_query.size(), "", 1000000, 1000);
 
-                    std::cerr << "0" << std::endl;
+                    //std::cerr << "0" << std::endl;
                     ASTInsertQuery * insert = ins_ast->as<ASTInsertQuery>();
                     insert->database = std::make_shared<ASTIdentifier>(database_name);
                     insert->table = std::make_shared<ASTIdentifier>(table_name);
@@ -261,7 +240,7 @@ public:
                     //const auto & vvv = *table_expr;
                     //std::cerr << typeid(vvv).name() << std::endl;
                     ASTFunction * table_function = table_expr->table_function->as<ASTFunction>();
-                    std::cerr << "7" << std::endl;
+                    //std::cerr << "7" << std::endl;
                     //std::cerr << table_function->arguments->children.size() << ' ' << table_function->parameters->children.size() << std::endl;
                     table_function->arguments->children.front()->as<ASTLiteral>()->value = schema;
 
@@ -272,37 +251,222 @@ public:
 
                     LOG_TRACE(log, "Inserting ({} / {}): {}", ps, size, queryToString(*insert));
 
-                    try
-                    {
-                        InterpreterInsertQuery interpreter_insert(ins_ast, context);
-                        auto io = interpreter_insert.execute();
-                        CompletedPipelineExecutor executor(io.pipeline);
-                        executor.execute();
-                    }
-                    catch (DB::Exception &)
-                    {
-                        //if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::ILLEGAL_COLUMN && e.code() != ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && INCORRECT_DATA)
-                        //    throw;
-                    }
+                    InterpreterInsertQuery interpreter_insert(ins_ast, context);
+                    auto io = interpreter_insert.execute();
+                    CompletedPipelineExecutor executor(io.pipeline);
+                    executor.execute();
                 }
 
+                res_err->getData().emplace_back(0);
+                res_message->insertDefault();
             }
-            catch (DB::Exception &)
+            catch (DB::Exception & e)
             {
-                tryLogCurrentException(log);
-                throw;
+                res_err->getData().emplace_back(e.code());
+                const auto & msg = e.message();
+                res_message->insertData(msg.data(), msg.size());
             }
         }
 
-        return result_type->createColumnConst(input_rows_count, Tuple{Field{""}, Field{0}});
+        return ColumnTuple::create(Columns{std::move(res_message), std::move(res_err)});
     }
 
-    ContextMutablePtr context;
+    ContextMutablePtr cur_context;
 };
 
-REGISTER_FUNCTION(SanityCheck)
+
+struct ReplaceDatabaseAndTableMatcher
 {
-    factory.registerFunction<FunctionSanityCheck>();
+    struct Data
+    {
+        std::string current_database_name;
+        std::string replace_database_name;
+    };
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * t = ast->as<ASTTablesInSelectQueryElement>())
+            visit(*t, data);
+    }
+
+    static void visit(ASTTablesInSelectQueryElement & elem, Data & data)
+    {
+        if (!elem.table_expression)
+            return;
+
+        auto * ast_table_expression = elem.table_expression->as<ASTTableExpression>();
+        if (!ast_table_expression)
+            return;
+
+        if (!ast_table_expression->database_and_table_name)
+            return;
+
+        auto * identifier = ast_table_expression->database_and_table_name->as<ASTTableIdentifier>();
+        if (!identifier)
+            return;
+
+        std::string cur_db;
+        std::string cur_table;
+
+        if (identifier->compound())
+        {
+            cur_db = identifier->name_parts[0];
+            cur_table = identifier->name_parts[1];
+        }
+        else
+        {
+            cur_db = data.current_database_name;
+            cur_table = identifier->name_parts[0];
+        }
+
+        auto qualified_identifier = std::make_shared<ASTTableIdentifier>(data.replace_database_name, cur_db + "_" + cur_table);
+        if (!identifier->alias.empty())
+            qualified_identifier->setAlias(identifier->alias);
+        ast_table_expression->database_and_table_name = qualified_identifier;
+    }
+};
+
+using ReplaceDatabaseAndTablVisitor = InDepthNodeVisitor<ReplaceDatabaseAndTableMatcher, true>;
+
+class FunctionRunMultipleQueries : public IFunction
+{
+public:
+    static constexpr auto name = "runMultipleQueries";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        auto fn = std::make_shared<FunctionRunMultipleQueries>();
+        fn->cur_context = Context::createCopy(context);
+        // fn->cur_context->setSetting("allow_experimental_object_type", 1);
+        // fn->cur_context->setSetting("allow_suspicious_low_cardinality_types", 1);
+        // fn->cur_context->setSetting("allow_experimental_annoy_index", 1);
+        // fn->cur_context->setSetting("allow_deprecated_database_ordinary", 1);
+        return fn;
+    }
+
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Get the name of the function.
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 3;
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        WhichDataType lhs_uuid(arguments[0].type.get());
+        if (!lhs_uuid.isUUID())
+            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First agrument (uuid) of function {} is expected to be UUID but got {}",
+                getName(), arguments[0].type->getName());
+
+        WhichDataType rhs_str(arguments[1].type.get());
+        if (!rhs_str.isString())
+            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second agrument (table schema) of function {} is expected to be String but got {}",
+                getName(), arguments[1].type->getName());
+
+        WhichDataType rhs_str2(arguments[2].type.get());
+        if (!rhs_str2.isString())
+            throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Third agrument (current database) of function {} is expected to be String but got {}",
+                getName(), arguments[2].type->getName());
+
+        return std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt32>()});
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        const auto * col_uuid =  typeid_cast<const ColumnUUID *>(arguments[0].column.get());
+        const auto * col_string = typeid_cast<const ColumnString *>(arguments[1].column.get());
+        if (!col_uuid)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column string, got {}", arguments[0].column->getName());
+        if (!col_string)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column string, got {}", arguments[1].column->getName());
+
+        std::unordered_set<std::string> databases;
+
+        auto * log = &Poco::Logger::get("runMultipleQueries");
+
+        auto res_err = ColumnUInt32::create();
+        auto res_message = ColumnString::create();
+
+        auto context = Context::createCopy(cur_context);
+
+        size_t size = input_rows_count;
+        for (size_t ps = 0; ps < size; ++ps)
+        {
+            UUID uuid = col_uuid->getData()[ps];
+            String database_name = "db_" + toString(uuid);
+
+            auto query = col_string->getDataAt(ps);
+            if (query.size == 0)
+            {
+                res_err->getData().emplace_back(0);
+                res_message->insertDefault();
+                continue;
+            }
+
+            ParserQuery parser(query.data + query.size, false);
+            ASTPtr ast = parseQuery(parser, query.data, query.data + query.size, "", 1000000, 1000);
+
+            ASTSelectWithUnionQuery * ast_select = ast->as<ASTSelectWithUnionQuery>();
+            if (!ast_select)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query {} is not select query", query);
+
+            try
+            {
+                context->setCurrentDatabase(database_name);
+                ReplaceDatabaseAndTablVisitor::Data data;
+                data.current_database_name = "default";
+                data.replace_database_name = database_name;
+                ReplaceDatabaseAndTablVisitor(data).visit(ast);
+
+                InterpreterSelectWithUnionQuery interpreter(ast, context, SelectQueryOptions{});
+                BlockIO io = interpreter.execute();
+
+                PullingPipelineExecutor executor(io.pipeline);
+                Chunk chunk;
+                size_t num_rows = 0;
+                while (executor.pull(chunk))
+                {
+                    num_rows += chunk.getNumRows();
+                }
+
+                LOG_TRACE(log, "Read {} rows. Query : {}", num_rows, queryToString(ast));
+                res_err->getData().emplace_back(0);
+                res_message->insertDefault();
+            }
+            catch (DB::Exception & e)
+            {
+                LOG_TRACE(log, "Excpetion while executing query : {}", queryToString(ast));
+                res_err->getData().emplace_back(e.code());
+                const auto & msg = e.message();
+                res_message->insertData(msg.data(), msg.size());
+            }
+        }
+
+        return ColumnTuple::create(Columns{std::move(res_message), std::move(res_err)});
+    }
+
+    ContextMutablePtr cur_context;
+};
+
+REGISTER_FUNCTION(CreateMultipleTables)
+{
+    factory.registerFunction<FunctionCreateMultipleTables>();
+    factory.registerFunction<FunctionRunMultipleQueries>();
 }
 
 }
