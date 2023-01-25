@@ -96,7 +96,6 @@ class Release:
 
         # Get the actual version for the commit before check
         with self._checkout(self.release_commit, True):
-            self.read_version()
             self.release_branch = f"{self.version.major}.{self.version.minor}"
 
         self.read_version()
@@ -262,7 +261,6 @@ class Release:
         self.read_version()
         with self._create_branch(self.release_branch, self.release_commit):
             with self._checkout(self.release_branch, True):
-                self.read_version()
                 self.version.with_description(self.get_stable_release_type())
                 with self._create_gh_release(False):
                     with self._bump_release_branch():
@@ -402,6 +400,8 @@ class Release:
             self.run(f"git checkout {ref}")
             # checkout is not put into rollback_stack intentionally
             rollback_cmd = f"git checkout {orig_ref}"
+            # always update version and git after checked out ref
+            self.read_version()
         try:
             yield
         except (Exception, KeyboardInterrupt):
