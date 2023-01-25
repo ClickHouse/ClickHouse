@@ -283,7 +283,7 @@ With `indexes` = 1, the `Indexes` key is added. It contains an array of used ind
 -   `Initial Parts` — A number of parts before the index is applied.
 -   `Selected Parts` — A number of parts after the index is applied.
 -   `Initial Granules` — A number of granules before the index is applied.
--   `Selected Granulesis` — A number of granules after the index is applied.
+-   `Selected Granules` — A number of granules after the index is applied.
 
 Example:
 
