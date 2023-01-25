@@ -73,7 +73,7 @@ public:
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
 
         if (!c0_const_string)
-            throw Exception("First argument of function " + getName() + " must be constant string", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be constant string", getName());
 
         String pattern = c0_const_string->getValue<String>();
 
@@ -106,8 +106,8 @@ public:
                 constant_strings[i - 1] = const_col->getValue<String>();
             }
             else
-                throw Exception(
-                    "Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                    column->getName(), getName());
         }
 
         FormatImpl::formatExecute(

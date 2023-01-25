@@ -413,7 +413,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
     if (!select && !external_tables.empty())
-        throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
 
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
@@ -595,7 +595,7 @@ try
             if (query_with_output->format != nullptr)
             {
                 if (has_vertical_output_suffix)
-                    throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
+                    throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
             }
@@ -1170,10 +1170,9 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             default:
-                throw NetException(
-                    "Unexpected packet from server (expected Data, Exception or Log, got "
-                        + String(Protocol::Server::toString(packet.type)) + ")",
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Unexpected packet from server (expected Data, Exception or Log, got {})",
+                    String(Protocol::Server::toString(packet.type)));
         }
     }
 }
@@ -1213,7 +1212,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         const auto & settings = global_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
-            throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+            throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
         else
             return;
     }
@@ -1256,7 +1255,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     auto columns_description_for_query = columns_description.empty() ? ColumnsDescription(sample.getNamesAndTypesList()) : columns_description;
     if (columns_description_for_query.empty())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Column description is empty and it can't be built from sample from table. "
+                        "Cannot execute query.");
     }
 
     /// If INSERT data must be sent.
@@ -1374,7 +1375,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else
-        throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+        throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
 }
 
 
@@ -1514,10 +1515,9 @@ bool ClientBase::receiveEndOfQuery()
                 break;
 
             default:
-                throw NetException(
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got "
-                        + String(Protocol::Server::toString(packet.type)) + ")",
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
+                    String(Protocol::Server::toString(packet.type)));
         }
     }
 }
@@ -1622,7 +1622,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
             if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
 
             processInsertQuery(query_to_execute, parsed_query);
         }
@@ -2068,9 +2068,9 @@ void ClientBase::initQueryIdFormats()
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
-        throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "query_id could be specified only in non-interactive mode");
     if (print_time_to_stderr)
-        throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "time option could be specified only in non-interactive mode");
 
     initQueryIdFormats();
 
@@ -2312,7 +2312,8 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     {
         auto hints = this->getHints(unrecognized_options[0]);
         if (!hints.empty())
-            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}", unrecognized_options[0], toString(hints));
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}",
+                            unrecognized_options[0], toString(hints));
 
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
     }

@@ -92,7 +92,7 @@ public:
             }
 
             if (!subquery_or_table_name)
-                throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
+                throw Exception(ErrorCodes::WRONG_GLOBAL_SUBQUERY, "Global subquery requires subquery or table name");
 
             if (is_table)
             {
