@@ -34,13 +34,13 @@ QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 void QueryPlan::checkInitialized() const
 {
     if (!isInitialized())
-        throw Exception("QueryPlan was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was not initialized");
 }
 
 void QueryPlan::checkNotCompleted() const
 {
     if (isCompleted())
-        throw Exception("QueryPlan was already completed", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was already completed");
 }
 
 bool QueryPlan::isCompleted() const
@@ -58,8 +58,7 @@ const DataStream & QueryPlan::getCurrentDataStream() const
 void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
-        throw Exception("Cannot unite plans because current QueryPlan is already initialized",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
 
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();

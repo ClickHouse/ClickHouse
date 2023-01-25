@@ -132,7 +132,7 @@ namespace
                 return {uri.substr(pos), uri.substr(0, pos)};
         }
 
-        throw Exception("Storage HDFS requires valid URL to be set", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage HDFS requires valid URL to be set");
     }
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)
@@ -204,9 +204,8 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
-            "specify table structure manually",
-            format);
+            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path."
+            " You must specify table structure manually", format);
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
@@ -717,8 +716,9 @@ void registerStorageHDFS(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.empty() || engine_args.size() > 3)
-            throw Exception(
-                "Storage HDFS requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage HDFS requires 1, 2 or 3 arguments: "
+                            "url, name of used format (taken from file extension by default) and optional compression method.");
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 

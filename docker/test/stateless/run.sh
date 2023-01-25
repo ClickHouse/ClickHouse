@@ -128,8 +128,9 @@ function run_tests()
 
     if [[ "${HIGH_LEVEL_COVERAGE}" = "YES" ]]; then
         ADDITIONAL_OPTIONS+=('--report-coverage')
-        ADDITIONAL_OPTIONS+=('--report-logs-stats')
     fi
+
+    ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
