@@ -160,7 +160,7 @@ static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function
         if (table_function_ast->name == "input")
         {
             if (input_function)
-                throw Exception("You can use 'input()' function only once per request.", ErrorCodes::INVALID_USAGE_OF_INPUT);
+                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "You can use 'input()' function only once per request.");
             input_function = ast;
         }
     }

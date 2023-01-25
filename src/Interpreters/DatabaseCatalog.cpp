@@ -136,7 +136,7 @@ StoragePtr TemporaryTableHolder::getTable() const
 {
     auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
     if (!table)
-        throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary table {} not found", getGlobalTableID().getNameForLogs());
     return table;
 }
 
@@ -268,7 +268,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         {
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
-                exception->emplace(fmt::format("Table {} doesn't exist", table_id.getNameForLogs()), ErrorCodes::UNKNOWN_TABLE);
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
             return {};
         }
 
@@ -317,7 +317,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
     auto table = database->tryGetTable(table_id.table_name, context_);
     if (!table && exception)
-            exception->emplace(fmt::format("Table {} doesn't exist", table_id.getNameForLogs()), ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs()));
     if (!table)
         database = nullptr;
 
@@ -382,7 +382,7 @@ void DatabaseCatalog::assertDatabaseExistsUnlocked(const String & database_name)
 {
     assert(!database_name.empty());
     if (databases.end() == databases.find(database_name))
-        throw Exception("Database " + backQuoteIfNeed(database_name) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(database_name));
 }
 
 
@@ -390,7 +390,7 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
 {
     assert(!database_name.empty());
     if (databases.end() != databases.find(database_name))
-        throw Exception("Database " + backQuoteIfNeed(database_name) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", backQuoteIfNeed(database_name));
 }
 
 void DatabaseCatalog::attachDatabase(const String & database_name, const DatabasePtr & database)
@@ -409,7 +409,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
     if (database_name == TEMPORARY_DATABASE)
-        throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot detach database with temporary tables.");
 
     DatabasePtr db;
     {
@@ -427,8 +427,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         try
         {
             if (!db->empty())
-                throw Exception("New table appeared in database being dropped or detached. Try again.",
-                                ErrorCodes::DATABASE_NOT_EMPTY);
+                throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "New table appeared in database being dropped or detached. Try again.");
             if (!drop)
                 db->assertCanBeDetached(false);
         }
@@ -500,7 +499,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const UUID & uuid) const
 {
     auto db_and_table = tryGetByUUID(uuid);
     if (!db_and_table.first || db_and_table.second)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database UUID {} does not exist", toString(uuid));
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database UUID {} does not exist", uuid);
     return db_and_table.first;
 }
 
@@ -544,7 +543,7 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr co
 void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, ContextPtr context_) const
 {
     if (isTableExist(table_id, context_))
-        throw Exception("Table " + table_id.getNameForLogs() + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id);
 }
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
@@ -590,11 +589,11 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
 
     /// We are trying to replace existing mapping (prev_database != nullptr), it's logical error
     if (database || table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", toString(uuid));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} already exists", uuid);
     /// Normally this should never happen, but it's possible when the same UUIDs are explicitly specified in different CREATE queries,
     /// so it's not LOGICAL_ERROR
     throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Mapping for table with UUID={} already exists. It happened due to UUID collision, "
-                    "most likely because some not random UUIDs were manually specified in CREATE queries.", toString(uuid));
+                    "most likely because some not random UUIDs were manually specified in CREATE queries.", uuid);
 }
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
@@ -604,7 +603,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
     it->second = {};
 }
 
@@ -614,7 +613,7 @@ void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     if (!map_part.map.erase(uuid))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
 }
 
 void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
@@ -625,7 +624,7 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", toString(uuid));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
     auto & prev_database = it->second.first;
     auto & prev_table = it->second.second;
     assert(prev_database && prev_table);
@@ -655,8 +654,7 @@ DatabaseCatalog & DatabaseCatalog::init(ContextMutablePtr global_context_)
 {
     if (database_catalog)
     {
-        throw Exception("Database catalog is initialized twice. This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database catalog is initialized twice. This is a bug.");
     }
 
     database_catalog.reset(new DatabaseCatalog(global_context_));
@@ -668,8 +666,7 @@ DatabaseCatalog & DatabaseCatalog::instance()
 {
     if (!database_catalog)
     {
-        throw Exception("Database catalog is not initialized. This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database catalog is not initialized. This is a bug.");
     }
 
     return *database_catalog;
@@ -729,7 +726,7 @@ DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String &
     return std::make_unique<DDLGuard>(db_guard.first, db_guard.second, std::move(lock), table, database);
 }
 
-std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
+std::unique_lock<SharedMutex> DatabaseCatalog::getExclusiveDDLGuardForDatabase(const String & database)
 {
     DDLGuards::iterator db_guard_iter;
     {
@@ -1282,7 +1279,7 @@ TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (Tempo
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
+DDLGuard::DDLGuard(Map & map_, SharedMutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
