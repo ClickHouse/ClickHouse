@@ -1869,6 +1869,19 @@ def reportLogStats(args):
     print(value)
     print("\n")
 
+    query = """
+        SELECT message_format_string, count(), any(message) AS any_message
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(120)) < event_time
+        AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
+        AND (message NOT LIKE concat('%Exception: ', s, '%'))
+        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages that does not match its format string:\n")
+    print(value)
+    print("\n")
+
 
 def main(args):
     global server_died
