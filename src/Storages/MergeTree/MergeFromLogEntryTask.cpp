@@ -109,10 +109,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
-            constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
+            constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
+            String message;
+            LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, message);
 
             return PrepareResult{
                 .prepared_successfully = false,
@@ -173,8 +174,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
     if (future_merged_part->name != entry.new_part_name)
     {
-        throw Exception("Future merged part name " + backQuote(future_merged_part->name) + " differs from part name in log entry: "
-            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
+            backQuote(future_merged_part->name), backQuote(entry.new_part_name));
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;

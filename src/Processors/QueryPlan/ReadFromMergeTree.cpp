@@ -581,8 +581,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 while (need_marks > 0)
                 {
                     if (part.ranges.empty())
-                        throw Exception("Unexpected end of ranges while spreading marks among streams",
-                                        ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
 
                     MarkRange & range = part.ranges.front();
 
@@ -952,7 +951,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
 
-        if (context->getSettingsRef().allow_experimental_analyzer)
+        if (settings.allow_experimental_analyzer)
         {
             const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
             for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())

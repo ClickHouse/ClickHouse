@@ -110,6 +110,13 @@ public:
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
 
+    /** Get a deep copy of the query tree.
+      * If node to clone is key in replacement map, then instead of clone it
+      * use value node from replacement map.
+      */
+    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
+    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
+
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const
     {

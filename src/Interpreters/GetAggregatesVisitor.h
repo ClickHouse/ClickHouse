@@ -66,8 +66,8 @@ private:
         if (isAggregateFunction(node))
         {
             if (data.assert_no_aggregates)
-                throw Exception("Aggregate function " + node.getColumnName()  + " is found " + String(data.assert_no_aggregates) + " in query",
-                                ErrorCodes::ILLEGAL_AGGREGATION);
+                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query",
+                                node.getColumnName(), String(data.assert_no_aggregates));
 
             String column_name = node.getColumnName();
             if (data.uniq_names.count(column_name))
@@ -79,8 +79,8 @@ private:
         else if (node.is_window_function)
         {
             if (data.assert_no_windows)
-                throw Exception("Window function " + node.getColumnName()  + " is found " + String(data.assert_no_windows) + " in query",
-                                ErrorCodes::ILLEGAL_AGGREGATION);
+                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
+                                node.getColumnName(), String(data.assert_no_windows));
 
             String column_name = node.getColumnName();
             if (data.uniq_names.count(column_name))

@@ -207,7 +207,7 @@ private:
         {
             // Fuse points if their text representations differ only in last digit
             auto min_diff = 10 * (points[left].mean + points[right].mean) * std::numeric_limits<Mean>::epsilon();
-            if (points[left].mean + min_diff >= points[right].mean)
+            if (points[left].mean + std::fabs(min_diff) >= points[right].mean)
             {
                 points[left] = points[left] + points[right];
             }
@@ -256,7 +256,7 @@ public:
         // nans break sort and compression
         // infs don't fit in bins partition method
         if (!isFinite(value))
-            throw Exception("Invalid value (inf or nan) for aggregation by 'histogram' function", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value (inf or nan) for aggregation by 'histogram' function");
 
         points[size] = {value, weight};
         ++size;
@@ -291,7 +291,7 @@ public:
 
         readVarUInt(size, buf);
         if (size > max_bins * 2)
-            throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many bins");
 
         buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }

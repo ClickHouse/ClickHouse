@@ -93,7 +93,7 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
         catch (...)
         {
             init_was_not_made = true;
-            LOG_ERROR(log, fmt::runtime(getCurrentExceptionMessage(false)));
+            LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
         }
     }
 }

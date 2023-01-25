@@ -7,31 +7,33 @@ import logging
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import List, Tuple
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
-from download_release_packages import download_last_release
-from upload_result_helper import upload_results
-from docker_pull_helper import get_images_with_versions
-from commit_status_helper import (
-    post_commit_status,
-    override_status,
-    post_commit_status_to_file,
-)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from stopwatch import Stopwatch
+from commit_status_helper import (
+    post_commit_status,
+    override_status,
+    post_commit_status_to_file,
+)
+from docker_pull_helper import get_images_with_versions
+from download_release_packages import download_last_release
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, read_test_results
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 
 # When update, update
@@ -90,8 +92,8 @@ def get_env_for_runner(build_path, repo_path, result_path, work_path):
 
 def process_results(
     result_folder: str,
-) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
-    test_results = []  # type: List[Tuple[str, str]]
+) -> Tuple[str, str, TestResults, List[str]]:
+    test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of result_folder.
@@ -115,10 +117,8 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = os.path.join(result_folder, "test_results.tsv")
-    if os.path.exists(results_path):
-        with open(results_path, "r", encoding="utf-8") as results_file:
-            test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
+    results_path = Path(result_folder) / "test_results.tsv"
+    test_results = read_test_results(results_path, False)
     if len(test_results) == 0:
         return "error", "Empty test_results.tsv", test_results, additional_files
 
@@ -142,7 +142,7 @@ def parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -271,7 +271,6 @@ if __name__ == "__main__":
         test_results,
         [output_path_log] + additional_logs,
         check_name_with_group,
-        False,
     )
 
     print(f"::notice:: {check_name} Report url: {report_url}")
@@ -303,5 +302,9 @@ if __name__ == "__main__":
 
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "error":
+    if state == "failure":
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
