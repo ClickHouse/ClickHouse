@@ -171,8 +171,7 @@ String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
 {
     WriteBufferFromOwnString buf;
 
-    FormatSettings settings{buf, one_line};
-    settings.show_secrets = false;
+    FormatSettings settings{buf, one_line, false};
     format(settings);
 
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
@@ -249,6 +248,11 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
             break;
         }
     }
+}
+
+void IAST::FormatSettings::outputSecret(const String & secret) const
+{
+    ostr << (should_show_secrets ? secret : "'[HIDDEN]'");
 }
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const

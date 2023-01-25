@@ -185,25 +185,32 @@ public:
         bool one_line;
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
-        bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
+    private:
+        const bool should_show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
+    public:
         // Newline or whitespace.
         char nl_or_ws;
 
-        FormatSettings(WriteBuffer & ostr_, bool one_line_)
-            : ostr(ostr_), one_line(one_line_)
+        FormatSettings(WriteBuffer & ostr_, bool one_line_, bool should_show_secrets_ = true)
+            : ostr(ostr_), one_line(one_line_), should_show_secrets(should_show_secrets_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style)
+            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
+            should_show_secrets(other.should_show_secrets)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
         void writeIdentifier(const String & name) const;
+
+        bool shouldShowSecrets() const { return should_show_secrets; }
+
+        void outputSecret(const String & secret = "") const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
