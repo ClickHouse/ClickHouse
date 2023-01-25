@@ -30,7 +30,10 @@ struct QueryPlanOptimizationSettings
     /// If aggregation-in-order optimisation is enabled
     bool aggregation_in_order = false;
 
-    /// true if removing redundant DISTINCT clauses is enabled
+    /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
+    bool remove_redundant_sorting = true;
+
+    /// If removing redundant distinct steps is enabled
     bool remove_redundant_distinct = true;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);

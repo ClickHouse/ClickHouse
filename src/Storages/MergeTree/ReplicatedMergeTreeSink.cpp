@@ -274,10 +274,10 @@ ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl() = defa
 static void assertSessionIsNotExpired(const zkutil::ZooKeeperPtr & zookeeper)
 {
     if (!zookeeper)
-        throw Exception("No ZooKeeper session.", ErrorCodes::NO_ZOOKEEPER);
+        throw Exception(ErrorCodes::NO_ZOOKEEPER, "No ZooKeeper session.");
 
     if (zookeeper->expired())
-        throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
+        throw Exception(ErrorCodes::NO_ZOOKEEPER, "ZooKeeper session has been expired.");
 }
 
 template<bool async_insert>
@@ -341,7 +341,7 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
     auto host = get_results[1];
 
     if (is_active.error == Coordination::Error::ZNONODE || host.error == Coordination::Error::ZNONODE)
-        throw Exception("Replica is not active right now", ErrorCodes::READONLY);
+        throw Exception(ErrorCodes::READONLY, "Replica is not active right now");
 
     quorum_info.is_active_node_version = is_active.stat.version;
     quorum_info.host_node_version = host.stat.version;
@@ -395,7 +395,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         if (const auto * chunk_offsets_ptr = typeid_cast<const ChunkOffsets *>(chunk_info.get()))
             chunk_offsets = std::make_shared<ChunkOffsets>(chunk_offsets_ptr->offsets);
         else
-            throw Exception("No chunk info for async inserts", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No chunk info for async inserts");
     }
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context, chunk_offsets);
@@ -861,7 +861,9 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             block_id_path.clear();
         }
         else
-            throw Exception("Conflict block ids and block number lock should not be empty at the same time for async inserts", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Conflict block ids and block number lock should not "
+                            "be empty at the same time for async inserts");
 
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
@@ -1000,7 +1002,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                 if (loop_counter == max_iterations)
                 {
                     part->is_duplicate = true; /// Part is duplicate, just remove it from local FS
-                    throw Exception("Too many transaction retries - it may indicate an error", ErrorCodes::DUPLICATE_DATA_PART);
+                    throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Too many transaction retries - it may indicate an error");
                 }
                 retries_ctl.requestUnconditionalRetry(); /// we want one more iteration w/o counting it as a try and timeout
                 return;
@@ -1021,7 +1023,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
                 /// So make it temporary to avoid its resurrection on restart
                 rename_part_to_temporary();
 
-                throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+                throw Exception(ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE, "Another quorum insert has been already started");
             }
             else
             {
@@ -1125,7 +1127,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
                 break;
 
             if (!event->tryWait(quorum_timeout_ms))
-                throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for quorum");
 
             LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
         }
@@ -1136,14 +1138,14 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
         String value;
         if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat)
             || stat.version != is_active_node_version)
-            throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
+            throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "Replica become inactive while waiting for quorum");
     }
     catch (...)
     {
         /// We do not know whether or not data has been inserted
         /// - whether other replicas have time to download the part and mark the quorum as done.
-        throw Exception("Unknown status, client must retry. Reason: " + getCurrentExceptionMessage(false),
-            ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
+        throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Unknown status, client must retry. Reason: {}",
+            getCurrentExceptionMessage(false));
     }
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
