@@ -372,33 +372,45 @@ Configure your ClickHouse server by adding a disk of type `s3_plain`.  Here is a
 <clickhouse>
     <storage_configuration>
         <disks>
-            <!-- NOTE: backup_disk_s3_plain is used to write backups to -->
             <backup_disk_s3_plain>
                 <type>s3_plain</type>
                 <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/</endpoint>
-                <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
-                <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
+                <access_key_id>Your AWS Access Key</access_key_id>
+                <secret_access_key>Your AWS Secret Key</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
             </backup_disk_s3_plain>
-            <!-- NOTE: s3_ro_backup is used to read from when the backup is attached -->
-            <s3_ro_backup>
+            <s3_backup_compact>
                 <type>s3_plain</type>
-                <!-- NOTE: /backup_25Jan23/ is a name of BACKUP -->
-                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/backup_25Jan23/</endpoint>
-                <access_key_id>ABCDEFGHIJKLMNOPQRST</access_key_id>
-                <secret_access_key>+abcABCde8FGHI3jkLM3oNoPQrStU7V6wX96yzaB</secret_access_key>
+                <!-- NOTE: /backup_compact/ is a name of BACKUP -->
+                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/backup_compact/</endpoint>
+                <access_key_id>Your AWS Access Key</access_key_id>
+                <secret_access_key>Your AWS Secret Key</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
-            </s3_ro_backup>
+            </s3_backup_compact>
+            <s3_backup_wide>
+                <type>s3_plain</type>
+                <!-- NOTE: /backup_wide/ is a name of BACKUP -->
+                <endpoint>https://s3-backup-for-read-only-table.s3.amazonaws.com/tables/backup_wide/</endpoint>
+                <access_key_id>Your AWS Access Key</access_key_id>
+                <secret_access_key>Your AWS Secret Key</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </s3_backup_wide>
         </disks>
         <policies>
-            <!-- NOTE: using storage policy s3_backup allows s3_ro_backup to be attached -->
-            <s3_backup>
+            <s3_backup_compact>
                 <volumes>
                     <main>
-                        <disk>s3_ro_backup</disk>
+                        <disk>s3_backup_compact</disk>
                     </main>
                 </volumes>
-            </s3_backup>
+            </s3_backup_compact>
+            <s3_backup_wide>
+                <volumes>
+                    <main>
+                        <disk>s3_backup_wide</disk>
+                    </main>
+                </volumes>
+            </s3_backup_wide>
         </policies>
     </storage_configuration>
     <backups>
@@ -428,7 +440,7 @@ This will create a table in the `ordinary_db` database that has five partitions:
 - the table is partitioned on the column `part`
 
 ```sql
-CREATE TABLE ordinary_db.table_name
+CREATE TABLE ordinary_db.compact
 ENGINE = MergeTree
 PARTITION BY part
 ORDER BY key AS
@@ -439,9 +451,10 @@ FROM numbers(100)
 ```
 
 ### Backup the table to S3
-This example uses the `s3_plain` destination [configured above](#add-a-storage-configuration).
 ```sql
-BACKUP TABLE ordinary_db.table_name TO Disk('backup_disk_s3_plain', 'backup_25Jan23') SETTINGS deduplicate_files = 0
+BACKUP TABLE ordinary_db.compact
+TO Disk('backup_disk_s3_plain', 'backup_compact')
+SETTINGS deduplicate_files = 0
 ```
 ```response
 ┌─id───────────────────────────────────┬─status─────────┐
@@ -453,18 +466,18 @@ BACKUP TABLE ordinary_db.table_name TO Disk('backup_disk_s3_plain', 'backup_25Ja
 
 ### Examine the way data is stored in S3
 
-Navigate to the bucket and locate the folder for the backup, in the example it is named `backup_25Jan23`.
+Navigate to the bucket and locate the folder for the backup.
 
 ![folder contents in S3](@site/docs/en/operations/images/backup-for-RO-attach-one-partition.png)
 
 ### Drop the table
 ```sql
-drop table ordinary_db.table_name;
+DROP TABLE ordinary_db.compact
 ```
 
 ### Attach the backup
 ```sql
-ATTACH TABLE ordinary_db.table_name
+ATTACH TABLE ordinary_db.compact
 (
     `part` UInt8,
     `key` UInt64
@@ -472,7 +485,131 @@ ATTACH TABLE ordinary_db.table_name
 ENGINE = MergeTree
 PARTITION BY part
 ORDER BY key
-SETTINGS storage_policy = 's3_backup'
+SETTINGS min_bytes_for_wide_part = 1000000000,
+max_suspicious_broken_parts = 0,
+#highlight-next-line
+storage_policy = 's3_backup_compact'
+```
+
+### Verify the content
+
+```sql
+SELECT *
+FROM ordinary_db.compact
+```
+```response
+┌─part─┬─key─┐
+│    1 │   1 │
+│    1 │   6 │
+│    1 │  11 │
+│    1 │  16 │
+│    1 │  21 │
+│    1 │  26 │
+│    1 │  31 │
+│    1 │  36 │
+│    1 │  41 │
+│    1 │  46 │
+│    1 │  51 │
+│    1 │  56 │
+│    1 │  61 │
+│    1 │  66 │
+│    1 │  71 │
+│    1 │  76 │
+│    1 │  81 │
+│    1 │  86 │
+│    1 │  91 │
+│    1 │  96 │
+└──────┴─────┘
+┌─part─┬─key─┐
+│    2 │   2 │
+│    2 │   7 │
+│    2 │  12 │
+│    2 │  17 │
+│    2 │  22 │
+│    2 │  27 │
+│    2 │  32 │
+│    2 │  37 │
+│    2 │  42 │
+│    2 │  47 │
+│    2 │  52 │
+│    2 │  57 │
+│    2 │  62 │
+│    2 │  67 │
+│    2 │  72 │
+│    2 │  77 │
+│    2 │  82 │
+│    2 │  87 │
+│    2 │  92 │
+│    2 │  97 │
+└──────┴─────┘
+┌─part─┬─key─┐
+│    0 │   0 │
+│    0 │   5 │
+│    0 │  10 │
+│    0 │  15 │
+│    0 │  20 │
+│    0 │  25 │
+│    0 │  30 │
+│    0 │  35 │
+│    0 │  40 │
+│    0 │  45 │
+│    0 │  50 │
+│    0 │  55 │
+│    0 │  60 │
+│    0 │  65 │
+│    0 │  70 │
+│    0 │  75 │
+│    0 │  80 │
+│    0 │  85 │
+│    0 │  90 │
+│    0 │  95 │
+└──────┴─────┘
+┌─part─┬─key─┐
+│    4 │   4 │
+│    4 │   9 │
+│    4 │  14 │
+│    4 │  19 │
+│    4 │  24 │
+│    4 │  29 │
+│    4 │  34 │
+│    4 │  39 │
+│    4 │  44 │
+│    4 │  49 │
+│    4 │  54 │
+│    4 │  59 │
+│    4 │  64 │
+│    4 │  69 │
+│    4 │  74 │
+│    4 │  79 │
+│    4 │  84 │
+│    4 │  89 │
+│    4 │  94 │
+│    4 │  99 │
+└──────┴─────┘
+┌─part─┬─key─┐
+│    3 │   3 │
+│    3 │   8 │
+│    3 │  13 │
+│    3 │  18 │
+│    3 │  23 │
+│    3 │  28 │
+│    3 │  33 │
+│    3 │  38 │
+│    3 │  43 │
+│    3 │  48 │
+│    3 │  53 │
+│    3 │  58 │
+│    3 │  63 │
+│    3 │  68 │
+│    3 │  73 │
+│    3 │  78 │
+│    3 │  83 │
+│    3 │  88 │
+│    3 │  93 │
+│    3 │  98 │
+└──────┴─────┘
+
+100 rows in set. Elapsed: 1.115 sec. 
 ```
 
 ## Alternatives
