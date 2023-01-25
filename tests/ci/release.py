@@ -178,6 +178,10 @@ class Release:
 
         with self._checkout(self.release_commit, True):
             if self.release_type in self.BIG:
+                if self._version.minor >= 12 and self.release_type != "major":
+                    raise ValueError(
+                        "The relese type must be 'major' for minor versions>=12"
+                    )
                 # Checkout to the commit, it will provide the correct current version
                 if with_release_branch:
                     with self.create_release_branch():
