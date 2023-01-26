@@ -19,7 +19,7 @@ static std::mutex init_sqlite_db_mutex;
 void processSQLiteError(const String & message, bool throw_on_error)
 {
     if (throw_on_error)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, message);
+        throw Exception::createDeprecated(message, ErrorCodes::PATH_ACCESS_DENIED);
     else
         LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), fmt::runtime(message));
 }

@@ -110,7 +110,7 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
     /// Add path from root to file name
     int res = hdfsDelete(hdfs_fs.get(), path.substr(begin_of_path).c_str(), 0);
     if (res == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 
 }
 

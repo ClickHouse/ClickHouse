@@ -1931,12 +1931,26 @@ def reportLogStats(args):
         FROM system.text_log
         WHERE (now() - toIntervalMinute(120)) < event_time
             AND (length(message_format_string) < 16
-                OR (length(message_format_string) < 16 AND message ilike '%DB::Exception%'))
+                OR (length(message_format_string) < 30 AND message ilike '%DB::Exception%'))
             AND message_format_string NOT IN known_short_messages
         GROUP BY message_format_string ORDER BY c DESC LIMIT 30 FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        SELECT max((freq, message_format_string)), level
+        FROM (SELECT count() / (SELECT count() FROM system.text_log
+              WHERE (now() - toIntervalMinute(120)) < event_time) AS freq,
+              min(level) AS level, message_format_string FROM system.text_log
+              WHERE (now() - toIntervalMinute(120)) < event_time
+              GROUP BY message_format_string ORDER BY freq DESC)
+        GROUP BY level
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages by level:\n")
     print(value)
     print("\n")
 

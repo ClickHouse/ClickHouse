@@ -771,7 +771,7 @@ namespace MySQLReplication
                     }
                     default:
                         throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION,
-                            "ParseRow: Unhandled MySQL field type: {}" + std::to_string(field_type));
+                            "ParseRow: Unhandled MySQL field type: {}", std::to_string(field_type));
                 }
             }
             null_index++;
