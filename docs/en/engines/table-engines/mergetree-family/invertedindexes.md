@@ -31,7 +31,14 @@ SET allow_experimental_inverted_index = true;
 An inverted index can be defined on a string column using the following syntax
 
 ``` sql
-CREATE TABLE tab (key UInt64, str String, INDEX inv_idx(s) TYPE inverted(N) GRANULARITY 1) Engine=MergeTree ORDER BY (k);
+CREATE TABLE tab
+(
+    `key` UInt64,
+    `str` String,
+    INDEX inv_idx(str) TYPE inverted(0) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY key
 ```
 
 where `N` specifies the tokenizer:
