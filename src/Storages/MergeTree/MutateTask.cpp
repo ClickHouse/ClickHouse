@@ -698,6 +698,12 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
+    /// This line should not be here because at that moment
+    /// of executing of mutation all projections should be loaded.
+    /// But unfortunately without it some tests fail.
+    /// TODO: fix.
+    new_data_part->loadProjections(false, false);
+
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
