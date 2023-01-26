@@ -483,6 +483,50 @@ Header: toTypeName(sum(v)) String
             Header: dummy UInt8
 -- execute
 Float64	9007199254740994
+-- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
+-- query
+SELECT
+    toTypeName(sum(v)),
+    sum(v)
+FROM
+(
+    SELECT v
+    FROM
+    (
+        SELECT '9007199254740992'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+    )
+    ORDER BY v ASC
+)
+-- explain
+Expression ((Projection + Before ORDER BY))
+Header: toTypeName(sum(v)) String
+        sum(v) Nullable(Float64)
+  Aggregating
+  Header: sum(v) Nullable(Float64)
+    Expression ((Before GROUP BY + Projection))
+    Header: v Nullable(Float64)
+      Sorting (Sorting for ORDER BY)
+      Header: v Nullable(Float64)
+        Union
+        Header: v Nullable(Float64)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+-- execute
+Nullable(Float64)	9007199254740994
 -- sumCount() with Floats depends on order, -> sorting is not removed here
 -- query
 SELECT
