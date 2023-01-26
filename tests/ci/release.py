@@ -167,9 +167,7 @@ class Release:
 
         self.check_commit_release_ready()
 
-    def do(
-        self, check_dirty: bool, check_branch: bool, with_release_branch: bool
-    ) -> None:
+    def do(self, check_dirty: bool, check_branch: bool) -> None:
         self.check_prerequisites()
 
         if check_dirty:
@@ -195,27 +193,22 @@ class Release:
 
             with self._checkout(self.release_commit, True):
                 # Checkout to the commit, it will provide the correct current version
-                if with_release_branch:
+                with self.testing():
                     with self.create_release_branch():
-                        logging.info("Prestable part of the releasing is done")
-                else:
-                    logging.info("Skipping creating release branch stage")
-
-                rollback = self._rollback_stack.copy()
-                try:
-                    with self.testing():
-                        logging.info("Testing part of the releasing is done")
-                except (Exception, KeyboardInterrupt):
-                    logging.fatal("Testing part failed, rollback previous steps")
-                    rollback.reverse()
-                    for cmd in rollback:
-                        self.run(cmd)
-                    raise
+                        logging.info(
+                            "Publishing release %s from commit %s is done",
+                            self.release_version.describe,
+                            self.release_commit,
+                        )
 
         elif self.release_type in self.SMALL:
             with self._checkout(self.release_commit, True):
                 with self.stable():
-                    logging.info("Stable part of the releasing is done")
+                    logging.info(
+                        "Publishing release %s from commit %s is done",
+                        self.release_version.describe,
+                        self.release_commit,
+                    )
 
         if self.dry_run:
             logging.info("Dry running, clean out possible changes")
@@ -301,10 +294,8 @@ class Release:
         self.read_version()
         with self._create_branch(self.release_branch, self.release_commit):
             with self._checkout(self.release_branch, True):
-                with self._create_gh_release(False):
-                    with self._bump_release_branch():
-                        # At this point everything will rollback automatically
-                        yield
+                with self._bump_release_branch():
+                    yield
 
     @contextmanager
     def stable(self):
@@ -419,8 +410,9 @@ class Release:
                         "changes with it.'",
                         dry_run=self.dry_run,
                     )
-                    # Here the release branch part is done
-                    yield
+                    with self._create_gh_release(False):
+                        # Here the release branch part is done
+                        yield
 
     @contextmanager
     def _bump_testing_version(self, helper_branch: str) -> Iterator[None]:
@@ -594,13 +586,6 @@ def parse_args() -> argparse.Namespace:
         "new branch is created only for 'major' and 'minor'",
     )
     parser.add_argument("--with-release-branch", default=True, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--no-release-branch",
-        dest="with_release_branch",
-        action="store_false",
-        default=argparse.SUPPRESS,
-        help=f"if set, for release types in {Release.BIG} skip creating release branch",
-    )
     parser.add_argument("--check-dirty", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-check-dirty",
@@ -635,7 +620,7 @@ def main():
     repo = Repo(args.repo, args.remote_protocol)
     release = Release(repo, args.commit, args.release_type, args.dry_run)
 
-    release.do(args.check_dirty, args.check_branch, args.with_release_branch)
+    release.do(args.check_dirty, args.check_branch)
 
 
 if __name__ == "__main__":
