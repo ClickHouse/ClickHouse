@@ -1199,6 +1199,12 @@ private:
 
     void initializeTableExpressionColumns(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
+    void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
+
+    void resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
+
+    void resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
+
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
@@ -5579,27 +5585,300 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
 }
 
+/// Resolve table function node in scope
+void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
+    IdentifierResolveScope & scope,
+    QueryExpressionsAliasVisitor & expressions_visitor,
+    bool nested_table_function)
+{
+    auto & table_function_node_typed = table_function_node->as<TableFunctionNode &>();
+
+    if (!nested_table_function)
+        expressions_visitor.visit(table_function_node_typed.getArgumentsNode());
+
+    const auto & table_function_factory = TableFunctionFactory::instance();
+    const auto & table_function_name = table_function_node_typed.getTableFunctionName();
+
+    auto & scope_context = scope.context;
+
+    TableFunctionPtr table_function_ptr = table_function_factory.tryGet(table_function_name, scope_context);
+    if (!table_function_ptr)
+    {
+        auto hints = TableFunctionFactory::instance().getHints(table_function_name);
+        if (!hints.empty())
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Unknown table function {}. Maybe you meant: {}",
+                table_function_name,
+                DB::toString(hints));
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Unknown table function {}",
+                table_function_name);
+    }
+
+    if (!nested_table_function &&
+        scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions &&
+        scope_context->hasInsertionTable() &&
+        table_function_ptr->needStructureHint())
+    {
+        const auto & insertion_table = scope_context->getInsertionTable();
+        if (!insertion_table.empty())
+        {
+            auto insertion_table_storage = DatabaseCatalog::instance().getTable(insertion_table, scope_context);
+            const auto & structure_hint = insertion_table_storage->getInMemoryMetadataPtr()->columns;
+            table_function_ptr->setStructureHint(structure_hint);
+        }
+    }
+
+    QueryTreeNodes result_table_function_arguments;
+
+    auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+
+    auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments.size();
+
+    for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
+    {
+        auto & table_function_argument = table_function_arguments[table_function_argument_index];
+
+        auto skip_argument_index_it = std::find(skip_analysis_arguments_indexes.begin(),
+            skip_analysis_arguments_indexes.end(),
+            table_function_argument_index);
+        if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
+        if (auto * identifier_node = table_function_argument->as<IdentifierNode>())
+        {
+            const auto & unresolved_identifier = identifier_node->getIdentifier();
+            auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
+
+            if (resolved_identifier && resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
+                result_table_function_arguments.push_back(std::move(resolved_identifier));
+            else
+                result_table_function_arguments.push_back(table_function_argument);
+
+            continue;
+        }
+
+        if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
+        {
+            const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
+            if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
+            {
+                auto table_function_node_to_resolve_typed = std::make_shared<TableFunctionNode>(table_function_argument_function_name);
+                table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
+
+                QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
+                resolveTableFunction(table_function_node_to_resolve, scope, expressions_visitor, true /*nested_table_function*/);
+
+                result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
+                continue;
+            }
+        }
+
+        resolveExpressionNode(table_function_argument, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (auto * expression_list = table_function_argument->as<ListNode>())
+        {
+            for (auto & expression_list_node : expression_list->getNodes())
+                result_table_function_arguments.push_back(expression_list_node);
+        }
+        else
+        {
+            result_table_function_arguments.push_back(table_function_argument);
+        }
+    }
+
+    table_function_node_typed.getArguments().getNodes() = std::move(result_table_function_arguments);
+
+    auto table_function_ast = table_function_node_typed.toAST();
+    table_function_ptr->parseArguments(table_function_ast, scope_context);
+
+    auto table_function_storage = table_function_ptr->execute(table_function_ast, scope_context, table_function_ptr->getName());
+    table_function_node_typed.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context);
+}
+
+/// Resolve array join node in scope
+void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
+{
+    auto & array_join_node_typed = array_join_node->as<ArrayJoinNode &>();
+    resolveQueryJoinTreeNode(array_join_node_typed.getTableExpression(), scope, expressions_visitor);
+
+    std::unordered_set<String> array_join_column_names;
+
+    /// Wrap array join expressions into column nodes, where array join expression is inner expression
+
+    auto & array_join_nodes = array_join_node_typed.getJoinExpressions().getNodes();
+    size_t array_join_nodes_size = array_join_nodes.size();
+
+    std::vector<QueryTreeNodePtr> array_join_column_expressions;
+    array_join_column_expressions.reserve(array_join_nodes_size);
+
+    for (auto & array_join_expression : array_join_nodes)
+    {
+        auto array_join_expression_alias = array_join_expression->getAlias();
+        if (!array_join_expression_alias.empty() && scope.alias_name_to_expression_node.contains(array_join_expression_alias))
+            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                "ARRAY JOIN expression {} with duplicate alias {}. In scope {}",
+                array_join_expression->formatASTForErrorMessage(),
+                array_join_expression_alias,
+                scope.scope_node->formatASTForErrorMessage());
+
+        /// Add array join expression into scope
+        expressions_visitor.visit(array_join_expression);
+
+        resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        auto result_type = array_join_expression->getResultType();
+
+        if (!isArray(result_type))
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "ARRAY JOIN {} requires expression {} with Array type. Actual {}. In scope {}",
+                array_join_node_typed.formatASTForErrorMessage(),
+                array_join_expression->formatASTForErrorMessage(),
+                result_type->getName(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
+
+        String array_join_column_name;
+
+        if (!array_join_expression_alias.empty())
+        {
+            array_join_column_name = array_join_expression_alias;
+        }
+        else if (auto * array_join_expression_inner_column = array_join_expression->as<ColumnNode>())
+        {
+            array_join_column_name = array_join_expression_inner_column->getColumnName();
+        }
+        else
+        {
+            array_join_column_name = "__array_join_expression_" + std::to_string(array_join_expressions_counter);
+            ++array_join_expressions_counter;
+        }
+
+        if (array_join_column_names.contains(array_join_column_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ARRAY JOIN {} multiple columns with name {}. In scope {}",
+                array_join_node_typed.formatASTForErrorMessage(),
+                array_join_column_name,
+                scope.scope_node->formatASTForErrorMessage());
+        array_join_column_names.emplace(array_join_column_name);
+
+        NameAndTypePair array_join_column(array_join_column_name, result_type);
+        auto array_join_column_node = std::make_shared<ColumnNode>(std::move(array_join_column), array_join_expression, array_join_node);
+        array_join_column_node->setAlias(array_join_expression_alias);
+        array_join_column_expressions.push_back(std::move(array_join_column_node));
+    }
+
+    /** Allow to resolve ARRAY JOIN columns from aliases with types after ARRAY JOIN only after ARRAY JOIN expression list is resolved, because
+      * during resolution of ARRAY JOIN expression list we must use column type before ARRAY JOIN.
+      *
+      * Example: SELECT id, value_element FROM test_table ARRAY JOIN [[1,2,3]] AS value_element, value_element AS value
+      * It is expected that `value_element AS value` expression inside ARRAY JOIN expression list will be
+      * resolved as `value_element` expression with type before ARRAY JOIN.
+      * And it is expected that `value_element` inside projection expression list will be resolved as `value_element` expression
+      * with type after ARRAY JOIN.
+      */
+    for (size_t i = 0; i < array_join_nodes_size; ++i)
+    {
+        auto & array_join_expression = array_join_nodes[i];
+        array_join_expression = std::move(array_join_column_expressions[i]);
+        auto it = scope.alias_name_to_expression_node.find(array_join_expression->getAlias());
+        if (it != scope.alias_name_to_expression_node.end())
+            it->second = array_join_nodes[i];
+    }
+}
+
+/// Resolve join node in scope
+void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
+{
+    auto & join_node_typed = join_node->as<JoinNode &>();
+
+    resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpression(), scope, expressions_visitor);
+    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpression(), scope);
+
+    resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
+    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
+
+    if (join_node_typed.isOnJoinExpression())
+    {
+        expressions_visitor.visit(join_node_typed.getJoinExpression());
+        auto join_expression = join_node_typed.getJoinExpression();
+        resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        join_node_typed.getJoinExpression() = std::move(join_expression);
+    }
+    else if (join_node_typed.isUsingJoinExpression())
+    {
+        auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
+        std::unordered_set<std::string> join_using_identifiers;
+
+        for (auto & join_using_node : join_using_list.getNodes())
+        {
+            auto * identifier_node = join_using_node->as<IdentifierNode>();
+            if (!identifier_node)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "JOIN {} USING clause expected identifier. Actual {}",
+                    join_node_typed.formatASTForErrorMessage(),
+                    join_using_node->formatASTForErrorMessage());
+
+            const auto & identifier_full_name = identifier_node->getIdentifier().getFullName();
+
+            if (join_using_identifiers.contains(identifier_full_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "JOIN {} identifier '{}' appears more than once in USING clause",
+                    join_node_typed.formatASTForErrorMessage(),
+                    identifier_full_name);
+
+            join_using_identifiers.insert(identifier_full_name);
+
+            IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
+            auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
+            if (!result_left_table_expression)
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
+                    join_node_typed.formatASTForErrorMessage(),
+                    identifier_full_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            auto result_right_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope);
+            if (!result_right_table_expression)
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    "JOIN {} using identifier '{}' cannot be resolved from right table expression. In scope {}",
+                    join_node_typed.formatASTForErrorMessage(),
+                    identifier_full_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            auto expression_types = DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()};
+            DataTypePtr common_type = tryGetLeastSupertype(expression_types);
+
+            if (!common_type)
+                throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                    "JOIN {} cannot infer common type for {} and {} in USING for identifier '{}'. In scope {}",
+                    join_node_typed.formatASTForErrorMessage(),
+                    result_left_table_expression->getResultType()->getName(),
+                    result_right_table_expression->getResultType()->getName(),
+                    identifier_full_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            NameAndTypePair join_using_column(identifier_full_name, common_type);
+            ListNodePtr join_using_expression = std::make_shared<ListNode>(QueryTreeNodes{result_left_table_expression, result_right_table_expression});
+            auto join_using_column_node = std::make_shared<ColumnNode>(std::move(join_using_column), std::move(join_using_expression), join_node);
+            join_using_node = std::move(join_using_column_node);
+        }
+    }
+}
+
 /** Resolve query join tree.
   *
   * Query join tree must be initialized before calling this function.
   */
 void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
-    auto add_table_expression_alias_into_scope = [&](const QueryTreeNodePtr & table_expression_node)
-    {
-        const auto & alias_name = table_expression_node->getAlias();
-        if (alias_name.empty())
-            return;
-
-        auto [it, inserted] = scope.alias_name_to_table_expression_node.emplace(alias_name, table_expression_node);
-        if (!inserted)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
-                alias_name,
-                table_expression_node->formatASTForErrorMessage(),
-                it->second->formatASTForErrorMessage());
-    };
-
     auto from_node_type = join_tree_node->getNodeType();
 
     switch (from_node_type)
@@ -5613,77 +5892,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            auto & table_function_node = join_tree_node->as<TableFunctionNode &>();
-            expressions_visitor.visit(table_function_node.getArgumentsNode());
-
-            const auto & table_function_factory = TableFunctionFactory::instance();
-            const auto & table_function_name = table_function_node.getTableFunctionName();
-
-            auto & scope_context = scope.context;
-
-            TableFunctionPtr table_function_ptr = table_function_factory.tryGet(table_function_name, scope_context);
-            if (!table_function_ptr)
-            {
-                auto hints = TableFunctionFactory::instance().getHints(table_function_name);
-                if (!hints.empty())
-                    throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                        "Unknown table function {}. Maybe you meant: {}",
-                        table_function_name,
-                        DB::toString(hints));
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function_name);
-            }
-
-            if (scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
-            {
-                const auto & insertion_table = scope_context->getInsertionTable();
-                if (!insertion_table.empty())
-                {
-                    const auto & structure_hint
-                        = DatabaseCatalog::instance().getTable(insertion_table, scope_context)->getInMemoryMetadataPtr()->columns;
-                    table_function_ptr->setStructureHint(structure_hint);
-                }
-            }
-
-            QueryTreeNodes result_nodes;
-
-            for (auto & node : table_function_node.getArguments())
-            {
-                if (auto * identifier_node = node->as<IdentifierNode>())
-                {
-                    const auto & unresolved_identifier = identifier_node->getIdentifier();
-                    auto identifier_resolve_result = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::EXPRESSION}, scope);
-                    auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
-
-                    if (resolved_identifier && resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
-                        result_nodes.push_back(resolved_identifier);
-                    else
-                        result_nodes.push_back(node);
-                }
-                else
-                {
-                    resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
-
-                    if (auto * expression_list = node->as<ListNode>())
-                    {
-                        for (auto & expression_list_node : expression_list->getNodes())
-                            result_nodes.push_back(expression_list_node);
-                    }
-                    else
-                    {
-                        result_nodes.push_back(node);
-                    }
-                }
-            }
-
-            table_function_node.getArguments().getNodes() = std::move(result_nodes);
-
-            auto table_function_ast = table_function_node.toAST();
-            table_function_ptr->parseArguments(table_function_ast, scope_context);
-
-            auto table_function_storage = table_function_ptr->execute(table_function_ast, scope_context, table_function_ptr->getName());
-            table_function_node.resolve(std::move(table_function_ptr), std::move(table_function_storage), scope_context);
-
+            resolveTableFunction(join_tree_node, scope, expressions_visitor, false /*nested_table_function*/);
             break;
         }
         case QueryTreeNodeType::TABLE:
@@ -5692,171 +5901,12 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
-            auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
-            resolveQueryJoinTreeNode(array_join_node.getTableExpression(), scope, expressions_visitor);
-
-            std::unordered_set<String> array_join_column_names;
-
-            /// Wrap array join expressions into column nodes, where array join expression is inner expression
-
-            auto & array_join_nodes = array_join_node.getJoinExpressions().getNodes();
-            size_t array_join_nodes_size = array_join_nodes.size();
-
-            std::vector<QueryTreeNodePtr> array_join_column_expressions;
-            array_join_column_expressions.reserve(array_join_nodes_size);
-
-            for (auto & array_join_expression : array_join_nodes)
-            {
-                auto array_join_expression_alias = array_join_expression->getAlias();
-                if (!array_join_expression_alias.empty() && scope.alias_name_to_expression_node.contains(array_join_expression_alias))
-                    throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                        "ARRAY JOIN expression {} with duplicate alias {}. In scope {}",
-                        array_join_expression->formatASTForErrorMessage(),
-                        array_join_expression_alias,
-                        scope.scope_node->formatASTForErrorMessage());
-
-                /// Add array join expression into scope
-                expressions_visitor.visit(array_join_expression);
-
-                resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-                auto result_type = array_join_expression->getResultType();
-
-                if (!isArray(result_type))
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "ARRAY JOIN {} requires expression with Array type. Actual {}. In scope {}",
-                        array_join_node.formatASTForErrorMessage(),
-                        result_type->getName(),
-                        scope.scope_node->formatASTForErrorMessage());
-
-                result_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
-
-                String array_join_column_name;
-
-                if (!array_join_expression_alias.empty())
-                {
-                    array_join_column_name = array_join_expression_alias;
-                }
-                else if (auto * array_join_expression_inner_column = array_join_expression->as<ColumnNode>())
-                {
-                    array_join_column_name = array_join_expression_inner_column->getColumnName();
-                }
-                else
-                {
-                    array_join_column_name = "__array_join_expression_" + std::to_string(array_join_expressions_counter);
-                    ++array_join_expressions_counter;
-                }
-
-                if (array_join_column_names.contains(array_join_column_name))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "ARRAY JOIN {} multiple columns with name {}. In scope {}",
-                        array_join_node.formatASTForErrorMessage(),
-                        array_join_column_name,
-                        scope.scope_node->formatASTForErrorMessage());
-                array_join_column_names.emplace(array_join_column_name);
-
-                auto array_join_column = std::make_shared<ColumnNode>(NameAndTypePair{array_join_column_name, result_type}, array_join_expression, join_tree_node);
-                array_join_column->setAlias(array_join_expression_alias);
-                array_join_column_expressions.push_back(std::move(array_join_column));
-            }
-
-            /** Allow to resolve ARRAY JOIN columns from aliases with types after ARRAY JOIN only after ARRAY JOIN expression list is resolved, because
-              * during resolution of ARRAY JOIN expression list we must use column type before ARRAY JOIN.
-              *
-              * Example: SELECT id, value_element FROM test_table ARRAY JOIN [[1,2,3]] AS value_element, value_element AS value
-              * It is expected that `value_element AS value` expression inside ARRAY JOIN expression list will be
-              * resolved as `value_element` expression with type before ARRAY JOIN.
-              * And it is expected that `value_element` inside projection expression list will be resolved as `value_element` expression
-              * with type after ARRAY JOIN.
-              */
-            for (size_t i = 0; i < array_join_nodes_size; ++i)
-            {
-                auto & array_join_expression = array_join_nodes[i];
-                array_join_expression = std::move(array_join_column_expressions[i]);
-                auto it = scope.alias_name_to_expression_node.find(array_join_expression->getAlias());
-                if (it != scope.alias_name_to_expression_node.end())
-                    it->second = array_join_nodes[i];
-            }
-
+            resolveArrayJoin(join_tree_node, scope, expressions_visitor);
             break;
         }
         case QueryTreeNodeType::JOIN:
         {
-            auto & join_node = join_tree_node->as<JoinNode &>();
-
-            resolveQueryJoinTreeNode(join_node.getLeftTableExpression(), scope, expressions_visitor);
-            validateJoinTableExpressionWithoutAlias(join_tree_node, join_node.getLeftTableExpression(), scope);
-
-            resolveQueryJoinTreeNode(join_node.getRightTableExpression(), scope, expressions_visitor);
-            validateJoinTableExpressionWithoutAlias(join_tree_node, join_node.getRightTableExpression(), scope);
-
-            if (join_node.isUsingJoinExpression())
-            {
-                auto & join_using_list = join_node.getJoinExpression()->as<ListNode &>();
-                std::unordered_set<std::string> join_using_identifiers;
-
-                for (auto & join_using_node : join_using_list.getNodes())
-                {
-                    auto * identifier_node = join_using_node->as<IdentifierNode>();
-                    if (!identifier_node)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "JOIN {} USING clause expected identifier. Actual {}",
-                            join_node.formatASTForErrorMessage(),
-                            join_using_node->formatASTForErrorMessage());
-
-                    const auto & identifier_full_name = identifier_node->getIdentifier().getFullName();
-
-                    if (join_using_identifiers.contains(identifier_full_name))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "JOIN {} identifier '{}' appears more than once in USING clause",
-                            join_node.formatASTForErrorMessage(),
-                            identifier_full_name);
-
-                    join_using_identifiers.insert(identifier_full_name);
-
-                    IdentifierLookup identifier_lookup {identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
-                    auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node.getLeftTableExpression(), scope);
-                    if (!result_left_table_expression)
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
-                            join_node.formatASTForErrorMessage(),
-                            identifier_full_name,
-                            scope.scope_node->formatASTForErrorMessage());
-
-                    auto result_right_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node.getRightTableExpression(), scope);
-                    if (!result_right_table_expression)
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                                        "JOIN {} using identifier '{}' cannot "
-                                        "be resolved from right table expression. In scope {}",
-                                        join_node.formatASTForErrorMessage(),
-                                        identifier_full_name,
-                                        scope.scope_node->formatASTForErrorMessage());
-
-                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()});
-
-                    if (!common_type)
-                        throw Exception(ErrorCodes::NO_COMMON_TYPE,
-                            "JOIN {} cannot infer common type for {} and {} in USING for identifier '{}'. In scope {}",
-                            join_node.formatASTForErrorMessage(),
-                            result_left_table_expression->getResultType()->getName(),
-                            result_right_table_expression->getResultType()->getName(),
-                            identifier_full_name,
-                            scope.scope_node->formatASTForErrorMessage());
-
-                    NameAndTypePair join_using_columns_common_name_and_type(identifier_full_name, common_type);
-                    ListNodePtr join_using_expression = std::make_shared<ListNode>(QueryTreeNodes{result_left_table_expression, result_right_table_expression});
-                    auto join_using_column = std::make_shared<ColumnNode>(join_using_columns_common_name_and_type, std::move(join_using_expression), join_tree_node);
-
-                    join_using_node = std::move(join_using_column);
-                }
-            }
-            else if (join_node.getJoinExpression())
-            {
-                expressions_visitor.visit(join_node.getJoinExpression());
-                auto join_expression = join_node.getJoinExpression();
-                resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-                join_node.getJoinExpression() = std::move(join_expression);
-            }
-
+            resolveJoin(join_tree_node, scope, expressions_visitor);
             break;
         }
         case QueryTreeNodeType::IDENTIFIER:
@@ -5881,6 +5931,21 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         validateTableExpressionModifiers(join_tree_node, scope);
         initializeTableExpressionColumns(join_tree_node, scope);
     }
+
+    auto add_table_expression_alias_into_scope = [&](const QueryTreeNodePtr & table_expression_node)
+    {
+        const auto & alias_name = table_expression_node->getAlias();
+        if (alias_name.empty())
+            return;
+
+        auto [it, inserted] = scope.alias_name_to_table_expression_node.emplace(alias_name, table_expression_node);
+        if (!inserted)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
+                alias_name,
+                table_expression_node->formatASTForErrorMessage(),
+                it->second->formatASTForErrorMessage());
+    };
 
     add_table_expression_alias_into_scope(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
