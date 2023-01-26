@@ -545,7 +545,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
 
-    notifySubscribers(queue_size);
+    notifySubscribers(queue_size, entry->log_entry_id);
 
     if (!need_remove_from_zk)
         return;
@@ -2468,9 +2468,6 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
-    /// Atomically notify about current size
-    (*it)(queue.size());
-
     return SubscriberHandler(it, *this);
 }
 
@@ -2480,16 +2477,19 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const String & log_entry_id_removed)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size);
+        subscriber_callback(new_queue_size, log_entry_id_removed);
 }
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
 {
-    notifySubscribers(0);
+    if (!queue.empty())
+    {
+        notifySubscribers(0, queue.back().get()->log_entry_id);
+    }
 }
 
 String padIndex(Int64 index)
