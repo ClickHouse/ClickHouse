@@ -81,8 +81,8 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
+class QueryCache;
 class QueryLog;
-class QueryResultCache;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
@@ -861,9 +861,9 @@ public:
     void dropMMappedFileCache() const;
 
     /// Create a cache of query results for statements which run repeatedly.
-    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records);
-    std::shared_ptr<QueryResultCache> getQueryResultCache() const;
-    void dropQueryResultCache() const;
+    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records);
+    std::shared_ptr<QueryCache> getQueryCache() const;
+    void dropQueryCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
