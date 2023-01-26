@@ -79,7 +79,8 @@ public:
 
             auto is_query_result_cache_related_setting = [](const auto & change)
             {
-                return change.name.starts_with("enable_experimental_query_result_cache")
+                return change.name == "allow_experimental_query_result_cache"
+                    || change.name.starts_with("use_query_result_cache")
                     || change.name.starts_with("query_result_cache");
             };
 

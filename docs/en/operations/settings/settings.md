@@ -1301,27 +1301,39 @@ Possible values:
 
 Default value: `3`.
 
-## enable_experimental_query_result_cache {#enable-experimental-query-result-cache}
+## use_query_result_cache {#use-query-result-cache}
 
-If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
+If turned on, SELECT queries may utilize the [query result cache](../query-result-cache.md). Parameters [use_query_result_cache_passive_usage](#use-query-result-cache-passive-usage)
+and [use_query_result_cache_active_usage](#use-query-result-cache-active-usage) control how the cache can be used in more detail.
+
+Possible values:
+
+- 0 - Yes
+- 1 - No
+
+Default value: `0`.
+
+## use_query_result_cache_passive_usage {#use-query-result-cache-passive-usage}
+
+If turned on, results of SELECT queries are retrieved from the [query result cache](../query-result-cache.md).
 
 Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
 
-Default value: `0`.
+Default value: `1`.
 
-## enable_experimental_query_result_cache_passive_usage {#enable-experimental-query-result-cache-passive-usage}
+## use_query_result_cache_active_usage {#use-query-result-cache-active-usage}
 
-If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
+If turned on, results of SELECT queries are stored in the [query result cache](../query-result-cache.md).
 
 Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
 
-Default value: `0`.
+Default value: `1`.
 
 ## query_result_cache_store_results_of_queries_with_nondeterministic_functions {#query-result-cache-store-results-of-queries-with-nondeterministic-functions}
 
