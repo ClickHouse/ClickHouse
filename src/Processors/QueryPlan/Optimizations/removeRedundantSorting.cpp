@@ -260,13 +260,10 @@ private:
                 /// so, we check explicitly for sum*() functions with Floats here
                 const auto aggregate_function = aggregate.function;
                 const String & func_name = aggregate_function->getName();
-                if (func_name.starts_with("sum") && aggregate_function->getArgumentTypes().size() == 1)
+                if (func_name.starts_with("sum"))
                 {
                     DataTypePtr data_type = aggregate_function->getArgumentTypes().front();
-                    if (WhichDataType(data_type).isNullable())
-                        data_type = static_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
-
-                    if (WhichDataType(data_type).isFloat())
+                    if (WhichDataType(removeNullable(data_type)).isFloat())
                         return false;
                 }
             }
