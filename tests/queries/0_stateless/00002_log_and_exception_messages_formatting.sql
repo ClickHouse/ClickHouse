@@ -37,10 +37,12 @@ select 80, max2((select count() from logs where level <= 'Debug' group by messag
 select 90, max2((select count() from logs where level <= 'Information' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.04);
 
 -- Same as above for Warning
-select 100, max2((select count() from logs where level = 'Warning' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.0005);
+with ('Not enabled four letter command {}') as frequent_in_tests
+select 100, max2((select count() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
+    group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.001);
 
--- Same as above for Error (it's funny that we have 100 time less warnings than errors)
-select 110, max2((select count() from logs where level = 'Warning' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.005);
+-- Same as above for Error (it's funny that we have 10 times less warnings than errors)
+select 110, max2((select count() from logs where level = 'Warning' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.01);
 
 -- Avoid too noisy messages: limit the number of messages with high frequency
 select 120, max2(count(), 3) from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.10);

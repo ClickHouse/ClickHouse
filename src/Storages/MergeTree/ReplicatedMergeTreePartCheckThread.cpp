@@ -300,7 +300,7 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
 
 CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 {
-    LOG_WARNING(log, "Checking part {}", part_name);
+    LOG_INFO(log, "Checking part {}", part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
     auto [exists_in_zookeeper, part] = findLocalPart(part_name);
