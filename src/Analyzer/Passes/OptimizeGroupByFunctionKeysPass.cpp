@@ -42,22 +42,29 @@ public:
     }
 private:
 
+    struct NodeWithInfo
+    {
+        QueryTreeNodePtr node;
+        bool parents_are_only_deterministic;
+    };
+
     static bool canBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
     {
         auto * function = node->as<FunctionNode>();
         if (!function || function->getArguments().getNodes().empty())
             return false;
 
-        QueryTreeNodes candidates;
+        std::vector<NodeWithInfo> candidates;
         auto & function_arguments = function->getArguments().getNodes();
+        bool is_deterministic = function->getFunction()->isDeterministicInScopeOfQuery();
         for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
-            candidates.push_back(*it);
+            candidates.push_back({ *it, is_deterministic });
 
         // Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
         // TODO: Also process CONSTANT here. We can simplify GROUP BY x, x + 1 to GROUP BY x.
         while (!candidates.empty())
         {
-            auto candidate = candidates.back();
+            auto [candidate, deterministic_context] = candidates.back();
             candidates.pop_back();
 
             bool found = group_by_keys.contains(candidate);
@@ -73,13 +80,18 @@ private:
 
                     if (!found)
                     {
+                        bool is_deterministic_function = deterministic_context && function->getFunction()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
-                            candidates.push_back(*it);
+                            candidates.push_back({ *it, is_deterministic_function });
                     }
                     break;
                 }
                 case QueryTreeNodeType::COLUMN:
                     if (!found)
+                        return false;
+                    break;
+                case QueryTreeNodeType::CONSTANT:
+                    if (!deterministic_context)
                         return false;
                     break;
                 default:
