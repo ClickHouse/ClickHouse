@@ -282,7 +282,7 @@ void PostgreSQLHandler::processQuery()
             settings.max_parser_depth,
             settings.allow_settings_after_format_in_insert);
         if (!parse_res.second)
-            throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 
         std::random_device rd;
         std::mt19937 gen(rd());

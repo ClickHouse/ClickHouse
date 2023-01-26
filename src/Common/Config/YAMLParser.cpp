@@ -121,7 +121,9 @@ namespace
             case YAML::NodeType::Null: break;
             case YAML::NodeType::Undefined:
             {
-                throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with undefined type and cannot continue parsing of the file");
+                throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                                "YAMLParser has encountered node with undefined type and cannot continue parsing "
+                                "of the file");
             }
         }
     }
@@ -154,7 +156,9 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
     }
     catch (const YAML::TypedBadConversion<std::string>&)
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with key or value which cannot be represented as string and cannot continue parsing of the file");
+        throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                        "YAMLParser has encountered node with key "
+                        "or value which cannot be represented as string and cannot continue parsing of the file");
     }
     return xml;
 }

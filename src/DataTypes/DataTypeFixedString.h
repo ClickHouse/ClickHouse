@@ -33,9 +33,9 @@ public:
     explicit DataTypeFixedString(size_t n_) : n(n_)
     {
         if (n == 0)
-            throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "FixedString size must be positive");
         if (n > MAX_FIXEDSTRING_SIZE)
-            throw Exception("FixedString size is too large", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "FixedString size is too large");
     }
 
     std::string doGetName() const override;
