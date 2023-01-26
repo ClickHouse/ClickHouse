@@ -520,7 +520,10 @@ class Release:
     @contextmanager
     def _create_tag(self):
         tag = self.release_version.describe
-        self.run(f"git tag -a -m 'Release {tag}' '{tag}'", dry_run=self.dry_run)
+        self.run(
+            f"git tag -a -m 'Release {tag}' '{tag}' {self.release_commit}",
+            dry_run=self.dry_run,
+        )
         rollback_cmd = f"{self.dry_run_prefix}git tag -d '{tag}'"
         self._rollback_stack.append(rollback_cmd)
         try:
