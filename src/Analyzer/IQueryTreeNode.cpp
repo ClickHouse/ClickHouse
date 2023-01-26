@@ -76,6 +76,9 @@ struct NodePairHash
 
 bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
 {
+    if (this == &rhs)
+        return true;
+
     std::vector<NodePair> nodes_to_process;
     std::unordered_set<NodePair, NodePairHash> equals_pairs;
 
@@ -89,11 +92,17 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
         const auto * lhs_node_to_compare = nodes_to_compare.first;
         const auto * rhs_node_to_compare = nodes_to_compare.second;
 
+        assert(lhs_node_to_compare);
+        assert(rhs_node_to_compare);
+
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
 
-        assert(lhs_node_to_compare);
-        assert(rhs_node_to_compare);
+        if (lhs_node_to_compare == rhs_node_to_compare)
+        {
+            equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);
+            continue;
+        }
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
             lhs_node_to_compare->alias != rhs_node_to_compare->alias ||
