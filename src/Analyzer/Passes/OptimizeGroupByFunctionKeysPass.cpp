@@ -70,7 +70,7 @@ private:
         // TODO: Also process CONSTANT here. We can simplify GROUP BY x, x + 1 to GROUP BY x.
         while (!candidates.empty())
         {
-            auto [candidate, deterministic_context] = candidates.back();
+            auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
             bool found = group_by_keys.contains(candidate);
@@ -86,7 +86,7 @@ private:
 
                     if (!found)
                     {
-                        bool is_deterministic_function = deterministic_context && function->getFunction()->isDeterministicInScopeOfQuery();
+                        bool is_deterministic_function = parents_are_only_deterministic && function->getFunction()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }
@@ -97,7 +97,7 @@ private:
                         return false;
                     break;
                 case QueryTreeNodeType::CONSTANT:
-                    if (!deterministic_context)
+                    if (!parents_are_only_deterministic)
                         return false;
                     break;
                 default:
