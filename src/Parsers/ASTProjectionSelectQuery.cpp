@@ -115,7 +115,7 @@ void ASTProjectionSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
 {
     if (!positions.contains(expr))
-        throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Get expression before set");
     return children[positions[expr]];
 }
 
