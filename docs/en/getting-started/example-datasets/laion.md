@@ -89,7 +89,7 @@ INSERT INTO laion_dataset FROM INFILE '{path_to_csv_files}/*.csv'
 
 ## Check data in table without indexes
 
-Let's check the work of following query on the part of dataset (8 million records):
+Let's check the work of the following query on the part of the dataset (8 million records):
 
 ```sql
 select url, caption from test_laion where similarity > 0.2 order by L2Distance(image_embedding, {target:Array(Float32)}) limit 30
@@ -116,7 +116,7 @@ Since the embeddings for images and texts may not match, let's also require a ce
 
 ## Add indexes
 
-Create new table or follow instructions from [alter documentation](../../sql-reference/statements/alter/skipping-index.md).
+Create a new table or follow instructions from [alter documentation](../../sql-reference/statements/alter/skipping-index.md).
 
 ```sql
 CREATE TABLE laion_dataset
@@ -135,7 +135,7 @@ ORDER BY id
 SETTINGS index_granularity = 8192
 ```
 
-When created, the index will be built by L2Distance. You can read more about the parameters in the [annoy documentation](../../engines/table-engines/mergetree-family/annindexes.md#annoy-annoy). It makes sense to build indexes for large number of granules. If you need good speed, then GRANULARITY should be several times larger than the expected number of results in the search. 
+When created, the index will be built by L2Distance. You can read more about the parameters in the [annoy documentation](../../engines/table-engines/mergetree-family/annindexes.md#annoy-annoy). It makes sense to build indexes for a large number of granules. If you need good speed, then GRANULARITY should be several times larger than the expected number of results in the search. 
 Now let's check again with the same query:
 
 ```sql
@@ -159,11 +159,11 @@ select url, caption from test_indexes_laion where similarity > 0.2 order by L2Di
 8 rows in set. Elapsed: 0.641 sec. Processed 22.06 thousand rows, 49.36 MB (91.53 thousand rows/s., 204.81 MB/s.)
 ```
 
-The speed has increased significantly. But now the results sometimes differ from what you are looking for. This is due to the approximation of the search and the quality of the constructed embedding. Note that the example was given for picture embeddings, but there are also text embeddings in the dataset, which can also be used for searching.
+The speed has increased significantly. But now, the results sometimes differ from what you are looking for. This is due to the approximation of the search and the quality of the constructed embedding. Note that the example was given for picture embeddings, but there are also text embeddings in the dataset, which can also be used for searching.
 
 ## Scripts for embeddings
 
-Usually we do not want to get embeddings from existing data, but to get them for new data and look for similar ones in old data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) for this purpose. They will allow you to set the `target` vector without leaving the client. All of the following scripts will be written for the `ViT-B/32` model as it was used for this dataset. You can use any model, but it is necessary to build embeddings in the dataset and for new objects using the same model.
+Usually, we do not want to get embeddings from existing data, but to get them for new data and look for similar ones in old data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) for this purpose. They will allow you to set the `target` vector without leaving the client. All of the following scripts will be written for the `ViT-B/32` model, as it was used for this dataset. You can use any model, but it is necessary to build embeddings in the dataset and for new objects using the same model.
 
 ### Text embeddings
 
@@ -209,11 +209,11 @@ Now we can simply use:
 SELECT encode_text('cat');
 ```
 
-The first use will be slow because you need to load the model. But repeated queries will be fast. Then we copy the results to ``set param_target=...`` and can easily write queries 
+The first use will be slow because the model needs to be loaded. But repeated queries will be fast. Then we copy the results to ``set param_target=...`` and can easily write queries 
 
 ### Image embeddings
 
-For pictures it is the same, but you do not need to send the picture but the path (if necessary, you can implement a download picture with processing, but it will be longer)
+For pictures, the process is similar, but you send the path instead of the picture (if necessary, you can implement a download picture with processing, but it will take longer)
 
 `encode_picture.py`
 ```python
