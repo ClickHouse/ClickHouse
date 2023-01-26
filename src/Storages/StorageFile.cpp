@@ -49,6 +49,7 @@
 #include <unistd.h>
 #include <re2/re2.h>
 #include <filesystem>
+#include <shared_mutex>
 
 
 namespace ProfileEvents

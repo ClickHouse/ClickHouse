@@ -19,7 +19,6 @@
 #include <Common/TypePromotion.h>
 
 #include <optional>
-#include <shared_mutex>
 #include <compare>
 
 
