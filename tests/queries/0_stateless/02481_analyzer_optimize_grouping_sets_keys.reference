@@ -246,3 +246,40 @@ QUERY id: 0, group_by_type: grouping_sets
                   ARGUMENTS
                     LIST id: 53, nodes: 1
                       COLUMN id: 54, column_name: number, result_type: UInt64, source_id: 11
+QUERY id: 0, group_by_type: grouping_sets
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE_FUNCTION id: 3, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_1000, constant_value_type: UInt16
+  GROUP BY
+    LIST id: 6, nodes: 3
+      LIST id: 7, nodes: 1
+        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 3
+      LIST id: 9, nodes: 2
+        FUNCTION id: 10, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 11, nodes: 2
+              COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 3
+              CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+        FUNCTION id: 13, function_name: modulo, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 14, nodes: 2
+              COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 3
+              CONSTANT id: 15, constant_value: UInt64_3, constant_value_type: UInt8
+      LIST id: 16, nodes: 2
+        FUNCTION id: 17, function_name: divide, function_type: ordinary, result_type: Float64
+          ARGUMENTS
+            LIST id: 18, nodes: 2
+              COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 3
+              CONSTANT id: 19, constant_value: UInt64_2, constant_value_type: UInt8
+        FUNCTION id: 20, function_name: divide, function_type: ordinary, result_type: Float64
+          ARGUMENTS
+            LIST id: 21, nodes: 2
+              COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 3
+              CONSTANT id: 22, constant_value: UInt64_3, constant_value_type: UInt8
