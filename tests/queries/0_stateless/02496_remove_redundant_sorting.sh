@@ -253,6 +253,25 @@ FROM
 )"
 run_query "$query"
 
+echo "-- sum() with Nullable(Floats) depends on order, -> sorting is not removed here"
+query="SELECT
+    toTypeName(sum(v)),
+    sum(v)
+FROM
+(
+    SELECT v
+    FROM
+    (
+        SELECT '9007199254740992'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+    )
+    ORDER BY v ASC
+)"
+run_query "$query"
+
 echo "-- sumCount() with Floats depends on order, -> sorting is not removed here"
 query="SELECT
     toTypeName(sumCount(v)),

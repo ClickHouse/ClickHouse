@@ -255,15 +255,20 @@ private:
                 if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                     return false;
 
-                /// sum*() on Floats depends on order
-                /// but currently there is no way to specify property `is_order_dependent` for combination of aggregating function and data type
+                /// sum*() with Floats depends on order
+                /// but currently, there is no way to specify property `is_order_dependent` for combination of aggregating function and data type as argument
                 /// so, we check explicitly for sum*() functions with Floats here
                 const auto aggregate_function = aggregate.function;
                 const String & func_name = aggregate_function->getName();
-                if ((func_name == "sum" || func_name == "sumCount" || func_name == "sumWithOverflow" || func_name == "sumKahan")
-                    && aggregate_function->getArgumentTypes().size() == 1
-                    && WhichDataType(aggregate_function->getArgumentTypes().front()).isFloat())
-                    return false;
+                if (func_name.starts_with("sum") && aggregate_function->getArgumentTypes().size() == 1)
+                {
+                    DataTypePtr data_type = aggregate_function->getArgumentTypes().front();
+                    if (WhichDataType(data_type).isNullable())
+                        data_type = static_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
+
+                    if (WhichDataType(data_type).isFloat())
+                        return false;
+                }
             }
             return true;
         }
