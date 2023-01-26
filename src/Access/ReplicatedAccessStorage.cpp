@@ -51,7 +51,7 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     , backup_allowed(allow_backup_)
 {
     if (zookeeper_path.empty())
-        throw Exception("ZooKeeper path must be non-empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -458,7 +458,7 @@ zkutil::ZooKeeperPtr ReplicatedAccessStorage::getZooKeeperNoLock()
     {
         auto zookeeper = get_zookeeper();
         if (!zookeeper)
-            throw Exception("Can't have Replicated access without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't have Replicated access without ZooKeeper");
 
         /// It's possible that we connected to different [Zoo]Keeper instance
         /// so we may read a bit stale state.
