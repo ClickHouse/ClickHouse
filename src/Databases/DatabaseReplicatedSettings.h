@@ -15,7 +15,7 @@ class ASTStorage;
     M(Bool, check_consistency, true, "Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency", 0) \
 
 
-DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)
+DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS, NO_ALIASES)
 
 
 struct DatabaseReplicatedSettings : public BaseSettings<DatabaseReplicatedSettingsTraits>

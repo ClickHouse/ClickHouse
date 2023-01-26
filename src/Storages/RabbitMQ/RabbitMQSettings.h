@@ -37,7 +37,7 @@ namespace DB
     RABBITMQ_RELATED_SETTINGS(M) \
     FORMAT_FACTORY_SETTINGS(M)
 
-DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS)
+DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS, NO_ALIASES)
 
 struct RabbitMQSettings : public BaseSettings<RabbitMQSettingsTraits>
 {

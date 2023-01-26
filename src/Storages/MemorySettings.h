@@ -11,7 +11,7 @@ class ASTStorage;
 #define MEMORY_SETTINGS(M) \
     M(Bool, compress, false, "Compress data in memory", 0) \
 
-DECLARE_SETTINGS_TRAITS(memorySettingsTraits, MEMORY_SETTINGS)
+DECLARE_SETTINGS_TRAITS(memorySettingsTraits, MEMORY_SETTINGS, NO_ALIASES)
 
 
 /** Settings for the Memory engine.

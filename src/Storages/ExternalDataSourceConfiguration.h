@@ -10,7 +10,7 @@ namespace DB
 {
 
 #define EMPTY_SETTINGS(M)
-DECLARE_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
+DECLARE_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS, NO_ALIASES)
 
 struct EmptySettings : public BaseSettings<EmptySettingsTraits> {};
 

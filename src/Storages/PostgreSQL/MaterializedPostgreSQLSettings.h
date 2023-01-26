@@ -23,7 +23,7 @@ namespace DB
         "Consider by default that if there is a dot in tables list 'name.name', " \
         "then the first name is postgres schema and second is postgres table. This setting is needed to allow table names with dots", 0) \
 
-DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS)
+DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, NO_ALIASES)
 
 struct MaterializedPostgreSQLSettings : public BaseSettings<MaterializedPostgreSQLSettingsTraits>
 {
