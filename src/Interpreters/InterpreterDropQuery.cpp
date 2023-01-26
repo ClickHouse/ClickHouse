@@ -285,8 +285,9 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 table->flushAndShutdown();
                 auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
                 /// Delete table data
-                table->drop();
-                table->is_dropped = true;
+                DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+                UUID table_uuid = table->getStorageID().uuid;
+                database->dropTable(getContext(), "_tmp_" + toString(table_uuid));
             }
         }
     }
