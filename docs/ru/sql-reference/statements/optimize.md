@@ -24,7 +24,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 -   По умолчанию, если запросу `OPTIMIZE` не удалось выполнить слияние, то
 ClickHouse не оповещает клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop).
 -   Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции. [Как задавать имя партиции в запросах](alter/index.md#alter-how-to-specify-part-expr).
--   Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске данных. Кроме того, слияние является принудительным, даже если выполняются параллельные слияния.
+-   Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске данных. Можно контролировать с помощью настройки [optimize_skip_merged_partitions](../../operations/settings/settings.md#optimize-skip-merged-partitions). Кроме того, слияние является принудительным, даже если выполняются параллельные слияния.
 -   Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех столбцах), имеет смысл только для движка MergeTree.
 
 Вы можете указать время ожидания (в секундах) выполнения запросов `OPTIMIZE` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
@@ -197,3 +197,4 @@ SELECT * FROM example;
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
+
