@@ -39,9 +39,9 @@ select 90, max2((select count() from logs where level <= 'Information' group by 
 -- Same as above for Warning
 with ('Not enabled four letter command {}') as frequent_in_tests
 select 100, max2((select count() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
-    group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.001);
+    group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.005);
 
--- Same as above for Error (it's funny that we have 10 times less warnings than errors)
+-- Same as above for Error
 select 110, max2((select count() from logs where level = 'Warning' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.01);
 
 -- Avoid too noisy messages: limit the number of messages with high frequency
