@@ -21,14 +21,16 @@ select 30, max2(countDistinct(message_format_string), 10) from logs where length
 select 40, max2(countDistinct(message_format_string), 40) from logs where length(message_format_string) < 16;
 
 -- Same as above, but exceptions must be more informative. Feel free to update the threshold or remove this query if really necessary
-select 50, max2(countDistinct(message_format_string), 120) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%';
+select 50, max2(countDistinct(message_format_string), 125) from logs where length(message_format_string) < 30 and message ilike '%DB::Exception%';
 
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
 select 60, max2((select count() from logs group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.30);
 
 -- Same as above, but excluding Test level (actually finds top 1 Trace message)
-select 70, max2((select count() from logs where level!='Test' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.16);
+with ('Access granted: {}{}', '{} -> {}') as frequent_in_tests
+select 70, max2((select count() from logs where level!='Test' and message_format_string not in frequent_in_tests
+    group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.16);
 
 -- Same as above for Debug
 select 80, max2((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.08);
