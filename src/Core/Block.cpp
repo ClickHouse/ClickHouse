@@ -35,7 +35,7 @@ static ReturnType onError(int code [[maybe_unused]],
                           FmtArgs && ...fmt_args [[maybe_unused]])
 {
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
+        throw Exception(code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
     else
         return false;
 }

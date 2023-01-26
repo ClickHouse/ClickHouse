@@ -577,10 +577,6 @@ ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
 {
 }
-ParsingException::ParsingException(int code, const std::string & message)
-    : Exception(message, code)
-{
-}
 
 /// We use additional field formatted_message_ to make this method const.
 std::string ParsingException::displayText() const

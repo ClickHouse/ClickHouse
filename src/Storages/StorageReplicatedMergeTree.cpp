@@ -7585,14 +7585,14 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         if (!merge_pred.canMergeSinglePart(part, &out_reason))
         {
             if (throw_if_noop)
-                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+                throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 
         if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
         {
             if (throw_if_noop)
-                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+                throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 

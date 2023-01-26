@@ -33,23 +33,39 @@ struct PreformattedMessage
     std::string_view format_string;
 
     template <typename... Args>
-    static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args)
-    {
-        return fmt.format(std::forward<Args>(args)...);
-    }
+    static PreformattedMessage create(FormatStringHelper<Args...> fmt, Args &&... args);
 
     operator const std::string & () const { return text; }
     operator std::string () && { return std::move(text); }
     operator fmt::format_string<> () const { UNREACHABLE(); }
 };
 
+template <typename... Args>
+PreformattedMessage FormatStringHelperImpl<Args...>::format(Args && ...args) const
+{
+    return PreformattedMessage{fmt::format(fmt_str, std::forward<Args>(args)...), message_format_string};
+}
+
+template <typename... Args>
+PreformattedMessage PreformattedMessage::create(FormatStringHelper<Args...> fmt, Args && ...args)
+{
+    return fmt.format(std::forward<Args>(args)...);
+}
+
 template<typename T> struct is_fmt_runtime : std::false_type {};
 template<typename T> struct is_fmt_runtime<fmt::basic_runtime<T>> : std::true_type {};
 
 template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x)
 {
-    /// Failure of this asserting indicates that something went wrong during type deduction.
-    /// For example, a string literal was implicitly converted to std::string. It should not happen.
+    /// Format string for an exception or log message must be a string literal (compile-time constant).
+    /// Failure of this assertion may indicate one of the following issues:
+    ///  - A message was already formatted into std::string before passing to Exception(...) or LOG_XXXXX(...).
+    ///    Please use variadic constructor of Exception.
+    ///    Consider using PreformattedMessage or LogToStr if you want to avoid double formatting and/or copy-paste.
+    ///  - A string literal was converted to std::string (or const char *).
+    ///  - Use Exception::createRuntime or fmt::runtime if there's no format string
+    ///    and a message is generated in runtime by a third-party library
+    ///    or deserialized from somewhere.
     static_assert(!std::is_same_v<std::string, std::decay_t<T>>);
 
     if constexpr (is_fmt_runtime<std::decay_t<T>>::value)

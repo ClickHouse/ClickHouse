@@ -133,7 +133,7 @@ private:
             if (!memoryIsZero(in_data.data(), 0, in_data.size() * sizeof(in_data[0])))
             {
                 if (message.has_value())
-                    throw Exception(
+                    throw Exception::createRuntime(
                         error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
                         *message);
                 else

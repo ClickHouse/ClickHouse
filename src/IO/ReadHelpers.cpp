@@ -938,10 +938,10 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = []<typename T>(T && message [[maybe_unused]], int code [[maybe_unused]])
+    auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(code, message);
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -989,10 +989,10 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = []<typename T>(T && message [[maybe_unused]], int code [[maybe_unused]])
+    auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(code, message);
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
