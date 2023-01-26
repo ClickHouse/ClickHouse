@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <Common/RawVector.h>
 #include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -21,7 +22,7 @@ class ColumnFixedString final : public COWHelper<ColumnVectorHelper, ColumnFixed
 public:
     friend class COWHelper<ColumnVectorHelper, ColumnFixedString>;
 
-    using Chars = PaddedPODArray<UInt8>;
+    using Chars = RawVector<UInt8>;
 
 private:
     /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.

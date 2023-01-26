@@ -1,6 +1,7 @@
 #include <Core/Defines.h>
 #include <Common/hex.h>
 #include <Common/PODArray.h>
+#include <Common/RawVector.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
@@ -201,6 +202,12 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, c
 }
 
 template <>
+inline void appendToStringOrVector(RawVector<UInt8> & s, ReadBuffer & rb, const char * end)
+{
+    s.insert(static_cast<const char *>(rb.position()), end);
+}
+
+template <>
 inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
 {
     s.insert(rb.position(), end);
@@ -240,6 +247,7 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
 }
 
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilNewlineInto<RawVector<UInt8>>(RawVector<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
 template <typename Vector>
@@ -314,6 +322,7 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf)
 }
 
 template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilEOFInto<RawVector<UInt8>>(RawVector<UInt8> & s, ReadBuffer & buf);
 
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
@@ -532,16 +541,15 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
     readEscapedStringIntoImpl<Vector, true>(s, buf);
 }
-
+template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<RawVector<UInt8>>(RawVector<UInt8> & s, ReadBuffer & buf);
+template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
     s.clear();
     readEscapedStringInto(s, buf);
 }
-
-template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 
 /** If enable_sql_style_quoting == true,
@@ -649,6 +657,7 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readQuotedStringInto<true>(RawVector<UInt8> & s, ReadBuffer & buf);
 template void readQuotedStringInto<true>(String & s, ReadBuffer & buf);
 template void readQuotedStringInto<false>(String & s, ReadBuffer & buf);
 template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
@@ -930,6 +939,7 @@ String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const For
 }
 
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringInto<RawVector<UInt8>>(RawVector<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 template void readCSVStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
@@ -980,6 +990,8 @@ void readJSONString(String & s, ReadBuffer & buf)
 
 template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONStringInto<RawVector<UInt8>, void>(RawVector<UInt8> & s, ReadBuffer & buf);
+template bool readJSONStringInto<RawVector<UInt8>, bool>(RawVector<UInt8> & s, ReadBuffer & buf);
 template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);

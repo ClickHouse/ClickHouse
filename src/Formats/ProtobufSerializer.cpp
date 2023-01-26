@@ -12,6 +12,7 @@
 #   include <Columns/ColumnTuple.h>
 #   include <Columns/ColumnVector.h>
 #   include <Common/PODArray.h>
+#   include <Common/RawVector.h>
 #   include <Common/quoteString.h>
 #   include <Core/DecimalComparison.h>
 #   include <DataTypes/DataTypeAggregateFunction.h>
@@ -271,7 +272,7 @@ namespace
         }
 
         void readStr(String & str) { reader->readString(str); }
-        void readStrAndAppend(PaddedPODArray<UInt8> & str) { reader->readStringAndAppend(str); }
+        void readStrAndAppend(RawVector<UInt8> & str) { reader->readStringAndAppend(str); }
 
         template <typename DestType>
         DestType parseFromStr(std::string_view str) const
@@ -727,7 +728,7 @@ namespace
                 case FieldTypeId::TYPE_INT32:
                 {
                     write_function = [this](std::string_view str) { writeInt(parseFromStr<Int32>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readInt(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int32()); };
                     break;
                 }
@@ -735,7 +736,7 @@ namespace
                 case FieldTypeId::TYPE_SINT32:
                 {
                     write_function = [this](std::string_view str) { writeSInt(parseFromStr<Int32>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readSInt(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readSInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int32()); };
                     break;
                 }
@@ -743,7 +744,7 @@ namespace
                 case FieldTypeId::TYPE_UINT32:
                 {
                     write_function = [this](std::string_view str) { writeUInt(parseFromStr<UInt32>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readUInt(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readUInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint32()); };
                     break;
                 }
@@ -751,7 +752,7 @@ namespace
                 case FieldTypeId::TYPE_INT64:
                 {
                     write_function = [this](std::string_view str) { writeInt(parseFromStr<Int64>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readInt(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int64()); };
                     break;
                 }
@@ -759,7 +760,7 @@ namespace
                 case FieldTypeId::TYPE_SINT64:
                 {
                     write_function = [this](std::string_view str) { writeSInt(parseFromStr<Int64>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readSInt(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readSInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int64()); };
                     break;
                 }
@@ -767,7 +768,7 @@ namespace
                 case FieldTypeId::TYPE_UINT64:
                 {
                     write_function = [this](std::string_view str) { writeUInt(parseFromStr<UInt64>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readUInt(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readUInt(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint64()); };
                     break;
                 }
@@ -775,7 +776,7 @@ namespace
                 case FieldTypeId::TYPE_FIXED32:
                 {
                     write_function = [this](std::string_view str) { writeFixed<UInt32>(parseFromStr<UInt32>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<UInt32>(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readFixed<UInt32>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint32()); };
                     break;
                 }
@@ -783,7 +784,7 @@ namespace
                 case FieldTypeId::TYPE_SFIXED32:
                 {
                     write_function = [this](std::string_view str) { writeFixed<Int32>(parseFromStr<Int32>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Int32>(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readFixed<Int32>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int32()); };
                     break;
                 }
@@ -791,7 +792,7 @@ namespace
                 case FieldTypeId::TYPE_FIXED64:
                 {
                     write_function = [this](std::string_view str) { writeFixed<UInt64>(parseFromStr<UInt64>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<UInt64>(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readFixed<UInt64>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_uint64()); };
                     break;
                 }
@@ -799,7 +800,7 @@ namespace
                 case FieldTypeId::TYPE_SFIXED64:
                 {
                     write_function = [this](std::string_view str) { writeFixed<Int64>(parseFromStr<Int64>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Int64>(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readFixed<Int64>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_int64()); };
                     break;
                 }
@@ -807,7 +808,7 @@ namespace
                 case FieldTypeId::TYPE_FLOAT:
                 {
                     write_function = [this](std::string_view str) { writeFixed<Float32>(parseFromStr<Float32>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Float32>(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readFixed<Float32>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_float()); };
                     break;
                 }
@@ -815,7 +816,7 @@ namespace
                 case FieldTypeId::TYPE_DOUBLE:
                 {
                     write_function = [this](std::string_view str) { writeFixed<Float64>(parseFromStr<Float64>(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { toStringAppend(readFixed<Float64>(), str); };
+                    read_function = [this](RawVector<UInt8> & str) { toStringAppend(readFixed<Float64>(), str); };
                     default_function = [this]() -> String { return toString(field_descriptor.default_value_double()); };
                     break;
                 }
@@ -832,7 +833,7 @@ namespace
                             cannotConvertValue(str, "String", field_descriptor.type_name());
                     };
 
-                    read_function = [this](PaddedPODArray<UInt8> & str)
+                    read_function = [this](RawVector<UInt8> & str)
                     {
                         UInt64 u64 = readUInt();
                         if (u64 < 2)
@@ -855,7 +856,7 @@ namespace
                 case FieldTypeId::TYPE_BYTES:
                 {
                     write_function = [this](std::string_view str) { writeStr(str); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { readStrAndAppend(str); };
+                    read_function = [this](RawVector<UInt8> & str) { readStrAndAppend(str); };
                     default_function = [this]() -> String { return field_descriptor.default_value_string(); };
                     break;
                 }
@@ -863,7 +864,7 @@ namespace
                 case FieldTypeId::TYPE_ENUM:
                 {
                     write_function = [this](std::string_view str) { writeInt(stringToProtobufEnumValue(str)); };
-                    read_function = [this](PaddedPODArray<UInt8> & str) { protobufEnumValueToStringAppend(static_cast<int>(readInt()), str); };
+                    read_function = [this](RawVector<UInt8> & str) { protobufEnumValueToStringAppend(static_cast<int>(readInt()), str); };
                     default_function = [this]() -> String { return field_descriptor.default_value_enum()->name(); };
                     break;
                 }
@@ -873,11 +874,11 @@ namespace
             }
         }
 
-        const PaddedPODArray<UInt8> & getDefaultString()
+        const RawVector<UInt8> & getDefaultString()
         {
             if (!default_string)
             {
-                PaddedPODArray<UInt8> arr;
+                RawVector<UInt8> arr;
                 auto str = default_function();
                 arr.insert(str.data(), str.data() + str.size());
                 if constexpr (is_fixed_string)
@@ -888,7 +889,7 @@ namespace
         }
 
         template <typename NumberType>
-        void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
+        void toStringAppend(NumberType value, RawVector<UInt8> & str)
         {
             WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
@@ -923,7 +924,7 @@ namespace
             return enum_value_descriptor->name();
         }
 
-        void protobufEnumValueToStringAppend(int value, PaddedPODArray<UInt8> & str) const
+        void protobufEnumValueToStringAppend(int value, RawVector<UInt8> & str) const
         {
             auto name = protobufEnumValueToString(value);
             str.insert(name.data(), name.data() + name.length());
@@ -932,11 +933,11 @@ namespace
         const std::shared_ptr<const DataTypeFixedString> fixed_string_data_type;
         const size_t n = 0;
         std::function<void(std::string_view)> write_function;
-        std::function<void(PaddedPODArray<UInt8> &)> read_function;
+        std::function<void(RawVector<UInt8> &)> read_function;
         std::function<String()> default_function;
         std::unordered_map<std::string_view, int> string_to_protobuf_enum_value_map;
-        PaddedPODArray<UInt8> text_buffer;
-        std::optional<PaddedPODArray<UInt8>> default_string;
+        RawVector<UInt8> text_buffer;
+        std::optional<RawVector<UInt8>> default_string;
     };
 
 

@@ -278,7 +278,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 
     ssize_t index = mask.size() - 1;
     ssize_t from = size() - 1;
-    chars.resize_fill(mask.size() * n, 0);
+    chars.resize_fill(mask.size() * n);
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)

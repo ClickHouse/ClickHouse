@@ -4,7 +4,7 @@
 
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
-#include <Common/PODArray.h>
+#include <Common/RawVector.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -116,7 +116,7 @@ inline UInt64 ALWAYS_INLINE normalizedQueryHash(const String & query)
 
 
 template <bool keep_names>
-inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArray<UInt8> & res_data)
+inline void normalizeQueryToPODArray(const char * begin, const char * end, RawVector<UInt8> & res_data)
 {
     Lexer lexer(begin, end);
     /// Coalesce whitespace characters and comments to a single whitespace.

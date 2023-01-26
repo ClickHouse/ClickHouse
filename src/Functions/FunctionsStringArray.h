@@ -678,7 +678,8 @@ public:
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+                /// NOTE: std::vector::operator[] has an assertion for out of bound
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset - 1]);
 
                 generator.set(pos, end);
                 size_t j = 0;

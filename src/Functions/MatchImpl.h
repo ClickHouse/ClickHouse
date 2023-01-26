@@ -209,7 +209,7 @@ struct MatchImpl
             /// NOTE This almost matches with the case of impl::likePatternIsSubstring.
 
             const UInt8 * const begin = haystack_data.data();
-            const UInt8 * const end = haystack_data.begin() + haystack_data.size();
+            const UInt8 * const end = haystack_data.data() + haystack_data.size();
             const UInt8 * pos = begin;
 
             /// The current index in the array of strings.

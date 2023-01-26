@@ -156,7 +156,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
-    filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
+    filterArraysImpl<Chars>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
     return res;
 }
 
@@ -176,7 +176,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
     UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
     offsets_data.resize(mask.size());
-    chars_data.resize_fill(last_offset, 0);
+    chars_data.resize_fill(last_offset);
     while (index >= 0)
     {
         offsets_data[index] = last_offset;

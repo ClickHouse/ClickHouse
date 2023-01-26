@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
+#include <Common/RawVector.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
 #include <Common/memcmpSmall.h>
@@ -14,7 +15,6 @@
 
 
 class Collator;
-
 
 namespace DB
 {
@@ -25,7 +25,7 @@ class ColumnString final : public COWHelper<IColumn, ColumnString>
 {
 public:
     using Char = UInt8;
-    using Chars = PaddedPODArray<UInt8>;
+    using Chars = RawVector<UInt8>;
 
 private:
     friend class COWHelper<IColumn, ColumnString>;

@@ -1,9 +1,10 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/RawVector.h>
 #include <bit>
-#include "ColumnsCommon.h"
 
 
 namespace DB
@@ -188,10 +189,10 @@ namespace
     };
 
 
-    template <typename T, typename ResultOffsetsBuilder>
+    template <typename C, typename ResultOffsetsBuilder>
     void filterArraysImplGeneric(
-        const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-        PaddedPODArray<T> & res_elems, IColumn::Offsets * res_offsets,
+        const C & src_elems, const IColumn::Offsets & src_offsets,
+        C & res_elems, IColumn::Offsets * res_offsets,
         const IColumn::Filter & filt, ssize_t result_size_hint)
     {
         const size_t size = src_offsets.size();
@@ -226,7 +227,7 @@ namespace
 
             const auto elems_size_old = res_elems.size();
             res_elems.resize(elems_size_old + arr_size);
-            memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
+            memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(typename C::value_type));
         };
 
         /** A slightly more optimized version.
@@ -254,7 +255,7 @@ namespace
                 /// copy elements for SIMD_BYTES arrays at once
                 const auto elems_size_old = res_elems.size();
                 res_elems.resize(elems_size_old + chunk_size);
-                memcpy(&res_elems[elems_size_old], &src_elems[chunk_offset], chunk_size * sizeof(T));
+                memcpy(&res_elems[elems_size_old], &src_elems[chunk_offset], chunk_size * sizeof(typename C::value_type));
             }
             else
             {
@@ -286,35 +287,43 @@ namespace
 }
 
 
-template <typename T>
+template <typename C>
 void filterArraysImpl(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-    PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
+    const C & src_elems, const IColumn::Offsets & src_offsets,
+    C & res_elems, IColumn::Offsets & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
-    return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint);
+    return filterArraysImplGeneric<C, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint);
 }
 
-template <typename T>
+template <typename C>
 void filterArraysImplOnlyData(
-    const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
-    PaddedPODArray<T> & res_elems,
+    const C & src_elems, const IColumn::Offsets & src_offsets,
+    C & res_elems,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
-    return filterArraysImplGeneric<T, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint);
+    return filterArraysImplGeneric<C, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint);
 }
 
 
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
-#define INSTANTIATE(TYPE) \
-template void filterArraysImpl<TYPE>( \
-    const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
-    PaddedPODArray<TYPE> &, IColumn::Offsets &, \
-    const IColumn::Filter &, ssize_t); \
-template void filterArraysImplOnlyData<TYPE>( \
-    const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
-    PaddedPODArray<TYPE> &, \
-    const IColumn::Filter &, ssize_t);
+#define INSTANTIATE(TYPE)                                     \
+template void filterArraysImpl<PaddedPODArray<TYPE>>(         \
+    const PaddedPODArray<TYPE> &, const IColumn::Offsets &,   \
+    PaddedPODArray<TYPE> &, IColumn::Offsets &,               \
+    const IColumn::Filter &, ssize_t);                        \
+template void filterArraysImpl<RawVector<TYPE>>(              \
+    const RawVector<TYPE> &, const IColumn::Offsets &,        \
+    RawVector<TYPE> &, IColumn::Offsets &,                    \
+    const IColumn::Filter &, ssize_t);                        \
+template void filterArraysImplOnlyData<PaddedPODArray<TYPE>>( \
+    const PaddedPODArray<TYPE> &, const IColumn::Offsets &,   \
+    PaddedPODArray<TYPE> &,                                   \
+    const IColumn::Filter &, ssize_t);                        \
+template void filterArraysImplOnlyData<RawVector<TYPE>>(      \
+    const RawVector<TYPE> &, const IColumn::Offsets &,        \
+    RawVector<TYPE> &,                                        \
+    const IColumn::Filter &, ssize_t);                        \
 
 INSTANTIATE(UInt8)
 INSTANTIATE(UInt16)

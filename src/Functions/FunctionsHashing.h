@@ -1337,7 +1337,11 @@ public:
         if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
         {
             auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
-            col_to_fixed_string->getChars() = std::move(*reinterpret_cast<ColumnFixedString::Chars *>(&col_to->getData()));
+            if (col_to->size())
+            {
+                StringRef data = col_to->getDataAt(0);
+                col_to_fixed_string->insertData(data.data, data.size);
+            }
             return col_to_fixed_string;
         }
 

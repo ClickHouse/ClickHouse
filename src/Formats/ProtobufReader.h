@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_PROTOBUF
-#   include <Common/PODArray.h>
+#   include <Common/RawVector.h>
 #   include <IO/ReadBuffer.h>
 
 
@@ -30,7 +30,7 @@ public:
     template<typename T> T readFixed();
 
     void readString(String & str);
-    void readStringAndAppend(PaddedPODArray<UInt8> & str);
+    void readStringAndAppend(RawVector<UInt8> & str);
 
     bool eof() const { return in->eof(); }
 

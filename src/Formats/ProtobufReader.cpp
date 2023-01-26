@@ -270,7 +270,7 @@ void ProtobufReader::readString(String & str)
     readBinary(reinterpret_cast<char*>(str.data()), length);
 }
 
-void ProtobufReader::readStringAndAppend(PaddedPODArray<UInt8> & str)
+void ProtobufReader::readStringAndAppend(RawVector<UInt8> & str)
 {
     if (unlikely(cursor > field_end))
         throwUnknownFormat();
