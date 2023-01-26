@@ -84,4 +84,4 @@ drop dictionary if exists regexp_device;
 drop table if exists user_agents;
 "
 
-rm -rf "$USER_FILES_PATH/test_02504"
+rm -rf "$user_files_path/test_02504"
