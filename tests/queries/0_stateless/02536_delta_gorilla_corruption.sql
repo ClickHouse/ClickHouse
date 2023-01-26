@@ -1,3 +1,6 @@
+-- Tags: no-asan
+-- no-asan: the flaky check complains that the test sometimes runs > 60 sec on asan builds
+
 select 'Original bug: the same query executed multiple times yielded different results.';
 select 'For unclear reasons this happened only in Release builds, not in Debug builds.';
 
