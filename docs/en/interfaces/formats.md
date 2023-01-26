@@ -2351,7 +2351,7 @@ FROM file(dump.sql, MySQLDump)
 
 ## Markdown {#markdown}
 
-You can export results using [Markdown](https://en.wikipedia.org/wiki/Markdown) format to use the output in `.md` files:
+You can export results using [Markdown](https://en.wikipedia.org/wiki/Markdown) format to generate output ready to be pasted into your `.md` files:
 
 ```sql
 SELECT
