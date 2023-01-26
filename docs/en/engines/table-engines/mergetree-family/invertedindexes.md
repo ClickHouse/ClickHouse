@@ -7,7 +7,7 @@ keywords: [full-text search, text search]
 
 # Inverted indexes [experimental]
 
-Inverted indexes are an experimental type of [secondary indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.mdi/#available-types-of-indices) which provide fast text search
+Inverted indexes are an experimental type of [secondary indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
 capabilities for [String](/docs/en/sql-reference/data-types/string.md) or [FixedString](/docs/en/sql-reference/data-types/fixedstring.md)
 columns. The main idea of an inverted index is to store a mapping from "terms" to the rows which contain these terms. "Terms" are
 tokenized cells of the string column. For example, the string cell "I will be a little late" is by default tokenized into six terms "I", "will",
