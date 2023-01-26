@@ -152,7 +152,7 @@ function start()
             echo -e "Cannot start clickhouse-server\tFAIL" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
+            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
             break
         fi
         # use root to match with current uid
@@ -229,12 +229,6 @@ fi
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateless # to have a proper environment
 
-# But we still need default disk because some tables loaded only into it
-sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
-mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
-
 # we mount tests folder from repo to /usr/share
 ln -s /usr/share/clickhouse-test/ci/stress.py /usr/bin/stress
 ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
@@ -276,6 +270,12 @@ else
     # Previous version may not be ready for fault injections
     export ZOOKEEPER_FAULT_INJECTION=0
     configure
+
+    # But we still need default disk because some tables loaded only into it
+    sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+    sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+    sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
     # Avoid "Setting s3_check_objects_after_upload is neither a builtin setting..."
     rm -f /etc/clickhouse-server/users.d/enable_blobs_check.xml ||:
