@@ -157,13 +157,6 @@ namespace
         };
         using URIInfoPtr = std::shared_ptr<URIInfo>;
 
-        void onCancel() override
-        {
-            std::lock_guard lock(reader_mutex);
-            if (reader)
-                reader->cancel();
-        }
-
         static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
         {
             const auto & user_info = request_uri.getUserInfo();
@@ -241,6 +234,13 @@ namespace
         {
             while (true)
             {
+                if (isCancelled())
+                {
+                    if (reader)
+                        reader->cancel();
+                    break;
+                }
+
                 if (!reader)
                 {
                     auto current_uri_pos = uri_info->next_uri_to_read.fetch_add(1);
@@ -249,18 +249,17 @@ namespace
 
                     auto current_uri = uri_info->uri_list_to_read[current_uri_pos];
 
-                    std::lock_guard lock(reader_mutex);
                     initialize(current_uri);
                 }
 
                 Chunk chunk;
-                std::lock_guard lock(reader_mutex);
                 if (reader->pull(chunk))
                     return chunk;
 
                 pipeline->reset();
                 reader.reset();
             }
+            return {};
         }
 
         static std::unique_ptr<ReadBuffer> getFirstAvailableURLReadBuffer(
@@ -443,9 +442,6 @@ namespace
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
-        /// onCancell and generate can be called concurrently and both of them
-        /// have R/W access to reader pointer.
-        std::mutex reader_mutex;
 
         Poco::Net::HTTPBasicCredentials credentials;
     };
