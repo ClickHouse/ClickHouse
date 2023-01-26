@@ -1,15 +1,15 @@
-#include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeFactory.h>
-
+#include "DataTypeInterval.h"
+#include "DataTypeFactory.h"
+#include "Serializations/SerializationInterval.h"
 
 namespace DB
 {
+SerializationPtr DataTypeInterval::doGetDefaultSerialization() const { return std::make_shared<SerializationInterval>(kind); }
 
 bool DataTypeInterval::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && kind == static_cast<const DataTypeInterval &>(rhs).kind;
 }
-
 
 void registerDataTypeInterval(DataTypeFactory & factory)
 {
@@ -25,5 +25,4 @@ void registerDataTypeInterval(DataTypeFactory & factory)
     factory.registerSimpleDataType("IntervalQuarter", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Quarter)); });
     factory.registerSimpleDataType("IntervalYear", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Year)); });
 }
-
 }
