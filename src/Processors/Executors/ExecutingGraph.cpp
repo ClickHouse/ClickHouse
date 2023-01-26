@@ -400,7 +400,9 @@ void ExecutingGraph::cancel()
         {
             try
             {
-                processor->cancel();
+                bool is_source = processor->getInputs().empty();
+                if (is_source)
+                    processor->cancel();
             }
             catch (...)
             {
