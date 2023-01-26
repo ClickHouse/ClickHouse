@@ -341,13 +341,6 @@ HDFSSource::HDFSSource(
     initialize();
 }
 
-void HDFSSource::onCancel()
-{
-    std::lock_guard lock(reader_mutex);
-    if (reader)
-        reader->cancel();
-}
-
 bool HDFSSource::initialize()
 {
     current_path = (*file_iterator)();
@@ -387,8 +380,12 @@ Chunk HDFSSource::generate()
 {
     while (true)
     {
-        if (!reader || isCancelled())
+        if (isCancelled() || !reader)
+        {
+            if (reader)
+                reader->cancel();
             break;
+        }
 
         Chunk chunk;
         if (reader->pull(chunk))
@@ -416,15 +413,12 @@ Chunk HDFSSource::generate()
             return Chunk(std::move(columns), num_rows);
         }
 
-        {
-            std::lock_guard lock(reader_mutex);
-            reader.reset();
-            pipeline.reset();
-            read_buf.reset();
+        reader.reset();
+        pipeline.reset();
+        read_buf.reset();
 
-            if (!initialize())
-                break;
-        }
+        if (!initialize())
+            break;
     }
     return {};
 }
