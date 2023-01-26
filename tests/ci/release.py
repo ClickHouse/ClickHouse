@@ -72,11 +72,13 @@ class Release:
         release_commit: str,
         release_type: Literal["major", "minor", "patch"],
         dry_run: bool,
+        with_stderr: bool,
     ):
         self.repo = repo
         self._release_commit = ""
         self.release_commit = release_commit
         self.dry_run = dry_run
+        self.with_stderr = with_stderr
         assert release_type in self.BIG + self.SMALL
         self.release_type = release_type
         self._git = Git()
@@ -94,6 +96,8 @@ class Release:
         if dry_run:
             logging.info("Would run command%s:\n    %s", cwd_text, cmd)
             return ""
+        if not self.with_stderr:
+            kwargs["stderr"] = subprocess.DEVNULL
 
         logging.info("Running command%s:\n    %s", cwd_text, cmd)
         return self._git.run(cmd, cwd, **kwargs)
@@ -610,6 +614,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="do not make any actual changes in the repo, just show what will be done",
     )
+    parser.add_argument(
+        "--with-stderr",
+        action="store_true",
+        help="if set, the stderr of all subprocess commands will be printed as well",
+    )
 
     return parser.parse_args()
 
@@ -618,7 +627,9 @@ def main():
     logging.basicConfig(level=logging.INFO)
     args = parse_args()
     repo = Repo(args.repo, args.remote_protocol)
-    release = Release(repo, args.commit, args.release_type, args.dry_run)
+    release = Release(
+        repo, args.commit, args.release_type, args.dry_run, args.with_stderr
+    )
 
     release.do(args.check_dirty, args.check_branch)
 
