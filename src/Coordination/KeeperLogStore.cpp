@@ -5,11 +5,11 @@ namespace DB
 {
 
 KeeperLogStore::KeeperLogStore(
-    const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_, uint64_t max_log_file_size)
+    const std::string & changelogs_path, LogFileSettings log_file_settings)
     : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(changelogs_path, rotate_interval_, force_sync_, log, compress_logs_, max_log_file_size)
+    , changelog(changelogs_path, log, log_file_settings)
 {
-    if (force_sync_)
+    if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
     else
         LOG_INFO(log, "force_sync disabled");

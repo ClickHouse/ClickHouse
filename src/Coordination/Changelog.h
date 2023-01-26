@@ -70,6 +70,15 @@ using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
 
 class ChangelogWriter;
 
+struct LogFileSettings
+{
+    bool force_sync = true;
+    bool compress_logs = true;
+    uint64_t rotate_interval = 100000;
+    uint64_t max_size = 0;
+    uint64_t overallocate_size = 0;
+};
+
 /// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one.
 /// Able to read broken files/entries and discard them. Not thread safe.
@@ -78,11 +87,8 @@ class Changelog
 public:
     Changelog(
         const std::string & changelogs_dir_,
-        uint64_t rotate_interval_,
-        bool force_sync_,
         Poco::Logger * log_,
-        bool compress_logs_ = true,
-        uint64_t max_log_file_size = 0);
+        LogFileSettings log_file_settings);
 
     Changelog(Changelog &&) = delete;
 
