@@ -23,6 +23,9 @@ namespace DB
          * Allow only DNSPTRProvider to instantiate this class
          * */
         struct provider_token {};
+
+        static constexpr auto C_ARES_POLL_EVENTS = POLLRDNORM | POLLIN;
+
     public:
         explicit CaresPTRResolver(provider_token);
         ~CaresPTRResolver() override;
@@ -32,7 +35,7 @@ namespace DB
         std::unordered_set<std::string> resolve_v6(const std::string & ip) override;
 
     private:
-        bool wait();
+        bool wait_and_process();
 
         void cancel_requests();
 

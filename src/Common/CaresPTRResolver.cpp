@@ -82,7 +82,7 @@ namespace DB
 
         resolve(ip, ptr_records);
 
-        if (!wait())
+        if (!wait_and_process())
         {
             cancel_requests();
             throw DB::Exception("Failed to complete reverse DNS query for IP " + ip, DB::ErrorCodes::DNS_ERROR);
@@ -99,7 +99,7 @@ namespace DB
 
         resolve_v6(ip, ptr_records);
 
-        if (!wait())
+        if (!wait_and_process())
         {
             cancel_requests();
             throw DB::Exception("Failed to complete reverse DNS query for IP " + ip, DB::ErrorCodes::DNS_ERROR);
@@ -125,7 +125,7 @@ namespace DB
         ares_gethostbyaddr(channel, reinterpret_cast<const void*>(&addr), sizeof(addr), AF_INET6, callback, &response);
     }
 
-    bool CaresPTRResolver::wait()
+    bool CaresPTRResolver::wait_and_process()
     {
         int sockets[ARES_GETSOCK_MAXNUM];
         pollfd pollfd[ARES_GETSOCK_MAXNUM];
@@ -140,17 +140,19 @@ namespace DB
             {
                 number_of_fds_ready = poll(readable_sockets.data(), static_cast<nfds_t>(readable_sockets.size()), static_cast<int>(timeout));
 
-                // will add comments/ improve readability soon
-                if (number_of_fds_ready < 0)
+                bool poll_error = number_of_fds_ready < 0;
+                bool is_poll_error_an_interrupt = poll_error && errno == EINTR;
+
+                /*
+                 * Retry in case of interrupts and return false in case of actual errors.
+                 * */
+                if (is_poll_error_an_interrupt)
                 {
-                    if (errno == EINTR)
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                    continue;
+                }
+                else if (poll_error)
+                {
+                    return false;
                 }
             }
 
@@ -187,7 +189,7 @@ namespace DB
             if (ARES_GETSOCK_READABLE(sockets_bitmask, i))
             {
                 pollfd[i].fd = sockets[i];
-                pollfd[i].events = POLLRDNORM | POLLIN;
+                pollfd[i].events = C_ARES_POLL_EVENTS;
             }
 
             if (pollfd[i].events)
@@ -227,7 +229,7 @@ namespace DB
     {
         for (auto readable_socket : readable_sockets)
         {
-            auto fd = readable_socket.revents & (POLLRDNORM | POLLIN) ? readable_socket.fd : ARES_SOCKET_BAD;
+            auto fd = readable_socket.revents & C_ARES_POLL_EVENTS ? readable_socket.fd : ARES_SOCKET_BAD;
             ares_process_fd(channel, fd, ARES_SOCKET_BAD);
         }
     }
