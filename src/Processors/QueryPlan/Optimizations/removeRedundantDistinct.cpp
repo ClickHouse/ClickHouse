@@ -1,8 +1,10 @@
 #include <memory>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -46,10 +48,16 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
 
     distinct_node = parent_node->children.front();
 
-    DistinctStep * inner_distinct_step = nullptr;
+    const DistinctStep * inner_distinct_step = nullptr;
     QueryPlan::Node * node = distinct_node;
     while (!node->children.empty())
     {
+        const IQueryPlanStep* current_step = node->step.get();
+
+        /// don't try to remove DISTINCT after union or join
+        if (typeid_cast<const UnionStep*>(current_step) || typeid_cast<const JoinStep*>(current_step))
+            break;
+
         node = node->children.front();
         inner_distinct_step = typeid_cast<DistinctStep *>(node->step.get());
         if (inner_distinct_step)
