@@ -702,7 +702,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::ge
             return entry;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", toString(task_uuid));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", task_uuid);
 }
 
 String PartMovesBetweenShardsOrchestrator::Entry::toString() const

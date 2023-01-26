@@ -21,11 +21,21 @@ def check_logs(must_contain=[], must_not_contain=[]):
     node.query("SYSTEM FLUSH LOGS")
 
     for str in must_contain:
-        escaped_str = str.replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+        escaped_str = (
+            str.replace("`", "\\`")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+            .replace("*", "\\*")
+        )
         assert node.contains_in_log(escaped_str)
 
     for str in must_not_contain:
-        escaped_str = str.replace("`", "\\`").replace("[", "\\[").replace("]", "\\]")
+        escaped_str = (
+            str.replace("`", "\\`")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+            .replace("*", "\\*")
+        )
         assert not node.contains_in_log(escaped_str)
 
     for str in must_contain:
@@ -255,6 +265,34 @@ def test_table_functions():
 
     for i in range(0, len(table_functions)):
         node.query(f"DROP TABLE tablefunc{i}")
+
+
+def test_table_function_ways_to_call():
+    password = new_password()
+
+    table_function = f"s3('http://minio1:9001/root/data/testfuncw.tsv.gz', 'minio', '{password}', 'TSV', 'x int')"
+
+    queries = [
+        "CREATE TABLE tablefuncw (`x` int) AS {}",
+        "INSERT INTO FUNCTION {} SELECT * FROM numbers(10)",
+        "DESCRIBE TABLE {}",
+    ]
+
+    for query in queries:
+        # query_and_get_answer_with_error() is used here because we don't want to stop on error "Cannot connect to AWS".
+        # We test logging here and not actual work with AWS server.
+        node.query_and_get_answer_with_error(query.format(table_function))
+
+    table_function_with_hidden_arg = "s3('http://minio1:9001/root/data/testfuncw.tsv.gz', 'minio', '[HIDDEN]', 'TSV', 'x int')"
+
+    check_logs(
+        must_contain=[
+            query.format(table_function_with_hidden_arg) for query in queries
+        ],
+        must_not_contain=[password],
+    )
+
+    node.query("DROP TABLE tablefuncw")
 
 
 def test_encryption_functions():
