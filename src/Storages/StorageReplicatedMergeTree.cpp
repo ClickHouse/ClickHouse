@@ -3864,6 +3864,8 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 {
     auto zookeeper = getZooKeeper();
 
+    LOG_DEBUG(log, "Cleaning up last parent node for partition {}", partition_id);
+
     /// The name of the previous part for which the quorum was reached.
     const String quorum_last_part_path = fs::path(zookeeper_path) / "quorum" / "last_part";
 
@@ -3894,6 +3896,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 
         if (code == Coordination::Error::ZOK)
         {
+            LOG_DEBUG(log, "Last parent node for partition {} is cleaned up", partition_id);
             break;
         }
         else if (code == Coordination::Error::ZNONODE)
