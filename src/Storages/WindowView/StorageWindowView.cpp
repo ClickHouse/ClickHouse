@@ -1442,11 +1442,11 @@ void StorageWindowView::writeIntoWindowView(
         });
     }
 
-    std::shared_lock<std::shared_mutex> fire_signal_lock;
+    std::shared_lock<SharedMutex> fire_signal_lock;
     QueryPipelineBuilder builder;
     if (window_view.is_proctime)
     {
-        fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
+        fire_signal_lock = std::shared_lock(window_view.fire_signal_mutex);
 
         /// Fill ____timestamp column with current time in case of now() time column.
         if (window_view.is_time_column_func_now)

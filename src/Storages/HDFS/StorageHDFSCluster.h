@@ -28,7 +28,8 @@ public:
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & compression_method_);
+        const String & compression_method_,
+        bool structure_argument_was_provided_);
 
     std::string getName() const override { return "HDFSCluster"; }
 
@@ -48,7 +49,7 @@ private:
     String uri;
     String format_name;
     String compression_method;
-    bool add_columns_structure_to_query = false;
+    bool structure_argument_was_provided;
 };
 
 

@@ -1890,8 +1890,8 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     auto lock = getLock();
 
-    const bool allow_concurrent_backups = this->getConfigRef().getBool("allow_concurrent_backups", true);
-    const bool allow_concurrent_restores = this->getConfigRef().getBool("allow_concurrent_restores", true);
+    const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
+    const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
     if (!shared->backups_worker)
         shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads, allow_concurrent_backups, allow_concurrent_restores);
@@ -3841,7 +3841,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
-    res.max_query_cache_size = settings.max_query_cache_size;
+    res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;

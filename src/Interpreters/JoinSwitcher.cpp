@@ -41,7 +41,7 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
 bool JoinSwitcher::switchJoin()
 {
     HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks();
+    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
 
     /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, right_sample_block);
