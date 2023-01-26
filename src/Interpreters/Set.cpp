@@ -176,10 +176,10 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 
 bool Set::insertFromBlock(const Columns & columns)
 {
-    std::lock_guard<std::shared_mutex> lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (data.empty())
-        throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
@@ -242,7 +242,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
-        throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no columns passed to Set::execute method.");
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
@@ -416,9 +416,9 @@ bool Set::areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) con
 void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
     if (!this->areTypesEqual(set_type_idx, other_type))
-        throw Exception("Types of column " + toString(set_type_idx + 1) + " in section IN don't match: "
-                        + other_type->getName() + " on the left, "
-                        + data_types[set_type_idx]->getName() + " on the right", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Types of column {} in section IN don't match: "
+                        "{} on the left, {} on the right", toString(set_type_idx + 1),
+                        other_type->getName(), data_types[set_type_idx]->getName());
 }
 
 MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)

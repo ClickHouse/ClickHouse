@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
+static std::mutex init_sqlite_db_mutex;
 
 void processSQLiteError(const String & message, bool throw_on_error)
 {
@@ -52,7 +53,11 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         LOG_DEBUG(&Poco::Logger::get("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
 
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
+    int status;
+    {
+        std::lock_guard lock(init_sqlite_db_mutex);
+        status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
+    }
 
     if (status != SQLITE_OK)
     {

@@ -145,8 +145,6 @@ public:
 
     Chunk generate() override;
 
-    void onCancel() override;
-
 private:
     String name;
     String bucket;
@@ -209,8 +207,6 @@ private:
 
     ReaderHolder reader;
 
-    /// onCancel and generate can be called concurrently
-    std::mutex reader_mutex;
     std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
     size_t download_thread_num = 1;

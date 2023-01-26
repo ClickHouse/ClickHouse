@@ -342,8 +342,7 @@ void registerStorageDictionary(StorageFactory & factory)
             /// Create dictionary storage that is view of underlying dictionary
 
             if (args.engine_args.size() != 1)
-                throw Exception("Storage Dictionary requires single parameter: name of dictionary",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
 
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");

@@ -49,7 +49,9 @@ public:
 
         if (pop_var_x < 0.0 || pop_var_y < 0.0)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Population variance parameters must be larger than or equal to zero in aggregate function {}.", Data::name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Population variance parameters must be larger than or equal to zero "
+                            "in aggregate function {}.", Data::name);
         }
 
         if (confidence_level <= 0.0 || confidence_level >= 1.0)

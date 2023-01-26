@@ -42,16 +42,16 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function 'merge' requires exactly 2 arguments"
-            " - name of source database and regexp for table names.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Table function 'merge' requires exactly 2 arguments - name "
+                        "of source database and regexp for table names.");
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.size() != 2)
-        throw Exception("Table function 'merge' requires exactly 2 arguments"
-            " - name of source database and regexp for table names.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Table function 'merge' requires exactly 2 arguments - name "
+                        "of source database and regexp for table names.");
 
     auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
 
