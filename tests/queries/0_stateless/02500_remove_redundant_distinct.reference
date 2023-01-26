@@ -1,3 +1,4 @@
+-- Disabled query_plan_remove_redundant_distinct
 Expression (Projection)
   Distinct
     Distinct (Preliminary DISTINCT)
@@ -9,8 +10,85 @@ Expression (Projection)
                 Distinct (Preliminary DISTINCT)
                   Expression (Before ORDER BY)
                     ReadFromStorage (SystemNumbers)
+-- Enabled query_plan_remove_redundant_distinct
+-- DISTINCT is only in most inner subquery
+-- query
+SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT *
+    FROM
+    (
+        SELECT DISTINCT *
+        FROM numbers(3)
+    )
+)
+-- explain
 Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Projection)))))
   Distinct
     Distinct (Preliminary DISTINCT)
       Expression (Before ORDER BY)
         ReadFromStorage (SystemNumbers)
+-- execute
+0
+1
+2
+-- do _not_ remove DISTINCT after UNION
+-- query
+SELECT DISTINCT number FROM
+(
+    (SELECT DISTINCT number FROM numbers(1))
+    UNION ALL
+    (SELECT DISTINCT number FROM numbers(2))
+)
+ORDER BY number
+-- explain
+Expression (Projection)
+  Distinct
+    Sorting (Sorting for ORDER BY)
+      Distinct (Preliminary DISTINCT)
+        Union
+          Expression ((Before ORDER BY + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromStorage (SystemNumbers)
+          Expression (( + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromStorage (SystemNumbers)
+-- execute
+0
+1
+-- do _not_ remove DISTINCT after JOIN
+-- query
+SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT number AS n
+    FROM numbers(2)
+),
+(
+    SELECT DISTINCT number AS n
+    FROM numbers(2)
+) SETTINGS joined_subquery_requires_alias=0
+-- explain
+Expression (Projection)
+  Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression (Before ORDER BY)
+        Join (JOIN FillRightFirst)
+          Expression ((Before JOIN + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromStorage (SystemNumbers)
+          Expression ((Joined actions + (Rename joined columns + Projection)))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromStorage (SystemNumbers)
+-- execute
+0	0
+1	1
