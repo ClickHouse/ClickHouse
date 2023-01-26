@@ -1,13 +1,14 @@
 ---
 slug: /en/engines/table-engines/mergetree-family/invertedindexes
-sidebar_position: 40
 sidebar_label:  Inverted Indexes
+description: Quickly find search terms in text.
+keywords: [full-text search, text search]
 ---
 
 # Inverted indexes [experimental]
 
-Inverted indexes are an experimental type of [secondary indexes](mergetree.md#available-types-of-indices) which provide fast text search
-capabilities for [String](../../../sql-reference/data-types/string.md) or [FixedString](../../../sql-reference/data-types/fixedstring.md)
+Inverted indexes are an experimental type of [secondary indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
+capabilities for [String](/docs/en/sql-reference/data-types/string.md) or [FixedString](/docs/en/sql-reference/data-types/fixedstring.md)
 columns. The main idea of an inverted index is to store a mapping from "terms" to the rows which contain these terms. "Terms" are
 tokenized cells of the string column. For example, the string cell "I will be a little late" is by default tokenized into six terms "I", "will",
 "be", "a", "little" and "late". Another kind of tokenizer is n-grams. For example, the result of 3-gram tokenization will be 21 terms "I w",
