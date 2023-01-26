@@ -786,21 +786,21 @@ struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
 
-    static inline UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t);
+        return time_zone.toDayOfWeek(t, mode);
     }
-    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt32 t, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t);
+        return time_zone.toDayOfWeek(t, mode);
     }
-    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int32 d, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(ExtendedDayNum(d));
+        return time_zone.toDayOfWeek(ExtendedDayNum(d), mode);
     }
-    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16 d, UInt8 mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(DayNum(d));
+        return time_zone.toDayOfWeek(DayNum(d), mode);
     }
 
     using FactorTransform = ToMondayImpl;
