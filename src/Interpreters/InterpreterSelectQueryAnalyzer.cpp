@@ -63,6 +63,11 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const SelectQu
     return query_tree;
 }
 
+PlannerConfiguration buildPlannerConfiguration(const SelectQueryOptions & select_query_options)
+{
+    return {.only_analyze = select_query_options.only_analyze};
+}
+
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -73,7 +78,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(Context::createCopy(context_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context))
-    , planner(query_tree, select_query_options)
+    , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
 {
 }
 
@@ -85,8 +90,30 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(Context::createCopy(context_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
-    , planner(query_tree, select_query_options)
+    , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
 {
+}
+
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
+    const ContextPtr & context,
+    const SelectQueryOptions & select_query_options)
+{
+    auto select_query_options_copy = select_query_options;
+    select_query_options_copy.only_analyze = true;
+    InterpreterSelectQueryAnalyzer interpreter(query, context, select_query_options_copy);
+
+    return interpreter.getSampleBlock();
+}
+
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query,
+    const ContextPtr & context,
+    const SelectQueryOptions & select_query_options)
+{
+    auto select_query_options_copy = select_query_options;
+    select_query_options_copy.only_analyze = true;
+    InterpreterSelectQueryAnalyzer interpreter(query, context, select_query_options_copy);
+
+    return interpreter.getSampleBlock();
 }
 
 Block InterpreterSelectQueryAnalyzer::getSampleBlock()

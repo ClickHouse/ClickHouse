@@ -32,6 +32,14 @@ public:
 
     Block getSampleBlock();
 
+    static Block getSampleBlock(const ASTPtr & query,
+        const ContextPtr & context,
+        const SelectQueryOptions & select_query_options = {});
+
+    static Block getSampleBlock(const QueryTreeNodePtr & query_,
+        const ContextPtr & context_,
+        const SelectQueryOptions & select_query_options = {});
+
     BlockIO execute() override;
 
     QueryPlan && extractQueryPlan() &&;
