@@ -243,7 +243,9 @@ public:
 
     virtual NameSet getCacheLayersNames() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method `getCacheLayersNames()` is not implemented for disk: {}",
+                        getDataSourceDescription().type);
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -268,7 +270,9 @@ public:
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method `getRemotePathsRecursive() not implemented for disk: {}`",
+                        getDataSourceDescription().type);
     }
 
     /// Batch request to remove multiple files.

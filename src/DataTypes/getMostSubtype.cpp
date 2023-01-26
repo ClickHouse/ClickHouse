@@ -58,14 +58,14 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     if (types.empty())
     {
         if (throw_if_result_is_nothing)
-            throw Exception("There is no common type for empty type list", ErrorCodes::NO_COMMON_TYPE);
+            throw Exception(ErrorCodes::NO_COMMON_TYPE, "There is no common type for empty type list");
         return std::make_shared<DataTypeNothing>();
     }
 
     if (types.size() == 1)
     {
         if (throw_if_result_is_nothing && typeid_cast<const DataTypeNothing *>(types[0].get()))
-            throw Exception("There is no common type for type Nothing", ErrorCodes::NO_COMMON_TYPE);
+            throw Exception(ErrorCodes::NO_COMMON_TYPE, "There is no common type for type Nothing");
         return types[0];
     }
 
@@ -309,8 +309,9 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 else if (min_mantissa_bits_of_floating <= 53)
                     return std::make_shared<DataTypeFloat64>();
                 else
-                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
-                                    + " but as all data types are floats, we must have found maximum float type", ErrorCodes::NO_COMMON_TYPE);
+                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                                    "Logical error: {} but as all data types are floats, "
+                                    "we must have found maximum float type", getExceptionMessagePrefix(types));
             }
 
             /// If there are signed and unsigned types of same bit-width, the result must be unsigned number.
@@ -326,8 +327,10 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 else if (min_bits_of_unsigned_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
                 else
-                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
-                                    + " but as all data types are integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
+                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                                    "Logical error: {} but as all data types are integers, "
+                                    "we must have found maximum unsigned integer type",
+                                    getExceptionMessagePrefix(types));
             }
 
             /// All signed.
@@ -341,8 +344,9 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 else if (min_bits_of_signed_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
                 else
-                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
-                                    + " but as all data types are integers, we must have found maximum signed integer type", ErrorCodes::NO_COMMON_TYPE);
+                    throw Exception(ErrorCodes::NO_COMMON_TYPE,
+                                    "Logical error: {} but as all data types are integers, "
+                                    "we must have found maximum signed integer type", getExceptionMessagePrefix(types));
             }
         }
     }

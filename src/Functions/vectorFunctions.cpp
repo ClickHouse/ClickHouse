@@ -1127,7 +1127,7 @@ public:
         const auto & p_column = arguments[1];
 
         if (!isColumnConst(*p_column.column) && p_column.column->size() != 1)
-            throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
         double p;
         if (isFloat(p_column.column->getDataType()))
@@ -1135,10 +1135,12 @@ public:
         else if (isUnsignedInteger(p_column.column->getDataType()))
             p = p_column.column->getUInt(0);
         else
-            throw Exception{"Second argument for function " + getName() + " must be either constant Float64 or constant UInt", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be either constant Float64 or constant UInt", getName());
 
         if (p < 1 || p >= HUGE_VAL)
-            throw Exception{"Second argument for function " + getName() + " must be not less than one and not be an infinity", ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Second argument for function {} must be not less than one and not be an infinity",
+                            getName());
 
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
