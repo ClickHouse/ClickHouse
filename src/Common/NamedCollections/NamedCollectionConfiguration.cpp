@@ -63,7 +63,7 @@ template <typename T> T getConfigValueOrDefault(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot extract {} from {}",
-            toString(magic_enum::enum_name(Field::TypeToEnum<NearestFieldType<T>>::value)),
+            magic_enum::enum_name(Field::TypeToEnum<NearestFieldType<T>>::value),
             path);
     }
 }

@@ -55,7 +55,7 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     if (search != query_parameters.end())
         return search->second;
     else
-        throw Exception("Substitution " + backQuote(name) + " is not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)

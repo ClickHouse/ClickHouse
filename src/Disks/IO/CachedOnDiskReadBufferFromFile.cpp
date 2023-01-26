@@ -1045,7 +1045,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {
-            throw Exception("Expected SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected SEEK_SET or SEEK_CUR as whence");
         }
 
         if (whence == SEEK_CUR)

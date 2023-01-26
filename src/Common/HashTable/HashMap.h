@@ -298,7 +298,7 @@ public:
     {
         if (auto it = this->find(x); it != this->end())
             return it->getMapped();
-        throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find element in HashMap::at method");
     }
 
 private:

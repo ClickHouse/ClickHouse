@@ -641,8 +641,9 @@ public:
                     arguments[0].type->getName(), getName());
             if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
-                    arguments[0].type->getName(), getName());
+                                "Illegal type {} of first argument of function {} when arguments size is 2 or 3. "
+                                "Should be a integer or a date with time",
+                                arguments[0].type->getName(), getName());
         }
         else
         {
@@ -686,8 +687,9 @@ public:
                     }))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64 when arguments size is 1.",
-                        arguments[0].column->getName(), getName());
+                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
+                                    "or DateTime64 when arguments size is 1.",
+                                    arguments[0].column->getName(), getName());
                 }
             }
             else
@@ -867,7 +869,7 @@ public:
 
                 pos = percent_pos + 1;
                 if (pos >= end)
-                    throw Exception("Sign '%' is the last in format, if you need it, use '%%'", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign '%' is the last in format, if you need it, use '%%'");
 
                 switch (*pos)
                 {
@@ -1103,7 +1105,7 @@ public:
                     // Case 2: find closing single quote
                     Int64 count = numLiteralChars(cur_token + 1, end);
                     if (count == -1)
-                        throw Exception("No closing single quote for literal", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No closing single quote for literal");
                     else
                     {
                         for (Int64 i = 1; i <= count; i++)
@@ -1145,9 +1147,9 @@ public:
                         reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                         break;
                     case 'x':
-                        throw Exception("format is not supported for WEEK_YEAR", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK_YEAR");
                     case 'w':
-                        throw Exception("format is not supported for WEEK_OF_WEEK_YEAR", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK_OF_WEEK_YEAR");
                     case 'e':
                         instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfWeek1Based, repetitions));
                         /// Day of week range [1, 7]
@@ -1232,7 +1234,7 @@ public:
                         reserve_size += std::max(repetitions, 2);
                         break;
                     case 'S':
-                        throw Exception("format is not supported for FRACTION_OF_SECOND", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for FRACTION_OF_SECOND");
                     case 'z':
                         if (repetitions <= 3)
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
@@ -1242,7 +1244,7 @@ public:
                         reserve_size += 32;
                         break;
                     case 'Z':
-                        throw Exception("format is not supported for TIMEZONE_OFFSET_ID", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for TIMEZONE_OFFSET_ID");
                     default:
                         if (isalpha(*cur_token))
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for {}", String(cur_token, repetitions));

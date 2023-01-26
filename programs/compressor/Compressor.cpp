@@ -46,7 +46,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
         UInt32 size_compressed = unalignedLoad<UInt32>(&header[1]);
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
-            throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed. Most likely corrupted data.");
 
         UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
 
@@ -113,10 +113,10 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codecs = options["codec"].as<std::vector<std::string>>();
 
         if ((use_lz4hc || use_zstd || use_deflate_qpl || use_none) && !codecs.empty())
-            throw Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, codec flags like --zstd and --codec options are mutually exclusive");
 
         if (!codecs.empty() && options.count("level"))
-            throw Exception("Wrong options, --level is not compatible with --codec list", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong options, --level is not compatible with --codec list");
 
         std::string method_family = "LZ4";
 

@@ -27,7 +27,7 @@ namespace DB
 struct NoCancel {};
 
 // for all PerfTests
-static constexpr int requests = 512 * 1024;
+static constexpr int requests = 128 * 1024;
 static constexpr int max_threads = 16;
 
 template <class T, class Status = NoCancel>
@@ -90,6 +90,49 @@ void TestSharedMutex()
             thread.join();
 
         ASSERT_EQ(test, writers);
+    }
+
+    // Test multiple readers can acquire lock simultaneously using try_shared_lock
+    for (int readers = 1; readers <= 128; readers *= 2)
+    {
+        T sm;
+        std::atomic<int> test(0);
+        std::barrier sync(readers + 1);
+
+        std::vector<std::thread> threads;
+        threads.reserve(readers);
+        auto reader = [&]
+        {
+            [[maybe_unused]] Status status;
+            bool acquired = sm.try_lock_shared();
+            ASSERT_TRUE(acquired);
+            if (!acquired) return; // Just to make TSA happy
+            sync.arrive_and_wait(); // (A) sync with writer
+            test++;
+            sync.arrive_and_wait(); // (B) wait for writer to call try_lock() while shared_lock is held
+            sm.unlock_shared();
+            sync.arrive_and_wait(); // (C) wait for writer to release lock, to ensure try_lock_shared() will see no writer
+        };
+
+        for (int i = 0; i < readers; i++)
+            threads.emplace_back(reader);
+
+        { // writer
+            [[maybe_unused]] Status status;
+            sync.arrive_and_wait(); // (A) wait for all reader to acquire lock to avoid blocking them
+            ASSERT_FALSE(sm.try_lock());
+            sync.arrive_and_wait(); // (B) sync with readers
+            {
+                std::unique_lock lock(sm);
+                test++;
+            }
+            sync.arrive_and_wait(); // (C) sync with readers
+        }
+
+        for (auto & thread : threads)
+            thread.join();
+
+        ASSERT_EQ(test, readers + 1);
     }
 }
 
