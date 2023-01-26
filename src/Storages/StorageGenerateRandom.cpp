@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -21,6 +22,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
@@ -157,7 +159,7 @@ ColumnPtr fillColumnWithRandomData(
 
         case TypeIndex::Array:
         {
-            auto nested_type = typeid_cast<const DataTypeArray *>(type.get())->getNestedType();
+            auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
 
             auto offsets_column = ColumnVector<ColumnArray::Offset>::create();
             auto & offsets = offsets_column->getData();
@@ -189,7 +191,7 @@ ColumnPtr fillColumnWithRandomData(
 
         case TypeIndex::Nullable:
         {
-            auto nested_type = typeid_cast<const DataTypeNullable *>(type.get())->getNestedType();
+            auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
             auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
 
             auto null_map_column = ColumnUInt8::create();
@@ -369,6 +371,20 @@ ColumnPtr fillColumnWithRandomData(
 
             for (size_t i = 0; i < limit; ++i)
                 column_concrete.getData()[i] = rng() % range;   /// Slow
+
+            return column;
+        }
+        case TypeIndex::LowCardinality:
+        {
+            /// We are generating the values using the same random distribution as for full columns
+            /// so it's not in fact "low cardinality",
+            /// but it's ok for testing purposes, because the LowCardinality data type supports high cardinality data as well.
+
+            auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+
+            auto column = type->createColumn();
+            typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*nested_column, 0, limit);
 
             return column;
         }
