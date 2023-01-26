@@ -527,11 +527,11 @@ Header: toTypeName(sum(v)) String
             Header: dummy UInt8
 -- execute
 Nullable(Float64)	9007199254740994
--- sumCount() with Floats depends on order, -> sorting is not removed here
+-- sumIf() with Floats depends on order, -> sorting is not removed here
 -- query
 SELECT
-    toTypeName(sumCount(v)),
-    sumCount(v)
+    toTypeName(sumIf(v, v > 0)),
+    sumIf(v, v > 0)
 FROM
 (
     SELECT v
@@ -547,12 +547,13 @@ FROM
 )
 -- explain
 Expression ((Projection + Before ORDER BY))
-Header: toTypeName(sumCount(v)) String
-        sumCount(v) Tuple(Float64, UInt64)
+Header: toTypeName(sumIf(v, greater(v, 0))) String
+        sumIf(v, greater(v, 0)) Float64
   Aggregating
-  Header: sumCount(v) Tuple(Float64, UInt64)
+  Header: sumIf(v, greater(v, 0)) Float64
     Expression ((Before GROUP BY + Projection))
     Header: v Float64
+            greater(v, 0) UInt8
       Sorting (Sorting for ORDER BY)
       Header: v Float64
         Union
@@ -570,7 +571,7 @@ Header: toTypeName(sumCount(v)) String
             ReadFromStorage (SystemOne)
             Header: dummy UInt8
 -- execute
-Tuple(Float64, UInt64)	(9007199254740994,3)
+Float64	9007199254740994
 -- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function
 -- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order
 -- query

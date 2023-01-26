@@ -272,10 +272,10 @@ FROM
 )"
 run_query "$query"
 
-echo "-- sumCount() with Floats depends on order, -> sorting is not removed here"
+echo "-- sumIf() with Floats depends on order, -> sorting is not removed here"
 query="SELECT
-    toTypeName(sumCount(v)),
-    sumCount(v)
+    toTypeName(sumIf(v, v > 0)),
+    sumIf(v, v > 0)
 FROM
 (
     SELECT v
