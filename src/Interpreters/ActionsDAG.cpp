@@ -1271,9 +1271,9 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
             auto it = first_result.find(input_node->result_name);
             if (it == first_result.end() || it->second.empty())
             {
-                if (first.project_input)
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                                    "Cannot find column {} in ActionsDAG result", input_node->result_name);
+//                if (first.project_input)
+//                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+//                                    "Cannot find column {} in ActionsDAG result", input_node->result_name);
 
                 first.inputs.push_back(input_node);
             }
