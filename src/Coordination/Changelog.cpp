@@ -284,15 +284,15 @@ private:
         if (file_buf)
             return *file_buf;
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writter wasn't initialized for any file");
-    } 
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writer wasn't initialized for any file");
+    }
 
     WriteBufferFromFile & getFileBuffer()
     {
         auto * file_buffer = tryGetFileBuffer();
 
         if (!file_buffer)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writter wasn't initialized for any file");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writer wasn't initialized for any file");
 
         return *file_buffer;
     }
