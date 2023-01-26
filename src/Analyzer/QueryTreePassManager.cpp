@@ -61,6 +61,14 @@ public:
         : pass_name(std::move(pass_name_))
     {}
 
+    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
+    {
+        if (parent->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return false;
+
+        return true;
+    }
+
     void visitImpl(QueryTreeNodePtr & node) const
     {
         if (auto * column = node->as<ColumnNode>())
