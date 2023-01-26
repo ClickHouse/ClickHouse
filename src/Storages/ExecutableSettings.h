@@ -16,7 +16,7 @@ class ASTStorage;
     M(UInt64, command_read_timeout, 10000, "Timeout for reading data from command stdout in milliseconds.", 0) \
     M(UInt64, command_write_timeout, 10000, "Timeout for writing data to command stdin in milliseconds.", 0)
 
-DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
+DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, NO_ALIASES)
 
 /// Settings for ExecutablePool engine.
 struct ExecutableSettings : public BaseSettings<ExecutableSettingsTraits>
