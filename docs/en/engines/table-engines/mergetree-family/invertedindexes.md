@@ -1,6 +1,5 @@
 ---
 slug: /en/engines/table-engines/mergetree-family/invertedindexes
-sidebar_position: 40
 sidebar_label:  Inverted Indexes
 description: Quickly find search terms in text.
 keywords: [full-text search, text search]
