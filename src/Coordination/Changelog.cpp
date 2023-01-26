@@ -10,7 +10,8 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-#include "IO/WriteBufferFromFile.h"
+#include <IO/WriteBufferFromFile.h>
+#include <base/errnoToString.h>
 
 
 namespace DB
@@ -33,7 +34,7 @@ std::string formatChangelogPath(
     const std::string & prefix, const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
 {
     std::filesystem::path path(prefix);
-    path /= std::filesystem::path(name_prefix + "_" + std::to_string(from_index) + "_" + std::to_string(to_index) + "." + extension);
+    path /= std::filesystem::path(fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension));
     return path;
 }
 
@@ -77,28 +78,19 @@ Checksum computeRecordChecksum(const ChangelogRecord & record)
 }
 
 /// Appendable log writer
-/// Writes are done in 2 phases:
-/// - write everything in-memory
-/// - if enough space on disk, write everything to file
 /// New file on disk will be created when:
 /// - we have already "rotation_interval" amount of logs in a single file
 /// - maximum log file size is reached
-/// At least 1 log should be contained in each log
+/// At least 1 log record should be contained in each log
 class ChangelogWriter
 {
 public:
     ChangelogWriter(
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
-        bool compress_logs_,
-        bool force_fsync_,
         const std::filesystem::path & changelogs_dir_,
-        uint64_t rotate_interval_,
-        uint64_t max_log_file_size_)
+        LogFileSettings log_file_settings_)
         : existing_changelogs(existing_changelogs_)
-        , compress_logs(compress_logs_)
-        , force_fsync(force_fsync_)
-        , rotate_interval(rotate_interval_)
-        , max_log_file_size(max_log_file_size_)
+        , log_file_settings(log_file_settings_)
         , changelogs_dir(changelogs_dir_)
         , log(&Poco::Logger::get("Changelog"))
     {
@@ -108,11 +100,11 @@ public:
     {
         try
         {
-            if (mode == WriteMode::Append && file_description->expectedEntriesCountInLog() != rotate_interval)
+            if (mode == WriteMode::Append && file_description->expectedEntriesCountInLog() != log_file_settings.rotate_interval)
                 LOG_TRACE(
                     log,
                     "Looks like rotate_logs_interval was changed, current {}, expected entries in last log {}",
-                    rotate_interval,
+                    log_file_settings.rotate_interval,
                     file_description->expectedEntriesCountInLog());
 
             // we have a file we need to finalize first
@@ -143,7 +135,7 @@ public:
             last_index_written.reset();
             current_file_description = std::move(file_description);
 
-            if (compress_logs)
+            if (log_file_settings.compress_logs)
                 compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(file_buf), /* compression level = */ 3, /* append_to_existing_file_ = */ mode == WriteMode::Append);
 
             prealloc_done = false;
@@ -162,17 +154,19 @@ public:
     {
         const auto * file_buffer = tryGetFileBuffer();
         assert(file_buffer && current_file_description);
+
+        assert(record.header.index - getStartIndex() <= current_file_description->expectedEntriesCountInLog());
         const bool log_is_complete = record.header.index - getStartIndex() == current_file_description->expectedEntriesCountInLog();
 
         if (log_is_complete)
             rotate(record.header.index);
 
         // writing at least 1 log is requirement - we don't want empty log files
-        const bool log_too_big = record.header.index != getStartIndex() && max_log_file_size != 0 &&  initial_file_size + file_buffer->count() > total_bytes_available;
+        const bool log_too_big = record.header.index != getStartIndex() && log_file_settings.max_size != 0 &&  initial_file_size + file_buffer->count() > log_file_settings.max_size;
 
         if (log_too_big)
         {
-            LOG_TRACE(log, "Log file reached maximum allowed size ({} bytes), creating new log file", max_log_file_size);
+            LOG_TRACE(log, "Log file reached maximum allowed size ({} bytes), creating new log file", log_file_settings.max_size);
             rotate(record.header.index);
         }
 
@@ -212,7 +206,7 @@ public:
     {
         auto * file_buffer = tryGetFileBuffer();
         /// Fsync file system if needed
-        if (file_buffer && force_fsync)
+        if (file_buffer && log_file_settings.force_sync)
             file_buffer->sync();
     }
 
@@ -228,17 +222,17 @@ public:
         auto new_description = std::make_shared<ChangelogFileDescription>();
         new_description->prefix = DEFAULT_PREFIX;
         new_description->from_log_index = new_start_log_index;
-        new_description->to_log_index = new_start_log_index + rotate_interval - 1;
+        new_description->to_log_index = new_start_log_index + log_file_settings.rotate_interval - 1;
         new_description->extension = "bin";
 
-        if (compress_logs)
+        if (log_file_settings.compress_logs)
             new_description->extension += "." + toContentEncodingName(CompressionMethod::Zstd);
 
         new_description->path = formatChangelogPath(
             changelogs_dir,
             new_description->prefix,
             new_start_log_index,
-            new_start_log_index + rotate_interval - 1,
+            new_start_log_index + log_file_settings.rotate_interval - 1,
             new_description->extension);
 
         LOG_TRACE(log, "Starting new changelog {}", new_description->path);
@@ -268,15 +262,15 @@ private:
             return;
         }
 
-        if (compress_logs)
+        if (log_file_settings.compress_logs)
             compressed_buffer->finalize();
 
         flush();
 
-        if (max_log_file_size != 0)
+        if (log_file_settings.max_size != 0)
             ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
 
-        if (compress_logs)
+        if (log_file_settings.compress_logs)
             compressed_buffer.reset();
         else
             file_buf.reset();
@@ -321,26 +315,25 @@ private:
 
     void tryPreallocateForFile()
     {
-        if (max_log_file_size == 0)
+        if (log_file_settings.max_size == 0)
         {
-            total_bytes_available = 0;
             initial_file_size = 0;
             prealloc_done = true;
             return;
         }
 
         const auto & file_buffer = getFileBuffer();
-        bool fallocate_ok = false;
 #ifdef OS_LINUX
         {
-            int res = fallocate(file_buffer.getFD(), FALLOC_FL_KEEP_SIZE, 0, 2 * max_log_file_size);
+            int res = fallocate(file_buffer.getFD(), FALLOC_FL_KEEP_SIZE, 0, log_file_settings.max_size + log_file_settings.overallocate_size);
             if (res == ENOSPC)
             {
                 LOG_FATAL(log, "Failed to allocate enough space on disk for logs");
                 return;
             }
 
-            fallocate_ok = res == 0;
+            if (res != 0)
+                LOG_WARNING(log, "Could not preallocate space on disk using fallocate. Error: {}, errno: {}", errnoToString(), errno);
         }
 #endif
 
@@ -351,8 +344,6 @@ private:
         }
 
         initial_file_size = buf.st_size;
-        // if fallocate passed, we know exact allocated bytes on disk which can be larger than the max_log_file_size
-        total_bytes_available = fallocate_ok ? buf.st_blocks * 512 : max_log_file_size;
 
         prealloc_done = true;
     }
@@ -363,17 +354,12 @@ private:
     std::unique_ptr<WriteBufferFromFile> file_buf;
     std::optional<uint64_t> last_index_written;
     size_t initial_file_size{0};
-    size_t total_bytes_available{0};
 
     std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
 
     bool prealloc_done{false};
 
-    // Changelog configuration
-    const bool compress_logs;
-    const bool force_fsync;
-    const uint64_t rotate_interval;
-    const uint64_t max_log_file_size;
+    LogFileSettings log_file_settings;
 
     const std::filesystem::path changelogs_dir;
 
@@ -510,14 +496,11 @@ private:
 
 Changelog::Changelog(
     const std::string & changelogs_dir_,
-    uint64_t rotate_interval_,
-    bool force_sync_,
     Poco::Logger * log_,
-    bool compress_logs_,
-    uint64_t max_log_file_size)
+    LogFileSettings log_file_settings)
     : changelogs_dir(changelogs_dir_)
     , changelogs_detached_dir(changelogs_dir / "detached")
-    , rotate_interval(rotate_interval_)
+    , rotate_interval(log_file_settings.rotate_interval)
     , log(log_)
     , write_operations(std::numeric_limits<size_t>::max())
     , append_completion_queue(std::numeric_limits<size_t>::max())
@@ -546,7 +529,7 @@ Changelog::Changelog(
     append_completion_thread = ThreadFromGlobalPool([this] { appendCompletionThread(); });
 
     current_writer = std::make_unique<ChangelogWriter>(
-        existing_changelogs, compress_logs_, force_sync_, changelogs_dir, rotate_interval_, max_log_file_size);
+        existing_changelogs, changelogs_dir, log_file_settings);
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -791,6 +774,9 @@ void Changelog::appendCompletionThread()
     bool append_ok = false;
     while (append_completion_queue.pop(append_ok))
     {
+        if (!append_ok)
+            current_writer->finalize();
+
         // we shouldn't start the raft_server before sending it here
         if (auto raft_server_locked = raft_server.lock())
             raft_server_locked->notify_log_append_completion(append_ok);
@@ -1075,7 +1061,7 @@ bool Changelog::flush()
     if (auto failed_ptr = flushAsync())
     {
         std::unique_lock lock{durable_idx_mutex};
-        durable_idx_cv.wait(lock, [&] { return failed_ptr || last_durable_idx == max_log_id; });
+        durable_idx_cv.wait(lock, [&] { return *failed_ptr || last_durable_idx == max_log_id; });
 
         return !*failed_ptr;
     }
