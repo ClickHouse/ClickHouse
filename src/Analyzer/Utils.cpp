@@ -90,6 +90,8 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
                 identifier.getFullName());
+
+        table_expression_node_ast->setAlias(identifier_node.getAlias());
     }
     else
     {

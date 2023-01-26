@@ -8,6 +8,8 @@
 
 #include <Parsers/ASTIdentifier.h>
 
+#include <Analyzer/TableNode.h>
+
 namespace DB
 {
 
@@ -99,9 +101,36 @@ QueryTreeNodePtr ColumnNode::cloneImpl() const
 
 ASTPtr ColumnNode::toASTImpl() const
 {
+    std::vector<std::string> additional_column_qualification_parts;
+
+    auto column_source = getColumnSourceOrNull();
+    if (column_source)
+    {
+        auto node_type = column_source->getNodeType();
+        if (node_type == QueryTreeNodeType::TABLE ||
+            node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+            node_type == QueryTreeNodeType::QUERY ||
+            node_type == QueryTreeNodeType::UNION)
+        {
+            if (column_source->hasAlias())
+            {
+                additional_column_qualification_parts = {column_source->getAlias()};
+            }
+            else if (auto * table_node = column_source->as<TableNode>())
+            {
+                const auto & table_storage_id = table_node->getStorageID();
+                additional_column_qualification_parts = {table_storage_id.getDatabaseName(), table_storage_id.getTableName()};
+            }
+        }
+    }
+
     auto column_name_identifier = Identifier(column.name);
-    auto column_name_identifier_parts = column_name_identifier.getParts();
-    return std::make_shared<ASTIdentifier>(std::move(column_name_identifier_parts));
+    const auto & column_name_identifier_parts = column_name_identifier.getParts();
+    additional_column_qualification_parts.insert(additional_column_qualification_parts.end(),
+        column_name_identifier_parts.begin(),
+        column_name_identifier_parts.end());
+
+    return std::make_shared<ASTIdentifier>(std::move(additional_column_qualification_parts));
 }
 
 }
