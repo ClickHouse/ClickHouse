@@ -320,12 +320,11 @@ namespace
 
         [[noreturn]] void cannotConvertValue(std::string_view src_value, std::string_view src_type_name, std::string_view dest_type_name) const
         {
-            throw Exception(
-                "Could not convert value '" + String{src_value} + "' from type " + String{src_type_name} + " to type "
-                    + String{dest_type_name} + " while " + (reader ? "reading" : "writing") + " field "
-                    + quoteString(field_descriptor.name()) + " " + (reader ? "for inserting into" : "extracted from") + " column "
-                    + quoteString(column_name),
-                ErrorCodes::PROTOBUF_BAD_CAST);
+            throw Exception(ErrorCodes::PROTOBUF_BAD_CAST,
+                            "Could not convert value '{}' from type {} to type {} while {} field {} {} column {}",
+                            String{src_value}, String{src_type_name}, String{dest_type_name},
+                            (reader ? "reading" : "writing"), quoteString(field_descriptor.name()),
+                            (reader ? "for inserting into" : "extracted from"), quoteString(column_name));
         }
 
         const String column_name;
@@ -660,7 +659,7 @@ namespace
                 if (row_num < old_size)
                 {
                     if (row_num != old_size - 1)
-                        throw Exception("Cannot replace a string in the middle of ColumnString", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace a string in the middle of ColumnString");
                     column_string.popBack(1);
                 }
                 try
@@ -1108,10 +1107,9 @@ namespace
 
             if (!num_mapped_values && !enum_data_type->getValues().empty() && enum_descriptor.value_count())
             {
-                throw Exception(
-                    "Couldn't find mapping between data type " + enum_data_type->getName() + " and the enum " + quoteString(enum_descriptor.full_name())
-                        + " in the protobuf schema",
-                    ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
+                throw Exception(ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD,
+                    "Couldn't find mapping between data type {} and the enum {} in the protobuf schema",
+                    enum_data_type->getName(), quoteString(enum_descriptor.full_name()));
             }
         }
 
@@ -1870,7 +1868,7 @@ namespace
             {
                 size_t new_size = nested_column.size();
                 if (new_size != old_size + 1)
-                    throw Exception("Size of ColumnNullable is unexpected", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of ColumnNullable is unexpected");
                 try
                 {
                     null_map.push_back(false);
@@ -2009,7 +2007,7 @@ namespace
             if (row_num < column_lc.size())
             {
                 if (row_num != column_lc.size() - 1)
-                    throw Exception("Cannot replace an element in the middle of ColumnLowCardinality", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace an element in the middle of ColumnLowCardinality");
                 column_lc.popBack(1);
             }
 
@@ -2090,7 +2088,7 @@ namespace
             auto & offsets = column_array.getOffsets();
             size_t old_size = offsets.size();
             if (row_num + 1 < old_size)
-                throw Exception("Cannot replace an element in the middle of ColumnArray", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace an element in the middle of ColumnArray");
             auto data_column = column_array.getDataPtr();
             size_t old_data_size = data_column->size();
 
@@ -2099,7 +2097,7 @@ namespace
                 element_serializer->readRow(old_data_size);
                 size_t data_size = data_column->size();
                 if (data_size != old_data_size + 1)
-                    throw Exception("Size of ColumnArray is unexpected", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of ColumnArray is unexpected");
 
                 if (row_num < old_size)
                     offsets.back() = data_size;
@@ -2719,8 +2717,10 @@ namespace
                     if (!column_array0.hasEqualOffsets(column_array))
                     {
                         throw Exception(ErrorCodes::PROTOBUF_BAD_CAST,
-                                        "Column #{} {} and column #{} {} are supposed to have equal offsets according to the following serialization tree:\n{}",
-                                        0, quoteString(column_names[0]), i, quoteString(column_names[i]), get_root_desc_function(0));
+                                        "Column #{} {} and column #{} {} are supposed "
+                                        "to have equal offsets according to the following serialization tree:\n{}",
+                                        0, quoteString(column_names[0]),
+                                        i, quoteString(column_names[i]), get_root_desc_function(0));
                     }
                 }
             }
@@ -2750,7 +2750,7 @@ namespace
         {
             size_t old_size = offset_columns[0]->size();
             if (row_num + 1 < old_size)
-                throw Exception("Cannot replace an element in the middle of ColumnArray", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace an element in the middle of ColumnArray");
 
             size_t old_data_size = data_columns[0]->size();
 
@@ -2759,7 +2759,7 @@ namespace
                 message_serializer->readRow(old_data_size);
                 size_t data_size = data_columns[0]->size();
                 if (data_size != old_data_size + 1)
-                    throw Exception("Unexpected number of elements of ColumnArray has been read", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of elements of ColumnArray has been read");
 
                 if (row_num < old_size)
                 {
@@ -2874,11 +2874,10 @@ namespace
 
             if (!message_serializer)
             {
-                throw Exception(
-                    "Not found matches between the names of the columns {" + boost::algorithm::join(column_names, ", ")
-                        + "} and the fields {" + boost::algorithm::join(getFieldNames(message_descriptor), ", ") + "} of the message "
-                        + quoteString(message_descriptor.full_name()) + " in the protobuf schema",
-                    ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS);
+                throw Exception(ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
+                     "Not found matches between the names of the columns {{}} and the fields {{}} of the message {} in the protobuf schema",
+                     boost::algorithm::join(column_names, ", "), boost::algorithm::join(getFieldNames(message_descriptor), ", "),
+                     quoteString(message_descriptor.full_name()));
             }
 
             missing_column_indices.clear();
@@ -3123,11 +3122,9 @@ namespace
                 auto it = field_descriptors_in_use.find(&field_descriptor_);
                 if (it != field_descriptors_in_use.end())
                 {
-                    throw Exception(
-                        "Multiple columns (" + backQuote(StringRef{it->second}) + ", "
-                            + backQuote(StringRef{column_name_}) + ") cannot be serialized to a single protobuf field "
-                            + quoteString(field_descriptor_.full_name()),
-                        ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD);
+                    throw Exception(ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD,
+                        "Multiple columns ({}, {}) cannot be serialized to a single protobuf field {}",
+                        backQuote(StringRef{it->second}), backQuote(StringRef{column_name_}), quoteString(field_descriptor_.full_name()));
                 }
 
                 used_column_indices.insert(used_column_indices.end(), column_indices_.begin(), column_indices_.end());
@@ -3302,9 +3299,8 @@ namespace
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
                     if (field_descriptor.is_required() && !field_descriptors_in_use.count(&field_descriptor))
-                        throw Exception(
-                            "Field " + quoteString(field_descriptor.full_name()) + " is required to be set",
-                            ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD);
+                        throw Exception(ErrorCodes::NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD, "Field {} is required to be set",
+                            quoteString(field_descriptor.full_name()));
                 }
             }
 
@@ -3441,12 +3437,12 @@ namespace
 
                         if (!message_serializer)
                         {
-                            throw Exception(
-                                "Not found matches between the names of the tuple's elements {"
-                                    + boost::algorithm::join(tuple_data_type.getElementNames(), ", ") + "} and the fields {"
-                                    + boost::algorithm::join(getFieldNames(*field_descriptor.message_type()), ", ") + "} of the message "
-                                    + quoteString(field_descriptor.message_type()->full_name()) + " in the protobuf schema",
-                                ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS);
+                            throw Exception(ErrorCodes::NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS,
+                                 "Not found matches between the names of the tuple's elements {{}} and the fields {{}} "
+                                 "of the message {} in the protobuf schema",
+                                 boost::algorithm::join(tuple_data_type.getElementNames(), ", "),
+                                 boost::algorithm::join(getFieldNames(*field_descriptor.message_type()), ", "),
+                                 quoteString(field_descriptor.message_type()->full_name()));
                         }
 
                         return std::make_unique<ProtobufSerializerTupleAsNestedMessage>(std::move(message_serializer));
@@ -3478,23 +3474,22 @@ namespace
                 }
 
                 default:
-                    throw Exception("Unknown data type: " + data_type->getName(), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown data type: {}", data_type->getName());
             }
         }
 
         [[noreturn]] static void throwFieldNotRepeated(const FieldDescriptor & field_descriptor, std::string_view column_name)
         {
             if (!field_descriptor.is_repeated())
-                throw Exception(
-                    "The field " + quoteString(field_descriptor.full_name())
-                        + " must be repeated in the protobuf schema to match the column " + backQuote(StringRef{column_name}),
-                    ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
+                throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
+                                "The field {} must be repeated in the protobuf schema to match the column {}",
+                                quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
 
-            throw Exception(
-                "The field " + quoteString(field_descriptor.full_name())
-                    + " is repeated but the level of repeatedness is not enough to serialize a multidimensional array from the column "
-                    + backQuote(StringRef{column_name}) + ". It's recommended to make the parent field repeated as well.",
-                ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
+            throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
+                            "The field {} is repeated but the level of repeatedness is not enough "
+                            "to serialize a multidimensional array from the column {}. "
+                            "It's recommended to make the parent field repeated as well.",
+                            quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
         }
 
         const ProtobufReaderOrWriter reader_or_writer;
@@ -3565,7 +3560,7 @@ namespace
                 {
                     if (skip_unsupported_fields)
                         return std::nullopt;
-                    throw Exception("Empty enum field", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty enum field");
                 }
                 int max_abs = std::abs(enum_descriptor->value(0)->number());
                 for (int i = 1; i != enum_descriptor->value_count(); ++i)
@@ -3581,7 +3576,7 @@ namespace
                 {
                     if (skip_unsupported_fields)
                         return std::nullopt;
-                    throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse supports only 8-bit and 16-bit enums");
                 }
             }
             case FieldTypeId::TYPE_GROUP:
@@ -3592,7 +3587,7 @@ namespace
                 {
                     if (skip_unsupported_fields)
                         return std::nullopt;
-                    throw Exception("Empty messages are not supported", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty messages are not supported");
                 }
                 else if (message_descriptor->field_count() == 1)
                 {

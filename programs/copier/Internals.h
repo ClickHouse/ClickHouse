@@ -119,7 +119,7 @@ struct TaskStateWithOwner
         rb >> state >> "\n" >> escape >> res.owner;
 
         if (state >= static_cast<int>(TaskState::Unknown))
-            throw Exception("Unknown state " + data, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state {}", data);
 
         res.state = static_cast<TaskState>(state);
         return res;

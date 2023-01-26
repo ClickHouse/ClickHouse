@@ -182,8 +182,9 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected node type for table expression. Expected identifier, table, table function, query, union, join or array join. Actual {}",
-                table_expression->getNodeTypeName());
+                            "Unexpected node type for table expression. "
+                            "Expected identifier, table, table function, query, union, join or array join. Actual {}",
+                            table_expression->getNodeTypeName());
         }
     }
 }
@@ -231,8 +232,9 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
-                    node_to_process->getNodeTypeName());
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                node_to_process->getNodeTypeName());
             }
         }
     }

@@ -79,7 +79,8 @@ public:
         auto compression_method = chooseCompressionMethod(filepath_, "");
         if (compression_method != CompressionMethod::Zstd && compression_method != CompressionMethod::None)
         {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported coordination log serialization format {}", toContentEncodingName(compression_method));
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported coordination log serialization format {}",
+                            toContentEncodingName(compression_method));
         }
         else if (compression_method == CompressionMethod::Zstd)
         {
