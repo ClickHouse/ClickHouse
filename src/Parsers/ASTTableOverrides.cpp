@@ -24,8 +24,7 @@ ASTPtr ASTTableOverride::clone() const
 
 void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState & state, FormatStateStacked frame) const
 {
-    FormatSettings settings = settings_;
-    settings.always_quote_identifiers = true;
+    FormatSettings settings(settings_, true);
     String nl_or_nothing = settings.one_line ? "" : "\n";
     String nl_or_ws = settings.one_line ? " " : "\n";
     String hl_keyword = settings.hilite ? hilite_keyword : "";

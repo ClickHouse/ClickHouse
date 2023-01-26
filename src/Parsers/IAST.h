@@ -183,15 +183,19 @@ public:
         WriteBuffer & ostr;
         bool hilite = false;
         bool one_line;
+    private:
         bool always_quote_identifiers = false;
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+    public:
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
         // Newline or whitespace.
         char nl_or_ws;
 
-        FormatSettings(WriteBuffer & ostr_, bool one_line_)
-            : ostr(ostr_), one_line(one_line_)
+        FormatSettings(WriteBuffer & ostr_, bool one_line_, bool always_quote_identifiers_ = false,
+                       IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks)
+            : ostr(ostr_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
+            identifier_quoting_style(identifier_quoting_style_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
@@ -199,6 +203,14 @@ public:
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
             always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
+            show_secrets(other.show_secrets)
+        {
+            nl_or_ws = one_line ? ' ' : '\n';
+        }
+
+        FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
+            : ostr(other.ostr), hilite(other.hilite), one_line(other.one_line),
+            always_quote_identifiers(always_quote_identifiers_), identifier_quoting_style(other.identifier_quoting_style),
             show_secrets(other.show_secrets)
         {
             nl_or_ws = one_line ? ' ' : '\n';
