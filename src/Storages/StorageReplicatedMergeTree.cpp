@@ -7520,32 +7520,39 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
 }
 
-bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
+bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds)
 {
     Stopwatch watch;
 
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+    LogEntriesData res;
+    queue.getEntries(res);
 
-    /// This is significant, because the execution of this task could be delayed at BackgroundPool.
-    /// And we force it to be executed.
-    background_operations_assignee.trigger();
-
-    Poco::Event target_size_event;
-    auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
+    if (!res.empty())
     {
-        if (new_queue_size <= queue_size)
-            target_size_event.set();
-    };
-    const auto handler = queue.addSubscriber(std::move(callback));
+        String waiting_for_log_entry_id = res.back().log_entry_id;
 
-    while (!target_size_event.tryWait(50))
-    {
-        if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
-            return false;
+        /// This is significant, because the execution of this task could be delayed at BackgroundPool.
+        /// And we force it to be executed.
+        background_operations_assignee.trigger();
 
-        if (partial_shutdown_called)
-            throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+        Poco::Event target_entry_event;
+        auto callback = [&target_entry_event, waiting_for_log_entry_id](size_t new_queue_size, const String & removed_log_entry_id)
+        {
+            if (removed_log_entry_id.compare(waiting_for_log_entry_id) == 0 || new_queue_size == 0)
+                target_entry_event.set();
+        };
+        const auto handler = queue.addSubscriber(std::move(callback));
+
+        while (!target_entry_event.tryWait(50))
+        {
+            if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
+                return false;
+
+            if (partial_shutdown_called)
+                throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+        }
     }
 
     return true;
