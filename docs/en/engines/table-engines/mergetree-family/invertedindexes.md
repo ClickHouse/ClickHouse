@@ -1,7 +1,7 @@
 ---
 slug: /en/engines/table-engines/mergetree-family/invertedindexes
 sidebar_position: 40
-sidebar_label:  Inverted indexes
+sidebar_label:  Inverted Indexes
 ---
 
 # Inverted indexes [experimental]
