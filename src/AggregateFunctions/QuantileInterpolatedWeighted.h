@@ -88,12 +88,12 @@ struct QuantileInterpolatedWeighted
     /// The same, but in the case of an empty state, NaN is returned.
     Float64 getFloat(Float64) const
     {
-        throw Exception("Method getFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileInterpolatedWeighted");
     }
 
     void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
     {
-        throw Exception("Method getManyFloat is not implemented for QuantileInterpolatedWeighted", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for QuantileInterpolatedWeighted");
     }
 
 private:

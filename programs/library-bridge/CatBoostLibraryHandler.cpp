@@ -169,7 +169,7 @@ std::vector<PODArray<char>> placeStringColumns(const ColumnRawPtrs & columns, si
         else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(column))
             data.push_back(placeFixedStringColumn(*column_fixed_string, buffer + i, size));
         else
-            throw Exception("Cannot place string column.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot place string column.");
     }
 
     return data;

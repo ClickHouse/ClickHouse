@@ -601,7 +601,7 @@ namespace MySQLReplication
                             DecimalType res(0);
 
                             if (payload.eof())
-                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+                                throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
                             if ((*payload.position() & 0x80) == 0)
                                 mask = static_cast<UInt32>(-1);
@@ -895,7 +895,7 @@ namespace MySQLReplication
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
         if (payload.eof())
-            throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
         UInt16 header = static_cast<unsigned char>(*payload.position());
         switch (header)

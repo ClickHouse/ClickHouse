@@ -141,9 +141,10 @@ void S3Settings::RequestSettings::PartUploadSettings::validate()
     size_t maybe_overflow;
     if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_factor is too big ({}). Multiplication to max_upload_part_size ({}) will cause integer overflow",
-            ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Setting upload_part_size_multiply_factor is too big ({}). "
+                        "Multiplication to max_upload_part_size ({}) will cause integer overflow",
+                        ReadableSize(max_part_number), ReadableSize(max_part_number_limit));
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
     if (!storage_class_name.empty() && !storage_class_names.contains(storage_class_name))
@@ -167,6 +168,7 @@ S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
 {
     max_single_read_retries = collection.getOrDefault<UInt64>("max_single_read_retries", max_single_read_retries);
     max_connections = collection.getOrDefault<UInt64>("max_connections", max_connections);
+    list_object_keys_size = collection.getOrDefault<UInt64>("list_object_keys_size", list_object_keys_size);
 }
 
 S3Settings::RequestSettings::RequestSettings(
@@ -180,6 +182,7 @@ S3Settings::RequestSettings::RequestSettings(
     max_single_read_retries = config.getUInt64(key + "max_single_read_retries", settings.s3_max_single_read_retries);
     max_connections = config.getUInt64(key + "max_connections", settings.s3_max_connections);
     check_objects_after_upload = config.getBool(key + "check_objects_after_upload", settings.s3_check_objects_after_upload);
+    list_object_keys_size = config.getUInt64(key + "list_object_keys_size", settings.s3_list_object_keys_size);
 
     /// NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
@@ -218,6 +221,9 @@ void S3Settings::RequestSettings::updateFromSettingsImpl(const Settings & settin
 
     if (!if_changed || settings.s3_max_unexpected_write_error_retries.changed)
         max_unexpected_write_error_retries = settings.s3_max_unexpected_write_error_retries;
+
+    if (!if_changed || settings.s3_list_object_keys_size.changed)
+        list_object_keys_size = settings.s3_list_object_keys_size;
 
     if ((!if_changed || settings.s3_max_get_rps.changed || settings.s3_max_get_burst.changed) && settings.s3_max_get_rps)
         get_request_throttler = std::make_shared<Throttler>(

@@ -229,7 +229,9 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
 
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", map_type.getKeyType()->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Only maps with String key type are supported in BSON, got key type: {}",
+                                map_type.getKeyType()->getName());
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);
@@ -452,7 +454,9 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         {
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", map_type.getKeyType()->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Only maps with String key type are supported in BSON, got key type: {}",
+                                map_type.getKeyType()->getName());
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);

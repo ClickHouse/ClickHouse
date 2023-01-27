@@ -9,12 +9,32 @@
 
 #include <base/defines.h>
 #include <Common/StackTrace.h>
+#include <Common/LoggingFormatStringHelpers.h>
 
 #include <fmt/format.h>
 
 
 namespace Poco { class Logger; }
 
+/// Extract format string from a string literal and constructs consteval fmt::format_string
+template <typename... Args>
+struct FormatStringHelperImpl
+{
+    std::string_view message_format_string;
+    fmt::format_string<Args...> fmt_str;
+    template<typename T>
+    consteval FormatStringHelperImpl(T && str) : message_format_string(tryGetStaticFormatString(str)), fmt_str(std::forward<T>(str)) {}
+    template<typename T>
+    FormatStringHelperImpl(fmt::basic_runtime<T> && str) : message_format_string(), fmt_str(std::forward<fmt::basic_runtime<T>>(str)) {}
+
+    PreformattedMessage format(Args && ...args) const
+    {
+        return PreformattedMessage{fmt::format(fmt_str, std::forward<Args...>(args)...), message_format_string};
+    }
+};
+
+template <typename... Args>
+using FormatStringHelper = FormatStringHelperImpl<std::type_identity_t<Args>...>;
 
 namespace DB
 {
@@ -33,22 +53,37 @@ public:
     {
         std::string msg;
         MessageMasked(const std::string & msg_);
+        MessageMasked(std::string && msg_);
     };
 
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
+    Exception(MessageMasked && msg_masked, int code, bool remote_);
 
     // delegating constructor to mask sensitive information from the message
-    Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_)
-    {}
+    Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_) {}
+    Exception(std::string && msg, int code, bool remote_ = false): Exception(MessageMasked(std::move(msg)), code, remote_) {}
+    Exception(PreformattedMessage && msg, int code): Exception(std::move(msg.message), code)
+    {
+        message_format_string = msg.format_string;
+    }
 
-    Exception(int code, const std::string & message)
+    template<typename T, typename = std::enable_if_t<std::is_convertible_v<T, String>>>
+    Exception(int code, T && message)
         : Exception(message, code)
-    {}
+    {
+        message_format_string = tryGetStaticFormatString(message);
+    }
+
+    template<> Exception(int code, const String & message) : Exception(message, code) {}
+    template<> Exception(int code, String & message) : Exception(message, code) {}
+    template<> Exception(int code, String && message) : Exception(std::move(message), code) {}
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
-    Exception(int code, fmt::format_string<Args...> fmt, Args &&... args) : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args)
+        : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
     {
+        message_format_string = fmt.message_format_string;
     }
 
     struct CreateFromPocoTag {};
@@ -87,6 +122,8 @@ public:
     /// Used for system.errors
     FramePointers getStackFramePointers() const;
 
+    std::string_view tryGetMessageFormatString() const { return message_format_string; }
+
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
@@ -94,6 +131,9 @@ private:
     bool remote = false;
 
     const char * className() const noexcept override { return "DB::Exception"; }
+
+protected:
+    std::string_view message_format_string;
 };
 
 
@@ -131,13 +171,14 @@ public:
     ParsingException();
     ParsingException(const std::string & msg, int code);
     ParsingException(int code, const std::string & message);
+    ParsingException(int code, std::string && message) : Exception(message, code) {}
 
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
-    ParsingException(int code, fmt::format_string<Args...> fmt, Args &&... args) : Exception(code, fmt, std::forward<Args>(args)...)
+    ParsingException(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
     {
+        message_format_string = fmt.message_format_string;
     }
-
 
     std::string displayText() const override;
 
@@ -184,6 +225,8 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
   */
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false,
                                        bool with_extra_info = true);
+PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace = false,
+                                       bool with_extra_info = true);
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
@@ -219,10 +262,8 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
 void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message = "");
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
+PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
-
-
-void rethrowFirstException(const Exceptions & exceptions);
 
 
 template <typename T>

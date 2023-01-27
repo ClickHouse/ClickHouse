@@ -21,7 +21,7 @@ std::string getClusterName(const IAST & node)
 {
     auto name = tryGetClusterName(node);
     if (!name)
-        throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal expression instead of cluster name.");
     return std::move(name).value();
 }
 

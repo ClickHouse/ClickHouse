@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
+#include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
@@ -1089,7 +1090,7 @@ protected:
     MultiVersion<MergeTreeSettings> storage_settings;
 
     /// Used to determine which UUIDs to send to root query executor for deduplication.
-    mutable std::shared_mutex pinned_part_uuids_mutex;
+    mutable SharedMutex pinned_part_uuids_mutex;
     PinnedPartUUIDsPtr pinned_part_uuids;
 
     /// True if at least one part was created/removed with transaction.
@@ -1197,23 +1198,23 @@ protected:
     void modifyPartState(DataPartIteratorByStateAndInfo it, DataPartState state)
     {
         if (!data_parts_by_state_and_info.modify(it, getStateModifier(state)))
-            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
     void modifyPartState(DataPartIteratorByInfo it, DataPartState state)
     {
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
-            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
     void modifyPartState(const DataPartPtr & part, DataPartState state)
     {
         auto it = data_parts_by_info.find(part->info);
         if (it == data_parts_by_info.end() || (*it).get() != part.get())
-            throw Exception("Part " + part->name + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} doesn't exist", part->name);
 
         if (!data_parts_by_state_and_info.modify(data_parts_indexes.project<TagByStateAndInfo>(it), getStateModifier(state)))
-            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't modify {}", (*it)->getNameWithState());
     }
 
     /// Used to serialize calls to grabOldParts.

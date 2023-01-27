@@ -1354,7 +1354,7 @@ FileCache::QueryLimit::QueryContextPtr FileCache::QueryLimit::getOrSetQueryConte
     if (inserted)
     {
         it->second = std::make_shared<QueryContext>(
-            settings.max_query_cache_size, !settings.skip_download_if_exceeds_query_cache);
+            settings.filesystem_cache_max_download_size, !settings.skip_download_if_exceeds_query_cache);
     }
 
     return it->second;
@@ -1363,7 +1363,7 @@ FileCache::QueryLimit::QueryContextPtr FileCache::QueryLimit::getOrSetQueryConte
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     const String & query_id, const ReadSettings & settings)
 {
-    if (!query_limit || settings.max_query_cache_size == 0)
+    if (!query_limit || settings.filesystem_cache_max_download_size == 0)
         return {};
 
     auto lock = cache_guard.lock();

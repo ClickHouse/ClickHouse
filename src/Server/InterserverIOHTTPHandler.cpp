@@ -63,7 +63,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
-        throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
 
     if (compress)
     {
@@ -134,21 +134,21 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         /// Sending to remote server was cancelled due to server shutdown or drop table.
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
 
-        std::string message = getCurrentExceptionMessage(is_real_error);
-        write_response(message);
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(is_real_error);
+        write_response(message.message);
 
         if (is_real_error)
-            LOG_ERROR(log, fmt::runtime(message));
+            LOG_ERROR(log, message);
         else
-            LOG_INFO(log, fmt::runtime(message));
+            LOG_INFO(log, message);
     }
     catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-        std::string message = getCurrentExceptionMessage(false);
-        write_response(message);
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+        write_response(message.message);
 
-        LOG_ERROR(log, fmt::runtime(message));
+        LOG_ERROR(log, message);
     }
 }
 

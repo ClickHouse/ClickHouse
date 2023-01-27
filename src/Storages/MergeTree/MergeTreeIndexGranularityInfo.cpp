@@ -129,7 +129,7 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
     else if (mark_type.part_type == MergeTreeDataPartType::InMemory)
         return 0;
     else
-        throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown part type");
 }
 
 size_t getAdaptiveMrkSizeCompact(size_t columns_num)
