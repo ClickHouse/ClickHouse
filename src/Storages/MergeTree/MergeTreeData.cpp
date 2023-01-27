@@ -1,3 +1,4 @@
+#include "Storages/MergeTree/MergeTreeDataPartBuilder.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Backups/BackupEntriesCollector.h>
@@ -44,7 +45,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-#include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -147,7 +148,6 @@ namespace ErrorCodes
     extern const int BAD_DATA_PART_NAME;
     extern const int READONLY_SETTING;
     extern const int ABORTED;
-    extern const int UNKNOWN_PART_TYPE;
     extern const int UNKNOWN_DISK;
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
@@ -1097,9 +1097,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     LoadPartResult res;
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, part_name);
+    auto data_part_storage = std::make_shared<DataPartStorageOnDiskFull>(single_disk_volume, relative_data_path, part_name);
 
-    res.part = createPart(part_name, part_info, data_part_storage);
+    res.part = getDataPartBuilder(part_name, single_disk_volume, part_name)
+        .withPartInfo(part_info)
+        .withPartFormatFromDisk()
+        .build();
 
     String part_path = fs::path(relative_data_path) / part_name;
     String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -1250,7 +1253,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     LOG_TRACE(log, "Finished loading {} part {} on disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
     return res;
-};
+}
 
 std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     ThreadPool & pool,
@@ -1776,7 +1779,7 @@ catch (...)
 {
     LOG_ERROR(log, "Loading of outdated parts failed. "
         "Will terminate to avoid undefined behaviour due to inconsistent set of parts. "
-        "Exception: ", getCurrentExceptionMessage(true));
+        "Exception: {}", getCurrentExceptionMessage(true));
     std::terminate();
 }
 
@@ -3105,72 +3108,39 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*
     /// Some validation will be added
 }
 
-MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
+MergeTreeDataPartFormat MergeTreeData::choosePartFormat(size_t bytes_uncompressed, size_t rows_count, bool only_on_disk) const
 {
-    const auto settings = getSettings();
-    if (!canUsePolymorphicParts(*settings))
-        return MergeTreeDataPartType::Wide;
+    using PartType = MergeTreeDataPartType;
+    using PartStorageType = MergeTreeDataPartStorageType;
 
-    if (bytes_uncompressed < settings->min_bytes_for_compact_part || rows_count < settings->min_rows_for_compact_part)
-        return MergeTreeDataPartType::InMemory;
+     const auto settings = getSettings();
+     if (!canUsePolymorphicParts(*settings))
+        return {PartType::Wide, PartStorageType::Full};
 
-    if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
-        return MergeTreeDataPartType::Compact;
-
-    return MergeTreeDataPartType::Wide;
-}
-
-MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const
-{
-    const auto settings = getSettings();
-    if (!canUsePolymorphicParts(*settings))
-        return MergeTreeDataPartType::Wide;
-
-    if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
-        return MergeTreeDataPartType::Compact;
-
-    return MergeTreeDataPartType::Wide;
-}
-
-
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
-    MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-    const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part) const
-{
-    if (type == MergeTreeDataPartType::Compact)
-        return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, data_part_storage, parent_part);
-    else if (type == MergeTreeDataPartType::Wide)
-        return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, data_part_storage, parent_part);
-    else if (type == MergeTreeDataPartType::InMemory)
-        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, data_part_storage, parent_part);
-    else
-        throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown type of part {}", data_part_storage->getRelativePath());
-}
-
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part) const
-{
-    return createPart(name, MergeTreePartInfo::fromPartName(name, format_version), data_part_storage, parent_part);
-}
-
-MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
-    const String & name, const MergeTreePartInfo & part_info,
-    const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part) const
-{
-    MergeTreeDataPartType type;
-    auto mrk_ext = MergeTreeIndexGranularityInfo::getMarksExtensionFromFilesystem(*data_part_storage);
-
-    if (mrk_ext)
+    auto satisfies = [&](const auto & min_bytes_for, const auto & min_rows_for)
     {
-        type = MarkType(*mrk_ext).part_type;
-    }
-    else
-    {
-        /// Didn't find any mark file, suppose that part is empty.
-        type = choosePartTypeOnDisk(0, 0);
-    }
+        return bytes_uncompressed < min_bytes_for || rows_count < min_rows_for;
+    };
 
-    return createPart(name, type, part_info, data_part_storage, parent_part);
+    if (!only_on_disk && satisfies(settings->min_bytes_for_compact_part, settings->min_rows_for_compact_part))
+        return {PartType::InMemory, PartStorageType::Full};
+
+    auto part_type = PartType::Wide;
+    if (satisfies(settings->min_bytes_for_wide_part, settings->min_rows_for_wide_part))
+        part_type = PartType::Compact;
+
+    return {part_type, PartStorageType::Full};
+}
+
+MergeTreeDataPartFormat MergeTreeData::choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const
+{
+    return choosePartFormat(bytes_uncompressed, rows_count, true);
+}
+
+MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
+    const String & name, const VolumePtr & volume, const String & part_dir) const
+{
+    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir);
 }
 
 void MergeTreeData::changeSettings(
@@ -3494,21 +3464,18 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     if (!hierarchy.intersected_parts.empty())
     {
-        String message = fmt::format("Part {} intersects part {}", part->name, hierarchy.intersected_parts.back()->getNameWithState());
-
         // Drop part|partition operation inside some transactions sees some stale snapshot from the time when transactions has been started.
         // So such operation may attempt to delete already outdated part. In this case, this outdated part is most likely covered by the other part and intersection may occur.
         // Part mayght be outdated due to merge|mutation|update|optimization operations.
         if (part->isEmpty() || (hierarchy.intersected_parts.size() == 1 && hierarchy.intersected_parts.back()->isEmpty()))
         {
-            message += fmt::format(" One of them is empty part. That is a race between drop operation under transaction and a merge/mutation.");
-            throw Exception(message, ErrorCodes::SERIALIZATION_ERROR);
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Part {} intersects part {}. One of them is empty part. "
+                            "That is a race between drop operation under transaction and a merge/mutation.",
+                            part->name, hierarchy.intersected_parts.back()->getNameWithState());
         }
 
-        if (hierarchy.intersected_parts.size() > 1)
-            message += fmt::format(" There are {} intersected parts.", hierarchy.intersected_parts.size());
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, message + " It is a bug.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects part {}. There are {} intersected parts. It is a bug.",
+                        part->name, hierarchy.intersected_parts.back()->getNameWithState(), hierarchy.intersected_parts.size());
     }
 
     if (part->hasLightweightDelete())
@@ -5008,8 +4975,9 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, temp_part_dir.parent_path(), part_name);
-    auto part = createPart(part_name, part_info, data_part_storage);
+    MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, temp_part_dir.parent_path(), part_name);
+    builder.withPartFormatFromDisk();
+    auto part = std::move(builder).build();
     part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     part->loadColumnsChecksumsIndexes(false, true);
 
@@ -5457,8 +5425,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         LOG_DEBUG(log, "Checking part {}", new_name);
 
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + old_name, disk);
-        auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, relative_data_path, source_dir + new_name);
-        MutableDataPartPtr part = createPart(old_name, data_part_storage);
+        auto part = getDataPartBuilder(old_name, single_disk_volume, source_dir + new_name)
+            .withPartFormatFromDisk()
+            .build();
 
         loadPartAndFixMetadataImpl(part);
         loaded_parts.push_back(part);
@@ -5661,12 +5630,10 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
 
 CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
 {
-
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
-
 
     if (best_ttl_entry)
         return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
@@ -6909,9 +6876,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         src_flushed_tmp_dir_lock = src_part->storage.getTemporaryPartDirectoryHolder(tmp_src_part_file_name);
 
         auto flushed_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
-        src_flushed_tmp_part = createPart(src_part->name, src_part->info, flushed_part_storage);
-        src_flushed_tmp_part->is_temp = true;
 
+        src_flushed_tmp_part = MergeTreeDataPartBuilder(*this, src_part->name, flushed_part_storage)
+            .withPartInfo(src_part->info)
+            .withPartFormatFromDisk()
+            .build();
+
+        src_flushed_tmp_part->is_temp = true;
         src_part_storage = flushed_part_storage;
     }
 
@@ -6919,7 +6890,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, copy_instead_of_hardlink, files_to_copy_instead_of_hardlinks);
+    auto dst_part_storage = src_part_storage->freeze(
+        relative_data_path,
+        tmp_dst_part_name,
+        /*make_source_readonly=*/ false,
+        /*save_metadata_callback=*/ {},
+        copy_instead_of_hardlink,
+        files_to_copy_instead_of_hardlinks);
 
     LOG_DEBUG(log, "Clone {} part {} to {}{}",
               src_flushed_tmp_part ? "flushed" : "",
@@ -6927,7 +6904,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
+    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage)
+        .withPartFormatFromDisk()
+        .build();
 
     if (!copy_instead_of_hardlink && hardlinked_files)
     {
@@ -7121,15 +7100,18 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             src_flushed_tmp_dir_lock = part->storage.getTemporaryPartDirectoryHolder("tmp_freeze" + part->name);
 
             auto flushed_part_storage = part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
-            src_flushed_tmp_part = createPart(part->name, part->info, flushed_part_storage);
-            src_flushed_tmp_part->is_temp = true;
 
+            src_flushed_tmp_part = MergeTreeDataPartBuilder(*this, part->name, flushed_part_storage)
+                .withPartInfo(part->info)
+                .withPartFormatFromDisk()
+                .build();
+
+            src_flushed_tmp_part->is_temp = true;
             data_part_storage = flushed_part_storage;
         }
 
         auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
         {
-
             // Store metadata for replicated table.
             // Do nothing for non-replicated.
             createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
@@ -7138,10 +7120,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         auto new_storage = data_part_storage->freeze(
             backup_part_path,
             part->getDataPartStorage().getPartDirectory(),
-            /*make_source_readonly*/ true,
+            /*make_source_readonly=*/ true,
             callback,
-            /*copy_instead_of_hardlink*/ false,
-            {});
+            /*copy_instead_of_hardlink=*/ false,
+            /*files_to_copy_instead_of_hardlinks=*/ {});
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
@@ -7499,6 +7481,11 @@ bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const 
             return false;
     }
     return true;
+}
+
+bool MergeTreeData::canUsePolymorphicParts() const
+{
+    return canUsePolymorphicParts(*getSettings(), nullptr);
 }
 
 bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const
@@ -7902,19 +7889,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    auto new_data_part_storage = std::make_shared<DataPartStorageOnDisk>(
-        data_part_volume,
-        getRelativeDataPath(),
-        EMPTY_PART_TMP_PREFIX + new_part_name);
-
-    auto new_data_part = createPart(
-        new_part_name,
-        choosePartTypeOnDisk(0, block.rows()),
-        new_part_info,
-        new_data_part_storage
-        );
-
-    new_data_part->name = new_part_name;
+    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name)
+        .withBytesAndRowsOnDisk(0, 0)
+        .withPartInfo(new_part_info)
+        .build();
 
     if (settings->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
@@ -7926,6 +7904,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+
+    auto new_data_part_storage = new_data_part->getDataPartStoragePtr();
+    new_data_part_storage->beginTransaction();
 
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
@@ -7960,9 +7941,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
 
     out.write(block);
     /// Here is no projections as no data inside
-
     out.finalizePart(new_data_part, sync_on_insert);
 
+    new_data_part_storage->precommitTransaction();
     return new_data_part;
 }
 
