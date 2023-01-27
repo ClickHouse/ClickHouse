@@ -178,8 +178,6 @@ private:
     const SettingFieldCustom * tryGetCustomSetting(std::string_view name) const;
 
     std::conditional_t<Traits::allow_custom_settings, CustomSettingMap, boost::blank> custom_settings_map;
-
-    std::map<std::string_view, std::string_view> settings_aliases;
 };
 
 struct BaseSettingsHelpers
