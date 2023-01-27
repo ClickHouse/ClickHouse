@@ -5,6 +5,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <IO/LimitSeekableReadBuffer.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/StdStreamFromReadBuffer.h>
 

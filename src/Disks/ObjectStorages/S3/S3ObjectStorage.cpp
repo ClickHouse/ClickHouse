@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
