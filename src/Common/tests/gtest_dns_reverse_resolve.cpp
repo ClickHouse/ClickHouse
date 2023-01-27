@@ -25,16 +25,16 @@ TEST(Common, ReverseDNS)
         for (int i = 0; i < 50; ++i)
         {
             auto & dns_resolver_instance = DNSResolver::instance();
-            dns_resolver_instance.setDisableCacheFlag();
+//            unfortunately, DNS cache can't be disabled because we might end up causing a DDoS attack
+//            dns_resolver_instance.setDisableCacheFlag();
 
             auto addr_index = rnd1() % addresses.size();
 
-            auto result = dns_resolver_instance.reverseResolve(Poco::Net::IPAddress{ addresses[addr_index] });
+            [[maybe_unused]] auto result = dns_resolver_instance.reverseResolve(Poco::Net::IPAddress{ addresses[addr_index] });
 
-            if (result.empty())
-            {
-                std::cout<<"failed\n";
-            }
+//            will not assert either because some of the IP addresses might change in the future and
+//            this test will become flaky
+//            ASSERT_TRUE(!result.empty());
         }
 
     };
