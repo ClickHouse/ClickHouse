@@ -277,7 +277,7 @@ private:
             }
 
             if (queries.empty())
-                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
+                throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty list of queries.");
         }
         else
         {

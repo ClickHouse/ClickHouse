@@ -1,5 +1,6 @@
-#include <memory>
 #include <Analyzer/QueryTreePassManager.h>
+
+#include <memory>
 
 #include <Common/Exception.h>
 
@@ -133,7 +134,6 @@ private:
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
-  * TODO: Support settings.optimize_or_like_chain.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
 
@@ -210,53 +210,31 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 
 void addQueryTreePasses(QueryTreePassManager & manager)
 {
-    auto context = manager.getContext();
-    const auto & settings = context->getSettingsRef();
-
     manager.addPass(std::make_unique<QueryAnalysisPass>());
+    manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
-    if (settings.optimize_functions_to_subcolumns)
-        manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
-
-    if (settings.count_distinct_optimization)
-        manager.addPass(std::make_unique<CountDistinctPass>());
-
-    if (settings.optimize_rewrite_sum_if_to_count_if)
-        manager.addPass(std::make_unique<SumIfToCountIfPass>());
-
-    if (settings.optimize_normalize_count_variants)
-        manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+    manager.addPass(std::make_unique<CountDistinctPass>());
+    manager.addPass(std::make_unique<SumIfToCountIfPass>());
+    manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_unique<CustomizeFunctionsPass>());
 
-    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
-        manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
+    manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
+    manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
+    manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
 
-    if (settings.optimize_injective_functions_inside_uniq)
-        manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
-
-    if (settings.optimize_group_by_function_keys)
-        manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
-
-    if (settings.optimize_multiif_to_if)
-        manager.addPass(std::make_unique<MultiIfToIfPass>());
-
+    manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
+    manager.addPass(std::make_unique<IfChainToMultiIfPass>());
 
-    if (settings.optimize_if_chain_to_multiif)
-        manager.addPass(std::make_unique<IfChainToMultiIfPass>());
-
-    if (settings.optimize_redundant_functions_in_order_by)
-        manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
+    manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 
-    if (settings.optimize_syntax_fuse_functions)
-        manager.addPass(std::make_unique<FuseFunctionsPass>());
+    manager.addPass(std::make_unique<FuseFunctionsPass>());
 
-    if (settings.optimize_if_transform_strings_to_enum)
-        manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
+    manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
