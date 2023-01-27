@@ -94,7 +94,7 @@ String DataPartStorageOnDiskFull::getUniqueId() const
 {
     auto disk = volume->getDisk();
     if (!disk->supportZeroCopyReplication())
-        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support zero-copy replication", disk->getName());
 
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
