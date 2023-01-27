@@ -88,8 +88,6 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
-
-    ResourceBudget budget;
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
