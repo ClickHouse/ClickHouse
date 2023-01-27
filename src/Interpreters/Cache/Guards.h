@@ -12,24 +12,23 @@ namespace DB
  */
 
 /**
- * Guard for a set of keys.
- * One guard per key prefix (first three digits of the path hash).
+ * Cache priority queue guard.
  */
-struct KeyGuard
+struct CacheGuard
 {
     struct Lock
     {
-        explicit Lock(KeyGuard & guard) : lock(guard.mutex) {}
+        explicit Lock(CacheGuard & guard) : lock(guard.mutex) {}
         std::unique_lock<std::mutex> lock;
     };
+    using LockPtr = std::shared_ptr<Lock>;
 
     std::mutex mutex;
 
-    Lock lock() { return Lock(*this); }
+    LockPtr lock() { return std::make_shared<Lock>(*this); }
 
-    KeyGuard() = default;
+    CacheGuard() = default;
 };
-using KeyGuardPtr = std::shared_ptr<KeyGuard>;
 
 /**
  * Guard for cache metadata.
@@ -51,23 +50,24 @@ struct CacheMetadataGuard
 };
 
 /**
- * Cache priority queue guard.
+ * Guard for a set of keys.
+ * One guard per key prefix (first three digits of the path hash).
  */
-struct CacheGuard
+struct KeyGuard
 {
     struct Lock
     {
-        explicit Lock(CacheGuard & guard) : lock(guard.mutex) {}
+        explicit Lock(KeyGuard & guard) : lock(guard.mutex) {}
         std::unique_lock<std::mutex> lock;
     };
-    using LockPtr = std::shared_ptr<Lock>;
 
     std::mutex mutex;
 
-    LockPtr lock() { return std::make_shared<Lock>(*this); }
+    Lock lock() { return Lock(*this); }
 
-    CacheGuard() = default;
+    KeyGuard() = default;
 };
+using KeyGuardPtr = std::shared_ptr<KeyGuard>;
 
 /**
  * Guard for a file segment.
