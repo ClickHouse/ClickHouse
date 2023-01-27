@@ -267,6 +267,8 @@ else
     install_packages previous_release_package_folder
 
     # Start server from previous release
+    # Let's enable S3 storage by default
+    export USE_S3_STORAGE_FOR_MERGE_TREE=1
     # Previous version may not be ready for fault injections
     export ZOOKEEPER_FAULT_INJECTION=0
     configure
