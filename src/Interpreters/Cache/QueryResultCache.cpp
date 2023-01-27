@@ -89,7 +89,7 @@ public:
     }
 
     /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
-    /// E.g. SELECT 1 SETTINGS enable_experimental_query_result_cache = true
+    /// E.g. SELECT 1 SETTINGS use_query_result_cache = true
     /// and  SELECT 1;
     /// currently don't match.
 };
@@ -97,11 +97,12 @@ public:
 using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResultCacheSettingsMatcher, true>;
 
 /// Consider
-///   (1) SET enable_experimental_query_result_cache = true;
+///   (1) SET use_query_result_cache = true;
 ///       SELECT expensiveComputation(...) SETTINGS max_threads = 64, query_result_cache_ttl = 300;
-///       SET enable_experimental_query_result_cache = false;
+///       SET use_query_result_cache = false;
 /// and
-///   (2) SELECT expensiveComputation(...) SETTINGS max_threads = 64, enable_experimental_query_result_cache_passive_usage = true;
+///   (2) SELECT expensiveComputation(...) SETTINGS max_threads = 64, use_query_result_cache = true;
+///
 /// The SELECT queries in (1) and (2) are basically the same and the user expects that the second invocation is served from the query result
 /// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
 /// more natural if settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves
