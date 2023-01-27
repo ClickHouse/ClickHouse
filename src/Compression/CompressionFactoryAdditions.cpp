@@ -15,7 +15,9 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
 
 
@@ -51,6 +53,28 @@ void CompressionCodecFactory::validateCodec(
     }
 }
 
+namespace
+{
+
+bool innerDataTypeIsFloat(const DataTypePtr & type)
+{
+    if (isFloat(type))
+        return true;
+    if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return innerDataTypeIsFloat(type_nullable->getNestedType());
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        return innerDataTypeIsFloat(type_array->getNestedType());
+    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & subtype : type_tuple->getElements())
+            if (innerDataTypeIsFloat(subtype))
+                return true;
+        return false;
+    }
+    return false;
+}
+
+}
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
@@ -139,7 +163,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
             with_compression_codec |= result_codec->isCompression();
             with_none_codec |= result_codec->isNone();
-            with_floating_point_timeseries_codec |= result_codec->isFloatingPointTimeSeries();
+            with_floating_point_timeseries_codec |= result_codec->isFloatingPointTimeSeriesCodec();
 
             if (!generic_compression_codec_pos && result_codec->isGenericCompression())
                 generic_compression_codec_pos = i;
@@ -176,12 +200,13 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                                 "post-processing ones. (Note: you can enable setting 'allow_suspicious_codecs' "
                                 "to skip this check).", codec_description);
 
-            if (column_type)
-                if (with_floating_point_timeseries_codec && !WhichDataType(*column_type).isFloat())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "The combination of compression codecs {} is meaningless,"
-                        " because it does not make sense to apply a floating-point time series codec to non-floating-point columns"
-                        " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", codec_description);
+            /// Floating-point time series codecs are not supposed to compress non-floating-point data
+            if (with_floating_point_timeseries_codec &&
+                column_type && !innerDataTypeIsFloat(column_type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The combination of compression codecs {} is meaningless,"
+                    " because it does not make sense to apply a floating-point time series codec to non-floating-point columns"
+                    " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", codec_description);
 
             /// It does not make sense to apply any transformations after generic compression algorithm
             /// So, generic compression can be only one and only at the end.

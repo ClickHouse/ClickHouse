@@ -1078,8 +1078,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 "this column name is reserved for lightweight delete feature", backQuote(column_name));
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type,
-                        !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -1103,8 +1102,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                                              "in a single ALTER query", backQuote(column_name));
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type,
-                        !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
             {
