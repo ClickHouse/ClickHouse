@@ -663,9 +663,14 @@ def test_allow_introspection():
         "SELECT demangle('a')", user="robin"
     )
 
+
 def test_settings_aliases():
-    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS replication_alter_partitions_sync=2")
-    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS replication_alter_partitions_sync=0")
+    instance.query(
+        "CREATE SETTINGS PROFILE P1 SETTINGS replication_alter_partitions_sync=2"
+    )
+    instance.query(
+        "CREATE SETTINGS PROFILE P2 SETTINGS replication_alter_partitions_sync=0"
+    )
     instance.query("ALTER USER robin SETTINGS PROFILE P1")
 
     assert (
