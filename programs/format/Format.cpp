@@ -63,8 +63,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         Settings cmd_settings;
         for (const auto & field : cmd_settings.all())
         {
-            if (field.getName() == "max_parser_depth" || field.getName() == "max_query_size")
-                cmd_settings.addProgramOption(desc, field);
+            std::string_view name = field.getName();
+            if (name == "max_parser_depth" || name == "max_query_size")
+                cmd_settings.addProgramOption(desc, name, field);
         }
 
         boost::program_options::variables_map options;

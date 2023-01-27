@@ -935,9 +935,9 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
 
     std::vector<String> getAllRegisteredNames() const override;
 
-    void addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field);
+    void addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
 
-    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
+    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
 
     void set(std::string_view name, const Field & value) override;
 
