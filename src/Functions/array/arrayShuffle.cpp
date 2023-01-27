@@ -36,7 +36,7 @@ struct FunctionArrayShuffleTraits
     static constexpr auto has_limit = false; // Permute the whole array
     static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1}; }
     static constexpr auto max_num_params = 2; // array[, seed]
-    static constexpr auto seed_param_idx = 1;
+    static constexpr auto seed_param_idx = 1; // --------^^^^
 };
 
 /** Partial shuffle array elements
@@ -50,7 +50,7 @@ struct FunctionArrayPartialShuffleTraits
     static constexpr auto has_limit = true;
     static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2}; }
     static constexpr auto max_num_params = 3; // array[, limit[, seed]]
-    static constexpr auto seed_param_idx = 2;
+    static constexpr auto seed_param_idx = 2; // ----------------^^^^
 };
 
 template <typename Traits>
