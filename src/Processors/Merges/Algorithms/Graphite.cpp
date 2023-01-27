@@ -166,7 +166,7 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     String error_msg = "age and precision should only grow up: "
         + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
         + std::to_string(b.age) + ":" + std::to_string(b.precision);
-    throw Exception(
+    throw Exception::createDeprecated(
         error_msg,
         DB::ErrorCodes::BAD_ARGUMENTS);
 }
@@ -389,15 +389,13 @@ static const Pattern & appendGraphitePattern(
     }
 
     if (!pattern.function && pattern.retentions.empty())
-        throw Exception(
-            "At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree",
-            DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree");
 
     if (default_rule && pattern.rule_type != RuleTypeAll)
     {
-        throw Exception(
-            "Default must have rule_type all for rollup patterns in GraphiteMergeTree",
-            DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+            "Default must have rule_type all for rollup patterns in GraphiteMergeTree");
     }
 
     if (!pattern.function)
@@ -415,9 +413,8 @@ static const Pattern & appendGraphitePattern(
 
     if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
         if (pattern.function->allocatesMemoryInArena())
-            throw Exception(
-                            "Aggregate function " + pattern.function->getName() + " isn't supported "
-                            "in GraphiteMergeTree", DB::ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                            "Aggregate function {} isn't supported in GraphiteMergeTree", pattern.function->getName());
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
