@@ -26,6 +26,7 @@ FileCache::FileCache(
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , bypass_cache_threshold(cache_settings_.enable_bypass_cache_with_threashold ? cache_settings_.bypass_cache_threashold : 0)
     , log(&Poco::Logger::get("FileCache"))
+    , cleanup_keys_metadata_queue(std::make_shared<KeysQueue>())
 {
     main_priority = std::make_unique<LRUFileCachePriority>(cache_settings_.max_size, cache_settings_.max_elements);
 
@@ -370,15 +371,14 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
 {
     auto lock = metadata_guard.lock();
 
-    auto it = metadata.find(key);
-
-    cleanup_keys_metadata_queue->clear([this](const Key & key_){
-        [[maybe_unused]] const bool erased = metadata.erase(key_);
+    cleanup_keys_metadata_queue->clear([this](const Key & cleanup_key)
+    {
+        [[maybe_unused]] const bool erased = metadata.erase(cleanup_key);
         chassert(erased);
 
         try
         {
-            const fs::path prefix_path = fs::path(getPathInLocalCache(key_)).parent_path();
+            const fs::path prefix_path = fs::path(getPathInLocalCache(cleanup_key)).parent_path();
             if (fs::exists(prefix_path) && fs::is_empty(prefix_path))
                 fs::remove_all(prefix_path);
         }
@@ -388,6 +388,7 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
         }
     });
 
+    auto it = metadata.find(key);
     if (it == metadata.end())
     {
         switch (key_not_found_policy)
@@ -408,6 +409,8 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
             }
         }
     }
+    else if (!it->second || !it->second->guard)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trash in metadata");
 
     return std::make_unique<KeyTransaction>(key, it->second, cleanup_keys_metadata_queue, this);
 }
