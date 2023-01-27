@@ -1304,7 +1304,7 @@ Default value: `3`.
 ## use_query_result_cache {#use-query-result-cache}
 
 If turned on, SELECT queries may utilize the [query result cache](../query-result-cache.md). Parameters [use_query_result_cache_passive_usage](#use-query-result-cache-passive-usage)
-and [use_query_result_cache_active_usage](#use-query-result-cache-active-usage) control how the cache can be used in more detail.
+and [use_query_result_cache_active_usage](#use-query-result-cache-active-usage) control in more detail how the cache is used.
 
 Possible values:
 
