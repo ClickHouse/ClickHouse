@@ -155,7 +155,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
         auto snapshot_name = fs::path(snapshot_path).filename().string();
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
 
-        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, snapshot_name, {}, request_settings_1))
+        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, snapshot_name))
         {
             LOG_ERROR(log, "Snapshot {} already exists", snapshot_name);
             return;
@@ -163,7 +163,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const std::string & snapshot_pa
 
         // First we need to verify that there isn't already a lock file for the snapshot we want to upload
         // Only leader uploads a snapshot, but there can be a rare case where we have 2 leaders in NuRaft
-        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, lock_file, {}, request_settings_1))
+        if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, lock_file))
         {
             LOG_ERROR(log, "Lock file for {} already, exists. Probably a different node is already uploading the snapshot", snapshot_name);
             return;
