@@ -36,9 +36,43 @@ void SettingsConstraints::clear()
     constraints.clear();
 }
 
+namespace
+{
+
+std::string_view resolveName(std::string_view name)
+{
+    auto write_warning_for_changed = [](const auto resolved_name, const auto original_name)
+    {
+        LOG_WARNING(
+            &Poco::Logger::get("SettingsConstaints"),
+            "Setting '{}' was renamed to '{}', please use '{}' when defining constraints",
+            original_name,
+            resolved_name,
+            resolved_name);
+    };
+
+    if (auto resolved_name = SettingsTraits::resolveName(name); resolved_name != name)
+    {
+        write_warning_for_changed(resolved_name, name);
+        return resolved_name;
+    }
+
+    if (auto resolved_name = MergeTreeSettingsTraits::resolveName(name); resolved_name != name)
+    {
+        write_warning_for_changed(resolved_name, name);
+        return resolved_name;
+    }
+
+    return name;
+}
+
+}
+
 void SettingsConstraints::set(const String & full_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability)
 {
-    auto & constraint = constraints[full_name];
+    std::string resolved_name{resolveName(full_name)};
+
+    auto & constraint = constraints[resolved_name];
     if (!min_value.isNull())
         constraint.min_value = settingCastValueUtil(full_name, min_value);
     if (!max_value.isNull())
@@ -204,6 +238,7 @@ bool getNewValueToCheck(const T & current_settings, SettingChange & change, Fiel
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
+    change.name = std::string{SettingsTraits::resolveName(change.name)};
     const String & setting_name = change.name;
 
     if (setting_name == "profile")
@@ -239,6 +274,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
+    change.name = std::string{MergeTreeSettingsTraits::resolveName(change.name)};
     Field new_value;
     if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;

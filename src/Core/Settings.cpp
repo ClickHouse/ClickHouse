@@ -84,31 +84,57 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only)
 
 void Settings::addProgramOptions(boost::program_options::options_description & options)
 {
+    // we can have multiple aliases to the same setting
+    std::unordered_map<std::string_view, std::vector<std::string_view>> setting_to_alias_mapping;
+    for (const auto & [alias, destination] : SettingsTraits::settings_aliases)
+    {
+        setting_to_alias_mapping[destination].push_back(alias);
+    }
+
     for (const auto & field : all())
     {
-        addProgramOption(options, field);
+        std::string_view name = field.getName();
+        addProgramOption(options, name, field);
+
+        if (auto it = setting_to_alias_mapping.find(name); it != setting_to_alias_mapping.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOption(options, alias, field);
+        }
     }
 }
 
 void Settings::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
 {
+    // we can have multiple aliases to the same setting
+    std::unordered_map<std::string_view, std::vector<std::string_view>> setting_to_alias_mapping;
+    for (const auto & [alias, destination] : SettingsTraits::settings_aliases)
+    {
+        setting_to_alias_mapping[destination].push_back(alias);
+    }
+
     for (const auto & field : all())
     {
-        addProgramOptionAsMultitoken(options, field);
+        std::string_view name = field.getName();
+        addProgramOptionAsMultitoken(options, name, field);
+
+        if (auto it = setting_to_alias_mapping.find(name); it != setting_to_alias_mapping.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOptionAsMultitoken(options, alias, field);
+        }
     }
 }
 
-void Settings::addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field)
+void Settings::addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
 {
-    const std::string_view name = field.getName();
     auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
     options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
         name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
-void Settings::addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field)
+void Settings::addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
 {
-    const std::string_view name = field.getName();
     auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
     options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
         name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));

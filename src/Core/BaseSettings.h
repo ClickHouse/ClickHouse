@@ -862,12 +862,11 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
+        static inline const std::unordered_map<std::string_view, std::string_view> settings_aliases { \
+            LIST_OF_ALIASES(CREATE_PAIR) \
+        }; \
         static std::string_view resolveName(std::string_view name) \
         { \
-            static const std::map<std::string_view, std::string_view> settings_aliases { \
-                LIST_OF_ALIASES(CREATE_PAIR) \
-            }; \
-            \
             if (auto it = settings_aliases.find(name); it != settings_aliases.end()) \
                 return it->second; \
             return name; \
