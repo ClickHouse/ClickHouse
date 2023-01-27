@@ -1848,23 +1848,19 @@ KeyCondition::Description KeyCondition::getDescription() const
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInRange");
 
-    std::vector<std::string_view> key_names(key_columns.size());
-    std::vector<bool> is_key_used(key_columns.size(), false);
-
+    std::map<size_t, std::string_view> key_names;
     for (const auto & key : key_columns)
         key_names[key.second] = key.first;
 
     WriteBufferFromOwnString buf;
 
     std::function<void(const Node *)> describe;
-    describe = [&describe, &key_names, &is_key_used, &buf](const Node * node)
+    describe = [&describe, &key_names, &buf](const Node * node)
     {
         switch (node->type)
         {
             case Node::Type::Leaf:
             {
-                is_key_used[node->element->key_column] = true;
-
                 /// Note: for condition with double negation, like `not(x not in set)`,
                 /// we can replace it to `x in set` here.
                 /// But I won't do it, because `cloneASTWithInversionPushDown` already push down `not`.
@@ -1902,9 +1898,8 @@ KeyCondition::Description KeyCondition::getDescription() const
     describe(rpn_stack.front().can_be_true.get());
     description.condition = std::move(buf.str());
 
-    for (size_t i = 0; i < key_names.size(); ++i)
-        if (is_key_used[i])
-            description.used_keys.emplace_back(key_names[i]);
+    for (auto && [_, name] : key_names)
+        description.used_keys.emplace_back(name);
 
     return description;
 }
