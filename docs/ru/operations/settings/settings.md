@@ -1997,6 +1997,21 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 0.
 
+## optimize_skip_merged_partitions {#optimize-skip-merged-partitions}
+
+Включает или отключает оптимизацию для запроса [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md), когда есть только один парт с level > 0 и неистекший TTL.
+
+- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
+
+По умолчанию, `OPTIMIZE TABLE ... FINAL` перезапишет даже один парт.
+
+Возможные значения:
+
+-   1 - Включена
+-   0 - Выключена
+
+Значение по умолчанию: 0.
+
 ## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
 
 Включает или отключает оптимизацию путем преобразования некоторых функций к чтению подстолбцов, таким образом уменьшая объем данных для чтения.

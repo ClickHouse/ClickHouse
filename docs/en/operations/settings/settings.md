@@ -1915,6 +1915,21 @@ Possible values:
 
 Default value: 0.
 
+## optimize_skip_merged_partitions {#optimize-skip-merged-partitions}
+
+Enables or disables optimization for [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md) query if there is only one part with level > 0 and it doesn't have expired TTL.
+
+- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
+
+By default, `OPTIMIZE TABLE ... FINAL` query rewrites the one part even if there is only a single part.
+
+Possible values:
+
+-   1 - Enable optimization.
+-   0 - Disable optimization.
+
+Default value: 0.
+
 ## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
 
 Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
