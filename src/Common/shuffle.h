@@ -6,6 +6,10 @@
 
 /* Reorders the elements in the given range [first, last) such that each
  * possible permutation of those elements has equal probability of appearance.
+ *
+ * for i ∈ [0, n-2):
+ *     j ← random from ∈ [i, n)
+ *     swap arr[i] ↔ arr[j]
  */
 template <typename Iter, typename Rng>
 void shuffle(Iter first, Iter last, Rng && rng)
@@ -28,6 +32,10 @@ void shuffle(Iter first, Iter last, Rng && rng)
  * [first, first + limit) is a random subset of the original range.
  * [first + limit, last) shall contain the elements not in [first, first + limit)
  * in undefined order.
+ *
+ * for i ∈ [0, limit):
+ *     j ← random from ∈ [i, n)
+ *     swap arr[i] ↔ arr[j]
  */
 template <typename Iter, typename Rng>
 void partial_shuffle(Iter first, Iter last, size_t limit, Rng && rng)
