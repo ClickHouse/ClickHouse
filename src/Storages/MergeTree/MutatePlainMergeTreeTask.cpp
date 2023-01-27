@@ -60,7 +60,6 @@ void MutatePlainMergeTreeTask::prepare()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
-
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
@@ -82,6 +81,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
+                auto & data_part_storage = new_part->getDataPartStorage();
+                if (data_part_storage.hasActiveTransaction())
+                    data_part_storage.precommitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
@@ -106,7 +108,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 return false;
             }
         }
-        case State::NEED_FINISH :
+        case State::NEED_FINISH:
         {
             // Nothing to do
             state = State::SUCCESS;
