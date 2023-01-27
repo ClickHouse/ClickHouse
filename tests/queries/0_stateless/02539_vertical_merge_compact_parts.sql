@@ -18,7 +18,7 @@ SYSTEM FLUSH LOGS;
 WITH splitByChar('_', part_name) AS name_parts,
     name_parts[2]::UInt64 AS min_block,
     name_parts[3]::UInt64 AS max_block
-SELECT min_block, max_block, part_name, event_type, merge_algorithm, part_type FROM system.part_log
+SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.part_log
 WHERE
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
@@ -32,7 +32,7 @@ SYSTEM FLUSH LOGS;
 WITH splitByChar('_', part_name) AS name_parts,
     name_parts[2]::UInt64 AS min_block,
     name_parts[3]::UInt64 AS max_block
-SELECT min_block, max_block, part_name, event_type, merge_algorithm, part_type FROM system.part_log
+SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.part_log
 WHERE
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
