@@ -936,6 +936,10 @@ Configuration markup:
 </storage_configuration>
 ```
 
+:::note cache configuration
+ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
+:::
+
 Required parameters:
 
 -   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
@@ -962,12 +966,29 @@ Optional parameters:
 -   `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
 -   `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
 
-Cache parameters:
+### Configuring the cache
 
+This is the cache configuration from above:
+```xml
+        <s3_cache>
+            <type>cache</type>
+            <disk>s3</disk>
+            <path>/var/lib/clickhouse/disks/s3_cache/</path>
+            <max_size>10Gi</max_size>
+        </s3_cache>
+```
+
+These parameters define the cache layer:
 -   `type` — If a disk is of type `cache` it caches mark and index files in memory.
 -   `disk` — The name of the disk that will be cached.
+
+Cache parameters:
 -   `path` — The path where metadata for the cache is stored.
 -   `max_size` — The size (amount of memory) that the cache can grow to.
+
+:::tip
+There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
+:::
 
 S3 disk can be configured as `main` or `cold` storage:
 ``` xml
