@@ -387,12 +387,12 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(*client.get(), bucket, path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    auto object_info = S3::getObjectInfo(*client.get(), bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true);
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.last_modified = object_info.last_modification_time;
-    result.attributes = S3::getObjectMetadata(*client.get(), bucket, path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    result.attributes = object_info.metadata;
 
     return result;
 }

@@ -1543,7 +1543,8 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
                 /// Note that in case of exception in getObjectInfo returned info will be empty,
                 /// but schema cache will handle this case and won't return columns from cache
                 /// because we can't say that it's valid without last modification time.
-                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, {}, /* throw_on_error= */ false);
+                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, s3_configuration.request_settings,
+                                         {}, {}, /* throw_on_error= */ false);
                 if (object_infos)
                     (*object_infos)[path] = info;
             }
