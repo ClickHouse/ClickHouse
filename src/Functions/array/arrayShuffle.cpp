@@ -178,6 +178,9 @@ REGISTER_FUNCTION(ArrayShuffle)
 Returns an array of the same size as the original array containing the elements in shuffled order.
 Elements are being reordered in such a way that each possible permutation of those elements has equal probability of appearance.
 
+Note: this function will not materialize constants:
+[example:materialize]
+
 If no seed is provided a random one will be used:
 [example:random_seed]
 
@@ -186,18 +189,22 @@ It is possible to override the seed to produce stable results:
 )",
          Documentation::Examples{
                 {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])"},
-                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)"}},
+                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)"},
+                {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)"}},
             Documentation::Categories{"Array"}
         },
         FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
         {
             R"(
-Returns an array of the same size as the original array where elements in range [0..limit) are a random
-subset of the original array. Remaining [limit..n) shall contain the elements not in [0..limit) range in undefined order.
-Value of limit shall be in range [0..n]. Values outside of that range are equivalent to performing full arrayShuffle:
+Returns an array of the same size as the original array where elements in range [1..limit] are a random
+subset of the original array. Remaining (limit..n] shall contain the elements not in [1..limit] range in undefined order.
+Value of limit shall be in range [1..n]. Values outside of that range are equivalent to performing full arrayShuffle:
 [example:no_limit1]
 [example:no_limit2]
+
+Note: this function will not materialize constants:
+[example:materialize]
 
 If no seed is provided a random one will be used:
 [example:random_seed]
@@ -209,7 +216,8 @@ It is possible to override the seed to produce stable results:
                 {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)"},
                 {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])"},
                 {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)"},
-                {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 2, 41)"}},
+                {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)"},
+                {"materialize", "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)"}},
             Documentation::Categories{"Array"}
         },
         FunctionFactory::CaseInsensitive);
