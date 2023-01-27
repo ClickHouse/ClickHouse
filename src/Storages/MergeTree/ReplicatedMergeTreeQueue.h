@@ -451,6 +451,8 @@ public:
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getEntries(LogEntriesData & res) const;
 
+    std::vector<String> getLogEntryIds() const;
+
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
 

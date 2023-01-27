@@ -1975,6 +1975,17 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res) const
         res.emplace_back(*entry);
 }
 
+std::vector<String> ReplicatedMergeTreeQueue::getLogEntryIds() const
+{
+    std::vector<String> result;
+    std::lock_guard lock(state_mutex);
+
+    result.reserve(queue.size());
+    for (const auto & entry : queue)
+        result.emplace_back(entry->log_entry_id);
+
+    return result;
+}
 
 void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const
 {
