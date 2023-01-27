@@ -227,3 +227,58 @@ SELECT dictGet('dict', 'b', 2);
 │ two                     │
 └─────────────────────────┘
 ```
+
+## Пример использования именованных соединений с удалённой базой данных Сlickhouse
+
+Описание параметров смотри [remote](../sql-reference/table-functions/remote.md).
+
+Пример конфигурации:
+```xml
+<clickhouse>
+    <named_collections>
+        <remote1>
+            <host>remote_host</host>
+            <port>9000</port>
+            <database>system</database>
+            <user>foo</user>
+            <password>secret</password>
+        </remote1>
+    </named_collections>
+</clickhouse>
+```
+
+### Пример использования именованных соединений с табличной функцией remote/remoteSecure
+
+```sql
+SELECT * FROM remote(remote1, table = one);
+┌─dummy─┐
+│     0 │
+└───────┘
+
+SELECT * FROM remote(remote1, database = merge(system, '^one'));
+┌─dummy─┐
+│     0 │
+└───────┘
+
+INSERT INTO FUNCTION remote(remote1, database = default, table = test) VALUES (1,'a');
+
+SELECT * FROM remote(remote1, database = default, table = test);
+┌─a─┬─b─┐
+│ 1 │ a │
+└───┴───┘
+```
+
+### Пример использования именованных соединений с внешним словарем с источником удалённым сервером Clickhouse
+
+```sql
+CREATE DICTIONARY dict(a Int64, b String)
+PRIMARY KEY a
+SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'b', 1);
+┌─dictGet('dict', 'b', 1)─┐
+│ a                       │
+└─────────────────────────┘
+```
