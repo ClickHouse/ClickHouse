@@ -160,7 +160,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     if (columns.empty())
-        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), getFileNameForColumn(columns.front()));
 }
@@ -302,7 +302,8 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Column {} has rows count {} according to size in memory "
-                    "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
+                    "and size of single value, but data part {} has {} rows",
+                    backQuote(column.name), rows_in_column, name, rows_count);
             }
         }
 #endif

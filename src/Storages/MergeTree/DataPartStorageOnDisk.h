@@ -106,6 +106,11 @@ public:
         const String & name,
         size_t buf_size,
         const WriteSettings & settings) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & name,
+        size_t buf_size,
+        DB::WriteMode mode,
+        const WriteSettings & settings) override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const override;
 

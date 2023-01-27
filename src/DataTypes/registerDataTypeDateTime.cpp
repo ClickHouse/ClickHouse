@@ -83,7 +83,8 @@ static DataTypePtr create32(const ASTPtr & arguments)
         return std::make_shared<DataTypeDateTime>();
 
     if (arguments->children.size() != 1)
-        throw Exception("DateTime32 data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "DateTime32 data type can optionally have only one argument - time zone name");
 
     const auto timezone = getArgument<String, ArgumentKind::Mandatory>(arguments, 0, "timezone", "DateTime32");
 
@@ -96,7 +97,8 @@ static DataTypePtr create64(const ASTPtr & arguments)
         return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale);
 
     if (arguments->children.size() > 2)
-        throw Exception("DateTime64 data type can optionally have two argument - scale and time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "DateTime64 data type can optionally have two argument - scale and time zone name");
 
     const auto scale = getArgument<UInt64, ArgumentKind::Mandatory>(arguments, 0, "scale", "DateTime64");
     const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, 1, "timezone", "DateTime64");

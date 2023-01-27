@@ -120,7 +120,7 @@ inline void validateCipherMode(const EVP_CIPHER * evp_cipher)
         }
     }
 
-    throw DB::Exception("Unsupported cipher mode", DB::ErrorCodes::BAD_ARGUMENTS);
+    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported cipher mode");
 }
 
 template <CipherMode mode>
@@ -187,11 +187,11 @@ private:
         const auto mode = arguments[0].column->getDataAt(0);
 
         if (mode.size == 0 || !mode.toView().starts_with("aes-"))
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto cipher_mode = EVP_CIPHER_mode(evp_cipher);
 
@@ -207,7 +207,7 @@ private:
         {
             const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
-                throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} does not support IV", mode.toString());
 
             if (arguments.size() <= 4)
             {
@@ -216,7 +216,7 @@ private:
             else
             {
                 if (cipher_mode != EVP_CIPH_GCM_MODE)
-                    throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
                 result_column = doEncrypt(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
@@ -316,14 +316,12 @@ private:
                 // in GCM mode IV can be of arbitrary size (>0), IV is optional for other modes.
                 if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
                 {
-                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size, iv_size);
                 }
 
                 if (mode != CipherMode::RFC5116_AEAD_AES_GCM && key_value.size != key_size)
                 {
-                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", key_value.size, key_size);
                 }
             }
 
@@ -462,11 +460,11 @@ private:
 
         const auto mode = arguments[0].column->getDataAt(0);
         if (mode.size == 0 || !mode.toView().starts_with("aes-"))
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         const auto * evp_cipher = getCipherByName(mode);
         if (evp_cipher == nullptr)
-            throw Exception("Invalid mode: " + mode.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid mode: {}", mode.toString());
 
         OpenSSLDetails::validateCipherMode<compatibility_mode>(evp_cipher);
 
@@ -482,7 +480,7 @@ private:
         {
             const auto iv_column = arguments[3].column;
             if (compatibility_mode != OpenSSLDetails::CompatibilityMode::MySQL && EVP_CIPHER_iv_length(evp_cipher) == 0)
-                throw Exception(mode.toString() + " does not support IV", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} does not support IV", mode.toString());
 
             if (arguments.size() <= 4)
             {
@@ -491,7 +489,7 @@ private:
             else
             {
                 if (EVP_CIPHER_mode(evp_cipher) != EVP_CIPH_GCM_MODE)
-                    throw Exception("AAD can be only set for GCM-mode", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "AAD can be only set for GCM-mode");
 
                 const auto aad_column = arguments[4].column;
                 result_column = doDecrypt<use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
@@ -565,8 +563,7 @@ private:
                     if (string_size > 0)
                     {
                         if (string_size < tag_size)
-                            throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                                ErrorCodes::BAD_ARGUMENTS);
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.");
 
                         resulting_size -= tag_size;
                     }
@@ -601,9 +598,9 @@ private:
                 {
                     // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
                     if (input_value.size < tag_size)
-                        throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
                                 "should contain at least {} bytes of a tag.",
-                                input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
+                                input_value.size, block_size, tag_size);
 
                     input_value.size -= tag_size;
                 }
@@ -614,14 +611,12 @@ private:
                 // in GCM mode IV can be of arbitrary size (>0), for other modes IV is optional.
                 if (mode == CipherMode::RFC5116_AEAD_AES_GCM && iv_value.size == 0)
                 {
-                    throw Exception("Invalid IV size " + std::to_string(iv_value.size) + " != expected size " + std::to_string(iv_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid IV size {} != expected size {}", iv_value.size, iv_size);
                 }
 
                 if (key_value.size != key_size)
                 {
-                    throw Exception("Invalid key size " + std::to_string(key_value.size) + " != expected size " + std::to_string(key_size),
-                            DB::ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid key size {} != expected size {}", key_value.size, key_size);
                 }
             }
 

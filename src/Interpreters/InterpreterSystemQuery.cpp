@@ -142,7 +142,7 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
     else if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
     else
-        throw Exception("Unknown action type: " + std::to_string(action_type), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
 constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
@@ -320,6 +320,10 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->dropMMappedFileCache();
             break;
+        case Type::DROP_QUERY_RESULT_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_RESULT_CACHE);
+            getContext()->dropQueryResultCache();
+            break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
@@ -435,7 +439,7 @@ BlockIO InterpreterSystemQuery::execute()
             SymbolIndex::reload();
             break;
 #else
-            throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RELOAD SYMBOLS is not supported on current platform");
 #endif
         }
         case Type::STOP_MERGES:
@@ -553,7 +557,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         }
         default:
-            throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
 
     return result;
@@ -676,7 +680,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 {
     if (query.replica.empty())
-        throw Exception("Replica name is empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
     if (!table_id.empty())
     {
@@ -731,10 +735,13 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
                     ReplicatedTableStatus status;
                     storage_replicated->getStatus(status);
                     if (status.zookeeper_path == query.replica_zk_path)
-                        throw Exception("There is a local table " + storage_replicated->getStorageID().getNameForLogs() +
-                                        ", which has the same table path in ZooKeeper. Please check the path in query. "
-                                        "If you want to drop replica of this table, use `DROP TABLE` "
-                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`", ErrorCodes::TABLE_WAS_NOT_DROPPED);
+                        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                                        "There is a local table {}, which has the same table path in ZooKeeper. "
+                                        "Please check the path in query. "
+                                        "If you want to drop replica "
+                                        "of this table, use `DROP TABLE` "
+                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`",
+                                        storage_replicated->getStorageID().getNameForLogs());
                 }
             }
         }
@@ -744,18 +751,17 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         bool looks_like_table_path = zookeeper->exists(query.replica_zk_path + "/replicas") ||
                                      zookeeper->exists(query.replica_zk_path + "/dropped");
         if (!looks_like_table_path)
-            throw Exception("Specified path " + query.replica_zk_path + " does not look like a table path",
-                            ErrorCodes::TABLE_WAS_NOT_DROPPED);
+            throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Specified path {} does not look like a table path",
+                            query.replica_zk_path);
 
         if (zookeeper->exists(remote_replica_path + "/is_active"))
-            throw Exception("Can't remove replica: " + query.replica + ", because it's active",
-                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+            throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't remove replica: {}, because it's active", query.replica);
 
         StorageReplicatedMergeTree::dropReplica(zookeeper, query.replica_zk_path, query.replica, log);
         LOG_INFO(log, "Dropped replica {}", remote_replica_path);
     }
     else
-        throw Exception("Invalid query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
 bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table)
@@ -770,15 +776,15 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
 
     /// Do not allow to drop local replicas and active remote replicas
     if (query.replica == status.replica_name)
-        throw Exception("We can't drop local replica, please use `DROP TABLE` "
-                        "if you want to clean the data and drop this replica", ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                        "We can't drop local replica, please use `DROP TABLE` if you want "
+                        "to clean the data and drop this replica");
 
     /// NOTE it's not atomic: replica may become active after this check, but before dropReplica(...)
     /// However, the main use case is to drop dead replica, which cannot become active.
     /// This check prevents only from accidental drop of some other replica.
     if (zookeeper->exists(status.zookeeper_path + "/replicas/" + query.replica + "/is_active"))
-        throw Exception("Can't drop replica: " + query.replica + ", because it's active",
-                        ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", query.replica);
 
     storage_replicated->dropReplica(zookeeper, status.zookeeper_path, query.replica, log);
     LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
@@ -789,7 +795,7 @@ bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const Stora
 void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
 {
     if (query.replica.empty())
-        throw Exception("Replica name is empty", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
     auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query)
     {
@@ -852,7 +858,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
     }
     else
-        throw Exception("Invalid query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
 void InterpreterSystemQuery::syncReplica()
@@ -928,13 +934,13 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
         storage_distributed->flushClusterNodesAllData(getContext());
     else
-        throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
 }
 
 [[noreturn]] void InterpreterSystemQuery::restartDisk(String &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
-    throw Exception("SYSTEM RESTART DISK is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
 }
 
 
@@ -956,6 +962,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
+        case Type::DROP_QUERY_RESULT_CACHE:
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #endif

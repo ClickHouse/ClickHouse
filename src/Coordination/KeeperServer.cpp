@@ -50,10 +50,10 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     String root_ca_file_property = "openSSL.server.caConfig";
 
     if (!config.has(certificate_file_property))
-        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
 
     if (!config.has(private_key_file_property))
-        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
     asio_opts.enable_ssl_ = true;
     asio_opts.server_cert_file_ = config.getString(certificate_file_property);
@@ -301,8 +301,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 #if USE_SSL
         setSSLParams(asio_opts);
 #else
-        throw Exception(
-            "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
     }
 

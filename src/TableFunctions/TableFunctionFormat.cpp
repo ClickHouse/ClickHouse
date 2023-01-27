@@ -34,12 +34,12 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments", getName());
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.size() != 2)
-        throw Exception("Table function '" + getName() + "' requires 2 arguments: format and data", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 2 arguments: format and data", getName());
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);

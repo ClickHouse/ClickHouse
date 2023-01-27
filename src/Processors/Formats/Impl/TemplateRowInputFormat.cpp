@@ -544,8 +544,7 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
             {
                 if (partName == "data")
                     return 0;
-                throw Exception("Unknown input part " + partName,
-                                ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown input part {}", partName);
             });
     }
     return resultset_format;
