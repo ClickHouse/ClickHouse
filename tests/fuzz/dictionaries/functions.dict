@@ -872,6 +872,8 @@
 "nullIn"
 "MONTH"
 "arrayReverse"
+"arrayShuffle"
+"arrayPartialShuffle"
 "now64"
 "DATE"
 "addressToLine"
