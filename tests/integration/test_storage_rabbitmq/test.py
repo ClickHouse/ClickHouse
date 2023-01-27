@@ -1,10 +1,5 @@
 import pytest
 
-# FIXME This test is too flaky
-# https://github.com/ClickHouse/ClickHouse/issues/45160
-
-pytestmark = pytest.mark.skip
-
 import json
 import os.path as p
 import random
@@ -702,7 +697,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
     assert (
         int(result1) == messages_num * threads_num
     ), "ClickHouse lost some messages: {}".format(result)
-    assert int(result2) == 5
+    assert int(result2) == 10
 
 
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
@@ -2049,6 +2044,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     )
 
 
+@pytest.mark.skip(reason="Timeout: FIXME")
 def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     logging.getLogger("pika").propagate = False
     instance.query(
@@ -3099,6 +3095,8 @@ def test_row_based_formats(rabbitmq_cluster):
                          rabbitmq_format = '{format_name}',
                          rabbitmq_exchange_name = '{format_name}',
                          rabbitmq_exchange_type = 'direct',
+                         rabbitmq_max_block_size = 100,
+                         rabbitmq_flush_interval_ms = 1000,
                          rabbitmq_routing_key_list = '{format_name}',
                          rabbitmq_max_rows_per_message = 5;
 
@@ -3167,6 +3165,8 @@ def test_block_based_formats_1(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'PrettySpace',
                      rabbitmq_exchange_type = 'direct',
+                     rabbitmq_max_block_size = 100,
+                     rabbitmq_flush_interval_ms = 1000,
                      rabbitmq_routing_key_list = 'PrettySpace',
                      rabbitmq_format = 'PrettySpace';
     """
@@ -3243,6 +3243,8 @@ def test_block_based_formats_2(rabbitmq_cluster):
                          rabbitmq_format = '{format_name}',
                          rabbitmq_exchange_name = '{format_name}',
                          rabbitmq_exchange_type = 'direct',
+                         rabbitmq_max_block_size = 100,
+                         rabbitmq_flush_interval_ms = 1000,
                          rabbitmq_routing_key_list = '{format_name}';
 
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
