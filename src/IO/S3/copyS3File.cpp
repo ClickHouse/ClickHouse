@@ -145,7 +145,7 @@ namespace
             LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
 
             if (part_tags.empty())
-                throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
+                throw Exception(ErrorCodes::S3_ERROR, "Failed to complete multipart upload. No parts have uploaded");
 
             Aws::S3::Model::CompleteMultipartUploadRequest request;
             request.SetBucket(dest_bucket);
@@ -710,7 +710,7 @@ namespace
             if (!outcome.IsSuccess())
             {
                 abortMultipartUpload();
-                throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+                throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
             }
 
             return outcome.GetResult().GetCopyPartResult().GetETag();
