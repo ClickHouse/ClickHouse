@@ -7553,7 +7553,8 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
                 }
                 else
                 {
-                    wait_for_ids.erase(wait_for_ids.begin(),iterator);
+                    /// Remove items till the removed_log_entry_id (including it)
+                    wait_for_ids.erase(wait_for_ids.begin(),iterator + 1);
                 }
             }
 
