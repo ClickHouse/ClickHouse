@@ -32,7 +32,7 @@ public:
         if (!command_arguments.empty())
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         for (const auto & [disk_name, _] : global_context->getDisksMap())

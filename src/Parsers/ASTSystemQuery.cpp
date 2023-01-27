@@ -166,6 +166,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (  type == Type::RESTART_REPLICA
             || type == Type::RESTORE_REPLICA
             || type == Type::SYNC_REPLICA
+            || type == Type::WAIT_LOADING_PARTS
             || type == Type::FLUSH_DISTRIBUTED
             || type == Type::RELOAD_DICTIONARY
             || type == Type::RELOAD_MODEL

@@ -575,7 +575,7 @@ Result:
 
 **See Also**
 
--   [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+
 
 ## ngramDistance(haystack, needle)
 

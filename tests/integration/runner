@@ -303,8 +303,8 @@ if __name__ == "__main__":
         parallel_args += " -n {}".format(args.parallel)
 
     rand_args = ""
-    if not args.no_random:
-        rand_args += f"--random-seed={os.getpid()}"
+    # if not args.no_random:
+    #     rand_args += f"--random-seed={os.getpid()}"
 
 
     net = ""

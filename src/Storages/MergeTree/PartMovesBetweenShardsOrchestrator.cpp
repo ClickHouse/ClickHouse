@@ -473,7 +473,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     log_entry.log_entry_id = attach_log_entry_barrier_path;
                     log_entry.part_checksum = part->checksums.getTotalChecksumHex();
                     log_entry.create_time = std::time(nullptr);
-                    log_entry.new_part_name = part_info.getPartName();
+                    log_entry.new_part_name = part_info.getPartNameAndCheckFormat(storage.format_version);
 
                     ops.emplace_back(zkutil::makeCreateRequest(attach_log_entry_barrier_path, log_entry.toString(), -1));
                     ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
@@ -702,7 +702,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::ge
             return entry;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", toString(task_uuid));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", task_uuid);
 }
 
 String PartMovesBetweenShardsOrchestrator::Entry::toString() const

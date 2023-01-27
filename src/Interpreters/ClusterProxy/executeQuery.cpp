@@ -132,7 +132,7 @@ void executeQuery(
     const Settings & settings = context->getSettingsRef();
 
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
-        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
     std::vector<QueryPlanPtr> plans;
     SelectStreamFactory::Shards remote_shards;

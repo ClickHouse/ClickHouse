@@ -116,13 +116,9 @@ public:
 
     static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
     {
-                if (types.empty())
+        if (types.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function {}Map requires at least one argument", nested->getName());
-
-        if (types.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {}Map requires only one map argument", nested->getName());
+            "Aggregate function {}Map requires one map argument, but {} found", nested->getName(), types.size());
 
         const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
         if (!map_type)
