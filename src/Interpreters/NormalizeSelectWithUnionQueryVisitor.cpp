@@ -65,9 +65,8 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
             else if (data.union_default_mode == SetOperationMode::DISTINCT)
                 union_modes[i] = SelectUnionMode::UNION_DISTINCT;
             else
-                throw Exception(
-                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
-                    DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
+                throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
+                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty");
         }
 
         if (union_modes[i] == SelectUnionMode::UNION_ALL)
