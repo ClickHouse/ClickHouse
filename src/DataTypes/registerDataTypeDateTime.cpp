@@ -47,10 +47,10 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
         else
         {
             if (argument && argument->value.getType() != field_type)
-                throw Exception(getExceptionMessage(fmt::format(" has wrong type: {}", argument->value.getTypeName()),
+                throw Exception::createDeprecated(getExceptionMessage(fmt::format(" has wrong type: {}", argument->value.getTypeName()),
                     argument_index, argument_name, context_data_type_name, field_type), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else
-                throw Exception(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
+                throw Exception::createDeprecated(getExceptionMessage(" is missing", argument_index, argument_name, context_data_type_name, field_type),
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
     }
@@ -67,7 +67,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     const auto timezone = getArgument<String, ArgumentKind::Optional>(arguments, !!scale, "timezone", "DateTime");
 
     if (!scale && !timezone)
-        throw Exception(getExceptionMessage(" has wrong type: ", 0, "scale", "DateTime", Field::Types::Which::UInt64),
+        throw Exception::createDeprecated(getExceptionMessage(" has wrong type: ", 0, "scale", "DateTime", Field::Types::Which::UInt64),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     /// If scale is defined, the data type is DateTime when scale = 0 otherwise the data type is DateTime64

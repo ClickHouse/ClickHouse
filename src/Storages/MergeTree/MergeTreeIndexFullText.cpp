@@ -468,6 +468,10 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
                 {
                     key_column_num = map_keys_key_column_num;
                     key_exists = true;
+
+                    auto const_data_type = WhichDataType(const_type);
+                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
+                        return false;
                 }
                 else
                 {
