@@ -43,7 +43,8 @@ namespace
     /// Performs a request to get the size and last modification time of an object.
     /// The function performs either HeadObject or GetObjectAttributes request depending on the endpoint.
     std::pair<std::optional<DB::S3::ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
-        const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+        const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id,
+        const S3Settings::RequestSettings &, bool for_disk_s3)
     {
         auto endpoint = getEndpoint(client);
         bool use_get_object_attributes_request = (endpoint.find(".amazonaws.com") != String::npos);
@@ -122,9 +123,9 @@ bool isNotFoundError(Aws::S3::S3Errors error)
     return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
 }
 
-ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
+ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, const S3Settings::RequestSettings & settings, bool for_disk_s3, bool throw_on_error)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, settings, for_disk_s3);
     if (object_info)
     {
         return *object_info;
@@ -138,14 +139,14 @@ ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket
     return {};
 }
 
-size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
+size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, const S3Settings::RequestSettings & settings, bool for_disk_s3, bool throw_on_error)
 {
-    return getObjectInfo(client, bucket, key, version_id, for_disk_s3, throw_on_error).size;
+    return getObjectInfo(client, bucket, key, version_id, settings, for_disk_s3, throw_on_error).size;
 }
 
-bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, const S3Settings::RequestSettings & settings, bool for_disk_s3)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, settings, for_disk_s3);
     if (object_info)
         return true;
 
@@ -157,16 +158,16 @@ bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const
         key, bucket, error.GetMessage());
 }
 
-void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, std::string_view description)
+void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, const S3Settings::RequestSettings & settings, bool for_disk_s3, std::string_view description)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, settings, for_disk_s3);
     if (object_info)
         return;
     throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
                         (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
 }
 
-std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
+std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, const S3Settings::RequestSettings &, bool for_disk_s3, bool throw_on_error)
 {
     ProfileEvents::increment(ProfileEvents::S3GetObjectMetadata);
     if (for_disk_s3)

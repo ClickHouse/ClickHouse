@@ -416,6 +416,7 @@ public:
         const std::string & version_id_,
         const std::vector<String> & keys_,
         const String & bucket_,
+        const S3Settings::RequestSettings & request_settings_,
         ASTPtr query_,
         const Block & virtual_header_,
         ContextPtr context_,
@@ -469,7 +470,7 @@ public:
             /// (which means we eventually need this info anyway, so it should be ok to do it now)
             if (object_infos_)
             {
-                info = S3::getObjectInfo(client_, bucket, key, version_id_);
+                info = S3::getObjectInfo(client_, bucket, key, version_id_, request_settings_);
                 total_size += info->size;
 
                 String path = fs::path(bucket) / key;
@@ -510,14 +511,15 @@ StorageS3Source::KeysIterator::KeysIterator(
     const std::string & version_id_,
     const std::vector<String> & keys_,
     const String & bucket_,
+    const S3Settings::RequestSettings & request_settings_,
     ASTPtr query,
     const Block & virtual_header,
     ContextPtr context,
     ObjectInfos * object_infos,
     Strings * read_keys)
     : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(
-        client_, version_id_, keys_, bucket_, query,
-        virtual_header, context, object_infos, read_keys))
+        client_, version_id_, keys_, bucket_, request_settings_,
+        query, virtual_header, context, object_infos, read_keys))
 {
 }
 
@@ -585,7 +587,7 @@ StorageS3Source::ReaderHolder StorageS3Source::createReader()
     if (current_key.empty())
         return {};
 
-    size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id);
+    size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id, request_settings);
 
     int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
     auto read_buf = wrapReadBufferWithCompressionMethod(
@@ -1009,7 +1011,7 @@ std::shared_ptr<StorageS3Source::IIterator> StorageS3::createFileIterator(
     {
         return std::make_shared<StorageS3Source::KeysIterator>(
             *s3_configuration.client, s3_configuration.uri.version_id, keys,
-            s3_configuration.uri.bucket, query, virtual_block, local_context,
+            s3_configuration.uri.bucket, s3_configuration.request_settings, query, virtual_block, local_context,
             object_infos, read_keys);
     }
 }
@@ -1144,7 +1146,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
 
         bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
 
-        if (!truncate_in_insert && S3::objectExists(*s3_configuration.client, s3_configuration.uri.bucket, keys.back(), s3_configuration.uri.version_id))
+        if (!truncate_in_insert && S3::objectExists(*s3_configuration.client, s3_configuration.uri.bucket, keys.back(), s3_configuration.uri.version_id, s3_configuration.request_settings))
         {
             if (local_context->getSettingsRef().s3_create_new_file_on_insert)
             {
@@ -1156,7 +1158,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
                     new_key = keys[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : keys[0].substr(pos));
                     ++index;
                 }
-                while (S3::objectExists(*s3_configuration.client, s3_configuration.uri.bucket, new_key, s3_configuration.uri.version_id));
+                while (S3::objectExists(*s3_configuration.client, s3_configuration.uri.bucket, new_key, s3_configuration.uri.version_id, s3_configuration.request_settings));
                 keys.push_back(new_key);
             }
             else
