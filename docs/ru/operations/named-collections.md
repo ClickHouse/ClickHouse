@@ -27,7 +27,7 @@ $ cat /etc/clickhouse-server/config.d/named_collections.xml
 
 ## Именованные соединения для доступа к S3
 
-Описание параметров смотри [Табличная Функция S3](../sql-reference/table-functions/s3.md).
+Описание параметров смотрите [Табличная Функция S3](../sql-reference/table-functions/s3.md).
 
 Пример конфигурации:
 ```xml
@@ -75,7 +75,7 @@ SELECT * FROM s3_engine_table LIMIT 3;
 
 ## Пример использования именованных соединений с базой данных MySQL
 
-Описание параметров смотри [mysql](../sql-reference/table-functions/mysql.md).
+Описание параметров смотрите [mysql](../sql-reference/table-functions/mysql.md).
 
 Пример конфигурации:
 ```xml
@@ -147,7 +147,7 @@ SELECT dictGet('dict', 'B', 2);
 
 ## Пример использования именованных соединений с базой данных PostgreSQL
 
-Описание параметров смотри [postgresql](../sql-reference/table-functions/postgresql.md).
+Описание параметров смотрите [postgresql](../sql-reference/table-functions/postgresql.md).
 
 Пример конфигурации:
 ```xml
@@ -230,7 +230,7 @@ SELECT dictGet('dict', 'b', 2);
 
 ## Пример использования именованных соединений с удалённой базой данных Сlickhouse
 
-Описание параметров смотри [remote](../sql-reference/table-functions/remote.md).
+Описание параметров смотрите [remote](../sql-reference/table-functions/remote.md).
 
 Пример конфигурации:
 ```xml
