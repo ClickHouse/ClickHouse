@@ -16,7 +16,7 @@ namespace DB
 /*
  * Scoped resource guard.
  * Waits for resource to be available in constructor and releases resource in destructor
- * IMPORTANT: multiple resources should not be locked concurently by a single thread
+ * IMPORTANT: multiple resources should not be locked concurrently by a single thread
  */
 class ResourceGuard
 {

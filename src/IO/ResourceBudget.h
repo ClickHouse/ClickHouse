@@ -31,7 +31,7 @@ public:
             // Valid resource request must have positive `cost`. Also takes consumption history into account.
             ResourceCost cost = std::max<ResourceCost>(1ll, estimated_cost - budget);
 
-            // Assume every request is satisfied (no resource request cancelation is possible now)
+            // Assume every request is satisfied (no resource request cancellation is possible now)
             // So we requested additional `cost` units and are going to consume `estimated_cost`
             ResourceCost new_budget = budget + cost - estimated_cost;
 
