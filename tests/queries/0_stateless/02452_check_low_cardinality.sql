@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 DROP TABLE IF EXISTS test_low_cardinality_string;
 DROP TABLE IF EXISTS test_low_cardinality_uuid;
 DROP TABLE IF EXISTS test_low_cardinality_int;
