@@ -4795,10 +4795,10 @@ bool StorageReplicatedMergeTree::optimize(
 
     auto handle_noop = [&]<typename... Args>(FormatStringHelper<Args...> fmt_string, Args && ...args)
     {
-        PreformattedMessage message = fmt_string.format(std::forward<Args...>(args)...);
+        PreformattedMessage message = fmt_string.format(std::forward<Args>(args)...);
         LOG_DEBUG(log, message);
         if (query_context->getSettingsRef().optimize_throw_if_noop)
-            throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+            throw Exception(std::move(message), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
         return false;
     };
 
@@ -7355,7 +7355,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
         String out_reason;
         if (!merge_pred.canMergeSinglePart(part, &out_reason))
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: " + out_reason);
+            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", out_reason);
     }
 
     {
@@ -7585,14 +7585,14 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         if (!merge_pred.canMergeSinglePart(part, &out_reason))
         {
             if (throw_if_noop)
-                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+                throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 
         if (merge_pred.partParticipatesInReplaceRange(part, &out_reason))
         {
             if (throw_if_noop)
-                throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, out_reason);
+                throw Exception::createDeprecated(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             return false;
         }
 

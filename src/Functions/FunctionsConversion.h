@@ -3181,8 +3181,8 @@ private:
 
         const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
         if (!from_type)
-            throw Exception{"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: "
-                + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types or from String.\n"
+                            "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
 
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
@@ -3223,8 +3223,9 @@ private:
         else
         {
             if (from_element_types.size() != to_element_types.size())
-                throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
-                    "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
+                                "with the same number of elements or from String.\nLeft type: {}, right type: {}",
+                                from_type->getName(), to_type->getName());
 
             element_wrappers = getElementWrappers(from_element_types, to_element_types);
             to_reverse_index.reserve(to_element_types.size());
@@ -3337,8 +3338,8 @@ private:
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
         {
             if (from_tuple->getElements().size() != 2)
-                throw Exception{"CAST AS Map from tuple requeires 2 elements.\n"
-                    "Left type: " + from_tuple->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from tuple requeires 2 elements. "
+                    "Left type: {}, right type: {}", from_tuple->getName(), to_type->getName());
 
             DataTypes from_kv_types;
             const auto & to_kv_types = to_type->getKeyValueTypes();
@@ -3359,8 +3360,8 @@ private:
         {
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
-                throw Exception{"CAST AS Map from array requeires nested tuple of 2 elements.\n"
-                    "Left type: " + from_array->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from array requeires nested tuple of 2 elements. "
+                    "Left type: {}, right type: {}", from_array->getName(), to_type->getName());
 
             return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }
@@ -3370,8 +3371,8 @@ private:
         }
         else
         {
-            throw Exception{"Unsupported types to CAST AS Map\n"
-                "Left type: " + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported types to CAST AS Map. "
+                "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
         }
     }
 

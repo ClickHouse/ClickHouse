@@ -207,7 +207,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     if (!checksums.files.contains(bin_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No {} file checksum for column {} in part ",
+                            "No {} file checksum for column {} in part {}",
                             bin_file_name, name_type.name, getDataPartStorage().getFullPath());
                 });
             }
