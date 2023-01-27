@@ -1848,9 +1848,10 @@ KeyCondition::Description KeyCondition::getDescription() const
     if (rpn_stack.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInRange");
 
-    std::map<size_t, std::string_view> key_names;
+    /// column_index -> {column_name, is_used_flag}
+    std::map<size_t, std::pair<std::string_view, bool>> key_names;
     for (const auto & key : key_columns)
-        key_names[key.second] = key.first;
+        key_names[key.second] = {key.first, false};
 
     WriteBufferFromOwnString buf;
 
@@ -1861,13 +1862,15 @@ KeyCondition::Description KeyCondition::getDescription() const
         {
             case Node::Type::Leaf:
             {
+                key_names[node->element->key_column].second = true; // key is used.
+
                 /// Note: for condition with double negation, like `not(x not in set)`,
                 /// we can replace it to `x in set` here.
                 /// But I won't do it, because `cloneASTWithInversionPushDown` already push down `not`.
                 /// So, this seem to be impossible for `can_be_true` tree.
                 if (node->negate)
                     buf << "not(";
-                buf << node->element->toString(key_names[node->element->key_column], true);
+                buf << node->element->toString(key_names[node->element->key_column].first, true);
                 if (node->negate)
                     buf << ")";
                 break;
@@ -1898,8 +1901,11 @@ KeyCondition::Description KeyCondition::getDescription() const
     describe(rpn_stack.front().can_be_true.get());
     description.condition = std::move(buf.str());
 
-    for (auto && [_, name] : key_names)
-        description.used_keys.emplace_back(name);
+    for (auto && [_, v] : key_names)
+    {
+        if (v.second)
+            description.used_keys.emplace_back(v.first);
+    }
 
     return description;
 }
