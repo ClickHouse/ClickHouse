@@ -101,6 +101,6 @@ tt2 as (
     union distinct
     select toDate(now())-1, ifnull((select samples from tt where dd = toDate(now())-1),0) as samples
 )
-select dd, samples from tt2 order by dd with fill step 1 limit 100;
+select dd, samples from tt2 order by dd with fill step 1 limit 100 format Null;
 
 drop table test;
