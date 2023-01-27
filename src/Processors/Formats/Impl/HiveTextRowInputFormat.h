@@ -18,13 +18,9 @@ public:
 
     String getName() const override { return "HiveTextRowInputFormat"; }
 
-    void setReadBuffer(ReadBuffer & in_) override;
-
 private:
     HiveTextRowInputFormat(
-        const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
-
-    std::unique_ptr<PeekableReadBuffer> buf;
+        const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
 };
 
 class HiveTextFormatReader final : public CSVFormatReader
@@ -35,10 +31,7 @@ public:
     std::vector<String> readNames() override;
     std::vector<String> readTypes() override;
 
-    void setReadBuffer(ReadBuffer & buf_) override;
-
 private:
-    PeekableReadBuffer * buf;
     std::vector<String> input_field_names;
 };
 

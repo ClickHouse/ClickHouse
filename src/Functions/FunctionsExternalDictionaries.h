@@ -692,8 +692,8 @@ private:
         auto return_type = impl.getReturnTypeImpl(arguments);
 
         if (!return_type->equals(*result_type))
-            throw Exception{"Dictionary attribute has different type " + return_type->getName() + " expected " + result_type->getName(),
-                    ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Dictionary attribute has different type {} expected {}",
+                    return_type->getName(), result_type->getName());
 
         return impl.executeImpl(arguments, return_type, input_rows_count);
     }

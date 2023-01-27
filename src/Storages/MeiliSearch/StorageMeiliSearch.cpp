@@ -101,7 +101,7 @@ Pipe StorageMeiliSearch::read(
             auto str = el->getColumnName();
             auto it = find(str.begin(), str.end(), '=');
             if (it == str.end())
-                throw Exception("meiliMatch function must have parameters of the form \'key=value\'", ErrorCodes::BAD_QUERY_PARAMETER);
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "meiliMatch function must have parameters of the form \'key=value\'");
 
             String key(str.begin() + 1, it);
             String value(it + 1, str.end() - 1);

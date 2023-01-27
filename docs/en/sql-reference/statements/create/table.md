@@ -502,3 +502,9 @@ Result:
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
+
+
+## Related content
+
+- Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

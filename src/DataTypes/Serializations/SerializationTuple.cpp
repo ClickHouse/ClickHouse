@@ -416,7 +416,7 @@ size_t SerializationTuple::getPositionByName(const String & name) const
     for (size_t i = 0; i < size; ++i)
         if (elems[i]->getElementName() == name)
             return i;
-    throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
 
 }

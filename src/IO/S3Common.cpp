@@ -132,7 +132,7 @@ public:
         const auto & [level, prio] = convertLogLevel(log_level);
         if (tag_loggers.contains(tag))
         {
-            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
+            LOG_IMPL(tag_loggers[tag], level, prio, fmt::runtime(message));
         }
         else
         {
@@ -951,7 +951,9 @@ namespace S3
 
             boost::to_upper(name);
             if (name != S3 && name != COS && name != OBS && name != OSS)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
+                                quoteString(name));
 
             if (name == S3)
                 storage_name = name;
@@ -977,7 +979,7 @@ namespace S3
         /// S3 specification requires at least 3 and at most 63 characters in bucket name.
         /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
         if (bucket.length() < 3 || bucket.length() > 63)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
@@ -1104,7 +1106,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
             auto header_str = config.getString(config_elem + "." + subkey);
             auto delimiter = header_str.find(':');
             if (delimiter == std::string::npos)
-                throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
             headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
         }
     }

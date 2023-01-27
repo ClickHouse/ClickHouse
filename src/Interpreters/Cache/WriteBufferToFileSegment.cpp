@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <IO/SwapHelper.h>
 
 #include <Common/logger_useful.h>
 
@@ -10,20 +11,6 @@ namespace ErrorCodes
 {
     extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    class SwapHelper
-    {
-    public:
-        SwapHelper(WriteBuffer & b1_, WriteBuffer & b2_) : b1(b1_), b2(b2_) { b1.swap(b2); }
-        ~SwapHelper() { b1.swap(b2); }
-
-    private:
-        WriteBuffer & b1;
-        WriteBuffer & b2;
-    };
 }
 
 WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)

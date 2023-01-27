@@ -34,6 +34,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2);
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1);
 SELECT JSONExtractBool('{"passed": true}', 'passed');
 SELECT JSONExtractBool('"HX-=');
+SELECT JSONExtractBool('-1');
 
 SELECT '--JSONExtractString--';
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
@@ -113,6 +114,12 @@ SELECT JSONExtract('{"a":"-1234567890123456789999"}', 'a', 'Int64') as a, toType
 SELECT JSONExtract('{"a":"1234567890123456789999"}', 'a', 'UInt64') as a, toTypeName(a);
 SELECT JSONExtract('{"a":0}', 'a', 'Bool') as a, toTypeName(a);
 SELECT JSONExtract('{"a":1}', 'a', 'Bool') as a, toTypeName(a);
+
+SELECT JSONExtract('{"a": "-123456789012.345"}', 'a', 'Int64') as a, toTypeName(a);
+SELECT JSONExtract('{"a": "123456789012.345"}', 'a', 'UInt64') as a, toTypeName(a);
+
+SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'UInt64') as a, toTypeName(a);
+SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'Int8') as a, toTypeName(a);
 
 SELECT '--JSONExtractKeysAndValues--';
 SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
@@ -195,6 +202,13 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2);
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1);
 SELECT JSONExtractBool('{"passed": true}', 'passed');
 SELECT JSONExtractBool('"HX-=');
+SELECT JSONExtractBool('-1');
+
+SELECT JSONExtract('{"a": "-123456789012.345"}', 'a', 'Int64') as a, toTypeName(a);
+SELECT JSONExtract('{"a": "123456789012.345"}', 'a', 'UInt64') as a, toTypeName(a);
+
+SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'UInt64') as a, toTypeName(a);
+SELECT JSONExtract('{"a": "-2000.22"}', 'a', 'Int8') as a, toTypeName(a);
 
 SELECT '--JSONExtractString--';
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');

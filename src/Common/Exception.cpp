@@ -71,11 +71,25 @@ Exception::MessageMasked::MessageMasked(const std::string & msg_)
         masker->wipeSensitiveData(msg);
 }
 
+Exception::MessageMasked::MessageMasked(std::string && msg_)
+    : msg(std::move(msg_))
+{
+    if (auto * masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(msg);
+}
+
 Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
 {
     handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
+}
+
+Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
+    : Poco::Exception(msg_masked.msg, code)
+    , remote(remote_)
+{
+    handle_error_code(message(), code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -172,10 +186,11 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
 {
     try
     {
-        if (start_of_message.empty())
-            LOG_ERROR(logger, "{}", getCurrentExceptionMessage(true));
-        else
-            LOG_ERROR(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+        if (!start_of_message.empty())
+            message.message = fmt::format("{}: {}", start_of_message, message.message);
+
+        LOG_ERROR(logger, message);
     }
     catch (...)
     {
@@ -324,7 +339,13 @@ std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
+    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info).message;
+}
+
+PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
+{
     WriteBufferFromOwnString stream;
+    std::string_view message_format_string;
 
     try
     {
@@ -335,6 +356,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace)
                << (with_extra_info ? getExtraExceptionInfo(e) : "")
                << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        message_format_string = e.tryGetMessageFormatString();
     }
     catch (const Poco::Exception & e)
     {
@@ -380,7 +402,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         catch (...) {}
     }
 
-    return stream.str();
+    return PreformattedMessage{stream.str(), message_format_string};
 }
 
 
@@ -433,14 +455,6 @@ int getExceptionErrorCode(std::exception_ptr e)
 }
 
 
-void rethrowFirstException(const Exceptions & exceptions)
-{
-    for (const auto & exception : exceptions)
-        if (exception)
-            std::rethrow_exception(exception);
-}
-
-
 void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message)
 {
     try
@@ -466,6 +480,11 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
+{
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).message;
+}
+
+PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
     WriteBufferFromOwnString stream;
 
@@ -497,7 +516,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
     }
     catch (...) {}
 
-    return stream.str();
+    return PreformattedMessage{stream.str(), e.tryGetMessageFormatString()};
 }
 
 std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)

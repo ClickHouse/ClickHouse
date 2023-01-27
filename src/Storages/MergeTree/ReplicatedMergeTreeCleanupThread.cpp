@@ -90,7 +90,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     Coordination::Stat stat;
     if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
-        throw Exception(storage.zookeeper_path + "/log doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+        throw Exception(ErrorCodes::NOT_FOUND_NODE, "{}/log doesn't exist", storage.zookeeper_path);
 
     int children_count = stat.numChildren;
 
@@ -293,7 +293,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     }
 
     if (candidate_lost_replicas.size() == replicas_count)
-        throw Exception("All replicas are stale: we won't mark any replica as lost", ErrorCodes::ALL_REPLICAS_LOST);
+        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are stale: we won't mark any replica as lost");
 
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)

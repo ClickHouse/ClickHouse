@@ -53,10 +53,10 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , name_map(header_.getNamesToIndexesMap())
     , prev_positions(header_.columns())
     , types(header_.getDataTypes())
 {
+    name_map = getPort().getHeader().getNamesToIndexesMap();
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
@@ -146,7 +146,8 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
     }
     else
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
     }
 }
 
@@ -154,7 +155,8 @@ template <typename T>
 static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != BSONType::DOUBLE)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
 
     Float64 value;
     readBinary(value, in);
@@ -165,7 +167,8 @@ template <typename DecimalType, BSONType expected_bson_type>
 static void readAndInsertSmallDecimal(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != expected_bson_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
 
     DecimalType value;
     readBinary(value, in);
@@ -186,12 +189,14 @@ template <typename ColumnType>
 static void readAndInsertBigInteger(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
     if (bson_type != BSONType::BINARY)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}", getBSONTypeName(bson_type), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
+                        getBSONTypeName(bson_type), data_type->getName());
 
     auto size = readBSONSize(in);
     auto subtype = getBSONBinarySubtype(readBSONType(in));
     if (subtype != BSONBinarySubtype::BINARY)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Binary subtype {} into column with type {}", getBSONBinarySubtypeName(subtype), data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Binary subtype {} into column with type {}",
+                        getBSONBinarySubtypeName(subtype), data_type->getName());
 
     using ValueType = typename ColumnType::ValueType;
 
@@ -216,7 +221,7 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & fixed_string_column = assert_cast<ColumnFixedString &>(column);
         size_t n = fixed_string_column.getN();
         if (size > n)
-            throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
         auto & data = fixed_string_column.getChars();
 
@@ -375,18 +380,20 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
             auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
             if (!try_get_index)
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot parse tuple column with type {} from BSON array/embedded document field: tuple doesn't have element with name \"{}\"",
-                    data_type->getName(),
-                    name);
+                                ErrorCodes::INCORRECT_DATA,
+                                "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                                "tuple doesn't have element with name \"{}\"",
+                                data_type->getName(),
+                                name);
             index = *try_get_index;
         }
 
         if (index >= data_type_tuple->getElements().size())
             throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Cannot parse tuple column with type {} from BSON array/embedded document field: the number of fields BSON document exceeds the number of fields in tuple",
-                data_type->getName());
+                            ErrorCodes::INCORRECT_DATA,
+                            "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                            "the number of fields BSON document exceeds the number of fields in tuple",
+                            data_type->getName());
 
         readField(tuple_column.getColumn(index), data_type_tuple->getElement(index), nested_bson_type);
         ++read_nested_columns;
@@ -396,11 +403,12 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
     if (read_nested_columns != data_type_tuple->getElements().size())
         throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Cannot parse tuple column with type {} from BSON array/embedded document field, the number of fields in tuple and BSON document doesn't match: {} != {}",
-            data_type->getName(),
-            data_type_tuple->getElements().size(),
-            read_nested_columns);
+                        ErrorCodes::INCORRECT_DATA,
+                        "Cannot parse tuple column with type {} from BSON array/embedded document field, "
+                        "the number of fields in tuple and BSON document doesn't match: {} != {}",
+                        data_type->getName(),
+                        data_type_tuple->getElements().size(),
+                        read_nested_columns);
 }
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -411,7 +419,9 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     const auto * data_type_map = assert_cast<const DataTypeMap *>(data_type.get());
     const auto & key_data_type = data_type_map->getKeyType();
     if (!isStringOrFixedString(key_data_type))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", key_data_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Only maps with String key type are supported in BSON, got key type: {}",
+                        key_data_type->getName());
 
     const auto & value_data_type = data_type_map->getValueType();
     auto & column_map = assert_cast<ColumnMap &>(column);
@@ -446,7 +456,9 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
         }
 
         if (!format_settings.null_as_default)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Null value into non-nullable column with type {}", getBSONTypeName(bson_type), data_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot insert BSON Null value into non-nullable column with type {}",
+                            getBSONTypeName(bson_type), data_type->getName());
 
         column.insertDefault();
         return false;

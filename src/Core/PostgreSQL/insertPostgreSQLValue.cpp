@@ -132,7 +132,7 @@ void insertPostgreSQLValue(
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
                 if ((parsed.first == pqxx::array_parser::juncture::row_start) && (++dimension > expected_dimensions))
-                    throw Exception("Got more dimensions than expected", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
 
                 else if (parsed.first == pqxx::array_parser::juncture::string_value)
                     dimensions[dimension].emplace_back(parse_value(parsed.second));
