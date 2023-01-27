@@ -2497,10 +2497,7 @@ void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const St
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
 {
-    if (!queue.empty())
-    {
-        notifySubscribers(0, queue.back().get()->log_entry_id);
-    }
+    notifySubscribers(0, "");
 }
 
 String padIndex(Int64 index)
