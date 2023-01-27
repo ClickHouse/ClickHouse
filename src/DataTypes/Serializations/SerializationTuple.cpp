@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -154,7 +155,7 @@ void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, co
 
 void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuples_as_objects
+    if (settings.json.write_named_tuples_as_objects
         && have_explicit_names)
     {
         writeChar('{', ostr);
@@ -185,7 +186,7 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
 
 void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuples_as_objects
+    if (settings.json.read_named_tuples_as_objects
         && have_explicit_names)
     {
         skipWhitespaceIfAny(istr);
@@ -194,12 +195,15 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 
         addElementSafe(elems.size(), column, [&]
         {
-            // Require all elements but in arbitrary order.
-            for (size_t i = 0; i < elems.size(); ++i)
+            std::vector<UInt8> seen_elements(elems.size(), 0);
+            size_t i = 0;
+            while (!istr.eof() && *istr.position() != '}')
             {
+                if (i == elems.size())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of elements in named tuple. Expected no more than {}", elems.size());
+
                 if (i > 0)
                 {
-                    skipWhitespaceIfAny(istr);
                     assertChar(',', istr);
                     skipWhitespaceIfAny(istr);
                 }
@@ -211,12 +215,35 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
                 skipWhitespaceIfAny(istr);
 
                 const size_t element_pos = getPositionByName(name);
+                seen_elements[element_pos] = 1;
                 auto & element_column = extractElementColumn(column, element_pos);
                 elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+
+                skipWhitespaceIfAny(istr);
+                ++i;
             }
 
-            skipWhitespaceIfAny(istr);
             assertChar('}', istr);
+
+            /// Check if we have missing elements.
+            if (i != elems.size())
+            {
+                for (size_t element_pos = 0; element_pos != seen_elements.size(); ++element_pos)
+                {
+                    if (seen_elements[element_pos])
+                        continue;
+
+                    if (!settings.json.defaults_for_missing_elements_in_named_tuple)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "JSON object doesn't contain tuple element {}. If you want to insert defaults in case of missing elements, "
+                            "enable setting input_format_json_defaults_for_missing_elements_in_named_tuple",
+                            elems[element_pos]->getElementName());
+
+                    auto & element_column = extractElementColumn(column, element_pos);
+                    element_column.insertDefault();
+                }
+            }
         });
     }
     else
@@ -389,7 +416,7 @@ size_t SerializationTuple::getPositionByName(const String & name) const
     for (size_t i = 0; i < size; ++i)
         if (elems[i]->getElementName() == name)
             return i;
-    throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
 
 }

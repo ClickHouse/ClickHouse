@@ -188,7 +188,7 @@ function build
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
 
             strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
+            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
         ccache --evict-older-than 1d ||:
@@ -234,6 +234,7 @@ function run_tests
         --check-zookeeper-session
         --order random
         --print-time
+        --report-logs-stats
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \

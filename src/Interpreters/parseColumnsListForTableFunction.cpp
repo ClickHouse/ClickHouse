@@ -83,7 +83,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
 
     auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
     if (!columns_list)
-        throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());

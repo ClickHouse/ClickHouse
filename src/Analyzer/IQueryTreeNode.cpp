@@ -215,6 +215,11 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 
 QueryTreeNodePtr IQueryTreeNode::clone() const
 {
+    return cloneAndReplace({});
+}
+
+QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacement_map) const
+{
     /** Clone tree with this node as root.
       *
       * Algorithm
@@ -236,11 +241,11 @@ QueryTreeNodePtr IQueryTreeNode::clone() const
         const auto [node_to_clone, place_for_cloned_node] = nodes_to_clone.back();
         nodes_to_clone.pop_back();
 
-        auto node_clone = node_to_clone->cloneImpl();
+        auto it = replacement_map.find(node_to_clone);
+        auto node_clone = it != replacement_map.end() ? it->second : node_to_clone->cloneImpl();
         *place_for_cloned_node = node_clone;
 
         node_clone->setAlias(node_to_clone->alias);
-        node_clone->setOriginalAST(node_to_clone->original_ast);
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
 

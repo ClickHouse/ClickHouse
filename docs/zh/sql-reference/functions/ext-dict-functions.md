@@ -45,5 +45,3 @@ slug: /zh/sql-reference/functions/ext-dict-functions
 `dictHas('dict_name', id)`
 
 -   检查字典是否存在指定的`id`。如果不存在，则返回0;如果存在，则返回1。
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

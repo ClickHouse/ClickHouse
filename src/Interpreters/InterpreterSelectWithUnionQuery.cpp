@@ -54,7 +54,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
-        throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no children in ASTSelectWithUnionQuery");
 
     /// Note that we pass 'required_result_column_names' to first SELECT.
     /// And for the rest, we pass names at the corresponding positions of 'required_result_column_names' in the result of first SELECT,
@@ -81,11 +81,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
                 = getCurrentChildResultHeader(ast->list_of_selects->children.at(query_num), required_result_column_names);
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
-                throw Exception("Different number of columns in UNION ALL elements:\n"
-                    + full_result_header.dumpNames()
-                    + "\nand\n"
-                    + full_result_header_for_current_select.dumpNames() + "\n",
-                    ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+                throw Exception(ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH,
+                                "Different number of columns in UNION ALL elements:\n{}\nand\n{}\n",
+                                full_result_header.dumpNames(), full_result_header_for_current_select.dumpNames());
 
             required_result_column_names_for_other_selects[query_num].reserve(required_result_column_names.size());
             for (const auto & pos : positions_of_required_result_columns)
@@ -213,11 +211,9 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
     for (size_t query_num = 1; query_num < num_selects; ++query_num)
     {
         if (headers[query_num].columns() != num_columns)
-            throw Exception("Different number of columns in UNION ALL elements:\n"
-                            + common_header.dumpNames()
-                            + "\nand\n"
-                            + headers[query_num].dumpNames() + "\n",
-                            ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+            throw Exception(ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH,
+                            "Different number of columns in UNION ALL elements:\n{}\nand\n{}\n",
+                            common_header.dumpNames(), headers[query_num].dumpNames());
     }
 
     std::vector<const ColumnWithTypeAndName *> columns(num_selects);
@@ -258,12 +254,14 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
-Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery)
+Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery, bool is_create_parameterized_view)
 {
     if (!context_->hasQueryContext())
     {
         if (is_subquery)
             return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
+        else if (is_create_parameterized_view)
+            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().createParameterizedView().analyze()).getSampleBlock();
         else
             return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
     }
@@ -280,6 +278,12 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     {
         return cache[key]
             = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
+    }
+    else if (is_create_parameterized_view)
+    {
+        return cache[key]
+            = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().createParameterizedView().analyze())
+            .getSampleBlock();
     }
     else
     {

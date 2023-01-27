@@ -305,7 +305,7 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
     /// Some validation will be added
 }
 
-void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
+void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context, bool /*force_wait*/)
 {
     std::lock_guard lock(mutex);
     auto metadata_snapshot = getInMemoryMetadataPtr();
