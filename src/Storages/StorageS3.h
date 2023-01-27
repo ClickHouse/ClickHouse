@@ -92,6 +92,7 @@ public:
             const std::string & version_id_,
             const std::vector<String> & keys_,
             const String & bucket_,
+            const S3Settings::RequestSettings & request_settings_,
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,

@@ -65,9 +65,8 @@ namespace
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
-            , settings(request_settings_.getUploadSettings())
-            , check_objects_after_upload(request_settings_.check_objects_after_upload)
-            , max_unexpected_write_error_retries(request_settings_.max_unexpected_write_error_retries)
+            , request_settings(request_settings_)
+            , upload_settings(request_settings.getUploadSettings())
             , object_metadata(object_metadata_)
             , schedule(schedule_)
             , for_disk_s3(for_disk_s3_)
@@ -81,9 +80,8 @@ namespace
         std::shared_ptr<const Aws::S3::S3Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
-        const S3Settings::RequestSettings::PartUploadSettings & settings;
-        bool check_objects_after_upload;
-        size_t max_unexpected_write_error_retries;
+        const S3Settings::RequestSettings & request_settings;
+        const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
         const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunner<void> schedule;
         bool for_disk_s3;
@@ -120,8 +118,9 @@ namespace
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
 
-            if (!settings.storage_class_name.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(settings.storage_class_name));
+            const auto & storage_class_name = upload_settings.storage_class_name;
+            if (!storage_class_name.empty())
+                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
             if (for_disk_s3)
@@ -162,7 +161,7 @@ namespace
 
             request.SetMultipartUpload(multipart_upload);
 
-            size_t max_retries = std::max(max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
@@ -206,7 +205,7 @@ namespace
         void checkObjectAfterUpload()
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, {}, "Immediately after upload");
+            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, request_settings, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
@@ -240,47 +239,49 @@ namespace
             if (!total_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
-            if (!settings.max_part_number)
+            auto max_part_number = upload_settings.max_part_number;
+            auto min_upload_part_size = upload_settings.min_upload_part_size;
+            auto max_upload_part_size = upload_settings.max_upload_part_size;
+
+            if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
-            else if (!settings.min_upload_part_size)
+            else if (!min_upload_part_size)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
-            else if (settings.max_upload_part_size < settings.min_upload_part_size)
+            else if (max_upload_part_size < min_upload_part_size)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
 
-            size_t part_size = settings.min_upload_part_size;
+            size_t part_size = min_upload_part_size;
             size_t num_parts = (total_size + part_size - 1) / part_size;
 
-            if (num_parts > settings.max_part_number)
+            if (num_parts > max_part_number)
             {
-                part_size = (total_size + settings.max_part_number - 1) / settings.max_part_number;
+                part_size = (total_size + max_part_number - 1) / max_part_number;
                 num_parts = (total_size + part_size - 1) / part_size;
             }
 
-            if (part_size > settings.max_upload_part_size)
+            if (part_size > max_upload_part_size)
             {
-                part_size = settings.max_upload_part_size;
+                part_size = max_upload_part_size;
                 num_parts = (total_size + part_size - 1) / part_size;
             }
 
-            if (num_parts < 1 || num_parts > settings.max_part_number || part_size < settings.min_upload_part_size
-                || part_size > settings.max_upload_part_size)
+            if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
             {
                 String msg;
                 if (num_parts < 1)
                     msg = "Number of parts is zero";
-                else if (num_parts > settings.max_part_number)
-                    msg = fmt::format("Number of parts exceeds {}", num_parts, settings.max_part_number);
-                else if (part_size < settings.min_upload_part_size)
-                    msg = fmt::format("Size of a part is less than {}", part_size, settings.min_upload_part_size);
+                else if (num_parts > max_part_number)
+                    msg = fmt::format("Number of parts exceeds {}", num_parts, max_part_number);
+                else if (part_size < min_upload_part_size)
+                    msg = fmt::format("Size of a part is less than {}", part_size, min_upload_part_size);
                 else
-                    msg = fmt::format("Size of a part exceeds {}", part_size, settings.max_upload_part_size);
+                    msg = fmt::format("Size of a part exceeds {}", part_size, max_upload_part_size);
 
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "{} while writing {} bytes to S3. Check max_part_number = {}, "
-                    "min_upload_part_size = {}, max_upload_part_size = {}, max_single_part_upload_size = {}",
-                    msg, total_size, settings.max_part_number, settings.min_upload_part_size,
-                    settings.max_upload_part_size, settings.max_single_part_upload_size);
+                    "min_upload_part_size = {}, max_upload_part_size = {}",
+                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
             }
 
             /// We've calculated the size of a normal part (the final part can be smaller).
@@ -419,12 +420,12 @@ namespace
 
         void performCopy()
         {
-            if (size <= settings.max_single_part_upload_size)
+            if (size <= upload_settings.max_single_part_upload_size)
                 performSinglepartUpload();
             else
                 performMultipartUpload();
 
-            if (check_objects_after_upload)
+            if (request_settings.check_objects_after_upload)
                 checkObjectAfterUpload();
         }
 
@@ -452,8 +453,9 @@ namespace
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
 
-            if (!settings.storage_class_name.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(settings.storage_class_name));
+            const auto & storage_class_name = upload_settings.storage_class_name;
+            if (!storage_class_name.empty())
+                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -461,7 +463,7 @@ namespace
 
         void processPutRequest(const Aws::S3::Model::PutObjectRequest & request)
         {
-            size_t max_retries = std::max(max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3PutObject);
@@ -583,12 +585,12 @@ namespace
 
         void performCopy()
         {
-            if (size <= settings.max_single_operation_copy_size)
+            if (size <= upload_settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
             else
                 performMultipartUploadCopy();
 
-            if (check_objects_after_upload)
+            if (request_settings.check_objects_after_upload)
                 checkObjectAfterUpload();
         }
 
@@ -617,8 +619,9 @@ namespace
                 request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
             }
 
-            if (!settings.storage_class_name.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(settings.storage_class_name));
+            const auto & storage_class_name = upload_settings.storage_class_name;
+            if (!storage_class_name.empty())
+                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -626,7 +629,7 @@ namespace
 
         void processCopyRequest(const Aws::S3::Model::CopyObjectRequest & request)
         {
-            size_t max_retries = std::max(max_unexpected_write_error_retries, 1UL);
+            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
             for (size_t retries = 1;; ++retries)
             {
                 ProfileEvents::increment(ProfileEvents::S3CopyObject);
