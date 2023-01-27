@@ -680,14 +680,15 @@ void DataPartStorageOnDisk::rename(
     {
         disk.setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
         disk.moveDirectory(from, to);
+
+        /// Only after moveDirectory() since before the directory does not exists.
+        SyncGuardPtr to_sync_guard;
+        if (fsync_part_dir)
+            to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
     });
 
     part_dir = new_part_dir;
     root_path = new_root_path;
-
-    SyncGuardPtr sync_guard;
-    if (fsync_part_dir)
-        sync_guard = volume->getDisk()->getDirectorySyncGuard(getRelativePath());
 }
 
 void DataPartStorageOnDisk::changeRootPath(const std::string & from_root, const std::string & to_root)
@@ -735,10 +736,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
     size_t buf_size,
     const WriteSettings & settings)
 {
-    if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings, /* autocommit = */ false);
-
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, WriteMode::Rewrite, settings);
+    return writeFile(name, buf_size, WriteMode::Rewrite, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
@@ -749,6 +747,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDisk::writeFile(
 {
     if (transaction)
         return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
+
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 

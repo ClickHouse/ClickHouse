@@ -25,7 +25,7 @@ public:
     uint128 getHash()
     {
         if (block_pos)
-            return CityHash_v1_0_2::CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
+            return CityHash_v1_0_2::CityHash128WithSeed(BufferWithOwnMemory<Buffer>::memory.data(), block_pos, state);
         else
             return state;
     }
