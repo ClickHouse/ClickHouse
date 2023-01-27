@@ -34,7 +34,7 @@ public:
         budget.adjust(estimated_cost, real_cost);
     }
 
-    // Adjust budget to account for extra consumtion of `cost` resource units
+    // Adjust budget to account for extra consumption of `cost` resource units
     void consumeBudget(ResourceCost cost)
     {
         adjustBudget(0, cost);
@@ -53,7 +53,7 @@ public:
 private:
     // Allows multiple consumers to synchronize with common "debit/credit" balance.
     // 1) (positive) to avoid wasting of allocated but not used resource (e.g in case of a failure);
-    // 2) (negative) to account for overconsumption (e.g. if cost is not know in advance and esimation from below is applied).
+    // 2) (negative) to account for overconsumption (e.g. if cost is not know in advance and estimation from below is applied).
     ResourceBudget budget;
 };
 
