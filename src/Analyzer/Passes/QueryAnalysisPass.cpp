@@ -405,8 +405,8 @@ struct TableExpressionData
 {
     std::string table_expression_name;
     std::string table_expression_description;
-    std::string table_name;
     std::string database_name;
+    std::string table_name;
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
@@ -422,7 +422,18 @@ struct TableExpressionData
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
     {
-        buffer << "Columns size " << column_name_to_column_node.size() << '\n';
+        buffer << "Table expression name " << table_expression_name;
+
+        if (!table_expression_description.empty())
+            buffer << " table expression description " << table_expression_description;
+
+        if (!database_name.empty())
+            buffer << " database name " << database_name;
+
+        if (!table_name.empty())
+            buffer << " table name " << table_name;
+
+        buffer << " columns size " << column_name_to_column_node.size() << '\n';
 
         for (const auto & [column_name, column_node] : column_name_to_column_node)
             buffer << "Column name " << column_name << " column node " << column_node->dumpTree() << '\n';
@@ -749,7 +760,21 @@ struct IdentifierResolveScope
         return scope_to_check;
     }
 
-    TableExpressionData & getTableExpressionDataOrThrow(QueryTreeNodePtr table_expression_node)
+    TableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node)
+    {
+        auto it = table_expression_node_to_data.find(table_expression_node);
+        if (it == table_expression_node_to_data.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Table expression {} data must be initialized. In scope {}",
+                table_expression_node->formatASTForErrorMessage(),
+                scope_node->formatASTForErrorMessage());
+        }
+
+        return it->second;
+    }
+
+    const TableExpressionData & getTableExpressionDataOrThrow(const QueryTreeNodePtr & table_expression_node) const
     {
         auto it = table_expression_node_to_data.find(table_expression_node);
         if (it == table_expression_node_to_data.end())
@@ -1139,13 +1164,13 @@ private:
 
     QueryTreeNodePtr tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
-    static bool tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+    static bool tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings = {});
 
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
-    static bool tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    static bool tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, const IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
@@ -1163,11 +1188,18 @@ private:
 
     /// Resolve query tree nodes functions
 
+    void qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
+        const QueryTreeNodePtr & table_expression_node,
+        const IdentifierResolveScope & scope);
+
+    static GetColumnsOptions buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context);
+
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
-    void qualifyMatchedColumnsProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names,
+    QueryTreeNodesWithNames getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
         const QueryTreeNodePtr & table_expression_node,
-        IdentifierResolveScope & scope);
+        const NamesAndTypes & matched_columns,
+        const IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
@@ -2268,11 +2300,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(cons
     return it->second;
 }
 
-bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
+bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
-    auto get_alias_name_to_node_map = [&]() -> std::unordered_map<std::string, QueryTreeNodePtr> &
+    auto get_alias_name_to_node_map = [&]() -> const std::unordered_map<std::string, QueryTreeNodePtr> &
     {
         if (identifier_lookup.isExpressionLookup())
             return scope.alias_name_to_expression_node;
@@ -2282,13 +2314,9 @@ bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifi
         return scope.alias_name_to_table_expression_node;
     };
 
-    auto & alias_name_to_node_map = get_alias_name_to_node_map();
-    auto it = alias_name_to_node_map.find(identifier_bind_part);
+    const auto & alias_name_to_node_map = get_alias_name_to_node_map();
 
-    if (it == alias_name_to_node_map.end())
-        return false;
-
-    return true;
+    return alias_name_to_node_map.contains(identifier_bind_part);
 }
 
 /** Resolve identifier from scope aliases.
@@ -2482,7 +2510,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableColumns(const Ident
     return result;
 }
 
-bool QueryAnalyzer::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+bool QueryAnalyzer::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope)
 {
     auto table_expression_node_type = table_expression_node->getNodeType();
 
@@ -2498,7 +2528,7 @@ bool QueryAnalyzer::tryBindIdentifierToTableExpression(const IdentifierLookup & 
     const auto & identifier = identifier_lookup.identifier;
     const auto & path_start = identifier.getParts().front();
 
-    auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
+    const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
@@ -3197,12 +3227,13 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
 /// Resolve query tree nodes functions implementation
 
-/** Qualify matched columns projection names for unqualified matcher or qualified matcher resolved nodes
+/** Qualify column nodes with projection names.
   *
   * Example: SELECT * FROM test_table AS t1, test_table AS t2;
   */
-void QueryAnalyzer::qualifyMatchedColumnsProjectionNamesIfNeeded(QueryTreeNodesWithNames & matched_nodes_with_column_names,
-    const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
+    const QueryTreeNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope)
 {
     /// Build additional column qualification parts array
     std::vector<std::string> additional_column_qualification_parts;
@@ -3219,8 +3250,9 @@ void QueryAnalyzer::qualifyMatchedColumnsProjectionNamesIfNeeded(QueryTreeNodesW
       */
     std::vector<std::string> column_qualified_identifier_parts;
 
-    for (auto & [column_node, column_name] : matched_nodes_with_column_names)
+    for (const auto & column_node : column_nodes)
     {
+        const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
         column_qualified_identifier_parts = Identifier(column_name).getParts();
 
         /// Iterate over additional column qualifications and apply them if needed
@@ -3230,7 +3262,7 @@ void QueryAnalyzer::qualifyMatchedColumnsProjectionNamesIfNeeded(QueryTreeNodesW
             auto identifier_to_check = Identifier(column_qualified_identifier_parts);
             IdentifierLookup lookup{identifier_to_check, IdentifierLookupContext::EXPRESSION};
 
-            for (auto & table_expression_data : scope.table_expression_node_to_data)
+            for (const auto & table_expression_data : scope.table_expression_node_to_data)
             {
                 if (table_expression_data.first.get() == table_expression_node.get())
                     continue;
@@ -3262,8 +3294,81 @@ void QueryAnalyzer::qualifyMatchedColumnsProjectionNamesIfNeeded(QueryTreeNodesW
             }
         }
 
-        node_to_projection_name.emplace(column_node, Identifier(column_qualified_identifier_parts).getFullName());
+        auto qualified_node_name = Identifier(column_qualified_identifier_parts).getFullName();
+        node_to_projection_name.emplace(column_node, qualified_node_name);
     }
+}
+
+/// Build get columns options for matcher
+GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context)
+{
+    auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
+    UInt8 get_columns_options_kind = GetColumnsOptions::AllPhysicalAndAliases;
+
+    if (matcher_node_typed.isAsteriskMatcher())
+    {
+        get_columns_options_kind = GetColumnsOptions::Ordinary;
+
+        const auto & settings = context->getSettingsRef();
+
+        if (settings.asterisk_include_alias_columns)
+            get_columns_options_kind |= GetColumnsOptions::Kind::Aliases;
+
+        if (settings.asterisk_include_materialized_columns)
+            get_columns_options_kind |= GetColumnsOptions::Kind::Materialized;
+    }
+
+    return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind));
+}
+
+QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
+    const QueryTreeNodePtr & table_expression_node,
+    const NamesAndTypes & matched_columns,
+    const IdentifierResolveScope & scope)
+{
+    auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
+
+    /** Use resolved columns from table expression data in nearest query scope if available.
+      * It is important for ALIAS columns to use column nodes with resolved ALIAS expression.
+      */
+    const TableExpressionData * table_expression_data = nullptr;
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    if (nearest_query_scope)
+        table_expression_data = &nearest_query_scope->getTableExpressionDataOrThrow(table_expression_node);
+
+    QueryTreeNodes matched_column_nodes;
+
+    for (const auto & column : matched_columns)
+    {
+        const auto & column_name = column.name;
+        if (!matcher_node_typed.isMatchingColumn(column_name))
+            continue;
+
+        if (table_expression_data)
+        {
+            auto column_node_it = table_expression_data->column_name_to_column_node.find(column_name);
+            if (column_node_it != table_expression_data->column_name_to_column_node.end())
+            {
+                matched_column_nodes.emplace_back(column_node_it->second);
+                continue;
+            }
+        }
+
+        matched_column_nodes.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node));
+    }
+
+    qualifyColumnNodesWithProjectionNames(matched_column_nodes, table_expression_node, scope);
+
+    QueryAnalyzer::QueryTreeNodesWithNames matched_column_nodes_with_names;
+    matched_column_nodes_with_names.reserve(matched_column_nodes.size());
+
+    for (auto && matched_column_node : matched_column_nodes)
+    {
+        auto column_name = matched_column_node->as<ColumnNode &>().getColumnName();
+        matched_column_nodes_with_names.emplace_back(std::move(matched_column_node), std::move(column_name));
+    }
+
+    return matched_column_nodes_with_names;
 }
 
 /** Resolve qualified tree matcher.
@@ -3276,8 +3381,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     assert(matcher_node_typed.isQualified());
-
-    QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
@@ -3302,6 +3405,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 scope.scope_node->formatASTForErrorMessage());
 
         const auto & element_names = tuple_data_type->getElementNames();
+        QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
         auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
         for (const auto & element_name : element_names)
@@ -3344,7 +3448,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    NamesAndTypes initial_matcher_columns;
+    NamesAndTypes matched_columns;
 
     auto * table_expression_query_node = table_expression_node->as<QueryNode>();
     auto * table_expression_union_node = table_expression_node->as<UnionNode>();
@@ -3353,15 +3457,16 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
     if (table_expression_query_node || table_expression_union_node)
     {
-        initial_matcher_columns = table_expression_query_node ? table_expression_query_node->getProjectionColumns()
+        matched_columns = table_expression_query_node ? table_expression_query_node->getProjectionColumns()
                                                               : table_expression_union_node->computeProjectionColumns();
     }
     else if (table_expression_table_node || table_expression_table_function_node)
     {
         const auto & storage_snapshot = table_expression_table_node ? table_expression_table_node->getStorageSnapshot()
                                                                     : table_expression_table_function_node->getStorageSnapshot();
-        auto storage_columns_list = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All));
-        initial_matcher_columns = NamesAndTypes(storage_columns_list.begin(), storage_columns_list.end());
+        auto get_columns_options = buildGetColumnsOptions(matcher_node, scope.context);
+        auto storage_columns_list = storage_snapshot->getColumns(get_columns_options);
+        matched_columns = NamesAndTypes(storage_columns_list.begin(), storage_columns_list.end());
     }
     else
     {
@@ -3371,18 +3476,13 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    for (auto & column : initial_matcher_columns)
-    {
-        const auto & column_name = column.name;
-        if (matcher_node_typed.isMatchingColumn(column_name))
-            matched_expression_nodes_with_column_names.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node), column_name);
-    }
+    auto result_matched_column_nodes_with_names = getMatchedColumnNodesWithNames(matcher_node,
+        table_expression_node,
+        matched_columns,
+        scope);
 
-    qualifyMatchedColumnsProjectionNamesIfNeeded(matched_expression_nodes_with_column_names, table_expression_node, scope);
-
-    return matched_expression_nodes_with_column_names;
+    return result_matched_column_nodes_with_names;
 }
-
 
 /// Resolve non qualified matcher, using scope join tree node.
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
@@ -3421,8 +3521,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
     for (auto & table_expression : table_expressions_stack)
     {
-        QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
-
         if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
         {
             if (table_expressions_column_nodes_with_names_stack.empty())
@@ -3486,6 +3584,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             left_table_expression_column_names_to_skip.clear();
             right_table_expression_column_names_to_skip.clear();
 
+            QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
+
             /** If there is JOIN with USING we need to match only single USING column and do not use left table expression
               * and right table expression column with same name.
               *
@@ -3544,23 +3644,29 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                 }
             }
 
-            for (auto && left_table_column : left_table_expression_columns)
+            for (auto && left_table_column_with_name : left_table_expression_columns)
             {
-                if (left_table_expression_column_names_to_skip.contains(left_table_column.second))
+                if (left_table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
                     continue;
 
-                matched_expression_nodes_with_column_names.push_back(std::move(left_table_column));
+                matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
             }
 
-            for (auto && right_table_column : right_table_expression_columns)
+            for (auto && right_table_column_with_name : right_table_expression_columns)
             {
-                if (right_table_expression_column_names_to_skip.contains(right_table_column.second))
+                if (right_table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
                     continue;
 
-                matched_expression_nodes_with_column_names.push_back(std::move(right_table_column));
+                matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));
             }
 
             table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
+            continue;
+        }
+
+        if (table_expression_in_resolve_process)
+        {
+            table_expressions_column_nodes_with_names_stack.emplace_back();
             continue;
         }
 
@@ -3568,12 +3674,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         auto * table_function_node = table_expression->as<TableFunctionNode>();
         auto * query_node = table_expression->as<QueryNode>();
         auto * union_node = table_expression->as<UnionNode>();
-
-        if (table_expression_in_resolve_process)
-        {
-            table_expressions_column_nodes_with_names_stack.emplace_back();
-            continue;
-        }
 
         NamesAndTypes table_expression_columns;
 
@@ -3585,27 +3685,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
         {
             const auto & storage_snapshot
                 = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-
-            UInt8 get_column_options_kind = 0;
-
-            if (matcher_node_typed.isAsteriskMatcher())
-            {
-                get_column_options_kind = GetColumnsOptions::Ordinary;
-                const auto & settings = scope.context->getSettingsRef();
-
-                if (settings.asterisk_include_alias_columns)
-                    get_column_options_kind |= GetColumnsOptions::Kind::Aliases;
-
-                if (settings.asterisk_include_materialized_columns)
-                    get_column_options_kind |= GetColumnsOptions::Kind::Materialized;
-            }
-            else
-            {
-                /// TODO: Check if COLUMNS select aliases column by default
-                get_column_options_kind = GetColumnsOptions::All;
-            }
-
-            auto get_columns_options = GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_column_options_kind));
+            auto get_columns_options = buildGetColumnsOptions(matcher_node, scope.context);
             auto storage_columns_list = storage_snapshot->getColumns(get_columns_options);
             table_expression_columns = NamesAndTypes(storage_columns_list.begin(), storage_columns_list.end());
         }
@@ -3617,25 +3697,12 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                 scope.scope_node->formatASTForErrorMessage());
         }
 
-        for (auto & table_expression_column : table_expression_columns)
-        {
-            if (!matcher_node_typed.isMatchingColumn(table_expression_column.name))
-                continue;
+        auto matched_column_nodes_with_names = getMatchedColumnNodesWithNames(matcher_node,
+            table_expression,
+            table_expression_columns,
+            scope);
 
-            auto matched_column_node = std::make_shared<ColumnNode>(table_expression_column, table_expression);
-            matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), table_expression_column.name);
-        }
-
-        qualifyMatchedColumnsProjectionNamesIfNeeded(matched_expression_nodes_with_column_names, table_expression, scope);
-
-        for (auto & [matched_node, column_name] : matched_expression_nodes_with_column_names)
-        {
-            auto node_projection_name_it = node_to_projection_name.find(matcher_node);
-            if (node_projection_name_it != node_to_projection_name.end())
-                column_name = node_projection_name_it->second;
-        }
-
-        table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
+        table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
 
     QueryTreeNodesWithNames result;
@@ -5478,8 +5545,8 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
     if (table_node)
     {
         const auto & table_storage_id = table_node->getStorageID();
-        table_expression_data.table_name = table_storage_id.table_name;
         table_expression_data.database_name = table_storage_id.database_name;
+        table_expression_data.table_name = table_storage_id.table_name;
         table_expression_data.table_expression_name = table_storage_id.getFullNameNotQuoted();
         table_expression_data.table_expression_description = "table";
     }
