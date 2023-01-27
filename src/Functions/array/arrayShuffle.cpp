@@ -89,8 +89,10 @@ public:
             WhichDataType which(arguments[param_idx]);
             if (!which.isUInt() && !which.isInt())
                 throw Exception(
-                    "Illegal type " + arguments[param_idx]->getName() + " of argument of function " + getName() + " (must be UInt or Int)",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of arguments of function {} (must be UInt or Int)",
+                    arguments[param_idx]->getName(),
+                    getName());
         };
 
         for (size_t idx = 1; idx < arguments.size(); ++idx)
@@ -111,7 +113,7 @@ ColumnPtr FunctionArrayShuffleImpl<Traits>::executeImpl(const ColumnsWithTypeAnd
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)
         throw Exception(
-            "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
 
     const auto seed = [&]() -> uint64_t
     {
@@ -187,12 +189,11 @@ If no seed is provided a random one will be used:
 It is possible to override the seed to produce stable results:
 [example:explicit_seed]
 )",
-         Documentation::Examples{
+            Documentation::Examples{
                 {"random_seed", "SELECT arrayShuffle([1, 2, 3, 4])"},
                 {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)"},
                 {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)"}},
-            Documentation::Categories{"Array"}
-        },
+            Documentation::Categories{"Array"}},
         FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
         {
@@ -212,14 +213,14 @@ If no seed is provided a random one will be used:
 It is possible to override the seed to produce stable results:
 [example:explicit_seed]
 )",
-         Documentation::Examples{
+            Documentation::Examples{
                 {"no_limit1", "SELECT arrayPartialShuffle([1, 2, 3, 4], 0)"},
                 {"no_limit2", "SELECT arrayPartialShuffle([1, 2, 3, 4])"},
                 {"random_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2)"},
                 {"explicit_seed", "SELECT arrayPartialShuffle([1, 2, 3, 4], 2, 41)"},
-                {"materialize", "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)"}},
-            Documentation::Categories{"Array"}
-        },
+                {"materialize",
+                 "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)"}},
+            Documentation::Categories{"Array"}},
         FunctionFactory::CaseInsensitive);
 }
 
