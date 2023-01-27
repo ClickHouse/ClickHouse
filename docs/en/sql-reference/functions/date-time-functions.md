@@ -209,9 +209,24 @@ Aliases: `DAYOFMONTH`, `DAY`.
 
 ## toDayOfWeek
 
-Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
+Converts a date or date with time to a UInt8 number containing the number of the day of the week.
+
+The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is ommited, the default mode is 0. The time zone of the date can be specified as the third argument.
+
+| Mode | First day of week | Range                                          |
+|------|-------------------|------------------------------------------------|
+| 0    | Monday            | 1-7: Monday = 1, Tuesday = 2, ..., Sunday = 7  |
+| 1    | Monday            | 0-6: Monday = 0, Tuesday = 1, ..., Sunday = 6  |
+| 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
+| 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
 
 Alias: `DAYOFWEEK`.
+
+**Syntax**
+
+``` sql
+toDayOfWeek(t[, mode[, timezone]])
+```
 
 ## toHour
 
@@ -316,11 +331,17 @@ If `toLastDayOfMonth` is called with an argument of type `Date` greater then 214
 Rounds down a date, or date with time, to the nearest Monday.
 Returns the date.
 
-## toStartOfWeek(t\[,mode\])
+## toStartOfWeek
 
-Rounds down a date, or date with time, to the nearest Sunday or Monday by mode.
+Rounds a date or date with time down to the nearest Sunday or Monday.
 Returns the date.
-The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+The mode argument works exactly like the mode argument in function `toWeek()`. If no mode is specified, mode is assumed as 0.
+
+**Syntax**
+
+``` sql
+toStartOfWeek(t[, mode[, timezone]])
+```
 
 ## toStartOfDay
 
@@ -455,10 +476,12 @@ Converts a date, or date with time, to a UInt16 number containing the ISO Year n
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
 
-## toWeek(date\[,mode\])
+## toWeek
 
-This function returns the week number for date or datetime. The two-argument form of toWeek() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
-`toISOWeek()`is a compatibility function that is equivalent to `toWeek(date,3)`.
+This function returns the week number for date or datetime. The two-argument form of `toWeek()` enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
+
+`toISOWeek()` is a compatibility function that is equivalent to `toWeek(date,3)`.
+
 The following table describes how the mode argument works.
 
 | Mode | First day of week | Range | Week 1 is the first week …    |
@@ -482,13 +505,15 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
 
+**Syntax**
+
 ``` sql
-toWeek(date, [, mode][, Timezone])
+toWeek(t[, mode[, time_zone]])
 ```
 
 **Arguments**
 
--   `date` – Date or DateTime.
+-   `t` – Date or DateTime.
 -   `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
 -   `Timezone` – Optional parameter, it behaves like any other conversion function.
 
@@ -504,13 +529,19 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 └────────────┴───────┴───────┴───────┘
 ```
 
-## toYearWeek(date\[,mode\])
+## toYearWeek
 
 Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+The mode argument works exactly like the mode argument to `toWeek()`. For the single-argument syntax, a mode value of 0 is used.
 
-`toISOYear()`is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+`toISOYear()` is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+
+**Syntax**
+
+``` sql
+toYearWeek(t[, mode[, timezone]])
+```
 
 **Example**
 

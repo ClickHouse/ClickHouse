@@ -579,15 +579,6 @@ StorageS3Source::StorageS3Source(
         reader_future = createReaderAsync();
 }
 
-
-void StorageS3Source::onCancel()
-{
-    std::lock_guard lock(reader_mutex);
-    if (reader)
-        reader->cancel();
-}
-
-
 StorageS3Source::ReaderHolder StorageS3Source::createReader()
 {
     auto [current_key, info] = (*file_iterator)();
@@ -708,8 +699,12 @@ Chunk StorageS3Source::generate()
 {
     while (true)
     {
-        if (!reader || isCancelled())
+        if (isCancelled() || !reader)
+        {
+            if (reader)
+                reader->cancel();
             break;
+        }
 
         Chunk chunk;
         if (reader->pull(chunk))
@@ -741,21 +736,19 @@ Chunk StorageS3Source::generate()
             return chunk;
         }
 
-        {
-            std::lock_guard lock(reader_mutex);
 
-            assert(reader_future.valid());
-            reader = reader_future.get();
+        assert(reader_future.valid());
+        reader = reader_future.get();
 
-            if (!reader)
-                break;
+        if (!reader)
+            break;
 
-            /// Even if task is finished the thread may be not freed in pool.
-            /// So wait until it will be freed before scheduling a new task.
-            create_reader_pool.wait();
-            reader_future = createReaderAsync();
-        }
+        /// Even if task is finished the thread may be not freed in pool.
+        /// So wait until it will be freed before scheduling a new task.
+        create_reader_pool.wait();
+        reader_future = createReaderAsync();
     }
+
     return {};
 }
 
