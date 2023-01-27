@@ -9,7 +9,7 @@
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
-#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Interpreters/Context.h>
 
 #include <aws/s3/S3Client.h>

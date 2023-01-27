@@ -66,6 +66,7 @@ struct S3Settings
         size_t list_object_keys_size = 1000;
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
+        bool allow_head_object = true;
 
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
 
