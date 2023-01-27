@@ -631,7 +631,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
                      rabbitmq_num_queues = 5,
                      rabbitmq_num_consumers = 10,
                      rabbitmq_max_block_size = 100,
-                     rabbitmq_flush_interval_ms=10000,
+                     rabbitmq_flush_interval_ms=500,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64, channel_id String)
@@ -1974,7 +1974,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         CREATE TABLE test.consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_flush_interval_ms=500,
                      rabbitmq_max_block_size = 100,
                      rabbitmq_exchange_name = 'producer_reconnect',
                      rabbitmq_format = 'JSONEachRow',
