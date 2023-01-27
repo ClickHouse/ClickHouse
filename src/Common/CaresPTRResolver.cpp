@@ -85,7 +85,7 @@ namespace DB
         if (!wait_and_process())
         {
             cancel_requests();
-            throw DB::Exception("Failed to complete reverse DNS query for IP " + ip, DB::ErrorCodes::DNS_ERROR);
+            throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to complete reverse DNS query for IP {}", ip);
         }
 
         return ptr_records;
@@ -102,7 +102,7 @@ namespace DB
         if (!wait_and_process())
         {
             cancel_requests();
-            throw DB::Exception("Failed to complete reverse DNS query for IP " + ip, DB::ErrorCodes::DNS_ERROR);
+            throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to complete reverse DNS query for IP {}", ip);
         }
 
         return ptr_records;

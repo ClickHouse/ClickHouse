@@ -30,7 +30,7 @@ public:
         return name;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & data_type, size_t input_rows_count) const override
     {
         if (arguments.empty())
         {
@@ -43,25 +43,18 @@ public:
 
         auto ptr_records = DNSResolver::instance().reverseResolve(ip_address);
 
-        auto string_column = ColumnString::create();
+        auto res_type = getReturnTypeImpl({data_type});
 
-        auto offsets_column = ColumnArray::ColumnOffsets::create();
+        if (ptr_records.empty())
+            return res_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        if (!ptr_records.empty())
+        Array res;
+        for (const auto & ptr_record : ptr_records)
         {
-            for (const auto & ptr_record : ptr_records)
-            {
-                string_column->insertData(ptr_record.c_str(), ptr_record.size());
-            }
-
-            offsets_column->insert(string_column->size());
-        }
-        else
-        {
-            offsets_column->insertDefault();
+            res.push_back(ptr_record);
         }
 
-        return ColumnArray::create(std::move(string_column), std::move(offsets_column));
+        return res_type->createColumnConst(input_rows_count, res);
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
