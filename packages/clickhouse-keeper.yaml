@@ -41,3 +41,6 @@ contents:
   dst: /usr/share/doc/clickhouse-keeper/LICENSE
 - src: ../README.md
   dst: /usr/share/doc/clickhouse-keeper/README.md
+
+scripts:
+  postinstall: ./clickhouse-keeper.postinstall
