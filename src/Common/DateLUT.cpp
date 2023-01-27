@@ -7,6 +7,8 @@
 
 #include <filesystem>
 #include <fstream>
+#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace
@@ -147,7 +149,7 @@ DateLUT::DateLUT()
 }
 
 
-const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
+const ALWAYS_INLINE DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -161,5 +163,11 @@ const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) co
 DateLUT & DateLUT::getInstance()
 {
     static DateLUT ret;
+    return ret;
+}
+
+std::string DateLUT::extractTimezoneFromContext(const DB::ContextPtr query_context)
+{
+    std::string ret = query_context->getSettingsRef().implicit_timezone.value;
     return ret;
 }
