@@ -3,6 +3,7 @@ SELECT arrayShuffle([], 0xbad_cafe);
 SELECT arrayShuffle([9223372036854775808]);
 SELECT arrayShuffle([9223372036854775808], 0xbad_cafe);
 SELECT arrayShuffle([1,2,3,4,5,6,7,8,9,10], 0xbad_cafe);
+SELECT arrayShuffle(materialize([1,2,3,4,5,6,7,8,9,10]), 0xbad_cafe);
 SELECT arrayShuffle([1,2,3,4,5,6,7,8,9,10.1], 0xbad_cafe);
 SELECT arrayShuffle([1,2,3,4,5,6,7,8,9,9223372036854775808], 0xbad_cafe);
 SELECT arrayShuffle([1,2,3,4,5,6,7,8,9,NULL], 0xbad_cafe);
@@ -13,6 +14,7 @@ SELECT arrayShuffle(['storage','tiger',NULL,'terminal','uniform','sensation'], 0
 SELECT arrayShuffle([NULL]);
 SELECT arrayShuffle([NULL,NULL]);
 SELECT arrayShuffle([[1,2,3,4],[-1,-2,-3,-4],[10,20,30,40],[100,200,300,400,500,600,700,800,900],[2,4,8,16,32,64]], 0xbad_cafe);
+SELECT arrayShuffle(materialize([[1,2,3,4],[-1,-2,-3,-4],[10,20,30,40],[100,200,300,400,500,600,700,800,900],[2,4,8,16,32,64]]), 0xbad_cafe);
 SELECT arrayShuffle([[1,2,3,4],[NULL,-2,-3,-4],[10,20,30,40],[100,200,300,400,500,600,700,800,900],[2,4,8,16,32,64]], 0xbad_cafe);
 SELECT arrayShuffle(groupArray(x),0xbad_cafe) FROM (SELECT number as x from system.numbers LIMIT 100);
 SELECT arrayShuffle(groupArray(toUInt64(x)),0xbad_cafe) FROM (SELECT number as x from system.numbers LIMIT 100);
@@ -61,6 +63,8 @@ SELECT arrayPartialShuffle(groupArray(x),20,0xbad_cafe) FROM (SELECT number as x
 SELECT arrayPartialShuffle(groupArray(toUInt64(x)),20,0xbad_cafe) FROM (SELECT number as x from system.numbers LIMIT 100);
 SELECT arrayPartialShuffle([tuple(1, -1), tuple(99999999, -99999999), tuple(3, -3)], 2, 0xbad_cafe);
 SELECT arrayPartialShuffle([tuple(1, NULL), tuple(2, 'a'), tuple(3, 'A')], 2, 0xbad_cafe);
+SELECT arrayShuffle([1, 2, 3], 42) FROM numbers(10); -- for constant array we don not materialize it and each row gets the same permutation
+SELECT arrayShuffle(materialize([1, 2, 3]), 42) FROM numbers(10);
 SELECT arrayShuffle(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayShuffle([1], 'a'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayShuffle([1], 1.1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
