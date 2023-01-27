@@ -188,12 +188,12 @@ static void logException(ContextPtr context, QueryLogElement & elem)
     message.format_string = elem.exception_format_string;
 
     if (elem.stack_trace.empty())
-        message.message = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
                         toOneLineQuery(elem.query));
     else
-        message.message = fmt::format(
+        message.text = fmt::format(
             "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
@@ -247,7 +247,7 @@ static void onExceptionBeforeStart(
 
     elem.exception_code = getCurrentExceptionCode();
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-    elem.exception = std::move(exception_message.message);
+    elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
 
     elem.client_info = context->getClientInfo();
@@ -1079,7 +1079,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
                 elem.exception_code = getCurrentExceptionCode();
                 auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-                elem.exception = std::move(exception_message.message);
+                elem.exception = std::move(exception_message.text);
                 elem.exception_format_string = exception_message.format_string;
 
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
