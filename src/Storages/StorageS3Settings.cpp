@@ -169,6 +169,7 @@ S3Settings::RequestSettings::RequestSettings(const NamedCollection & collection)
     max_single_read_retries = collection.getOrDefault<UInt64>("max_single_read_retries", max_single_read_retries);
     max_connections = collection.getOrDefault<UInt64>("max_connections", max_connections);
     list_object_keys_size = collection.getOrDefault<UInt64>("list_object_keys_size", list_object_keys_size);
+    allow_head_object_request = collection.getOrDefault<bool>("allow_head_object_request", allow_head_object_request);
 }
 
 S3Settings::RequestSettings::RequestSettings(
@@ -183,6 +184,7 @@ S3Settings::RequestSettings::RequestSettings(
     max_connections = config.getUInt64(key + "max_connections", settings.s3_max_connections);
     check_objects_after_upload = config.getBool(key + "check_objects_after_upload", settings.s3_check_objects_after_upload);
     list_object_keys_size = config.getUInt64(key + "list_object_keys_size", settings.s3_list_object_keys_size);
+    allow_head_object_request = config.getBool(key + "allow_head_object_request", allow_head_object_request);
 
     /// NOTE: it would be better to reuse old throttlers to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time. But it is good enough unless very high `burst` values are used.
