@@ -79,6 +79,7 @@ struct QueryLogElement
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
+    std::string_view exception_format_string{};
 
     ClientInfo client_info;
 

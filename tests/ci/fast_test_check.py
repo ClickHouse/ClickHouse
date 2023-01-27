@@ -175,6 +175,7 @@ def main():
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
     )
     test_result_exists = "test_results.tsv" in test_output_files
+    test_results = []  # type: TestResults
     if "submodule_log.txt" not in test_output_files:
         description = "Cannot clone repository"
         state = "failure"

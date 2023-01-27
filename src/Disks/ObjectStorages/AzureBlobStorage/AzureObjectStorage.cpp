@@ -128,7 +128,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     const WriteSettings & write_settings)
 {
     if (mode != WriteMode::Rewrite)
-        throw Exception("Azure storage doesn't support append", ErrorCodes::UNSUPPORTED_METHOD);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Azure storage doesn't support append");
 
     LOG_TEST(log, "Writing file: {}", object.absolute_path);
 

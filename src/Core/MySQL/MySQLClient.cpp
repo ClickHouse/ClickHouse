@@ -79,9 +79,8 @@ void MySQLClient::handshake()
     packet_endpoint->receivePacket(handshake);
     if (handshake.auth_plugin_name != mysql_native_password)
     {
-        throw Exception(
-            "Only support " + mysql_native_password + " auth plugin name, but got " + handshake.auth_plugin_name,
-            ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Only support {} auth plugin name, but got {}",
+            mysql_native_password, handshake.auth_plugin_name);
     }
 
     Native41 native41(password, handshake.auth_plugin_data);
@@ -98,7 +97,7 @@ void MySQLClient::handshake()
     if (packet_response.getType() == PACKET_ERR)
         throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     else if (packet_response.getType() == PACKET_AUTH_SWITCH)
-        throw Exception("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Access denied for user {}", user);
 }
 
 void MySQLClient::writeCommand(char command, String query)

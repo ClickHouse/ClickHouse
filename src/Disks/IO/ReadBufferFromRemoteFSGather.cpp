@@ -38,31 +38,31 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
         && (!FileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
 }
 
-SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const String & path, size_t file_size)
+SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
 {
-    if (!current_file_path.empty() && !with_cache && enable_cache_log)
+    if (current_object && !with_cache && enable_cache_log)
     {
         appendFilesystemCacheLog();
     }
 
-    current_file_path = path;
-    current_file_size = file_size;
+    current_object = object;
     total_bytes_read_from_current_file = 0;
+    const auto & object_path = object.absolute_path;
 
-    size_t current_read_until_position = read_until_position ? read_until_position : file_size;
-    auto current_read_buffer_creator = [path, current_read_until_position, this]() { return read_buffer_creator(path, current_read_until_position); };
+    size_t current_read_until_position = read_until_position ? read_until_position : object.bytes_size;
+    auto current_read_buffer_creator = [=, this]() { return read_buffer_creator(object_path, current_read_until_position); };
 
     if (with_cache)
     {
-        auto cache_key = settings.remote_fs_cache->hash(path);
+        auto cache_key = settings.remote_fs_cache->hash(object_path);
         return std::make_shared<CachedOnDiskReadBufferFromFile>(
-            path,
+            object_path,
             cache_key,
             settings.remote_fs_cache,
             std::move(current_read_buffer_creator),
             settings,
             query_id,
-            file_size,
+            object.bytes_size,
             /* allow_seeks */false,
             /* use_external_buffer */true,
             read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt);
@@ -73,12 +73,15 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
 void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
 {
+    if (!current_object)
+        return;
+
     FilesystemCacheLogElement elem
     {
         .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
         .query_id = query_id,
-        .source_file_path = current_file_path,
-        .file_segment_range = { 0, current_file_size },
+        .source_file_path = current_object->absolute_path,
+        .file_segment_range = { 0, current_object->bytes_size },
         .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
         .file_segment_size = total_bytes_read_from_current_file,
         .read_from_cache_attempted = false,
@@ -123,7 +126,7 @@ void ReadBufferFromRemoteFSGather::initialize()
             if (!current_buf || current_buf_idx != i)
             {
                 current_buf_idx = i;
-                current_buf = createImplementationBuffer(object.absolute_path, object.bytes_size);
+                current_buf = createImplementationBuffer(object);
             }
 
             current_buf->seek(current_buf_offset, SEEK_SET);
@@ -170,7 +173,7 @@ bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
     ++current_buf_idx;
 
     const auto & object = blobs_to_read[current_buf_idx];
-    current_buf = createImplementationBuffer(object.absolute_path, object.bytes_size);
+    current_buf = createImplementationBuffer(object);
 
     return true;
 }
@@ -242,7 +245,9 @@ void ReadBufferFromRemoteFSGather::reset()
 
 String ReadBufferFromRemoteFSGather::getFileName() const
 {
-    return current_file_path;
+    if (current_object)
+        return current_object->absolute_path;
+    return blobs_to_read[0].absolute_path;
 }
 
 size_t ReadBufferFromRemoteFSGather::getFileSize() const
@@ -256,7 +261,7 @@ size_t ReadBufferFromRemoteFSGather::getFileSize() const
 String ReadBufferFromRemoteFSGather::getInfoForLog()
 {
     if (!current_buf)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get info: buffer not initialized");
+        return "";
 
     return current_buf->getInfoForLog();
 }

@@ -98,9 +98,9 @@ bool MutatePlainMergeTreeTask::executeStep()
             {
                 if (merge_mutate_entry->txn)
                     merge_mutate_entry->txn->onException();
-                String exception_message = getCurrentExceptionMessage(false);
-                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), "{}", exception_message);
-                storage.updateMutationEntriesErrors(future_part, false, exception_message);
+                PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), exception_message);
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.message);
                 write_part_log(ExecutionStatus::fromCurrentException());
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
