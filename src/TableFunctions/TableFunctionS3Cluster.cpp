@@ -60,7 +60,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
                                 " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method";
     auto message = PreformattedMessage{fmt::format(fmt_string, getName()), fmt_string};
     if (args.size() < 2 || args.size() > 7)
-        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception::createDeprecated(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// This arguments are always the first
     configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
@@ -74,7 +74,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     std::copy(args.begin() + 1, args.end(), std::back_inserter(clipped_args));
 
     /// StorageS3ClusterConfiguration inherints from StorageS3Configuration, so it is safe to upcast it.
-    TableFunctionS3::parseArgumentsImpl(message.message, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));
+    TableFunctionS3::parseArgumentsImpl(message.text, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));
 }
 
 

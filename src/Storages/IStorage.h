@@ -19,7 +19,6 @@
 #include <Common/TypePromotion.h>
 
 #include <optional>
-#include <shared_mutex>
 #include <compare>
 
 
@@ -562,6 +561,7 @@ public:
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
 
     std::atomic<bool> is_dropped{false};
+    std::atomic<bool> is_detached{false};
 
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }

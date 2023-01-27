@@ -334,6 +334,19 @@
 
     <max_thread_pool_size>10000</max_thread_pool_size>
 
+    <!-- Configure other thread pools: -->
+    <!--
+    <background_buffer_flush_schedule_pool_size>16</background_buffer_flush_schedule_pool_size>
+    <background_pool_size>16</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+    <background_move_pool_size>8</background_move_pool_size>
+    <background_fetches_pool_size>8</background_fetches_pool_size>
+    <background_common_pool_size>8</background_common_pool_size>
+    <background_schedule_pool_size>128</background_schedule_pool_size>
+    <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
+    <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    -->
+
     <!-- Number of workers to recycle connections in background (see also drain_timeout).
          If the pool is full, connection will be drained synchronously. -->
     <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
