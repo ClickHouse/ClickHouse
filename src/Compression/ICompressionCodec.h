@@ -107,7 +107,7 @@ public:
     virtual bool isEncryption() const { return false; }
 
     /// If it is a specialized codec for floating-point time series. Applying it to non-floating point data is suspicious.
-    virtual bool isFloatingPointTimeSeries() const { return false; }
+    virtual bool isFloatingPointTimeSeriesCodec() const { return false; }
 
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.

@@ -123,7 +123,7 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
-    bool isFloatingPointTimeSeries() const override { return true; }
+    bool isFloatingPointTimeSeriesCodec() const override { return true; }
 
 private:
     UInt8 data_bytes_size;
