@@ -3911,3 +3911,26 @@ Default value: `0`.
 :::note
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
+
+## enable_extended_subject_syntax {#enable_extended_subject_syntax}
+
+The `enable_extended_subject_syntax` setting causes ClickHouse to explicitly report users and roles as such
+in response to `SHOW GRANTS ...` or `SHOW ACCESS ...` queries.
+
+Example:
+
+```sql
+SET enable_extended_subject_syntax=0
+SHOW GRANTS FOR default
+┌─GRANTS FOR default────────────────────────────┐
+│ GRANT ALL ON *.* TO default WITH GRANT OPTION │
+└───────────────────────────────────────────────┘
+
+SET enable_extended_subject_syntax=1
+SHOW GRANTS FOR default
+┌─GRANTS FOR default────────────────────────────────────┐
+│ GRANT ALL ON *.* TO default AS USER WITH GRANT OPTION │
+└───────────────────────────────────────────────────────┘
+```
+
+Disabled by default.

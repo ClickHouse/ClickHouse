@@ -16,7 +16,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
-    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [GRANTEES {user [AS USER] | role [AS ROLE] | user_and_role AS BOTH | ANY | NONE} [,...] [EXCEPT {user [AS USER] | role [AS ROLE] | user_and_role AS BOTH} [,...]]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
@@ -69,6 +69,7 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 -   `NONE` — This user can grant privileges to none.
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
+If `AS {USER|ROLE|BOTH}` is not used and a user and a role with the same name exist, only the user will be affected.
 
 ## Examples
 
