@@ -4,6 +4,7 @@
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
@@ -153,7 +154,7 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context) override;
+    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
@@ -336,6 +337,7 @@ private:
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
+    friend class AsyncBlockIDsCache;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -444,6 +446,8 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
+    AsyncBlockIDsCache async_block_ids_cache;
+
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
@@ -463,8 +467,6 @@ private:
 
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
     const RenamingRestrictions renaming_restrictions;
-
-    const size_t replicated_fetches_pool_size;
 
     /// Throttlers used in DataPartsExchange to lower maximum fetch/sends
     /// speed.
@@ -537,7 +539,7 @@ private:
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
-    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
+    void getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children);
 
     /// Just removes part from ZooKeeper using previous method
     void removePartFromZooKeeper(const String & part_name);
@@ -551,7 +553,7 @@ private:
     void removePartsFromZooKeeperWithRetries(PartsToRemoveFromZooKeeper & parts, size_t max_retries = 5);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
-    void removePartAndEnqueueFetch(const String & part_name);
+    void removePartAndEnqueueFetch(const String & part_name, bool storage_init);
 
     /// Running jobs from the queue.
 

@@ -60,10 +60,8 @@ public:
     {
         auto column = arguments.at(0).column;
         if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            throw Exception("Illegal column " + arguments.at(0).column->getName()
-                    + " of first argument of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments.at(0).column->getName(), getName());
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));

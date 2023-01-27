@@ -384,7 +384,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         default:
             break;
     }
-    throw Exception("Type " + data_type->getName() + " is not supported for Avro output", ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Avro output", data_type->getName());
 }
 
 
@@ -438,7 +438,7 @@ static avro::Codec getCodec(const std::string & codec_name)
     if (codec_name == "snappy")  return avro::Codec::SNAPPY_CODEC;
 #endif
 
-    throw Exception("Avro codec " + codec_name + " is not available", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(

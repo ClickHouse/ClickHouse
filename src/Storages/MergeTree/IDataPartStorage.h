@@ -1,5 +1,6 @@
 #pragma once
 #include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -214,6 +215,11 @@ public:
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
+        const WriteSettings & settings) = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & name,
+        size_t buf_size,
+        WriteMode mode,
         const WriteSettings & settings) = 0;
 
     /// A special const method to write transaction file.

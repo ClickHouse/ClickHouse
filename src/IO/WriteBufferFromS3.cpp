@@ -39,6 +39,9 @@ namespace ProfileEvents
     extern const Event DiskS3CompleteMultipartUpload;
     extern const Event DiskS3UploadPart;
     extern const Event DiskS3PutObject;
+
+    extern const Event RemoteWriteThrottlerBytes;
+    extern const Event RemoteWriteThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -108,7 +111,7 @@ void WriteBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
     last_part_size += offset();
     if (write_settings.remote_throttler)
-        write_settings.remote_throttler->add(offset());
+        write_settings.remote_throttler->add(offset(), ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
     if (multipart_upload_id.empty() && last_part_size > settings.max_single_part_upload_size)
@@ -182,12 +185,8 @@ void WriteBufferFromS3::finalizeImpl()
     if (check_objects_after_upload)
     {
         LOG_TRACE(log, "Checking object {} exists after upload", key);
-
-        auto response = S3::headObject(*client_ptr, bucket, key, "", write_settings.for_object_storage);
-        if (!response.IsSuccess())
-            throw S3Exception(fmt::format("Object {} from bucket {} disappeared immediately after upload, it's a bug in S3 or S3 API.", key, bucket), response.GetError().GetErrorType());
-        else
-            LOG_TRACE(log, "Object {} exists after upload", key);
+        S3::checkObjectExists(*client_ptr, bucket, key, {}, /* for_disk_s3= */ write_settings.for_object_storage, "Immediately after upload");
+        LOG_TRACE(log, "Object {} exists after upload", key);
     }
 }
 
@@ -307,12 +306,15 @@ void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & re
     if (!multipart_upload_id.empty() && (part_number > settings.max_part_number))
     {
         throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Part number exceeded {} while writing {} bytes to S3. Check min_upload_part_size = {}, max_upload_part_size = {}, "
-            "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, max_single_part_upload_size = {}",
-            settings.max_part_number, count(), settings.min_upload_part_size, settings.max_upload_part_size,
-            settings.upload_part_size_multiply_factor, settings.upload_part_size_multiply_parts_count_threshold,
-            settings.max_single_part_upload_size);
+                        ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Part number exceeded {} while writing {} bytes to S3. "
+                        "Check min_upload_part_size = {}, max_upload_part_size = {}, "
+                        "upload_part_size_multiply_factor = {}, upload_part_size_multiply_parts_count_threshold = {}, "
+                        "max_single_part_upload_size = {}",
+                        settings.max_part_number, count(), settings.min_upload_part_size, settings.max_upload_part_size,
+                        settings.upload_part_size_multiply_factor,
+                        settings.upload_part_size_multiply_parts_count_threshold,
+                        settings.max_single_part_upload_size);
     }
 
     /// Setup request.
@@ -359,7 +361,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
 
     if (tags.empty())
-        throw Exception("Failed to complete multipart upload. No parts have uploaded", ErrorCodes::S3_ERROR);
+        throw Exception(ErrorCodes::S3_ERROR, "Failed to complete multipart upload. No parts have uploaded");
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);

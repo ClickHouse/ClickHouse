@@ -3,6 +3,7 @@
 # pylint: disable=too-many-return-statements
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
+# pylint: disable=anomalous-backslash-in-string
 
 import enum
 from queue import Full
@@ -231,18 +232,54 @@ def need_retry(args, stdout, stderr, total_time):
     )
 
 
-def get_processlist(args):
-    if args.replicated_database:
-        return clickhouse_execute_json(
-            args,
-            """
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE query NOT LIKE '%system.processes%'
-        """,
-        )
-    else:
-        return clickhouse_execute_json(args, "SHOW PROCESSLIST")
+def get_processlist_with_stacktraces(args):
+    try:
+        if args.replicated_database:
+            return clickhouse_execute_json(
+                args,
+                """
+            SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
+            -- NOTE: view() here to do JOIN on shards, instead of initiator
+            FROM clusterAllReplicas('test_cluster_database_replicated', view(
+                SELECT
+                    groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                        x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                        s.trace), '\n') AS stacktrace
+                    )) AS stacktraces,
+                    p.*
+                FROM system.processes p
+                JOIN system.stack_trace s USING (query_id)
+                WHERE query NOT LIKE '%system.processes%'
+                GROUP BY p.*
+            ))
+            ORDER BY elapsed DESC
+            """,
+                settings={
+                    "allow_introspection_functions": 1,
+                },
+            )
+        else:
+            return clickhouse_execute_json(
+                args,
+                """
+            SELECT
+                groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                    x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                    s.trace), '\n') AS stacktrace
+                )) AS stacktraces,
+                p.*
+            FROM system.processes p
+            JOIN system.stack_trace s USING (query_id)
+            WHERE query NOT LIKE '%system.processes%'
+            GROUP BY p.*
+            ORDER BY elapsed DESC
+            """,
+                settings={
+                    "allow_introspection_functions": 1,
+                },
+            )
+    except Exception as e:
+        return "Failed to get processlist: " + str(e)
 
 
 def get_transactions_list(args):
@@ -1219,7 +1256,7 @@ class TestSuite:
                 line = line.strip()
                 if line and not is_shebang(line):
                     return line
-            return ''
+            return ""
 
         def load_tags_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
@@ -1544,8 +1581,11 @@ def check_server_started(args):
             print(" OK")
             sys.stdout.flush()
             return True
-        except (ConnectionError, http.client.ImproperConnectionState):
-            print(".", end="")
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            if args.hung_check:
+                print("Connection error, will retry: ", str(e))
+            else:
+                print(".", end="")
             sys.stdout.flush()
             retry_count -= 1
             sleep(0.5)
@@ -1743,7 +1783,7 @@ def removesuffix(text, *suffixes):
     return text
 
 
-def reportCoverageFor(args, what, query, permissive = False):
+def reportCoverageFor(args, what, query, permissive=False):
     value = clickhouse_execute(args, query).decode()
 
     if value != "":
@@ -1756,10 +1796,11 @@ def reportCoverageFor(args, what, query, permissive = False):
 
 
 def reportCoverage(args):
-    return reportCoverageFor(
-        args,
-        "functions",
-        """
+    return (
+        reportCoverageFor(
+            args,
+            "functions",
+            """
             SELECT name
             FROM system.functions
             WHERE NOT is_aggregate AND origin = 'System' AND alias_to = ''
@@ -1769,11 +1810,12 @@ def reportCoverage(args):
                 )
             ORDER BY name
         """,
-        True
-    ) and reportCoverageFor(
-        args,
-        "aggregate functions",
-        """
+            True,
+        )
+        and reportCoverageFor(
+            args,
+            "aggregate functions",
+            """
             SELECT name
             FROM system.functions
             WHERE is_aggregate AND origin = 'System' AND alias_to = ''
@@ -1782,11 +1824,12 @@ def reportCoverage(args):
                     SELECT arrayJoin(used_aggregate_functions) FROM system.query_log WHERE event_date >= yesterday()
                 )
             ORDER BY name
-        """
-    ) and reportCoverageFor(
-        args,
-        "aggregate function combinators",
-        """
+        """,
+        )
+        and reportCoverageFor(
+            args,
+            "aggregate function combinators",
+            """
             SELECT name
             FROM system.aggregate_function_combinators
             WHERE NOT is_internal
@@ -1795,11 +1838,12 @@ def reportCoverage(args):
                     SELECT arrayJoin(used_aggregate_function_combinators) FROM system.query_log WHERE event_date >= yesterday()
                 )
             ORDER BY name
-        """
-    ) and reportCoverageFor(
-        args,
-        "data type families",
-        """
+        """,
+        )
+        and reportCoverageFor(
+            args,
+            "data type families",
+            """
             SELECT name
             FROM system.data_type_families
             WHERE alias_to = '' AND name NOT LIKE 'Interval%'
@@ -1808,8 +1852,60 @@ def reportCoverage(args):
                     SELECT arrayJoin(used_data_type_families) FROM system.query_log WHERE event_date >= yesterday()
                 )
             ORDER BY name
-        """
+        """,
+        )
     )
+
+def reportLogStats(args):
+    query = """
+        WITH
+            120 AS mins,
+            (
+                SELECT (count(), sum(length(message)))
+                FROM system.text_log
+                WHERE (now() - toIntervalMinute(mins)) < event_time
+            ) AS total
+        SELECT
+            count() AS count,
+            round(count / (total.1), 3) AS `count_%`,
+            formatReadableSize(sum(length(message))) AS size,
+            round(sum(length(message)) / (total.2), 3) AS `size_%`,
+            countDistinct(logger_name) AS uniq_loggers,
+            countDistinct(thread_id) AS uniq_threads,
+            groupArrayDistinct(toString(level)) AS levels,
+            round(sum(query_id = '') / count, 3) AS `background_%`,
+            message_format_string
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(mins)) < event_time
+        GROUP BY message_format_string
+        ORDER BY count DESC
+        LIMIT 100
+        FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop patterns of log messages:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        WITH
+            120 AS mins
+        SELECT
+            count() AS count,
+            substr(replaceRegexpAll(message, '[^A-Za-z]+', ''), 1, 32) AS pattern,
+            substr(any(message), 1, 256) as runtime_message,
+            any((extract(source_file, '\/[a-zA-Z0-9_]+\.[a-z]+'), source_line)) as line
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
+        GROUP BY pattern
+        ORDER BY count DESC
+        LIMIT 50
+        FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages without format string (fmt::runtime):\n")
+    print(value)
+    print("\n")
 
 
 def main(args):
@@ -1833,7 +1929,9 @@ def main(args):
         args, "system", "processes", "is_all_data_sent"
     )
 
-    if args.s3_storage and (BuildFlags.THREAD in args.build_flags or BuildFlags.DEBUG in args.build_flags):
+    if args.s3_storage and (
+        BuildFlags.THREAD in args.build_flags or BuildFlags.DEBUG in args.build_flags
+    ):
         args.no_random_settings = True
 
     if args.skip:
@@ -1905,10 +2003,9 @@ def main(args):
         exit_code.value = 1
 
     if args.hung_check:
-
         # Some queries may execute in background for some time after test was finished. This is normal.
         for _ in range(1, 60):
-            processlist = get_processlist(args)
+            processlist = get_processlist_with_stacktraces(args)
             if not processlist:
                 break
             sleep(1)
@@ -1922,7 +2019,6 @@ def main(args):
             print(json.dumps(processlist, indent=4))
             print(get_transactions_list(args))
 
-            print_stacktraces()
             exit_code.value = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -1945,6 +2041,9 @@ def main(args):
     else:
         print("All tests have finished.")
 
+    if args.report_logs_stats:
+        reportLogStats(args)
+
     if args.report_coverage and not reportCoverage(args):
         exit_code.value = 1
 
@@ -1952,19 +2051,22 @@ def main(args):
 
 
 def find_binary(name):
-    if os.path.exists(name) and os.access(name, os.X_OK):
-        return True
+    if os.access(name, os.X_OK):
+        return name
     paths = os.environ.get("PATH").split(":")
     for path in paths:
-        if os.access(os.path.join(path, name), os.X_OK):
-            return True
+        bin_path = os.path.join(path, name)
+        if os.access(bin_path, os.X_OK):
+            return bin_path
 
     # maybe it wasn't in PATH
-    if os.access(os.path.join("/usr/local/bin", name), os.X_OK):
-        return True
-    if os.access(os.path.join("/usr/bin", name), os.X_OK):
-        return True
-    return False
+    bin_path = os.path.join("/usr/local/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+    bin_path = os.path.join("/usr/bin", name)
+    if os.access(bin_path, os.X_OK):
+        return bin_path
+    return None
 
 
 def get_additional_client_options(args):
@@ -2004,9 +2106,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-b",
         "--binary",
-        default="clickhouse",
-        help="Path to clickhouse"
-        "binary or name of binary in PATH",
+        default=find_binary("clickhouse"),
+        help="Path to clickhouse binary or name of binary in PATH",
     )
 
     parser.add_argument(
@@ -2234,6 +2335,12 @@ if __name__ == "__main__":
         default=False,
         help="Check what high-level server components were covered by tests",
     )
+    parser.add_argument(
+        "--report-logs-stats",
+        action="store_true",
+        default=False,
+        help="Report statistics about log messages",
+    )
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
@@ -2276,18 +2383,13 @@ if __name__ == "__main__":
     if args.tmp is None:
         args.tmp = args.queries
     if args.client is None:
-        if find_binary(args.binary + "-client"):
-            args.client = args.binary + "-client"
-
-            print("Using " + args.client + " as client program")
-        elif find_binary(args.binary):
+        client_bin = find_binary(args.binary + "-client")
+        if client_bin is not None:
+            args.client = client_bin
+            print("Using {args.client} as client program")
+        elif args.binary:
             args.client = args.binary + " client"
-
-            print(
-                "Using "
-                + args.client
-                + " as client program (expecting monolithic build)"
-            )
+            print(f"Using {args.client} as client program (expecting monolithic build)")
         else:
             print(
                 "No 'clickhouse' or 'clickhouse-client' client binary found",

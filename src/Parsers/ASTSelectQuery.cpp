@@ -7,7 +7,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -258,7 +258,7 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
             if (!array_join)
                 array_join = tables_element.array_join->as<ASTArrayJoin>();
             else
-                throw Exception("Support for more than one ARRAY JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Support for more than one ARRAY JOIN in query is not implemented");
         }
     }
 
@@ -283,7 +283,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Multiple JOIN does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple JOIN does not support the query.");
         }
     }
 
@@ -460,7 +460,7 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 ASTPtr & ASTSelectQuery::getExpression(Expression expr)
 {
     if (!positions.contains(expr))
-        throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Get expression before set");
     return children[positions[expr]];
 }
 
@@ -477,6 +477,16 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
 
     tables_element.table_expression->as<ASTTableExpression &>().final = true;
+}
+
+bool ASTSelectQuery::hasQueryParameters() const
+{
+    if (!has_query_parameters.has_value())
+    {
+        has_query_parameters = !analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty();
+    }
+
+    return  has_query_parameters.value();
 }
 
 }
