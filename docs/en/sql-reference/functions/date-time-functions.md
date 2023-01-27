@@ -215,10 +215,10 @@ The two-argument form of `toDayOfWeek()` enables you to specify whether the week
 
 | Mode | First day of week | Range                                          |
 |------|-------------------|------------------------------------------------|
-| 0    | Monday            | 1-7, Monday = 1, Tuesday = 2, ..., Sunday = 7  |
-| 1    | Monday            | 0-6, Monday = 0, Tuesday = 1, ..., Sunday = 6  |
-| 2    | Sunday            | 0-6, Sunday = 0, Monday = 1, ..., Saturday = 6 |
-| 3    | Sunday            | 1-7, Sunday = 1, Monday = 2, ..., Saturday = 7 |
+| 0    | Monday            | 1-7: Monday = 1, Tuesday = 2, ..., Sunday = 7  |
+| 1    | Monday            | 0-6: Monday = 0, Tuesday = 1, ..., Sunday = 6  |
+| 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
+| 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
 
 Alias: `DAYOFWEEK`.
 
