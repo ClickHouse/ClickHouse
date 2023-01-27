@@ -148,9 +148,10 @@ struct AggregateProjectionCandidate
 {
     AggregateProjectionInfo info;
     ProjectionDescription * projection;
+    ActionsDAGPtr dag;
 };
 
-std::optional<AggregateProjectionCandidate> analyzeAggregateProjection(
+ActionsDAGPtr analyzeAggregateProjection(
     //ProjectionDescription & projection,
     AggregateProjectionInfo info,
     ActionsDAG & query_dag,
@@ -352,9 +353,11 @@ std::optional<AggregateProjectionCandidate> analyzeAggregateProjection(
         }
     }
 
+    std::unordered_map<const ActionsDAG::Node *, std::string> new_inputs;
+    for (const auto * node : split_nodes)
+        new_inputs[node] = matches[node].node->result_name;
 
-
-    return {};
+    return query_dag.foldActionsByProjection(new_inputs);
 }
 
 void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes &)

@@ -214,6 +214,8 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
+    ActionsDAGPtr foldActionsByProjection(const std::unordered_map<const Node *, std::string> & new_inputs);
+
     /// Reorder the output nodes using given position mapping.
     void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
 
