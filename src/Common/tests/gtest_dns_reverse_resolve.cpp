@@ -17,11 +17,11 @@ TEST(Common, ReverseDNS)
         "127.0.0.1", "::1"
     });
 
-    // Good random seed, good engine
-    auto rnd1 = std::mt19937(std::random_device{}());
-
     auto func = [&]()
     {
+        // Good random seed, good engine
+        auto rnd1 = std::mt19937(std::random_device{}());
+
         for (int i = 0; i < 50; ++i)
         {
             auto & dns_resolver_instance = DNSResolver::instance();
