@@ -173,7 +173,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
     if (future_merged_part->name != entry.new_part_name)
     {
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
