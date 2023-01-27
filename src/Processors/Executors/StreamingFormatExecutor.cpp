@@ -93,6 +93,12 @@ size_t StreamingFormatExecutor::execute()
         format->resetParser();
         return on_error(result_columns, e);
     }
+    catch (std::exception & e)
+    {
+        format->resetParser();
+        auto exception = Exception(Exception::CreateFromSTDTag{}, e);
+        return on_error(result_columns, exception);
+    }
 }
 
 }
