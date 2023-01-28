@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
+#include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
@@ -1089,7 +1090,7 @@ protected:
     MultiVersion<MergeTreeSettings> storage_settings;
 
     /// Used to determine which UUIDs to send to root query executor for deduplication.
-    mutable std::shared_mutex pinned_part_uuids_mutex;
+    mutable SharedMutex pinned_part_uuids_mutex;
     PinnedPartUUIDsPtr pinned_part_uuids;
 
     /// True if at least one part was created/removed with transaction.

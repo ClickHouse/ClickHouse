@@ -1,30 +1,28 @@
-
-#include <algorithm>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 
 #include <Columns/ColumnArray.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
-#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/GinFilter.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/GinFilter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
-#include <Core/Defines.h>
-
 #include <Poco/Logger.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexUtils.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <algorithm>
 
 
 namespace DB
@@ -35,19 +33,18 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-MergeTreeIndexGranuleGinFilter::MergeTreeIndexGranuleGinFilter(
+MergeTreeIndexGranuleInverted::MergeTreeIndexGranuleInverted(
     const String & index_name_,
     size_t columns_number,
     const GinFilterParameters & params_)
     : index_name(index_name_)
     , params(params_)
-    , gin_filters(
-        columns_number, GinFilter(params))
+    , gin_filters(columns_number, GinFilter(params))
     , has_elems(false)
 {
 }
 
-void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleInverted::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
@@ -59,11 +56,11 @@ void MergeTreeIndexGranuleGinFilter::serializeBinary(WriteBuffer & ostr) const
     {
         size_t filter_size = gin_filter.getFilter().size();
         size_serialization->serializeBinary(filter_size, ostr, {});
-        ostr.write(reinterpret_cast<const char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::GinSegmentWithRowIDRanges::value_type));
+        ostr.write(reinterpret_cast<const char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
 }
 
-void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleInverted::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
@@ -81,13 +78,13 @@ void MergeTreeIndexGranuleGinFilter::deserializeBinary(ReadBuffer & istr, MergeT
             continue;
 
         gin_filter.getFilter().assign(filter_size, {});
-        istr.readStrict(reinterpret_cast<char*>(gin_filter.getFilter().data()), filter_size * sizeof(GinFilter::GinSegmentWithRowIDRanges::value_type));
+        istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
     has_elems = true;
 }
 
 
-MergeTreeIndexAggregatorGinFilter::MergeTreeIndexAggregatorGinFilter(
+MergeTreeIndexAggregatorInverted::MergeTreeIndexAggregatorInverted(
     GinIndexStorePtr store_,
     const Names & index_columns_,
     const String & index_name_,
@@ -99,32 +96,30 @@ MergeTreeIndexAggregatorGinFilter::MergeTreeIndexAggregatorGinFilter(
     , params(params_)
     , token_extractor(token_extractor_)
     , granule(
-        std::make_shared<MergeTreeIndexGranuleGinFilter>(
+        std::make_shared<MergeTreeIndexGranuleInverted>(
             index_name, index_columns.size(), params))
 {
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorGinFilter::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorInverted::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeIndexGranuleGinFilter>(
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleInverted>(
         index_name, index_columns.size(), params);
     new_granule.swap(granule);
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char* data, size_t length, GinFilter& gin_filter, UInt64 limit)
+void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter, UInt64 limit)
 {
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
 
     while (cur < length && token_extractor->nextInStringPadded(data, length, &cur, &token_start, &token_len))
-    {
         gin_filter.add(data + token_start, token_len, rowID, store, limit);
-    }
 }
 
-void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -188,7 +183,7 @@ void MergeTreeIndexAggregatorGinFilter::update(const Block & block, size_t * pos
     *pos += rows_read;
 }
 
-MergeTreeConditionGinFilter::MergeTreeConditionGinFilter(
+MergeTreeConditionInverted::MergeTreeConditionInverted(
     const SelectQueryInfo & query_info,
     ContextPtr context_,
     const Block & index_sample_block,
@@ -235,7 +230,7 @@ MergeTreeConditionGinFilter::MergeTreeConditionGinFilter(
 }
 
 /// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
-bool MergeTreeConditionGinFilter::alwaysUnknownOrTrue() const
+bool MergeTreeConditionInverted::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
     std::vector<bool> rpn_stack;
@@ -282,10 +277,10 @@ bool MergeTreeConditionGinFilter::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
-bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore &cache_store) const
+bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranulePtr idx_granule,[[maybe_unused]] PostingsCacheForStore & cache_store) const
 {
-    std::shared_ptr<MergeTreeIndexGranuleGinFilter> granule
-            = std::dynamic_pointer_cast<MergeTreeIndexGranuleGinFilter>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleInverted> granule
+            = std::dynamic_pointer_cast<MergeTreeIndexGranuleInverted>(idx_granule);
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GinFilter index condition got a granule with the wrong type.");
 
@@ -373,7 +368,7 @@ bool MergeTreeConditionGinFilter::mayBeTrueOnGranuleInPart(MergeTreeIndexGranule
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeConditionGinFilter::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -453,7 +448,7 @@ bool MergeTreeConditionGinFilter::traverseAtomAST(const RPNBuilderTreeNode & nod
     return false;
 }
 
-bool MergeTreeConditionGinFilter::traverseASTEquals(
+bool MergeTreeConditionInverted::traverseASTEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_ast,
     const DataTypePtr & value_type,
@@ -606,7 +601,7 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
         out.function = RPNElement::FUNCTION_MULTI_SEARCH;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
-        std::vector<std::vector<GinFilter>> gin_filters;
+        std::vector<GinFilters> gin_filters;
         gin_filters.emplace_back();
         for (const auto & element : const_value.get<Array>())
         {
@@ -624,7 +619,7 @@ bool MergeTreeConditionGinFilter::traverseASTEquals(
     return false;
 }
 
-bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
+bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
     const RPNBuilderTreeNode & lhs,
     const RPNBuilderTreeNode & rhs,
     RPNElement & out)
@@ -667,7 +662,7 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
         if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
             return false;
 
-    std::vector<std::vector<GinFilter>> gin_filters;
+    std::vector<GinFilters> gin_filters;
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
@@ -693,55 +688,55 @@ bool MergeTreeConditionGinFilter::tryPrepareSetGinFilter(
     return true;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexGinFilter::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexInverted::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleGinFilter>(index.name, index.column_names.size(), params);
+    return std::make_shared<MergeTreeIndexGranuleInverted>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexGinFilter::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator() const
 {
     /// should not be called: createIndexAggregatorForPart should be used
     assert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexGinFilter::createIndexAggregatorForPart(const GinIndexStorePtr &store) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store) const
 {
-    return std::make_shared<MergeTreeIndexAggregatorGinFilter>(store, index.column_names, index.name, params, token_extractor.get());
+    return std::make_shared<MergeTreeIndexAggregatorInverted>(store, index.column_names, index.name, params, token_extractor.get());
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexGinFilter::createIndexCondition(
+MergeTreeIndexConditionPtr MergeTreeIndexInverted::createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionGinFilter>(query, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionInverted>(query, context, index.sample_block, params, token_extractor.get());
 };
 
-bool MergeTreeIndexGinFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
+bool MergeTreeIndexInverted::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     return std::find(std::cbegin(index.column_names), std::cend(index.column_names), node->getColumnName()) != std::cend(index.column_names);
 }
 
-MergeTreeIndexPtr ginIndexCreator(
+MergeTreeIndexPtr invertedIndexCreator(
     const IndexDescription & index)
 {
     size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-    Float64 density = index.arguments.size() < 2 ? 1.0f : index.arguments[1].get<Float64>();
+    Float64 density = index.arguments.size() < 2 ? 1.0 : index.arguments[1].get<Float64>();
     GinFilterParameters params(n, density);
 
     /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
     if (n > 0)
     {
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-        return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexInverted>(index, params, std::move(tokenizer));
     }
     else
     {
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
-        return std::make_shared<MergeTreeIndexGinFilter>(index, params, std::move(tokenizer));
+        return std::make_shared<MergeTreeIndexInverted>(index, params, std::move(tokenizer));
     }
 }
 
-void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
+void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     for (const auto & index_data_type : index.data_types)
     {
@@ -764,9 +759,6 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
                             "column or Array with `String` or `FixedString` values column.");
     }
 
-    if (index.type != GinFilter::getName())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
-
     if (index.arguments.size() > 2)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Inverted index must have less than two arguments.");
 
@@ -776,10 +768,9 @@ void ginIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (index.arguments.size() == 2 && (index.arguments[1].getType() != Field::Types::Float64 || index.arguments[1].get<Float64>() <= 0 || index.arguments[1].get<Float64>() > 1))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The second Inverted index argument must be a float between 0 and 1.");
 
-    size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-    Float64 density = index.arguments.size() < 2 ? 1.0f : index.arguments[1].get<Float64>();
-
     /// Just validate
+    size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
+    Float64 density = index.arguments.size() < 2 ? 1.0 : index.arguments[1].get<Float64>();
     GinFilterParameters params(ngrams, density);
 }
 

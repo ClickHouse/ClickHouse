@@ -83,7 +83,7 @@ ColumnsDescription TableFunctionHDFSCluster::getActualTableStructure(ContextPtr 
 
 
 StoragePtr TableFunctionHDFSCluster::getStorage(
-    const String & /*source*/, const String & /*format_*/, const ColumnsDescription &, ContextPtr context,
+    const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & /*compression_method_*/) const
 {
     StoragePtr storage;
@@ -94,7 +94,7 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
             filename,
             StorageID(getDatabaseName(), table_name),
             format,
-            getActualTableStructure(context),
+            columns,
             ConstraintsDescription{},
             String{},
             context,
@@ -107,8 +107,8 @@ StoragePtr TableFunctionHDFSCluster::getStorage(
         storage = std::make_shared<StorageHDFSCluster>(
             context,
             cluster_name, filename, StorageID(getDatabaseName(), table_name),
-            format, getActualTableStructure(context), ConstraintsDescription{},
-            compression_method);
+            format, columns, ConstraintsDescription{},
+            compression_method, structure != "auto");
     }
     return storage;
 }
