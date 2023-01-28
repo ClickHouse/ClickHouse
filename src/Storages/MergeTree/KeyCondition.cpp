@@ -736,12 +736,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
-    {
-        const auto & name = key_column_names[i];
+    for (const auto & name : key_column_names)
         if (!key_columns.contains(name))
-            key_columns[name] = i;
-    }
+            key_columns[name] = key_columns.size();
 
     auto filter_node = buildFilterNode(query, additional_filter_asts);
 
@@ -804,12 +801,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
-    {
-        const auto & name = key_column_names[i];
+    for (const auto & name : key_column_names)
         if (!key_columns.contains(name))
-            key_columns[name] = i;
-    }
+            key_columns[name] = key_columns.size();
 
     if (!filter_dag)
     {
