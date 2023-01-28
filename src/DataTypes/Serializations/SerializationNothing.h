@@ -16,13 +16,13 @@ class SerializationNothing : public SimpleTextSerialization
 private:
     [[noreturn]] static void throwNoSerialization()
     {
-        throw Exception("Serialization is not implemented for type Nothing", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization is not implemented for type Nothing");
     }
 public:
-    void serializeBinary(const Field &, WriteBuffer &) const override                       { throwNoSerialization(); }
-    void deserializeBinary(Field &, ReadBuffer &) const override                            { throwNoSerialization(); }
-    void serializeBinary(const IColumn &, size_t, WriteBuffer &) const override             { throwNoSerialization(); }
-    void deserializeBinary(IColumn &, ReadBuffer &) const override                          { throwNoSerialization(); }
+    void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override                       { throwNoSerialization(); }
+    void deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const override                            { throwNoSerialization(); }
+    void serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override             { throwNoSerialization(); }
+    void deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const override                          { throwNoSerialization(); }
     void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwNoSerialization(); }
     void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &, bool) const override    { throwNoSerialization(); }
 

@@ -6,7 +6,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
-#include <Common/ConcurrentBoundedQueue.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -14,7 +13,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -23,6 +21,9 @@ namespace Poco
     class Logger;
 }
 
+
+template <class T>
+class ConcurrentBoundedQueue;
 
 namespace DB
 {
@@ -78,7 +79,7 @@ public:
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
     std::function<void()> fatal_error_callback;
 
-    std::vector<UInt64> thread_ids;
+    std::unordered_set<UInt64> thread_ids;
     std::unordered_set<ThreadStatusPtr> threads;
 
     /// The first thread created this thread group
@@ -87,10 +88,6 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
-    /// Query without new lines (see toOneLineQuery())
-    /// Used to print in case of fatal error
-    /// (to avoid calling extra code in the fatal error handler)
-    String one_line_query;
     UInt64 normalized_query_hash = 0;
 
     std::vector<ProfileEventsCountersAndMemory> finished_threads_counters_memory;
@@ -179,8 +176,8 @@ protected:
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     std::function<void()> fatal_error_callback;
 
-    /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
-    bool query_profiler_enabled = true;
+    /// See setInternalThread()
+    bool internal_thread = false;
 
     /// Requires access to query_id.
     friend class MemoryTrackerThreadSwitcher;
@@ -225,11 +222,21 @@ public:
         return global_context.lock();
     }
 
-    void disableProfiling()
-    {
-        assert(!query_profiler_real && !query_profiler_cpu);
-        query_profiler_enabled = false;
-    }
+    /// "Internal" ThreadStatus is used for materialized views for separate
+    /// tracking into system.query_views_log
+    ///
+    /// You can have multiple internal threads, but only one non-internal with
+    /// the same thread_id.
+    ///
+    /// "Internal" thread:
+    /// - cannot have query profiler
+    ///   since the running (main query) thread should already have one
+    /// - should not try to obtain latest counter on detach
+    ///   because detaching of such threads will be done from a different
+    ///   thread_id, and some counters are not available (i.e. getrusage()),
+    ///   but anyway they are accounted correctly in the main ThreadStatus of a
+    ///   query.
+    void setInternalThread();
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -286,7 +293,7 @@ protected:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
 
-    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
+    void assertState(ThreadState permitted_state, const char * description = nullptr) const;
 
 
 private:

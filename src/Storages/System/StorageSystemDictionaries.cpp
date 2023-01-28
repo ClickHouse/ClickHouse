@@ -20,6 +20,37 @@
 
 namespace DB
 {
+namespace
+{
+
+StorageID getDictionaryID(const ExternalLoader::LoadResult & load_result, const std::shared_ptr<const IDictionary> & dict_ptr)
+{
+    StorageID dict_id = StorageID::createEmpty();
+
+    if (dict_ptr)
+        dict_id = dict_ptr->getDictionaryID();
+    else if (load_result.config)
+        dict_id = StorageID::fromDictionaryConfig(*load_result.config->config, load_result.config->key_in_config);
+    else
+        dict_id.table_name = load_result.name;
+
+    return dict_id;
+}
+
+std::optional<DictionaryStructure>
+getDictionaryStructure(const ExternalLoader::LoadResult & load_result, std::exception_ptr & last_exception)
+try
+{
+    return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+}
+catch (const DB::Exception &)
+{
+    if (!last_exception)
+        last_exception = std::current_exception();
+    return {};
+}
+
+}
 
 NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 {
@@ -47,7 +78,6 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"loading_start_time", std::make_shared<DataTypeDateTime>()},
         {"last_successful_update_time", std::make_shared<DataTypeDateTime>()},
         {"loading_duration", std::make_shared<DataTypeFloat32>()},
-        //{ "creation_time", std::make_shared<DataTypeDateTime>() },
         {"last_exception", std::make_shared<DataTypeString>()},
         {"comment", std::make_shared<DataTypeString>()}
     };
@@ -73,15 +103,11 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionary>(load_result.object);
-        DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 
-        StorageID dict_id = StorageID::createEmpty();
-        if (dict_ptr)
-            dict_id = dict_ptr->getDictionaryID();
-        else if (load_result.config)
-            dict_id = StorageID::fromDictionaryConfig(*load_result.config->config, load_result.config->key_in_config);
-        else
-            dict_id.table_name = load_result.name;
+        std::exception_ptr last_exception = load_result.exception;
+        auto dict_structure = getDictionaryStructure(load_result, last_exception);
+
+        StorageID dict_id = getDictionaryID(load_result, dict_ptr);
 
         String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
         if (!access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
@@ -94,22 +120,28 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
         res_columns[i++]->insert(load_result.config ? load_result.config->path : "");
 
-        std::exception_ptr last_exception = load_result.exception;
-
         if (dict_ptr)
             res_columns[i++]->insert(dict_ptr->getTypeName());
         else
             res_columns[i++]->insertDefault();
 
-        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.getKeysNames(), [] (auto & name) { return name; }));
+        if (dict_structure)
+        {
+            res_columns[i++]->insert(collections::map<Array>(dict_structure->getKeysNames(), [](auto & name) { return name; }));
 
-        if (dictionary_structure.id)
-            res_columns[i++]->insert(Array({"UInt64"}));
+            if (dict_structure->id)
+                res_columns[i++]->insert(Array({"UInt64"}));
+            else
+                res_columns[i++]->insert(collections::map<Array>(*dict_structure->key, [](auto & attr) { return attr.type->getName(); }));
+
+            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.name; }));
+            res_columns[i++]->insert(collections::map<Array>(dict_structure->attributes, [](auto & attr) { return attr.type->getName(); }));
+        }
         else
-            res_columns[i++]->insert(collections::map<Array>(*dictionary_structure.key, [] (auto & attr) { return attr.type->getName(); }));
-
-        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.name; }));
-        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.type->getName(); }));
+        {
+            for (size_t j = 0; j != 4; ++j) // Number of empty fields if dict_structure is null
+                res_columns[i++]->insertDefault();
+        }
 
         if (dict_ptr)
         {
@@ -157,9 +189,11 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 
         /// Start fill virtual columns
 
-        res_columns[i++]->insert(dictionary_structure.getKeyDescription());
+        if (dict_structure)
+            res_columns[i++]->insert(dict_structure->getKeyDescription());
+        else
+            res_columns[i++]->insertDefault();
     }
 }
 
 }
-

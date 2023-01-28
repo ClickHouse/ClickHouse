@@ -26,6 +26,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -46,7 +47,6 @@
 #include <ValidSchema.hh>
 
 #include <Poco/Buffer.h>
-#include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -146,7 +146,7 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         default:
-            throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type is not compatible with Avro");
     }
 }
 
@@ -193,7 +193,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw ParsingException(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
                     UUID uuid;
                     parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
@@ -283,14 +283,15 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (root_node->leaves() == 2
                 && (root_node->leafAt(0)->type() == avro::AVRO_NULL || root_node->leafAt(1)->type() == avro::AVRO_NULL))
             {
-                size_t non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
+                int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
                 if (target.isNullable())
                 {
-                    auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
+                    auto nested_deserialize = this->createDeserializeFn(
+                        root_node->leafAt(non_null_union_index), removeNullable(target_type));
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-                        size_t union_index = decoder.decodeUnionIndex();
+                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
                         if (union_index == non_null_union_index)
                         {
                             nested_deserialize(col.getNestedColumn(), decoder);
@@ -303,12 +304,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     };
                 }
 
-                if (null_as_default)
+                /// If the Union is ['Null', Nested-Type], since the Nested-Type can not be inside
+                /// Nullable, so we will get Nested-Type, instead of Nullable type.
+                if (null_as_default || !target.isNullable())
                 {
                     auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
-                        size_t union_index = decoder.decodeUnionIndex();
+                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
                         if (union_index == non_null_union_index)
                             nested_deserialize(column, decoder);
                         else
@@ -345,7 +348,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isString())
             {
                 std::vector<std::string> symbols;
-                for (size_t i = 0; i < root_node->names(); ++i)
+                symbols.reserve(root_node->names());
+                for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
                 {
                     symbols.push_back(root_node->nameAt(i));
                 }
@@ -360,7 +364,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
                 Row symbol_mapping;
-                for (size_t i = 0; i < root_node->names(); ++i)
+                for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));
                 }
@@ -397,7 +401,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 if (root_node->leaves() != nested_types.size())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
 
-                for (size_t i = 0; i != root_node->leaves(); ++i)
+                for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
                 {
                     const auto & name = root_node->nameAt(i);
                     size_t pos = tuple_type.getPositionByName(name);
@@ -464,10 +468,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         };
     }
 
-    throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n"
-        + nodeToJson(root_node),
-        ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+        "Type {} is not compatible with Avro {}:\n{}",
+        target_type->getName(), avro::toString(root_node->type()), nodeToJson(root_node));
 }
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
@@ -505,7 +508,8 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_UNION:
         {
             std::vector<SkipFn> union_skip_fns;
-            for (size_t i = 0; i < root_node->leaves(); ++i)
+            union_skip_fns.reserve(root_node->leaves());
+            for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -514,7 +518,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
                 auto index = decoder.decodeUnionIndex();
                 if (index >= union_skip_fns.size())
                 {
-                    throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
                 }
                 union_skip_fns[index](decoder);
             };
@@ -546,7 +550,8 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_RECORD:
         {
             std::vector<SkipFn> field_skip_fns;
-            for (size_t i = 0; i < root_node->leaves(); ++i)
+            field_skip_fns.reserve(root_node->leaves());
+            for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
             {
                 field_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -569,7 +574,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             };
         }
         default:
-            throw Exception("Unsupported Avro type " + root_node->name().fullname() + " (" + toString(int(root_node->type())) + ")", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported Avro type {} ({})", root_node->name().fullname(), int(root_node->type()));
     }
 }
 
@@ -633,7 +638,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         const auto & column = header.getByPosition(target_column_idx);
         try
         {
-            AvroDeserializer::Action action(target_column_idx, createDeserializeFn(node, column.type));
+            AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type));
             column_found[target_column_idx] = true;
             return action;
         }
@@ -646,7 +651,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_RECORD)
     {
         std::vector<AvroDeserializer::Action> field_actions(node->leaves());
-        for (size_t i = 0; i < node->leaves(); ++i)
+        for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
             const auto & field_node = node->leafAt(i);
             const auto & field_name = node->nameAt(i);
@@ -657,7 +662,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_UNION)
     {
         std::vector<AvroDeserializer::Action> branch_actions(node->leaves());
-        for (size_t i = 0; i < node->leaves(); ++i)
+        for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
         {
             const auto & branch_node = node->leafAt(i);
             const auto & branch_name = nodeName(branch_node);
@@ -687,7 +692,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         /// Create nested deserializer for each nested column.
         std::vector<DeserializeFn> nested_deserializers;
         std::vector<size_t> nested_indexes;
-        for (size_t i = 0; i != nested_avro_node->leaves(); ++i)
+        for (int i = 0; i != static_cast<int>(nested_avro_node->leaves()); ++i)
         {
             const auto & name = nested_avro_node->nameAt(i);
             if (!nested_types.contains(name))
@@ -713,7 +718,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
     {
-        throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
     }
 
     column_found.resize(header.columns());
@@ -725,7 +730,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
         {
             if (!column_found[i])
             {
-                throw Exception("Field " + header.getByPosition(i).name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Field {} not found in Avro schema", header.getByPosition(i).name);
             }
         }
     }
@@ -776,7 +781,7 @@ public:
         : base_url(base_url_), schema_cache(schema_cache_max_size)
     {
         if (base_url.empty())
-            throw Exception("Empty Schema Registry URL", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Schema Registry URL");
     }
 
     avro::ValidSchema getSchema(uint32_t id)
@@ -836,7 +841,7 @@ private:
             }
             catch (const avro::Exception & e)
             {
-                throw Exception(e.what(), ErrorCodes::INCORRECT_DATA);
+                throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
             }
         }
         catch (Exception & e)
@@ -883,7 +888,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
         if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
         {
             /* empty or incomplete message without Avro Confluent magic number or schema id */
-            throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Missing AvroConfluent magic byte or schema identifier.");
         }
         else
             throw;
@@ -891,8 +896,8 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 
     if (magic != 0x00)
     {
-        throw Exception("Invalid magic byte before AvroConfluent schema identifier."
-            " Must be zero byte, found " + std::to_string(int(magic)) + " instead", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid magic byte before AvroConfluent schema identifier. "
+            "Must be zero byte, found {} instead", int(magic));
     }
 
     return schema_id;
@@ -902,11 +907,15 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
-    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(*in))
-    , decoder(avro::binaryDecoder())
     , format_settings(format_settings_)
 
 {
+}
+
+void AvroConfluentRowInputFormat::readPrefix()
+{
+    input_stream = std::make_unique<InputStreamReadBufferAdapter>(*in);
+    decoder = avro::binaryDecoder();
     decoder->init(*input_stream);
 }
 
@@ -967,10 +976,10 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     }
 
     if (root_node->type() != avro::Type::AVRO_RECORD)
-        throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
 
     NamesAndTypesList names_and_types;
-    for (size_t i = 0; i != root_node->leaves(); ++i)
+    for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
         names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
 
     return names_and_types;
@@ -985,7 +994,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_LONG:
             return std::make_shared<DataTypeInt64>();
         case avro::Type::AVRO_BOOL:
-            return std::make_shared<DataTypeUInt8>();
+            return DataTypeFactory::instance().get("Bool");
         case avro::Type::AVRO_FLOAT:
             return std::make_shared<DataTypeFloat32>();
         case avro::Type::AVRO_DOUBLE:
@@ -993,20 +1002,20 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_STRING:
             return std::make_shared<DataTypeString>();
         case avro::Type::AVRO_BYTES:
-            return std::make_shared<DataTypeFloat32>();
+            return std::make_shared<DataTypeString>();
         case avro::Type::AVRO_ENUM:
         {
             if (node->names() < 128)
             {
                 EnumValues<Int8>::Values values;
-                for (size_t i = 0; i != node->names(); ++i)
+                for (int i = 0; i != static_cast<int>(node->names()); ++i)
                     values.emplace_back(node->nameAt(i), i);
                 return std::make_shared<DataTypeEnum8>(std::move(values));
             }
             else if (node->names() < 32768)
             {
                 EnumValues<Int16>::Values values;
-                for (size_t i = 0; i != node->names(); ++i)
+                for (int i = 0; i != static_cast<int>(node->names()); ++i)
                     values.emplace_back(node->nameAt(i), i);
                 return std::make_shared<DataTypeEnum16>(std::move(values));
             }
@@ -1022,7 +1031,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_UNION:
             if (node->leaves() == 2 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
-                size_t nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
+                int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
                 auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index));
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
@@ -1035,7 +1044,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             nested_types.reserve(node->leaves());
             Names nested_names;
             nested_names.reserve(node->leaves());
-            for (size_t i = 0; i != node->leaves(); ++i)
+            for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
                 nested_types.push_back(avroNodeToDataType(node->leafAt(i)));
                 nested_names.push_back(node->nameAt(i));

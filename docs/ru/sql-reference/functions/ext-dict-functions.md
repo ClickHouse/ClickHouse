@@ -151,7 +151,7 @@ LIMIT 3;
 
 ``` sql
 SELECT
-    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
+    dictGet('ext-dict-mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
 FROM system.numbers
 LIMIT 3;

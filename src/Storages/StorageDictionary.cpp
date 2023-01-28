@@ -153,7 +153,7 @@ void StorageDictionary::checkTableCanBeDropped() const
             dictionary_name);
     if (location == Location::DictionaryDatabase)
         throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
-            "Cannot drop/detach table from a database with DICTIONARY engine, use DROP DICTIONARY or DETACH DICTIONARY query instead",
+            "Cannot drop/detach table '{}' from a database with DICTIONARY engine, use DROP DICTIONARY or DETACH DICTIONARY query instead",
             dictionary_name);
 }
 
@@ -169,11 +169,17 @@ Pipe StorageDictionary::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned threads)
+    const size_t threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
     return dictionary->read(column_names, max_block_size, threads);
+}
+
+std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
+{
+    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+    return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
 void StorageDictionary::shutdown()
@@ -336,8 +342,7 @@ void registerStorageDictionary(StorageFactory & factory)
             /// Create dictionary storage that is view of underlying dictionary
 
             if (args.engine_args.size() != 1)
-                throw Exception("Storage Dictionary requires single parameter: name of dictionary",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage Dictionary requires single parameter: name of dictionary");
 
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");

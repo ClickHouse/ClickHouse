@@ -8,7 +8,7 @@
 namespace DB
 {
 
-MergeTreeSelectProcessor::MergeTreeSelectProcessor(
+MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
@@ -25,7 +25,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     size_t part_index_in_query_,
     bool has_limit_below_one_block_,
     std::optional<ParallelReadingExtension> extension_)
-    : MergeTreeBaseSelectProcessor{
+    : IMergeTreeSelectAlgorithm{
         storage_snapshot_->getSampleBlockForColumns(required_columns_),
         storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
@@ -38,18 +38,10 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     has_limit_below_one_block(has_limit_below_one_block_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
-    /// Actually it means that parallel reading from replicas enabled
-    /// and we have to collaborate with initiator.
-    /// In this case we won't set approximate rows, because it will be accounted multiple times.
-    /// Also do not count amount of read rows if we read in order of sorting key,
-    /// because we don't know actual amount of read rows in case when limit is set.
-    if (!extension_.has_value() && !reader_settings.read_in_order)
-        addTotalRowsApprox(total_rows);
-
-    ordered_names = header_without_virtual_columns.getNames();
+    ordered_names = header_without_const_virtual_columns.getNames();
 }
 
-void MergeTreeSelectProcessor::initializeReaders()
+void MergeTreeSelectAlgorithm::initializeReaders()
 {
     task_columns = getReadTaskColumns(
         LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
@@ -69,7 +61,7 @@ void MergeTreeSelectProcessor::initializeReaders()
 }
 
 
-void MergeTreeSelectProcessor::finish()
+void MergeTreeSelectAlgorithm::finish()
 {
     /** Close the files (before destroying the object).
     * When many sources are created, but simultaneously reading only a few of them,
@@ -80,6 +72,6 @@ void MergeTreeSelectProcessor::finish()
     data_part.reset();
 }
 
-MergeTreeSelectProcessor::~MergeTreeSelectProcessor() = default;
+MergeTreeSelectAlgorithm::~MergeTreeSelectAlgorithm() = default;
 
 }

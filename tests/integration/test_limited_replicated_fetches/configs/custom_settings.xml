@@ -1,7 +1,3 @@
 <clickhouse>
-    <profiles>
-        <default>
-            <background_fetches_pool_size>3</background_fetches_pool_size>
-        </default>
-    </profiles>
+    <background_fetches_pool_size>3</background_fetches_pool_size>
 </clickhouse>

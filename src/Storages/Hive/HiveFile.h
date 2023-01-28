@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 
@@ -72,7 +72,7 @@ public:
         {
             return VALID_HDFS_FORMATS.find(format_class)->second;
         }
-        throw Exception("Unsupported hdfs file format " + format_class, ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported hdfs file format {}", format_class);
     }
 
     IHiveFile(
@@ -134,12 +134,12 @@ public:
 protected:
     virtual void loadFileMinMaxIndexImpl()
     {
-        throw Exception("Method loadFileMinMaxIndexImpl is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadFileMinMaxIndexImpl is not supported by hive file:{}", getFormatName());
     }
 
     virtual void loadSplitMinMaxIndexesImpl()
     {
-        throw Exception("Method loadSplitMinMaxIndexesImpl is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadSplitMinMaxIndexesImpl is not supported by hive file:{}", getFormatName());
     }
 
     virtual std::optional<size_t> getRowsImpl() = 0;

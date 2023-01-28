@@ -136,7 +136,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    unsigned keep_alive_timeout_,
+    size_t keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)

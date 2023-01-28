@@ -77,7 +77,7 @@ decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
     std::exception_ptr exception;
 
     if (max_tries == 0)
-        throw Exception("Cannot perform zero retries", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot perform zero retries");
 
     for (UInt64 try_number = 1; try_number <= max_tries; ++try_number)
     {
@@ -123,7 +123,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         }
         catch (Exception & e)
         {
-            throw Exception("Partition " + partition_text_quoted + " has incorrect format. " + e.displayText(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition {} has incorrect format. {}", partition_text_quoted, e.displayText());
         }
     };
 
@@ -325,8 +325,8 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
 
         if (!table_is_done)
         {
-            throw Exception("Too many tries to process table " + task_table.table_id + ". Abort remaining execution",
-                            ErrorCodes::UNFINISHED);
+            throw Exception(ErrorCodes::UNFINISHED, "Too many tries to process table {}. Abort remaining execution",
+                            task_table.table_id);
         }
     }
 }
@@ -666,28 +666,34 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         }
 
         if (inject_fault)
-            throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
+            throw Exception(ErrorCodes::UNFINISHED, "Copy fault injection is activated");
     }
 
     /// Create node to signal that we finished moving
+    /// Also increment a counter of processed partitions
     {
-        String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
-        zookeeper->set(current_partition_attach_is_done, state_finished, 0);
-        /// Also increment a counter of processed partitions
+        const auto state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
+        const auto task_status = task_zookeeper_path + "/status";
+
+        /// Try until success
         while (true)
         {
             Coordination::Stat stat;
-            auto status_json = zookeeper->get(task_zookeeper_path + "/status", &stat);
+            auto status_json = zookeeper->get(task_status, &stat);
             auto statuses = StatusAccumulator::fromJSON(status_json);
 
             /// Increment status for table.
-            auto status_for_table = (*statuses)[task_table.name_in_config];
-            status_for_table.processed_partitions_count += 1;
-            (*statuses)[task_table.name_in_config] = status_for_table;
-
+            (*statuses)[task_table.name_in_config].processed_partitions_count += 1;
             auto statuses_to_commit = StatusAccumulator::serializeToJSON(statuses);
-            auto error = zookeeper->trySet(task_zookeeper_path + "/status", statuses_to_commit, stat.version, &stat);
-            if (error == Coordination::Error::ZOK)
+
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeSetRequest(current_partition_attach_is_done, state_finished, 0));
+            ops.emplace_back(zkutil::makeSetRequest(task_status, statuses_to_commit, stat.version));
+
+            Coordination::Responses responses;
+            Coordination::Error code = zookeeper->tryMulti(ops, responses);
+
+            if (code == Coordination::Error::ZOK)
                 break;
         }
     }
@@ -747,7 +753,7 @@ std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_
     auto res = std::make_shared<ASTCreateQuery>(create);
 
     if (create.storage == nullptr || new_storage_ast == nullptr)
-        throw Exception("Storage is not specified", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not specified");
 
     res->setDatabase(new_table.first);
     res->setTable(new_table.second);
@@ -769,7 +775,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         const CleanStateClock & clean_state_clock)
 {
     if (is_safe_mode)
-        throw Exception("DROP PARTITION is prohibited in safe mode", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is prohibited in safe mode");
 
     TaskTable & task_table = task_partition.task_shard.task_table;
     ShardPartitionPiece & partition_piece = task_partition.pieces[current_piece_number];
@@ -938,7 +944,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     for (const String & partition_name : task_table.ordered_partition_names)
     {
         if (!task_table.cluster_partitions.contains(partition_name))
-            throw Exception("There are no expected partition " + partition_name + ". It is a bug", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no expected partition {}. It is a bug", partition_name);
 
         ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
 
@@ -1000,7 +1006,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             /// Previously when we discovered that shard does not contain current partition, we skipped it.
             /// At this moment partition have to be present.
             if (it_shard_partition == shard->partition_tasks.end())
-                throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no such partition in a shard. This is a bug.");
             auto & partition = it_shard_partition->second;
 
             expected_shards.emplace_back(shard);
@@ -1142,7 +1148,7 @@ TaskStatus ClusterCopier::tryCreateDestinationTable(const ConnectionTimeouts & t
         InterpreterCreateQuery::prepareOnClusterQuery(create, getContext(), task_table.cluster_push_name);
         String query = queryToString(create_query_push_ast);
 
-        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
+        LOG_INFO(log, "Create destination tables. Query: {}", query);
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
@@ -1413,7 +1419,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto create_query_push_ast = rewriteCreateQueryStorage(create_query_ast, database_and_table_for_current_piece, new_engine_push_ast);
         String query = queryToString(create_query_push_ast);
 
-        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
+        LOG_INFO(log, "Create destination tables. Query: {}", query);
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
@@ -1517,7 +1523,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         // Select all fields
         ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ true, inject_fault ? "1" : "");
 
-        LOG_INFO(log, "Executing SELECT query and pull from {} : {}", task_shard.getDescription(), queryToString(query_select_ast));
+        LOG_INFO(log, "Executing SELECT query and pull from {}: {}", task_shard.getDescription(), queryToString(query_select_ast));
 
         ASTPtr query_insert_ast;
         {
@@ -1581,7 +1587,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             auto cancel_check = [&] ()
             {
                 if (zookeeper->expired())
-                    throw Exception("ZooKeeper session is expired, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
+                    throw Exception(ErrorCodes::UNFINISHED, "ZooKeeper session is expired, cancel INSERT SELECT");
 
                 if (!future_is_dirty_checker.valid())
                     future_is_dirty_checker = zookeeper->asyncExists(piece_is_dirty_flag_path);
@@ -1597,7 +1603,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                         LogicalClock dirt_discovery_epoch (status.stat.mzxid);
                         if (dirt_discovery_epoch == clean_state_clock.discovery_zxid)
                             return false;
-                        throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
+                        throw Exception(ErrorCodes::UNFINISHED, "Partition is dirty, cancel INSERT SELECT");
                     }
                 }
 
@@ -1640,7 +1646,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 future_is_dirty_checker.get();
 
             if (inject_fault)
-                throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
+                throw Exception(ErrorCodes::UNFINISHED, "Copy fault injection is activated");
         }
         catch (...)
         {
@@ -1871,7 +1877,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     const auto & settings = getContext()->getSettingsRef();
     ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
-    LOG_INFO(log, "Computing destination partition set, executing query: \n {}", query);
+    LOG_INFO(log, "Computing destination partition set, executing query: {}", query);
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
@@ -1922,7 +1928,7 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
     const auto & settings = getContext()->getSettingsRef();
     ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
-    LOG_INFO(log, "Checking shard {} for partition {} existence, executing query: \n {}",
+    LOG_INFO(log, "Checking shard {} for partition {} existence, executing query: {}",
         task_shard.getDescription(), partition_quoted_name, query_ast->formatForErrorMessage());
 
     auto local_context = Context::createCopy(context);
@@ -1964,7 +1970,7 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     query += " LIMIT 1";
 
-    LOG_INFO(log, "Checking shard {} for partition {} piece {} existence, executing query: \n \u001b[36m {}", task_shard.getDescription(), partition_quoted_name, std::to_string(current_piece_number), query);
+    LOG_INFO(log, "Checking shard {} for partition {} piece {} existence, executing query: {}", task_shard.getDescription(), partition_quoted_name, std::to_string(current_piece_number), query);
 
     ParserQuery parser_query(query.data() + query.size());
     const auto & settings = getContext()->getSettingsRef();
@@ -2046,7 +2052,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             }
             catch (...)
             {
-                LOG_WARNING(log, "An error occurred while processing query : \n {}", query);
+                LOG_WARNING(log, "An error occurred while processing query: {}", query);
                 tryLogCurrentException(log);
                 continue;
             }

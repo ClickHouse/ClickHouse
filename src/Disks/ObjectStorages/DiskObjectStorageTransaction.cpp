@@ -133,8 +133,13 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
+        /// The client for an object storage may do retries internally
+        /// and there could be a situation when a query succeeded, but the response is lost
+        /// due to network error or similar. And when it will retry an operation it may receive
+        /// a 404 HTTP code. We don't want to threat this code as a real error for deletion process
+        /// (e.g. throwing some exceptions) and thus we just use method `removeObjectsIfExists`
         if (!delete_metadata_only && !objects_to_remove.empty())
-            object_storage.removeObjects(objects_to_remove);
+            object_storage.removeObjectsIfExist(objects_to_remove);
     }
 };
 
@@ -213,8 +218,10 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
     void finalize() override
     {
+        /// Read comment inside RemoveObjectStorageOperation class
+        /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjects(objects_to_remove);
+            object_storage.removeObjectsIfExist(objects_to_remove);
     }
 };
 
@@ -307,7 +314,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                     remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
                 }
             }
-            object_storage.removeObjects(remove_from_remote);
+            /// Read comment inside RemoveObjectStorageOperation class
+            /// TL;DR Don't pay any attention to 404 status code
+            object_storage.removeObjectsIfExist(remove_from_remote);
         }
     }
 };
@@ -352,8 +361,10 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     void finalize() override
     {
+        /// Read comment inside RemoveObjectStorageOperation class
+        /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjects(objects_to_remove);
+            object_storage.removeObjectsIfExist(objects_to_remove);
     }
 };
 
@@ -487,7 +498,7 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
         {
             if (metadata_storage.exists(to_path))
-                throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", to_path);
 
             if (!metadata_storage.exists(from_path))
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);
@@ -599,7 +610,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
     std::function<void(size_t count)> create_metadata_callback;
 
-    if  (autocommit)
+    if (autocommit)
     {
         create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
         {
@@ -747,6 +758,12 @@ void DiskObjectStorageTransaction::commit()
 
     for (const auto & operation : operations_to_execute)
         operation->finalize();
+}
+
+void DiskObjectStorageTransaction::undo()
+{
+    for (const auto & operation : operations_to_execute | std::views::reverse)
+        operation->undo();
 }
 
 }

@@ -3,7 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB
@@ -25,6 +25,7 @@ public:
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
+        DROP_QUERY_RESULT_CACHE,
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
@@ -35,7 +36,9 @@ public:
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
+        WAIT_LOADING_PARTS,
         DROP_REPLICA,
+        DROP_DATABASE_REPLICA,
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,

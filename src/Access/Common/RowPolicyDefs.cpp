@@ -75,7 +75,7 @@ const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType
 #endif
         case RowPolicyFilterType::MAX: break;
     }
-    throw Exception("Unknown type: " + std::to_string(static_cast<size_t>(type_)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", static_cast<size_t>(type_));
 }
 
 }

@@ -3,6 +3,7 @@ slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-l
 sidebar_position: 42
 sidebar_label: Dictionary Updates
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Dictionary Updates 
 
@@ -11,6 +12,8 @@ ClickHouse periodically updates the dictionaries. The update interval for fully 
 Dictionary updates (other than loading for first use) do not block queries. During updates, the old version of a dictionary is used. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
 
 Example of settings:
+
+<CloudDetails />
 
 ``` xml
 <dictionary>
@@ -133,3 +136,7 @@ or
 SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
 ```
+
+## Related Content
+
+- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

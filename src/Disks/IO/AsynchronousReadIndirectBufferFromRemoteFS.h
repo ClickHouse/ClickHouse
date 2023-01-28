@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
+#include <IO/ReadSettings.h>
 #include <utility>
 
 namespace Poco { class Logger; }
@@ -11,7 +12,6 @@ namespace DB
 {
 
 class ReadBufferFromRemoteFSGather;
-struct ReadSettings;
 
 /**
  * Reads data from S3/HDFS/Web using stored paths in metadata.
@@ -64,9 +64,20 @@ private:
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
+    enum class FilesystemPrefetchState
+    {
+        USED,
+        CANCELLED_WITH_SEEK,
+        CANCELLED_WITH_RANGE_CHANGE,
+        UNNEEDED,
+    };
+    void resetPrefetch(FilesystemPrefetchState state);
+
+    ReadSettings read_settings;
+
     IAsynchronousReader & reader;
 
-    Int32 priority;
+    Int64 priority;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
 

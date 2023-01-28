@@ -49,6 +49,20 @@ void FieldVisitorHash::operator() (const UUID & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const IPv4 & x) const
+{
+    UInt8 type = Field::Types::IPv4;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const IPv6 & x) const
+{
+    UInt8 type = Field::Types::IPv6;
+    hash.update(type);
+    hash.update(x);
+}
+
 void FieldVisitorHash::operator() (const Float64 & x) const
 {
     UInt8 type = Field::Types::Float64;

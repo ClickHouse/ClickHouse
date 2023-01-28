@@ -4,6 +4,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/UUID.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 
@@ -55,6 +56,7 @@ struct PartLogElement
 
     String database_name;
     String table_name;
+    UUID table_uuid{UUIDHelpers::Nil};
     String part_name;
     String partition_id;
     String disk_name;

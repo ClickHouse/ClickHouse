@@ -36,6 +36,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -206,7 +207,7 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
         default:
             return type;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void initDataVariantsWithSizeHint(
@@ -220,16 +221,32 @@ void initDataVariantsWithSizeHint(
             const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
             const auto lower_limit = hint->sum_of_sizes / max_threads;
             const auto upper_limit = stats_collecting_params.max_size_to_preallocate_for_aggregation / max_threads;
-            const auto adjusted = std::min(std::max(lower_limit, hint->median_size), upper_limit);
-            if (worthConvertToTwoLevel(
-                    params.group_by_two_level_threshold,
-                    hint->sum_of_sizes,
-                    /*group_by_two_level_threshold_bytes*/ 0,
-                    /*result_size_bytes*/ 0))
-                method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
-            result.init(method_chosen, adjusted);
-            ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
-            return;
+            if (hint->median_size > upper_limit)
+            {
+                /// Since we cannot afford to preallocate as much as we want, we will likely need to do resize anyway.
+                /// But we will also work with the big (i.e. not so cache friendly) HT from the beginning which may result in a slight slowdown.
+                /// So let's just do nothing.
+                LOG_TRACE(
+                    &Poco::Logger::get("Aggregator"),
+                    "No space were preallocated in hash tables because 'max_size_to_preallocate_for_aggregation' has too small value: {}, "
+                    "should be at least {}",
+                    stats_collecting_params.max_size_to_preallocate_for_aggregation,
+                    hint->median_size * max_threads);
+            }
+            /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
+            else if ((max_threads > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
+            {
+                const auto adjusted = std::max(lower_limit, hint->median_size);
+                if (worthConvertToTwoLevel(
+                        params.group_by_two_level_threshold,
+                        hint->sum_of_sizes,
+                        /*group_by_two_level_threshold_bytes*/ 0,
+                        /*result_size_bytes*/ 0))
+                    method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
+                result.init(method_chosen, adjusted);
+                ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
+                return;
+            }
         }
     }
     result.init(method_chosen);
@@ -365,7 +382,7 @@ void AggregatedDataVariants::convertToTwoLevel()
     #undef M
 
         default:
-            throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
     }
 }
 
@@ -432,7 +449,7 @@ Block Aggregator::Params::getHeader(
             {
                 auto & elem = res.getByName(aggregate.column_name);
 
-                elem.type = aggregate.function->getReturnType();
+                elem.type = aggregate.function->getResultType();
                 elem.column = elem.type->createColumn();
             }
         }
@@ -451,7 +468,7 @@ Block Aggregator::Params::getHeader(
 
             DataTypePtr type;
             if (final)
-                type = aggregate.function->getReturnType();
+                type = aggregate.function->getResultType();
             else
                 type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
 
@@ -487,7 +504,6 @@ Aggregator::AggregateColumnsConstData Aggregator::Params::makeAggregateColumnsDa
 
 void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 {
-    Strings res;
     String prefix(indent, ' ');
 
     {
@@ -570,7 +586,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
     , keys_positions(calculateKeysPositions(header, params_))
     , params(params_)
-    , tmp_data(params.tmp_data_scope ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data_scope) : nullptr)
+    , tmp_data(params.tmp_data_scope ? std::make_unique<TemporaryDataOnDisk>(params.tmp_data_scope, CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
 {
     /// Use query-level memory tracker
@@ -606,7 +622,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         {
             size_t alignment_of_next_state = params.aggregates[i + 1].function->alignOfData();
             if ((alignment_of_next_state & (alignment_of_next_state - 1)) != 0)
-                throw Exception("Logical error: alignOfData is not 2^N", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: alignOfData is not 2^N");
 
             /// Extend total_size to next alignment requirement
             /// Add padding by rounding up 'total_size_of_aggregate_states' to be a multiplier of alignment_of_next_state.
@@ -811,6 +827,11 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_key32;
             if (size_of_field == 8)
                 return AggregatedDataVariants::Type::low_cardinality_key64;
+            if (size_of_field == 16)
+                return AggregatedDataVariants::Type::low_cardinality_keys128;
+            if (size_of_field == 32)
+                return AggregatedDataVariants::Type::low_cardinality_keys256;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: low cardinality numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
         }
 
         if (size_of_field == 1)
@@ -825,7 +846,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::keys128;
         if (size_of_field == 32)
             return AggregatedDataVariants::Type::keys256;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16, 32.");
     }
 
     if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
@@ -925,7 +946,10 @@ void Aggregator::executeOnBlockSmall(
     /// How to perform the aggregation?
     if (result.empty())
     {
-        initDataVariantsWithSizeHint(result, method_chosen, params);
+        if (method_chosen != AggregatedDataVariants::Type::without_key)
+            initDataVariantsWithSizeHint(result, method_chosen, params);
+        else
+            result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
     }
@@ -962,7 +986,7 @@ void Aggregator::mergeOnBlockSmall(
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
 void Aggregator::executeImpl(
@@ -1568,15 +1592,15 @@ bool Aggregator::executeOnBlock(Columns columns,
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
     if (!tmp_data)
-        throw Exception("Cannot write to temporary file because temporary file is not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
 
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto & out_stream = tmp_data->createStream(getHeader(false), CurrentMetrics::TemporaryFilesForAggregation, max_temp_file_size);
+    auto & out_stream = tmp_data->createStream(getHeader(false), max_temp_file_size);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.path());
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getPath());
 
     /// Flush only two-level data and possibly overflow data.
 
@@ -1588,7 +1612,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant");
 
     /// NOTE Instead of freeing up memory and creating new hash tables and arenas, you can re-use the old ones.
     data_variants.init(data_variants.type);
@@ -1633,14 +1657,14 @@ Block Aggregator::convertOneBucketToBlock(
     Method & method,
     Arena * arena,
     bool final,
-    size_t bucket) const
+    Int32 bucket) const
 {
     // Used in ConvertingAggregatedToChunksSource -> ConvertingAggregatedToChunksTransform (expects single chunk for each bucket_id).
     constexpr bool return_single_block = true;
     Block block = convertToBlockImpl<return_single_block>(
         method, method.data.impls[bucket], arena, data_variants.aggregates_pools, final, method.data.impls[bucket].size());
 
-    block.info.bucket_num = bucket;
+    block.info.bucket_num = static_cast<int>(bucket);
     return block;
 }
 
@@ -1648,7 +1672,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     ManyAggregatedDataVariants & variants,
     Arena * arena,
     bool final,
-    size_t bucket,
+    Int32 bucket,
     std::atomic<bool> * is_cancelled) const
 {
     auto & merged_data = *variants[0];
@@ -1692,7 +1716,7 @@ void Aggregator::writeToTemporaryFileImpl(
             max_temporary_block_size_bytes = block_size_bytes;
     };
 
-    for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+    for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         Block block = convertOneBucketToBlock(data_variants, method, data_variants.aggregates_pool, false, bucket);
         out.write(block);
@@ -1722,9 +1746,8 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
         {
             case OverflowMode::THROW:
                 ProfileEvents::increment(ProfileEvents::OverflowThrow);
-                throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
-                    + " rows, maximum: " + toString(params.max_rows_to_group_by),
-                    ErrorCodes::TOO_MANY_ROWS);
+                throw Exception(ErrorCodes::TOO_MANY_ROWS, "Limit for rows to GROUP BY exceeded: has {} rows, maximum: {}",
+                    result_size, params.max_rows_to_group_by);
 
             case OverflowMode::BREAK:
                 ProfileEvents::increment(ProfileEvents::OverflowBreak);
@@ -2150,7 +2173,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         AggregatedDataWithoutKey & data = data_variants.without_key;
 
         if (!data)
-            throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong data variant passed.");
 
         if (!final)
         {
@@ -2195,7 +2218,7 @@ Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variant
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
-    else throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+    else throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
 
@@ -2209,7 +2232,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & dat
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
 
@@ -2229,6 +2252,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     auto converter = [&](size_t thread_id, ThreadGroupStatusPtr thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
 
@@ -2503,6 +2530,8 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
     ManyAggregatedDataVariants & non_empty_data) const
 {
+    ThreadPool thread_pool{params.max_threads};
+
     AggregatedDataVariantsPtr & res = non_empty_data[0];
 
     /// We merge all aggregation results to the first.
@@ -2512,7 +2541,15 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         AggregatedDataWithoutKey & current_data = non_empty_data[result_num]->without_key;
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i], res->aggregates_pool);
+            if (aggregate_functions[i]->isAbleToParallelizeMerge())
+                aggregate_functions[i]->merge(
+                    res_data + offsets_of_aggregate_states[i],
+                    current_data + offsets_of_aggregate_states[i],
+                    thread_pool,
+                    res->aggregates_pool);
+            else
+                aggregate_functions[i]->merge(
+                    res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i], res->aggregates_pool);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
@@ -2632,7 +2669,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const
 {
     if (data_variants.empty())
-        throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::prepareVariantsToMerge.");
 
     LOG_TRACE(log, "Merging aggregated data");
 
@@ -2681,7 +2718,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
     {
         if (first->type != non_empty_data[i]->type)
-            throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
+            throw Exception(ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS, "Cannot merge different aggregated data variants.");
 
         /** Elements from the remaining sets can be moved to the first data set.
           * Therefore, it must own all the arenas of all other sets.
@@ -2847,7 +2884,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
     else if (result.type != AggregatedDataVariants::Type::without_key)
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = 0;
@@ -2936,6 +2973,10 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
             if (thread_group)
                 CurrentThread::attachToIfDetached(thread_group);
 
@@ -2949,7 +2990,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
             #undef M
                 else
-                    throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+                    throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
             }
         };
 
@@ -3003,7 +3044,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
             else if (result.type != AggregatedDataVariants::Type::without_key)
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
         LOG_TRACE(log, "Merged partially aggregated single-level data.");
@@ -3079,7 +3120,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
         else if (result.type != AggregatedDataVariants::Type::without_key)
-            throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
     }
 
     Block block;
@@ -3154,19 +3195,19 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
         selector[i] = bucket;
     }
 
-    size_t num_buckets = destinations.size();
+    UInt32 num_buckets = static_cast<UInt32>(destinations.size());
 
     for (size_t column_idx = 0; column_idx < columns; ++column_idx)
     {
         const ColumnWithTypeAndName & src_col = source.getByPosition(column_idx);
         MutableColumns scattered_columns = src_col.column->scatter(num_buckets, selector);
 
-        for (size_t bucket = 0, size = num_buckets; bucket < size; ++bucket)
+        for (UInt32 bucket = 0, size = num_buckets; bucket < size; ++bucket)
         {
             if (!scattered_columns[bucket]->empty())
             {
                 Block & dst = destinations[bucket];
-                dst.info.bucket_num = bucket;
+                dst.info.bucket_num = static_cast<int>(bucket);
                 dst.insert({std::move(scattered_columns[bucket]), src_col.type, src_col.name});
             }
 
@@ -3203,7 +3244,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     data.init(type);
 
@@ -3217,7 +3258,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     std::vector<Block> splitted_blocks(num_buckets);
 
@@ -3230,7 +3271,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
     return splitted_blocks;
 }
@@ -3275,8 +3316,6 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
     if (result.empty())
         return;
 
-    LOG_TRACE(log, "Destroying aggregate states");
-
     /// In what data structure is the data aggregated?
     if (result.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
         destroyWithoutKey(result);
@@ -3289,7 +3328,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
     else if (result.type != AggregatedDataVariants::Type::without_key)
-        throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
 

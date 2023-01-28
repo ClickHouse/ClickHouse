@@ -181,9 +181,12 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         }
 
         if (columns.empty())
-            throw Exception("Columns definition was not returned", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns definition was not returned");
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(
+            response,
+            request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
+            keep_alive_timeout);
         try
         {
             writeStringBinary(columns.toString(), out);

@@ -100,7 +100,7 @@ public:
 
     bool alwaysReturnsEmptySet() const override { return false; }
 
-    std::shared_ptr<NotJoinedBlocks>
+    IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getNonJoinedBlocks should not be called");

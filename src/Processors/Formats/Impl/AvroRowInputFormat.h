@@ -1,7 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_AVRO
 
@@ -104,7 +103,7 @@ private:
                     auto index = decoder.decodeUnionIndex();
                     if (index >= actions.size())
                     {
-                        throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
                     }
                     actions[index].execute(columns, decoder, ext);
                     break;
@@ -164,6 +163,7 @@ public:
 
 private:
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
 
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
