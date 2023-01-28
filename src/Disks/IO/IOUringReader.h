@@ -44,22 +44,20 @@ private:
 
     using EnqueuedIterator = std::unordered_map<UInt64, EnqueuedRequest>::iterator;
 
-    void failRequest(const EnqueuedIterator & requestIt, int code, const std::string & message);
+    void failRequest(const EnqueuedIterator & requestIt, const Exception & ex);
     void finalizeRequest(const EnqueuedIterator & requestIt);
 
     void monitorRing();
 
-    template <typename T, typename... Args> inline void failPromise(
-        std::promise<T> & promise, int code, fmt::format_string<Args...> fmt, Args &&... args)
+    template<typename T> inline void failPromise(std::promise<T> & promise, const Exception & ex)
     {
-        promise.set_exception(std::make_exception_ptr(Exception(fmt::format(fmt, std::forward<Args>(args)...), code)));
+        promise.set_exception(std::make_exception_ptr(ex));
     }
 
-    template <typename... Args> inline std::future<Result> makeFailedResult(
-        int code, fmt::format_string<Args...> fmt, Args &&... args)
+    inline std::future<Result> makeFailedResult(const Exception & ex)
     {
         auto promise = std::promise<Result>{};
-        failPromise(promise, code, fmt, std::forward<Args>(args)...);
+        failPromise(promise, ex);
         return promise.get_future();
     }
 
