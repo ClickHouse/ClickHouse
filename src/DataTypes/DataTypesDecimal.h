@@ -116,8 +116,7 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
         if (common::mulOverflow(static_cast<MaxNativeType>(value.value), converted_value, converted_value))
         {
             if constexpr (throw_exception)
-                throw Exception(std::string(ToDataType::family_name) + " convert overflow",
-                                ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
             else
                 return ReturnType(false);
         }
@@ -131,8 +130,7 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
             converted_value > std::numeric_limits<typename ToFieldType::NativeType>::max())
         {
             if constexpr (throw_exception)
-                throw Exception(std::string(ToDataType::family_name) + " convert overflow",
-                                ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow", std::string(ToDataType::family_name));
             else
                 return ReturnType(false);
         }
@@ -205,10 +203,9 @@ inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & 
         if (!std::isfinite(value))
         {
             if constexpr (throw_exception)
-                throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
-                                ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);
             else
-                return false;
+                return ReturnType(false);
         }
 
         auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
@@ -217,8 +214,7 @@ inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & 
             out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
         {
             if constexpr (throw_exception)
-                throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
-                                ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
             else
                 return ReturnType(false);
         }

@@ -77,36 +77,41 @@ public:
     {
         const auto args_size = arguments.size();
         if (args_size != 3 && args_size != 4)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " + toString(args_size) + ", should be 3 or 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
+                "passed {}, should be 3 or 4", getName(), args_size);
 
         const DataTypePtr & type_x = arguments[0];
 
         if (!type_x->isValueRepresentedByNumber() && !isString(type_x))
-            throw Exception{"Unsupported type " + type_x->getName()
-                + " of first argument of function " + getName()
-                + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Unsupported type {} of first argument "
+                            "of function {}, must be numeric type or Date/DateTime or String",
+                            type_x->getName(), getName());
 
         const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
         if (!type_arr_from)
-            throw Exception{"Second argument of function " + getName()
-                + ", must be array of source values to transform from.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Second argument of function {}, must be array of source values to transform from.",
+                            getName());
 
         const auto type_arr_from_nested = type_arr_from->getNestedType();
 
         if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
             || (isString(type_x) != isString(type_arr_from_nested)))
         {
-            throw Exception{"First argument and elements of array of second argument of function " + getName()
-                + " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument and elements of array "
+                            "of second argument of function {} must have compatible types: "
+                            "both numeric or both strings.", getName());
         }
 
         const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
 
         if (!type_arr_to)
-            throw Exception{"Third argument of function " + getName()
-                + ", must be array of destination values to transform to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Third argument of function {}, must be array of destination values to transform to.",
+                            getName());
 
         const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
 
@@ -114,9 +119,9 @@ public:
         {
             if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
                 || (isString(type_x) != isString(type_arr_to_nested)))
-                throw Exception{"Function " + getName()
-                    + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} has signature: "
+                                "transform(T, Array(T), Array(U), U) -> U; "
+                                "or transform(T, Array(T), Array(T)) -> T; where T and U are types.", getName());
 
             return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
         }
@@ -125,18 +130,19 @@ public:
             const DataTypePtr & type_default = arguments[3];
 
             if (!type_default->isValueRepresentedByNumber() && !isString(type_default))
-                throw Exception{"Unsupported type " + type_default->getName()
-                    + " of fourth argument (default value) of function " + getName()
-                    + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Unsupported type {} of fourth argument (default value) "
+                                "of function {}, must be numeric type or Date/DateTime or String",
+                                type_default->getName(), getName());
 
             bool default_is_string = WhichDataType(type_default).isString();
             bool nested_is_string = WhichDataType(type_arr_to_nested).isString();
 
             if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
                 || (default_is_string != nested_is_string))
-                throw Exception{"Function " + getName()
-                    + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} have signature: "
+                                "transform(T, Array(T), Array(U), U) -> U; "
+                                "or transform(T, Array(T), Array(T)) -> T; where T and U are types.", getName());
 
             if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
@@ -155,7 +161,7 @@ public:
         const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
 
         if (!array_from || !array_to)
-            throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays.", getName());
 
         initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), arguments);
 
@@ -185,7 +191,7 @@ public:
             && !executeDecimal<Decimal64>(in, out, default_column)
             && !executeString(in, out, default_column))
         {
-            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }
 
         return column_result;
@@ -214,8 +220,10 @@ private:
                 auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
                 if (!out)
                 {
-                    throw Exception{"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
-                        + ", must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Illegal column {} of elements "
+                                    "of array of third argument of function {}, must be {}",
+                                    out_untyped->getName(), getName(), in->getName());
                 }
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
@@ -236,8 +244,8 @@ private:
                     && !executeNumToDecimalWithConstDefault<T, Decimal64>(in, out_untyped)
                     && !executeNumToStringWithConstDefault<T>(in, out_untyped))
                 {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of elements of array of second argument of function {}",
+                        in->getName(), getName());
                 }
             }
             else
@@ -256,8 +264,8 @@ private:
                     && !executeNumToDecimalWithNonConstDefault<T, Decimal64>(in, out_untyped, default_untyped)
                     && !executeNumToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
                 {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of elements of array of second argument of function {}",
+                        in->getName(), getName());
                 }
             }
 
@@ -277,8 +285,10 @@ private:
                 auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
                 if (!out)
                 {
-                    throw Exception{"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
-                                    + ", must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Illegal column {} of elements "
+                                    "of array of third argument of function {}, must be {}",
+                                    out_untyped->getName(), getName(), in->getName());
                 }
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
@@ -299,8 +309,8 @@ private:
                     && !executeDecimalToDecimalWithConstDefault<T, Decimal64>(in, out_untyped)
                     && !executeDecimalToStringWithConstDefault<T>(in, out_untyped))
                 {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of elements of array of second argument of function {}",
+                                    in->getName(), getName());
                 }
             }
             else
@@ -319,8 +329,8 @@ private:
                     && !executeDecimalToDecimalWithNonConstDefault<T, Decimal64>(in, out_untyped, default_untyped)
                     && !executeDecimalToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
                 {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of elements of array of second argument of function {}",
+                                    in->getName(), getName());
                 }
             }
 
@@ -337,8 +347,8 @@ private:
             if (!default_untyped)
             {
                 if (!executeStringToString(in, out_untyped))
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of elements of array of second argument of function {}",
+                        in->getName(), getName());
             }
             else if (isColumnConst(*default_untyped))
             {
@@ -356,8 +366,8 @@ private:
                     && !executeStringToDecimalWithConstDefault<Decimal64>(in, out_untyped)
                     && !executeStringToStringWithConstDefault(in, out_untyped))
                 {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of elements of array of second argument of function {}",
+                        in->getName(), getName());
                 }
             }
             else
@@ -377,8 +387,8 @@ private:
 
                     && !executeStringToStringWithNonConstDefault(in, out_untyped, default_untyped))
                 {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of elements of array of second argument of function {}",
+                        in->getName(), getName());
                 }
             }
 
@@ -451,9 +461,8 @@ private:
             && !executeNumToNumWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
             && !executeNumToNumWithNonConstDefault2<T, U, Float64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -479,9 +488,8 @@ private:
             && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -507,9 +515,8 @@ private:
             && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -535,9 +542,8 @@ private:
             && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
             && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -656,8 +662,8 @@ private:
         const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
         if (!default_col)
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         executeImplNumToStringWithNonConstDefault<T>(
@@ -678,8 +684,8 @@ private:
         const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
         if (!default_col)
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                            default_untyped->getName(), getName());
         }
 
         executeImplNumToStringWithNonConstDefault<T>(
@@ -731,8 +737,8 @@ private:
             && !executeStringToNumWithNonConstDefault2<U, Float32>(in, out, default_untyped)
             && !executeStringToNumWithNonConstDefault2<U, Float64>(in, out, default_untyped))
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         return true;
@@ -758,8 +764,8 @@ private:
             && !executeStringToDecimalWithNonConstDefaultDecimal2<U, Decimal32>(in, out, default_untyped)
             && !executeStringToDecimalWithNonConstDefaultDecimal2<U, Decimal64>(in, out, default_untyped))
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                            default_untyped->getName(), getName());
         }
 
         return true;
@@ -830,8 +836,8 @@ private:
         const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
         if (!default_col)
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of fourth argument of function {}",
+                default_untyped->getName(), getName());
         }
 
         executeImplStringToStringWithNonConstDefault(
@@ -853,7 +859,12 @@ private:
         {
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else
                 dst[i] = dst_default;
         }
@@ -869,7 +880,12 @@ private:
         {
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else if constexpr (is_decimal<U>)
                 dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
@@ -887,7 +903,12 @@ private:
         {
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else
                 dst[i] = src[i];
         }
@@ -958,7 +979,12 @@ private:
             current_src_offset = src_offsets[i];
             const auto * it = table.find(ref);
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else
                 dst[i] = dst_default;
         }
@@ -979,7 +1005,12 @@ private:
             current_src_offset = src_offsets[i];
             const auto * it = table.find(ref);
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else if constexpr (is_decimal<U>)
                 dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
@@ -1098,7 +1129,7 @@ private:
             case Field::Types::Decimal32:   return x.get<DecimalField<Decimal32>>().getValue();
             case Field::Types::Decimal64:   return x.get<DecimalField<Decimal64>>().getValue();
             default:
-                throw Exception("Unexpected type in function 'transform'", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type in function 'transform'");
         }
     }
 
@@ -1110,7 +1141,7 @@ private:
 
         const size_t size = from.size();
         if (0 == size)
-            throw Exception{"Empty arrays are illegal in function " + getName(), ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty arrays are illegal in function {}", getName());
 
         std::lock_guard lock(cache.mutex);
 
@@ -1118,7 +1149,7 @@ private:
             return;
 
         if (size != to.size())
-            throw Exception{"Second and third arguments of function " + getName() + " must be arrays of same size", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments of function {} must be arrays of same size", getName());
 
         Array converted_to;
         const Array * used_to = &to;

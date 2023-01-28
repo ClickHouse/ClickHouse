@@ -15,8 +15,8 @@
 #include <Core/ServerUUID.h>
 #include <Common/hex.h>
 
-#include "Common/config_version.h"
-#include <Common/config.h>
+#include "config.h"
+#include "config_version.h"
 
 #if USE_SENTRY && !defined(KEEPER_STANDALONE_BUILD)
 
@@ -96,14 +96,14 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
         }
         sentry_options_set_dsn(options, endpoint.c_str());
         sentry_options_set_database_path(options, temp_folder_path.c_str());
+
+        /// This value will be attached to each report
+        String environment_default_value = "test";
         if (strstr(VERSION_DESCRIBE, "-stable") || strstr(VERSION_DESCRIBE, "-lts"))
-        {
-            sentry_options_set_environment(options, "prod");
-        }
-        else
-        {
-            sentry_options_set_environment(options, "test");
-        }
+            environment_default_value = "prod";
+        /// If the value is set in config - use it
+        auto value = config.getString("send_crash_reports.environment", environment_default_value);
+        sentry_options_set_environment(options, value.c_str());
 
         const std::string & http_proxy = config.getString("send_crash_reports.http_proxy", "");
         if (!http_proxy.empty())
@@ -189,7 +189,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
                     sentry_value_set_by_key(sentry_frame, "filename", sentry_value_new_string(current_frame.file.value().c_str()));
 
                 if (current_frame.line.has_value())
-                    sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(current_frame.line.value()));
+                    sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(static_cast<int32_t>(current_frame.line.value())));
 
                 sentry_value_append(sentry_frames, sentry_frame);
             }

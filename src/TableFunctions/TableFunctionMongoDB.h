@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Storages/StorageMongoDB.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/StorageMongoDB.h>
 
 namespace DB
 {
@@ -24,7 +24,7 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    std::optional<StorageMongoDBConfiguration> configuration;
+    std::optional<StorageMongoDB::Configuration> configuration;
     String structure;
 };
 

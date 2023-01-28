@@ -85,7 +85,7 @@ namespace DB
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
-            throw Exception{fmt::format("Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString()), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString());
     }
 
     template <typename NumericType, typename ArrowBuilderType>
@@ -123,6 +123,34 @@ namespace DB
         checkStatus(status, write_column->getName(), format_name);
     }
 
+    static void fillArrowArrayWithBoolColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const PaddedPODArray<UInt8> & internal_data = assert_cast<const ColumnVector<UInt8> &>(*write_column).getData();
+        arrow::BooleanBuilder & builder = assert_cast<arrow::BooleanBuilder &>(*array_builder);
+        arrow::Status status;
+
+        const UInt8 * arrow_null_bytemap_raw_ptr = nullptr;
+        PaddedPODArray<UInt8> arrow_null_bytemap;
+        if (null_bytemap)
+        {
+            /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
+            arrow_null_bytemap.reserve(end - start);
+            for (size_t i = start; i < end; ++i)
+                arrow_null_bytemap.template emplace_back(!(*null_bytemap)[i]);
+
+            arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
+        }
+
+        status = builder.AppendValues(reinterpret_cast<const uint8_t *>(internal_data.data() + start), end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        checkStatus(status, write_column->getName(), format_name);
+    }
+
     static void fillArrowArrayWithDateTime64ColumnData(
         const DataTypeDateTime64 * type,
         ColumnPtr write_column,
@@ -151,7 +179,7 @@ namespace DB
                 if (need_rescale)
                 {
                     if (common::mulOverflow(value, rescale_multiplier, value))
-                        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                 }
                 status = builder.Append(value);
             }
@@ -224,7 +252,14 @@ namespace DB
         for (size_t i = 0; i != column_tuple->tupleSize(); ++i)
         {
             ColumnPtr nested_column = column_tuple->getColumnPtr(i);
-            fillArrowArray(column_name + "." + nested_names[i], nested_column, nested_types[i], null_bytemap, builder.field_builder(i), format_name, start, end, output_string_as_string, dictionary_values);
+            fillArrowArray(
+                column_name + "." + nested_names[i],
+                nested_column, nested_types[i], null_bytemap,
+                builder.field_builder(static_cast<int>(i)),
+                format_name,
+                start, end,
+                output_string_as_string,
+                dictionary_values);
         }
 
         for (size_t i = start; i != end; ++i)
@@ -260,8 +295,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return extractIndexesImpl<UInt64>(column, start, end, shift);
             default:
-                throw Exception(fmt::format("Indexes column must be ColumnUInt, got {}.", column->getName()),
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column must be ColumnUInt, got {}.", column->getName());
         }
     }
 
@@ -370,7 +404,7 @@ namespace DB
             else
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i).toView();
-                status = builder.Append(string_ref.data(), string_ref.size());
+                status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
             }
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -541,6 +575,10 @@ namespace DB
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
             fillArrowArrayWithDateTime64ColumnData(datetime64_type, column, null_bytemap, format_name, array_builder, start, end);
         }
+        else if (isBool(column_type))
+        {
+            fillArrowArrayWithBoolColumnData(column, null_bytemap, format_name, array_builder, start, end);
+        }
     #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
         else if (#CPP_NUMERIC_TYPE == column_type_name) \
         { \
@@ -551,11 +589,8 @@ namespace DB
     #undef DISPATCH
         else
         {
-            throw Exception
-                {
-                    fmt::format("Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name),
-                    ErrorCodes::UNKNOWN_TYPE
-                };
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                    "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name);
         }
     }
 
@@ -602,8 +637,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return arrow::int64();
             default:
-                throw Exception(fmt::format("Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName()),
-                                      ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName());
         }
     }
 
@@ -710,6 +744,9 @@ namespace DB
 
         if (isStringOrFixedString(column_type) && output_string_as_string)
             return arrow::utf8();
+
+        if (isBool(column_type))
+            return arrow::boolean();
 
         const std::string type_name = column_type->getFamilyName();
         if (const auto * arrow_type_it = std::find_if(

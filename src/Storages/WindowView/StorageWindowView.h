@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SharedMutex.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -150,7 +151,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     Pipe watch(
         const Names & column_names,
@@ -158,7 +159,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::pair<BlocksPtr, Block> getNewBlocks(UInt32 watermark);
 
@@ -213,7 +214,7 @@ private:
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
-    std::shared_mutex fire_signal_mutex;
+    SharedMutex fire_signal_mutex;
     mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block
 
     IntervalKind::Kind window_kind;

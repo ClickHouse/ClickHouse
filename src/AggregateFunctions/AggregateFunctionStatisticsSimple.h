@@ -81,12 +81,12 @@ public:
     using ColVecResult = ColumnVector<ResultType>;
 
     explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
         , src_scale(0)
     {}
 
     AggregateFunctionVarianceSimple(const IDataType & data_type, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
         , src_scale(getDecimalScale(data_type))
     {}
 
@@ -114,12 +114,7 @@ public:
             return "covarSamp";
         if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
             return "corr";
-        __builtin_unreachable();
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeNumber<ResultType>>();
+        UNREACHABLE();
     }
 
     bool allocatesMemoryInArena() const override { return false; }

@@ -36,7 +36,7 @@ public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        unsigned keep_alive_timeout_,
+        size_t keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 
@@ -105,7 +105,7 @@ private:
 
     bool is_http_method_head;
     bool add_cors_header = false;
-    unsigned keep_alive_timeout = 0;
+    size_t keep_alive_timeout = 0;
     bool compress = false;
     CompressionMethod compression_method;
     int compression_level = 1;

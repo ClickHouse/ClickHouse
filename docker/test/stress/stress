@@ -14,9 +14,6 @@ def get_options(i, backward_compatibility_check):
     if 0 < i:
         options.append("--order=random")
 
-    if i % 3 == 1:
-        options.append("--db-engine=Ordinary")
-
     if i % 3 == 2 and not backward_compatibility_check:
         options.append(
             '''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
@@ -92,7 +89,7 @@ def run_func_test(
 
 
 def compress_stress_logs(output_path, files_prefix):
-    cmd = f"cd {output_path} && tar -zcf stress_run_logs.tar.gz {files_prefix}* && rm {files_prefix}*"
+    cmd = f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst {files_prefix}* && rm {files_prefix}*"
     check_output(cmd, shell=True)
 
 
@@ -147,6 +144,12 @@ def prepare_for_hung_check(drop_databases):
     call_with_retry(
         make_query_command(
             "KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u %'"
+        )
+    )
+    # Long query from 02136_kill_scalar_queries
+    call_with_retry(
+        make_query_command(
+            "KILL QUERY WHERE query LIKE 'SELECT (SELECT number FROM system.numbers WHERE number = 1000000000000)%'"
         )
     )
 
@@ -286,14 +289,13 @@ if __name__ == "__main__":
                 # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
                 "--client-option",
                 "max_untracked_memory=1Gi",
-                "--client-option",
                 "max_memory_usage_for_user=0",
-                "--client-option",
                 "memory_profiler_step=1Gi",
                 # Use system database to avoid CREATE/DROP DATABASE queries
                 "--database=system",
                 "--hung-check",
                 "--stress",
+                "--report-logs-stats",
                 "00001_select_1",
             ]
         )

@@ -244,8 +244,14 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
-void BackgroundSchedulePool::attachToThreadGroup()
+scope_guard BackgroundSchedulePool::attachToThreadGroup()
 {
+    scope_guard guard = [&]()
+        {
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        };
+
     std::lock_guard lock(delayed_tasks_mutex);
 
     if (thread_group)
@@ -258,6 +264,7 @@ void BackgroundSchedulePool::attachToThreadGroup()
         CurrentThread::initializeQuery();
         thread_group = CurrentThread::getGroup();
     }
+    return guard;
 }
 
 
@@ -265,7 +272,7 @@ void BackgroundSchedulePool::threadFunction()
 {
     setThreadName(thread_name.c_str());
 
-    attachToThreadGroup();
+    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {
@@ -296,7 +303,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName((thread_name + "/D").c_str());
 
-    attachToThreadGroup();
+    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {

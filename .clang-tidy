@@ -1,7 +1,7 @@
 # To run clang-tidy from CMake, build ClickHouse with -DENABLE_CLANG_TIDY=1. To show all warnings, it is
 # recommended to pass "-k0" to Ninja.
 
-# Enable all checks + disale selected checks. Feel free to remove disabled checks from below list if
+# Enable all checks + disable selected checks. Feel free to remove disabled checks from below list if
 # a) the new check is not controversial (this includes many checks in readability-* and google-*) or
 # b) too noisy (checks with > 100 new warnings are considered noisy, this includes e.g. cppcoreguidelines-*).
 
@@ -16,6 +16,7 @@ Checks: '*,
 
     -android-*,
 
+    -bugprone-assignment-in-if-condition,
     -bugprone-branch-clone,
     -bugprone-easily-swappable-parameters,
     -bugprone-exception-escape,
@@ -23,7 +24,6 @@ Checks: '*,
     -bugprone-narrowing-conversions,
     -bugprone-not-null-terminated-result,
     -bugprone-unchecked-optional-access,
-    -bugprone-assignment-in-if-condition,
 
     -cert-dcl16-c,
     -cert-err58-cpp,
@@ -34,7 +34,6 @@ Checks: '*,
 
     -clang-analyzer-optin.performance.Padding,
     -clang-analyzer-optin.portability.UnixAPI,
-
     -clang-analyzer-security.insecureAPI.bzero,
     -clang-analyzer-security.insecureAPI.strcpy,
 
@@ -103,12 +102,13 @@ Checks: '*,
 
     -openmp-*,
 
+    -misc-const-correctness,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
-    -misc-const-correctness,
 
     -modernize-avoid-c-arrays,
     -modernize-concat-nested-namespaces,
+    -modernize-macro-to-enum,
     -modernize-pass-by-value,
     -modernize-return-braced-init-list,
     -modernize-use-auto,
@@ -117,7 +117,6 @@ Checks: '*,
     -modernize-use-nodiscard,
     -modernize-use-override,
     -modernize-use-trailing-return-type,
-    -modernize-macro-to-enum,
 
     -performance-inefficient-string-concatenation,
     -performance-no-int-to-ptr,
@@ -135,17 +134,35 @@ Checks: '*,
     -readability-magic-numbers,
     -readability-named-parameter,
     -readability-redundant-declaration,
+    -readability-simplify-boolean-expr,
     -readability-static-accessed-through-instance,
     -readability-suspicious-call-argument,
     -readability-uppercase-literal-suffix,
     -readability-use-anyofallof,
-    -readability-simplify-boolean-expr,
 
     -zirkon-*,
+
+    -misc-*, # temporarily disabled due to being too slow
+    # also disable checks in other categories which are aliases of checks in misc-*:
+    # https://releases.llvm.org/15.0.0/tools/clang/tools/extra/docs/clang-tidy/checks/list.html
+    -cert-dcl54-cpp,                                            # alias of misc-new-delete-overloads
+    -hicpp-new-delete-operators,                                # alias of misc-new-delete-overloads
+    -cert-fio38-c,                                              # alias of misc-non-copyable-objects
+    -cert-dcl03-c,                                              # alias of misc-static-assert
+    -hicpp-static-assert,                                       # alias of misc-static-assert
+    -cert-err09-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
+    -cert-err61-cpp,                                            # alias of misc-throw-by-value-catch-by-reference
+    -cppcoreguidelines-c-copy-assignment-signature,             # alias of misc-unconventional-assign-operator
+    -cppcoreguidelines-non-private-member-variables-in-classes, # alias of misc-non-private-member-variables-in-classes
 '
 
 WarningsAsErrors: '*'
 
+# TODO: use dictionary syntax for CheckOptions when minimum clang-tidy level rose to 15
+#           some-check.SomeOption: 'some value'
+#       instead of
+#           - key:             some-check.SomeOption
+#             value:           'some value'
 CheckOptions:
   - key: readability-identifier-naming.ClassCase
     value: CamelCase

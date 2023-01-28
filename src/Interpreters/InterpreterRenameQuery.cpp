@@ -124,10 +124,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
         else
         {
-            TableNamesSet dependencies;
+            std::vector<StorageID> dependencies;
             if (!exchange_tables)
-                dependencies = database_catalog.tryRemoveLoadingDependencies(StorageID(elem.from_database_name, elem.from_table_name),
-                                                                             getContext()->getSettingsRef().check_table_dependencies);
+                dependencies = database_catalog.removeDependencies(StorageID(elem.from_database_name, elem.from_table_name),
+                                                                   getContext()->getSettingsRef().check_table_dependencies);
 
             database->renameTable(
                 getContext(),
@@ -138,7 +138,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 rename.dictionary);
 
             if (!dependencies.empty())
-                DatabaseCatalog::instance().addLoadingDependencies(QualifiedTableName{elem.to_database_name, elem.to_table_name}, std::move(dependencies));
+                DatabaseCatalog::instance().addDependencies(StorageID(elem.to_database_name, elem.to_table_name), dependencies);
         }
     }
 
