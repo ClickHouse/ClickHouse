@@ -270,9 +270,13 @@ void IOUringReader::monitorRing()
 
         if (cqe->res < 0)
         {
-            int fd = assert_cast<const LocalFileDescriptor &>(*enqueued.request.descriptor).fd;
-            failRequest(it, Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
-                "Cannot read from file {}: {}", fd, errnoToString(-cqe->res)));
+            auto req = enqueued.request;
+            int fd = assert_cast<const LocalFileDescriptor &>(*req.descriptor).fd;
+            failRequest(it, Exception(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Failed reading {} bytes at offset {} to address {} from fd {}: {}",
+                req.size, req.offset, static_cast<void*>(req.buf), fd, errnoToString(-cqe->res)
+            ));
 
             ProfileEvents::increment(ProfileEvents::IOUringCQEsFailed);
             io_uring_cqe_seen(&ring, cqe);
