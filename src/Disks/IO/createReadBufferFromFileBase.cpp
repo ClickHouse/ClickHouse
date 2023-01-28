@@ -90,7 +90,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
 
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
-                *reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
+                *reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, buffer_alignment, file_size);
 #else
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif
