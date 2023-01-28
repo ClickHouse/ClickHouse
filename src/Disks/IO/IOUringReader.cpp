@@ -104,15 +104,16 @@ std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
             if (!success)
             {
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                return makeFailedResult(ErrorCodes::LOGICAL_ERROR, "Tried enqueuing read request for {} that is already submitted", request_id);
+                return makeFailedResult(Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Tried enqueuing read request for {} that is already submitted", request_id));
             }
             return (kv->second).promise.get_future();
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            return makeFailedResult(ErrorCodes::IO_URING_SUBMIT_ERROR,
-                "Failed submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted");
+            return makeFailedResult(Exception(
+                ErrorCodes::IO_URING_SUBMIT_ERROR, "Failed submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
         }
     }
     else
@@ -152,10 +153,10 @@ int IOUringReader::submitToRing(EnqueuedRequest & enqueued)
     return ret;
 }
 
-void IOUringReader::failRequest(const EnqueuedIterator & requestIt, int code, const std::string & message)
+void IOUringReader::failRequest(const EnqueuedIterator & requestIt, const Exception & ex)
 {
     ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-    (requestIt->second).promise.set_exception(std::make_exception_ptr(Exception(code, message)));
+    (requestIt->second).promise.set_exception(std::make_exception_ptr(ex));
 
     finalizeRequest(requestIt);
 }
@@ -181,14 +182,14 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
             if (!in_flight_requests.contains(request_id))
                 in_flight_requests.emplace(request_id, std::move(pending_request));
             else
-                failPromise(pending_request.promise, ErrorCodes::LOGICAL_ERROR,
-                    "Tried enqueuing pending read request for {} that is already submitted", request_id);
+                failPromise(pending_request.promise, Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Tried enqueuing pending read request for {} that is already submitted", request_id));
         }
         else
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            failPromise(pending_request.promise, ErrorCodes::IO_URING_SUBMIT_ERROR,
-                "Failed submitting SQE for pending request: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted");
+            failPromise(pending_request.promise, Exception(ErrorCodes::IO_URING_SUBMIT_ERROR,
+                "Failed submitting SQE for pending request: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
         }
 
         CurrentMetrics::sub(CurrentMetrics::IOUringPendingEvents);
@@ -259,8 +260,8 @@ void IOUringReader::monitorRing()
             ret = submitToRing(enqueued);
             if (ret <= 0)
             {
-                failRequest(it, ErrorCodes::IO_URING_SUBMIT_ERROR,
-                    fmt::format("Failed re-submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
+                failRequest(it, Exception(ErrorCodes::IO_URING_SUBMIT_ERROR,
+                    "Failed re-submitting SQE: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
             }
 
             io_uring_cqe_seen(&ring, cqe);
@@ -270,8 +271,8 @@ void IOUringReader::monitorRing()
         if (cqe->res < 0)
         {
             int fd = assert_cast<const LocalFileDescriptor &>(*enqueued.request.descriptor).fd;
-            failRequest(it, ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
-                fmt::format("Cannot read from file {}: {}", fd, errnoToString(-cqe->res)));
+            failRequest(it, Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Cannot read from file {}: {}", fd, errnoToString(-cqe->res)));
 
             ProfileEvents::increment(ProfileEvents::IOUringCQEsFailed);
             io_uring_cqe_seen(&ring, cqe);
@@ -298,9 +299,8 @@ void IOUringReader::monitorRing()
             ret = submitToRing(enqueued);
             if (ret <= 0)
             {
-                failRequest(it,
-                    ErrorCodes::IO_URING_SUBMIT_ERROR,
-                    fmt::format("Failed re-submitting SQE for short read: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
+                failRequest(it, Exception(ErrorCodes::IO_URING_SUBMIT_ERROR,
+                    "Failed re-submitting SQE for short read: {}", ret < 0 ? errnoToString(-ret) : "no SQE submitted"));
             }
         }
         else
