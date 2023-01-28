@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
@@ -106,6 +107,9 @@ template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
+
+template <typename DataType> constexpr bool IsIPv4 = false;
+template <> inline constexpr bool IsIPv4<DataTypeIPv4> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal128>> = true;
@@ -1210,6 +1214,17 @@ public:
             return arguments[0];
         }
 
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0]) || isIPv4(arguments[1]))
+        {
+            DataTypes new_arguments {
+                    isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
+                    isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
+            };
+
+            return getReturnTypeImplStatic(new_arguments, context);
+        }
+
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
@@ -1705,6 +1720,25 @@ public:
         if (isAggregateAddition(arguments[0].type, arguments[1].type))
         {
             return executeAggregateAddition(arguments, result_type, input_rows_count);
+        }
+
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0].type) || isIPv4(arguments[1].type))
+        {
+            ColumnsWithTypeAndName new_arguments {
+                {
+                    isIPv4(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt32>()) : arguments[0].column,
+                    isIPv4(arguments[0].type) ? std::make_shared<DataTypeUInt32>() : arguments[0].type,
+                    arguments[0].name,
+                },
+                {
+                    isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
+                    isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
+                    arguments[1].name
+                }
+            };
+
+            return executeImpl(new_arguments, result_type, input_rows_count);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.

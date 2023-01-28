@@ -902,26 +902,16 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata, ContextPtr context)
+bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        IndexDescription index_desc;
-        try
-        {
-            index_desc = IndexDescription::getIndexFromAST(index.definition_ast, metadata.columns, context);
-        }
-        catch (...)
-        {
-            continue;
-        }
-        if (index.type == GinFilter::FilterName)
-        {
+        if (index.type == INVERTED_INDEX_NAME)
             return true;
-        }
     }
     return false;
 }
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)

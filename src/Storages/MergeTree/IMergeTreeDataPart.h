@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IO/WriteSettings.h"
+#include <IO/WriteSettings.h>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
@@ -21,8 +21,6 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
-
-#include <shared_mutex>
 
 
 namespace zkutil

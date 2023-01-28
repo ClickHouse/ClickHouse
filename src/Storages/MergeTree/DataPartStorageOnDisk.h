@@ -106,17 +106,17 @@ public:
         const String & name,
         size_t buf_size,
         const WriteSettings & settings) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & name,
+        size_t buf_size,
+        DB::WriteMode mode,
+        const WriteSettings & settings) override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const override;
 
     void createFile(const String & name) override;
     void moveFile(const String & from_name, const String & to_name) override;
     void replaceFile(const String & from_name, const String & to_name) override;
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const String & name,
-        size_t buf_size,
-        DB::WriteMode mode,
-        const WriteSettings & settings) override;
 
     void removeFile(const String & name) override;
     void removeFileIfExists(const String & name) override;
