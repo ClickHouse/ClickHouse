@@ -1011,7 +1011,7 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
     String archive_name_with_suffix = getArchiveNameWithSuffix(suffix);
     auto new_archive_writer = createArchiveWriter(archive_params.archive_name, writer->writeFile(archive_name_with_suffix));
     new_archive_writer->setPassword(archive_params.password);
-
+    new_archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     size_t pos = suffix.empty() ? 0 : 1;
     archive_writers[pos] = {suffix, new_archive_writer};
 
