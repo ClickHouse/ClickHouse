@@ -515,7 +515,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<DB::Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception = std::make_unique<DB::Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
 
         try
@@ -1475,9 +1475,8 @@ void TCPHandler::receiveQuery()
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else
-        auto exception = Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::AUTHENTICATION_FAILED);
+        auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
         session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
         throw exception; /// NOLINT
 #endif

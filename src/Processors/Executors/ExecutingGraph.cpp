@@ -392,10 +392,34 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
 void ExecutingGraph::cancel()
 {
-    std::lock_guard guard(processors_mutex);
-    for (auto & processor : *processors)
-        processor->cancel();
-    cancelled = true;
+    std::exception_ptr exception_ptr;
+
+    {
+        std::lock_guard guard(processors_mutex);
+        for (auto & processor : *processors)
+        {
+            try
+            {
+                processor->cancel();
+            }
+            catch (...)
+            {
+                if (!exception_ptr)
+                    exception_ptr = std::current_exception();
+
+                /// Log any exception since:
+                /// a) they are pretty rare (the only that I know is from
+                ///    RemoteQueryExecutor)
+                /// b) there can be exception during query execution, and in this
+                ///    case, this exception can be ignored (not showed to the user).
+                tryLogCurrentException("ExecutingGraph");
+            }
+        }
+        cancelled = true;
+    }
+
+    if (exception_ptr)
+        std::rethrow_exception(exception_ptr);
 }
 
 }
