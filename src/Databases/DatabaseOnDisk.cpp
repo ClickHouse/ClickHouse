@@ -379,10 +379,14 @@ void DatabaseOnDisk::renameTable(
     if (dictionary && table && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
-    table_lock = table->lockExclusively(
-        local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    /// We have to lock the table before detaching, because otherwise lockExclusively will throw. But the table may not exist.
+    bool need_lock = table != nullptr;
+    if (need_lock)
+        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
     detachTable(local_context, table_name);
+    if (!need_lock)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table was detached without locking, it's a bug");
 
     UUID prev_uuid = UUIDHelpers::Nil;
     try
@@ -672,7 +676,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
                              "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
-        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+        throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
     else if (!ast)
         return nullptr;
 

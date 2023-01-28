@@ -26,8 +26,18 @@ namespace ErrorCodes
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
 
-
 DataTypePtr DataTypeFactory::get(const String & full_name) const
+{
+    return getImpl<false>(full_name);
+}
+
+DataTypePtr DataTypeFactory::tryGet(const String & full_name) const
+{
+    return getImpl<true>(full_name);
+}
+
+template <bool nullptr_on_error>
+DataTypePtr DataTypeFactory::getImpl(const String & full_name) const
 {
     /// Data type parser can be invoked from coroutines with small stack.
     /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
@@ -41,34 +51,75 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
 #endif
 
     ParserDataType parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
-    return get(ast);
+    ASTPtr ast;
+    if constexpr (nullptr_on_error)
+    {
+        String out_err;
+        const char * start = full_name.data();
+        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", false, DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth);
+        if (!ast)
+            return nullptr;
+    }
+    else
+    {
+        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", false, data_type_max_parse_depth);
+    }
+
+    return getImpl<nullptr_on_error>(ast);
 }
 
 DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 {
+    return getImpl<false>(ast);
+}
+
+DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
+{
+    return getImpl<true>(ast);
+}
+
+template <bool nullptr_on_error>
+DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
+{
     if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->parameters)
+        {
+            if constexpr (nullptr_on_error)
+                return nullptr;
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Data type cannot have multiple parenthesized parameters.");
-        return get(func->name, func->arguments);
+        }
+        return getImpl<nullptr_on_error>(func->name, func->arguments);
     }
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name(), {});
+        return getImpl<nullptr_on_error>(ident->name(), {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
     {
         if (lit->value.isNull())
-            return get("Null", {});
+            return getImpl<nullptr_on_error>("Null", {});
     }
 
+    if constexpr (nullptr_on_error)
+        return nullptr;
     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type.");
 }
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
+{
+    return getImpl<false>(family_name_param, parameters);
+}
+
+DataTypePtr DataTypeFactory::tryGet(const String & family_name_param, const ASTPtr & parameters) const
+{
+    return getImpl<true>(family_name_param, parameters);
+}
+
+template <bool nullptr_on_error>
+DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const ASTPtr & parameters) const
 {
     String family_name = getAliasToOrName(family_name_param);
 
@@ -86,10 +137,29 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         else
             low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
 
-        return get("LowCardinality", low_cardinality_params);
+        return getImpl<nullptr_on_error>("LowCardinality", low_cardinality_params);
     }
 
-    return findCreatorByName(family_name)(parameters);
+    const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
+    if constexpr (nullptr_on_error)
+    {
+        if (!creator)
+            return nullptr;
+
+        try
+        {
+            return (*creator)(parameters);
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
+    }
+    else
+    {
+        assert(creator);
+        return (*creator)(parameters);
+    }
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
@@ -155,19 +225,19 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
     }, case_sensitiveness);
 }
 
-const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
+template <bool nullptr_on_error>
+const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String & family_name) const
 {
     ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
-
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
             if (query_context && query_context->getSettingsRef().log_queries)
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
-            return it->second;
+            return &it->second;
         }
     }
 
@@ -179,9 +249,12 @@ const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String &
         {
             if (query_context && query_context->getSettingsRef().log_queries)
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
-            return it->second;
+            return &it->second;
         }
     }
+
+    if constexpr (nullptr_on_error)
+        return nullptr;
 
     auto hints = this->getHints(family_name);
     if (!hints.empty())

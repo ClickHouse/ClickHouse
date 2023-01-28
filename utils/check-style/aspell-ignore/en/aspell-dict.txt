@@ -329,6 +329,7 @@ kafka
 kafkacat
 konsole
 latencies
+laion
 lexicographically
 libFuzzer
 libc
