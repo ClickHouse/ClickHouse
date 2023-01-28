@@ -2046,7 +2046,7 @@ void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, 
     auto lock = getLock();
 
     if (shared->query_result_cache)
-        throw Exception("Query result cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query result cache has been already created.");
 
     shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_records);
 }
@@ -3437,7 +3437,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id)
     {
         if (exception)
-            exception->emplace("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
         return storage_id;
     }
 
@@ -3454,8 +3454,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (in_specified_database)
             return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
         if (exception)
-            exception->emplace("External and temporary tables have no database, but " +
-                        storage_id.database_name + " is specified", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "External and temporary tables have no database, but {} is specified",
+                               storage_id.database_name));
         return StorageID::createEmpty();
     }
 
@@ -3498,7 +3498,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (current_database.empty())
         {
             if (exception)
-                exception->emplace("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
@@ -3507,7 +3507,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     }
 
     if (exception)
-        exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
+        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot resolve database name for table {}", storage_id.getNameForLogs()));
     return StorageID::createEmpty();
 }
 

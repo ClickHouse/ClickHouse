@@ -130,9 +130,7 @@ namespace
             }
             return grpc::SslServerCredentials(options);
 #else
-            throw DB::Exception(
-                "Can't use SSL in grpc, because ClickHouse was built without SSL library",
-                DB::ErrorCodes::SUPPORT_IS_DISABLED);
+            throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "Can't use SSL in grpc, because ClickHouse was built without SSL library");
 #endif
         }
         return grpc::InsecureServerCredentials();
