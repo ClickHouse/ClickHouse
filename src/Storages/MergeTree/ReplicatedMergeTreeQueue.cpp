@@ -2488,11 +2488,11 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const String & log_entry_id_removed)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const String & removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size, log_entry_id_removed);
+        subscriber_callback(new_queue_size, removed_log_entry_id);
 }
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
