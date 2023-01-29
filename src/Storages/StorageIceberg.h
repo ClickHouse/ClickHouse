@@ -4,8 +4,7 @@
 
 #if USE_AWS_S3
 
-#    include <Storages/IStorage.h>
-#    include <Storages/StorageS3.h>
+#    include <Storages/IStorageDataLake.h>
 
 #    include <unordered_map>
 #    include <base/JSON.h>
@@ -36,6 +35,8 @@ public:
 
     std::vector<String> getFiles() const;
 
+    static String generateQueryFromKeys(const std::vector<String> & keys, const String & format);
+
 private:
     static constexpr auto metadata_directory = "metadata";
     StorageS3::S3Configuration base_configuration;
@@ -51,45 +52,12 @@ private:
     std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key) const;
 };
 
-class StorageIceberg : public IStorage
+struct StorageIcebergName
 {
-public:
-    // 1. Parses internal file structure of table
-    // 2. Finds out parts with latest version
-    // 3. Creates url for underlying StorageS3 enigne to handle reads
-    StorageIceberg(
-        const StorageS3Configuration & configuration_,
-        const StorageID & table_id_,
-        ColumnsDescription columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        std::optional<FormatSettings> format_settings_);
-
-    String getName() const override { return "Iceberg"; }
-
-    // Reads latest version of Iceberg table
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override;
-
-    static ColumnsDescription getTableStructureFromData(
-        const StorageS3Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
-private:
-
-    StorageS3::S3Configuration base_configuration;
-    std::shared_ptr<StorageS3> s3engine;
-    Poco::Logger * log;
-    String table_path;
+    static constexpr auto name = "Iceberg";
 };
 
+using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetaParser>;
 }
 
 #endif
