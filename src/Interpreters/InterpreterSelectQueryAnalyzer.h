@@ -36,6 +36,8 @@ public:
 
     QueryPlan && extractQueryPlan() &&;
 
+    QueryPipelineBuilder buildQueryPipeline();
+
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
     bool supportsTransactions() const override { return true; }

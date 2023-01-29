@@ -82,7 +82,9 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 
         if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")
         {
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "dictionary source `{}` should have one primary key with string value to represent regular expressions", kYAMLRegExpTree);
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                            "dictionary source `{}` should have one primary key with string value "
+                            "to represent regular expressions", kYAMLRegExpTree);
         }
 
         const auto & filepath = config.getString(config_prefix + "." + kYAMLRegExpTree + ".path");

@@ -156,8 +156,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
             {
                 auto res = or_parent_map.insert(std::make_pair(function, ParentNodes{from_node}));
                 if (!res.second)
-                    throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
-                        ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: parent node information is corrupted");
             }
         }
         else
@@ -332,8 +331,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 
         auto it = garbage_map.find(or_with_expression.or_function);
         if (it == garbage_map.end())
-            throw Exception("LogicalExpressionsOptimizer: garbage map is corrupted",
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: garbage map is corrupted");
 
         auto & first_erased = it->second;
         first_erased = std::remove_if(operands.begin(), first_erased, [&](const ASTPtr & operand)
@@ -369,8 +367,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
         {
             auto it = or_parent_map.find(or_function);
             if (it == or_parent_map.end())
-                throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: parent node information is corrupted");
             auto & parents = it->second;
 
             auto it2 = column_to_position.find(or_function);
@@ -379,7 +376,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
                 size_t position = it2->second;
                 bool inserted = column_to_position.emplace(operands[0].get(), position).second;
                 if (!inserted)
-                    throw Exception("LogicalExpressionsOptimizer: internal error", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: internal error");
                 column_to_position.erase(it2);
             }
 

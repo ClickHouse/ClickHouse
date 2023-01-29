@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int INCORRECT_DATA;
 }
 
 /// Base class for schema inference for the data in some specific format.
@@ -174,6 +175,25 @@ void chooseResultColumnType(
             row,
             new_type->getName());
     }
+}
+
+template <class SchemaReader>
+void chooseResultColumnTypes(
+    SchemaReader & schema_reader,
+    DataTypes & types,
+    DataTypes & new_types,
+    const DataTypePtr & default_type,
+    const std::vector<String> & column_names,
+    size_t row)
+{
+    if (types.size() != new_types.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
+
+    if (types.size() != column_names.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The number of column names {} differs from the number of types {}", column_names.size(), types.size());
+
+    for (size_t i = 0; i != types.size(); ++i)
+        chooseResultColumnType(schema_reader, types[i], new_types[i], default_type, column_names[i], row);
 }
 
 void checkFinalInferredType(DataTypePtr & type, const String & name, const FormatSettings & settings, const DataTypePtr & default_type, size_t rows_read);

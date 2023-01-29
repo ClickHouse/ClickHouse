@@ -52,3 +52,6 @@ SELECT * FROM random;
 │ [8,-83,0,-22,65,9,-30,28,64] │ -186233.4909 │ ('2062-01-11 00:06:04.124','69563ea1-5ad1-f870-16d8-67061da0df25') │
 └──────────────────────────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
+
+## Related content
+- Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

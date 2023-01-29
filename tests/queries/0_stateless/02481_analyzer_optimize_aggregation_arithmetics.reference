@@ -10,7 +10,7 @@ QUERY id: 0
         ARGUMENTS
           LIST id: 3, nodes: 2
             CONSTANT id: 4, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
-              EXPRESSION 
+              EXPRESSION
                 FUNCTION id: 5, function_name: log, function_type: ordinary, result_type: Float64
                   ARGUMENTS
                     LIST id: 6, nodes: 1
@@ -38,7 +38,7 @@ QUERY id: 0
                 LIST id: 5, nodes: 1
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
             CONSTANT id: 8, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
-              EXPRESSION 
+              EXPRESSION
                 FUNCTION id: 9, function_name: log, function_type: ordinary, result_type: Float64
                   ARGUMENTS
                     LIST id: 10, nodes: 1

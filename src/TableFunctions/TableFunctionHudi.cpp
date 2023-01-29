@@ -14,7 +14,6 @@ struct TableFunctionHudiName
 {
     static constexpr auto name = "hudi";
 };
-
 using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudi>;
 
 void registerTableFunctionHudi(TableFunctionFactory & factory)

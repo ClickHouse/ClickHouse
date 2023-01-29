@@ -248,7 +248,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 {
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get());
     if (!query_on_cluster)
-        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Received unknown DDL query");
 
     cluster_name = query_on_cluster->cluster;
     cluster = context->tryGetCluster(cluster_name);
@@ -321,7 +321,8 @@ bool DDLTask::tryFindHostInCluster()
                         {
                             if (!query_with_table->database)
                                 throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+                                                "For a distributed DDL on circular replicated cluster its table name "
+                                                "must be qualified by database name.");
 
                             if (default_database == query_with_table->getDatabase())
                                 return true;

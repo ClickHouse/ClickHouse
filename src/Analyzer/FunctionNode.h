@@ -145,6 +145,11 @@ public:
       */
     void resolveAsFunction(FunctionBasePtr function_value);
 
+    void resolveAsFunction(const FunctionOverloadResolverPtr & resolver)
+    {
+        resolveAsFunction(resolver->build(getArgumentColumns()));
+    }
+
     /** Resolve function node as aggregate function.
       * It is important that function name is updated with resolved function name.
       * Main motivation for this is query tree optimizations.
