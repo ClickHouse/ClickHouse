@@ -18,18 +18,19 @@
 #    include <aws/core/auth/STSCredentialsProvider.h>
 #    include <aws/core/client/DefaultRetryStrategy.h>
 #    include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
+#    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/core/platform/Environment.h>
 #    include <aws/core/platform/OSVersionInfo.h>
+#    include <aws/core/utils/HashingUtils.h>
+#    include <aws/core/utils/UUID.h>
 #    include <aws/core/utils/json/JsonSerializer.h>
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
-#    include <aws/core/utils/HashingUtils.h>
-#    include <aws/core/utils/UUID.h>
-#    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/GetObjectAttributesRequest.h>
 #    include <aws/s3/model/GetObjectRequest.h>
 #    include <aws/s3/model/HeadObjectRequest.h>
+#    include <aws/s3/model/ListObjectsV2Request.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -1062,8 +1063,49 @@ namespace S3
             "Failed to get metadata of key {} in bucket {}: {}",
             key, bucket, error.GetMessage());
     }
-}
 
+    std::vector<String>
+    listFiles(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & prefix, const String & extension)
+    {
+        std::vector<String> res;
+        Aws::S3::Model::ListObjectsV2Request request;
+        Aws::S3::Model::ListObjectsV2Outcome outcome;
+
+        bool is_finished{false};
+
+        request.SetBucket(bucket);
+
+        request.SetPrefix(prefix);
+
+        while (!is_finished)
+        {
+            outcome = client.ListObjectsV2(request);
+            if (!outcome.IsSuccess())
+                throw Exception(
+                    ErrorCodes::S3_ERROR,
+                    "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
+                    quoteString(bucket),
+                    quoteString(key),
+                    backQuote(outcome.GetError().GetExceptionName()),
+                    quoteString(outcome.GetError().GetMessage()));
+
+            const auto & result_batch = outcome.GetResult().GetContents();
+            for (const auto & obj : result_batch)
+            {
+                const auto & filename = obj.GetKey();
+
+                if (std::filesystem::path(filename).extension() == extension)
+                    res.push_back(filename);
+            }
+
+            request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+
+            is_finished = !outcome.GetResult().GetIsTruncated();
+        }
+
+        return res;
+    }
+}
 }
 
 #endif

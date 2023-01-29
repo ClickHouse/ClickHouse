@@ -144,6 +144,8 @@ bool isNotFoundError(Aws::S3::S3Errors error);
 /// Returns the object's metadata.
 std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
+std::vector<String>
+listFiles(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & prefix, const String & extension);
 }
 #endif
 
