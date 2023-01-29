@@ -36,7 +36,12 @@ void TinyContext::initializeKeeperDispatcher([[maybe_unused]] bool start_async) 
     if (config_ref.has("keeper_server"))
     {
         keeper_dispatcher = std::make_shared<KeeperDispatcher>();
-        keeper_dispatcher->initialize(config_ref, true, start_async);
+
+        MultiVersion<Macros>::Version macros;
+
+        if (config_ref.has("macros"))
+            macros = std::make_unique<Macros>(config_ref, "macros", &Poco::Logger::get("TinyContext"));
+        keeper_dispatcher->initialize(config_ref, true, start_async, macros);
     }
 }
 
@@ -71,7 +76,12 @@ void TinyContext::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::A
     if (!keeper_dispatcher)
         return;
 
-    keeper_dispatcher->updateConfiguration(config_);
+    MultiVersion<Macros>::Version macros;
+
+    if (config_.has("macros"))
+        macros = std::make_unique<Macros>(config_, "macros", &Poco::Logger::get("TinyContext"));
+
+    keeper_dispatcher->updateConfiguration(config_, macros);
 }
 
 }

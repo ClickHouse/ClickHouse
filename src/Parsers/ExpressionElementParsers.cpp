@@ -1,15 +1,15 @@
 #include <cerrno>
 #include <cstdlib>
-
 #include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <Parsers/DumpASTNode.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/BinStringDecodeHelper.h>
 
+#include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -29,22 +29,16 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTExplainQuery.h>
-
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-
-
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/parseIntervalKind.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserCase.h>
-
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/StorageID.h>
@@ -124,8 +118,40 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (ASTPtr explain_node; explain.parse(pos, explain_node, expected))
     {
-        /// Replace SELECT * FROM (EXPLAIN SELECT ...) with SELECT * FROM viewExplain(EXPLAIN SELECT ...)
-        result_node = buildSelectFromTableFunction(makeASTFunction("viewExplain", explain_node));
+        const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
+
+        if (explain_query.getTableFunction() || explain_query.getTableOverride())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
+
+        /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
+        /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
+
+        String kind_str = ASTExplainQuery::toString(explain_query.getKind());
+
+        String settings_str;
+        if (ASTPtr settings_ast = explain_query.getSettings())
+        {
+            if (!settings_ast->as<ASTSetQuery>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
+            settings_str = queryToString(settings_ast);
+        }
+
+        const ASTPtr & explained_ast = explain_query.getExplainedQuery();
+        if (explained_ast)
+        {
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str),
+                explained_ast);
+            result_node = buildSelectFromTableFunction(view_explain);
+        }
+        else
+        {
+            auto view_explain = makeASTFunction("viewExplain",
+                std::make_shared<ASTLiteral>(kind_str),
+                std::make_shared<ASTLiteral>(settings_str));
+            result_node = buildSelectFromTableFunction(view_explain);
+        }
     }
     else
     {
@@ -834,13 +860,17 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto try_read_float = [&](const char * it, const char * end)
     {
+        std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
         char * str_end;
         errno = 0;    /// Functions strto* don't clear errno.
-        Float64 float_value = std::strtod(it, &str_end);
-        if (str_end == end && errno != ERANGE)
+        /// The usage of strtod is needed, because we parse hex floating point literals as well.
+        Float64 float_value = std::strtod(buf.c_str(), &str_end);
+        if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
         {
             if (float_value < 0)
-                throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Logical error: token number cannot begin with minus, "
+                                "but parsed float number is less than zero.");
 
             if (negative)
                 float_value = -float_value;
@@ -882,7 +912,10 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     for (const auto * it = pos->begin; it != pos->end; ++it)
     {
         if (*it != '_')
-            buf[buf_size++] = *it;
+        {
+            buf[buf_size] = *it;
+            ++buf_size;
+        }
         if (unlikely(buf_size > MAX_LENGTH_OF_NUMBER))
         {
             expected.add(pos, "number");
@@ -1626,13 +1659,21 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ++pos;
         auto asterisk = std::make_shared<ASTAsterisk>();
+        auto transformers = std::make_shared<ASTColumnsTransformerList>();
         ParserColumnsTransformers transformers_p(allowed_transformers);
         ASTPtr transformer;
         while (transformers_p.parse(pos, transformer, expected))
         {
-            asterisk->children.push_back(transformer);
+            transformers->children.push_back(transformer);
         }
-        node = asterisk;
+
+        if (!transformers->children.empty())
+        {
+            asterisk->transformers = std::move(transformers);
+            asterisk->children.push_back(asterisk->transformers);
+        }
+
+        node = std::move(asterisk);
         return true;
     }
     return false;
@@ -1641,7 +1682,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserCompoundIdentifier(true, true).parse(pos, node, expected))
+    if (!ParserCompoundIdentifier(false, true).parse(pos, node, expected))
         return false;
 
     if (pos->type != TokenType::Dot)
@@ -1653,13 +1694,23 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ++pos;
 
     auto res = std::make_shared<ASTQualifiedAsterisk>();
-    res->children.push_back(node);
+    auto transformers = std::make_shared<ASTColumnsTransformerList>();
     ParserColumnsTransformers transformers_p;
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
     {
-        res->children.push_back(transformer);
+        transformers->children.push_back(transformer);
     }
+
+    res->qualifier = std::move(node);
+    res->children.push_back(res->qualifier);
+
+    if (!transformers->children.empty())
+    {
+        res->transformers = std::move(transformers);
+        res->children.push_back(res->transformers);
+    }
+
     node = std::move(res);
     return true;
 }
@@ -1683,28 +1734,44 @@ static bool parseColumnsMatcherBody(IParser::Pos & pos, ASTPtr & node, Expected 
         return false;
     ++pos;
 
+    auto transformers = std::make_shared<ASTColumnsTransformerList>();
+    ParserColumnsTransformers transformers_p(allowed_transformers);
+    ASTPtr transformer;
+    while (transformers_p.parse(pos, transformer, expected))
+    {
+        transformers->children.push_back(transformer);
+    }
+
     ASTPtr res;
     if (column_list)
     {
         auto list_matcher = std::make_shared<ASTColumnsListMatcher>();
-        list_matcher->column_list = column_list;
-        res = list_matcher;
+
+        list_matcher->column_list = std::move(column_list);
+        list_matcher->children.push_back(list_matcher->column_list);
+
+        if (!transformers->children.empty())
+        {
+            list_matcher->transformers = std::move(transformers);
+            list_matcher->children.push_back(list_matcher->transformers);
+        }
+
+        node = std::move(list_matcher);
     }
     else
     {
         auto regexp_matcher = std::make_shared<ASTColumnsRegexpMatcher>();
         regexp_matcher->setPattern(regex_node->as<ASTLiteral &>().value.get<String>());
-        res = regexp_matcher;
+
+        if (!transformers->children.empty())
+        {
+            regexp_matcher->transformers = std::move(transformers);
+            regexp_matcher->children.push_back(regexp_matcher->transformers);
+        }
+
+        node = std::move(regexp_matcher);
     }
 
-    ParserColumnsTransformers transformers_p(allowed_transformers);
-    ASTPtr transformer;
-    while (transformers_p.parse(pos, transformer, expected))
-    {
-        res->children.push_back(transformer);
-    }
-
-    node = std::move(res);
     return true;
 }
 
@@ -1720,29 +1787,19 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserCompoundIdentifier(true, true).parse(pos, node, expected))
+    if (!ParserCompoundIdentifier(false, true).parse(pos, node, expected))
         return false;
 
     auto identifier_node = node;
-    const auto & identifier_node_typed = identifier_node->as<ASTTableIdentifier &>();
+    auto & identifier_node_typed = identifier_node->as<ASTIdentifier &>();
+    auto & name_parts = identifier_node_typed.name_parts;
 
     /// ParserCompoundIdentifier parse identifier.COLUMNS
-    if (identifier_node_typed.name_parts.size() == 1 || identifier_node_typed.name_parts.back() != "COLUMNS")
+    if (name_parts.size() == 1 || name_parts.back() != "COLUMNS")
         return false;
 
-    /// TODO: ASTTableIdentifier can contain only 2 parts
-
-    if (identifier_node_typed.name_parts.size() == 2)
-    {
-        auto table_name = identifier_node_typed.name_parts[0];
-        identifier_node = std::make_shared<ASTTableIdentifier>(table_name);
-    }
-    else
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Expected identifier to contain no more than 2 parts. Actual {}",
-            identifier_node_typed.full_name);
-    }
+    name_parts.pop_back();
+    identifier_node = std::make_shared<ASTIdentifier>(std::move(name_parts), false, std::move(node->children));
 
     if (!parseColumnsMatcherBody(pos, node, expected, allowed_transformers))
         return false;
@@ -1750,28 +1807,36 @@ bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (auto * columns_list_matcher = node->as<ASTColumnsListMatcher>())
     {
         auto result = std::make_shared<ASTQualifiedColumnsListMatcher>();
+        result->qualifier = std::move(identifier_node);
         result->column_list = std::move(columns_list_matcher->column_list);
 
-        result->children.reserve(columns_list_matcher->children.size() + 1);
-        result->children.push_back(std::move(identifier_node));
+        result->children.push_back(result->qualifier);
+        result->children.push_back(result->column_list);
 
-        for (auto && child : columns_list_matcher->children)
-            result->children.push_back(std::move(child));
+        if (columns_list_matcher->transformers)
+        {
+            result->transformers = std::move(columns_list_matcher->transformers);
+            result->children.push_back(result->transformers);
+        }
 
-        node = result;
+        node = std::move(result);
     }
     else if (auto * column_regexp_matcher = node->as<ASTColumnsRegexpMatcher>())
     {
         auto result = std::make_shared<ASTQualifiedColumnsRegexpMatcher>();
+        result->setPattern(column_regexp_matcher->getPattern(), false);
         result->setMatcher(column_regexp_matcher->getMatcher());
 
-        result->children.reserve(column_regexp_matcher->children.size() + 1);
-        result->children.push_back(std::move(identifier_node));
+        result->qualifier = std::move(identifier_node);
+        result->children.push_back(result->qualifier);
 
-        for (auto && child : column_regexp_matcher->children)
-            result->children.push_back(std::move(child));
+        if (column_regexp_matcher->transformers)
+        {
+            result->transformers = std::move(column_regexp_matcher->transformers);
+            result->children.push_back(result->transformers);
+        }
 
-        node = result;
+        node = std::move(result);
     }
     else
     {

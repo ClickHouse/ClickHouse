@@ -1,5 +1,7 @@
 #include <Analyzer/QueryNode.h>
 
+#include <fmt/core.h>
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -35,7 +37,7 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_)
-    : QueryNode(context_, {} /*settings_changes*/)
+    : QueryNode(std::move(context_), {} /*settings_changes*/)
 {}
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -178,6 +180,13 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
         getOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasSettingsChanges())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, toString(change.value));
     }
 }
 

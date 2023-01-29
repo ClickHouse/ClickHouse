@@ -9,6 +9,29 @@ slug: /en/operations/backup
 - [Backup/restore using an S3 disk](#backuprestore-using-an-s3-disk)
 - [Alternatives](#alternatives)
 
+## Command summary
+
+```bash
+ BACKUP|RESTORE
+  TABLE [db.]table_name [AS [db.]table_name_in_backup]
+    [PARTITION[S] partition_expr [,...]] |
+  DICTIONARY [db.]dictionary_name [AS [db.]name_in_backup] |
+  DATABASE database_name [AS database_name_in_backup]
+    [EXCEPT TABLES ...] |
+  TEMPORARY TABLE table_name [AS table_name_in_backup] |
+  VIEW view_name [AS view_name_in_backup]
+  ALL TEMPORARY TABLES [EXCEPT ...] |
+  ALL DATABASES [EXCEPT ...] } [,...]
+  [ON CLUSTER 'cluster_name']
+  TO|FROM File('<path>/<filename>') | Disk('<disk_name>', '<path>/') | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')
+  [SETTINGS base_backup = File('<path>/<filename>') | Disk(...) | S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')]
+
+```
+
+:::note ALL
+`ALL` is only applicable to the `RESTORE` command.
+:::
+
 ## Background
 
 While [replication](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can’t just drop tables with a MergeTree-like engine containing more than 50 Gb of data](server-configuration-parameters/settings.md#max-table-size-to-drop). However, these safeguards do not cover all possible cases and can be circumvented.
