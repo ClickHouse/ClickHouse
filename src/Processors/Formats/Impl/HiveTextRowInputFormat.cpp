@@ -30,19 +30,14 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
-    const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
+    const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(
-        header_, *buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, format_settings_)), buf(std::move(buf_))
+        header_, buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, format_settings_))
 {
-}
-
-void HiveTextRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
 }
 
 HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_)
-    : CSVFormatReader(buf_, format_settings_), buf(&buf_), input_field_names(format_settings_.hive_text.input_field_names)
+    : CSVFormatReader(buf_, format_settings_), input_field_names(format_settings_.hive_text.input_field_names)
 {
 }
 
@@ -57,12 +52,6 @@ std::vector<String> HiveTextFormatReader::readNames()
 std::vector<String> HiveTextFormatReader::readTypes()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
-}
-
-void HiveTextFormatReader::setReadBuffer(ReadBuffer & buf_)
-{
-    buf = assert_cast<PeekableReadBuffer *>(&buf_);
-    CSVFormatReader::setReadBuffer(buf_);
 }
 
 void registerInputFormatHiveText(FormatFactory & factory)

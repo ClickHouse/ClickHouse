@@ -14,7 +14,12 @@ log = None
 # uncomment the line below for debugging
 # log=sys.stdout
 
-with client(name="client>", log=log) as client1:
+with client(
+    name="client>",
+    log=log,
+    command=os.environ.get("CLICKHOUSE_BINARY", "clickhouse")
+    + " client --storage_file_read_method=pread",
+) as client1:
     filename = os.environ["CLICKHOUSE_TMP"] + "/infile_progress.tsv"
 
     client1.expect(prompt)

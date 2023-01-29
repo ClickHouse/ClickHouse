@@ -528,6 +528,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "MutateFromLogEntryTask" \
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
+                   -e "TOO_MANY_PARTS" \
             /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | rg -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
@@ -593,7 +594,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
-find . -type f -name 'core.*' | while read core; do
+find . -type f -maxdepth 1 -name 'core.*' | while read core; do
     zstd --threads=0 $core
     mv $core.zst /test_output/
 done

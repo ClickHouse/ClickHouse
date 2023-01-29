@@ -78,7 +78,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const
 static void assertIndexColumnsType(const Block & header)
 {
     if (!header || !header.columns())
-        throw Exception("Index must have columns.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Index must have columns.");
 
     const DataTypes & columns_data_types = header.getDataTypes();
 
@@ -89,8 +89,7 @@ static void assertIndexColumnsType(const Block & header)
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
             !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID())
-            throw Exception("Unexpected type " + type->getName() + " of bloom filter index.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
     }
 }
 
@@ -118,7 +117,7 @@ void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach)
     if (index.arguments.size() > 1)
     {
         if (!attach) /// This is for backward compatibility.
-            throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "BloomFilter index cannot have more than one parameter.");
     }
 
     if (!index.arguments.empty())
@@ -126,7 +125,7 @@ void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach)
         const auto & argument = index.arguments[0];
 
         if (!attach && (argument.getType() != Field::Types::Float64 || argument.get<Float64>() < 0 || argument.get<Float64>() > 1))
-            throw Exception("The BloomFilter false positive must be a double number between 0 and 1.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");
     }
 }
 

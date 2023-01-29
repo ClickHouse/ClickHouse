@@ -98,9 +98,8 @@ namespace
                     parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
                 break;
             default:
-                throw Exception(
-                    "Type mismatch, expected a number, got type id = " + toString(value.type()) + " for column " + name,
-                    ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected a number, got type id = {} for column {}",
+                    toString(value.type()), name);
         }
     }
 
@@ -156,15 +155,15 @@ namespace
                     break;
                 }
 
-                throw Exception{"Type mismatch, expected String, got type id = " + toString(value.type()) + " for column " + name,
-                                ErrorCodes::TYPE_MISMATCH};
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String, got type id = {} for column {}",
+                                toString(value.type()), name);
             }
 
             case ValueType::vtDate:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
-                                    ErrorCodes::TYPE_MISMATCH};
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
+                                    toString(value.type()), name);
 
                 assert_cast<ColumnUInt16 &>(column).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())));
@@ -174,8 +173,8 @@ namespace
             case ValueType::vtDateTime:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
-                                    ErrorCodes::TYPE_MISMATCH};
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected Timestamp, got type id = {} for column {}",
+                                    toString(value.type()), name);
 
                 assert_cast<ColumnUInt32 &>(column).getData().push_back(
                     static_cast<UInt32>(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime()));
@@ -189,13 +188,12 @@ namespace
                     assert_cast<ColumnUUID &>(column).getData().push_back(parse<UUID>(string));
                 }
                 else
-                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) + " for column "
-                                        + name,
-                                    ErrorCodes::TYPE_MISMATCH};
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected String (UUID), got type id = {} for column {}",
+                                        toString(value.type()), name);
                 break;
             }
             default:
-                throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
+                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Value of unsupported type:{}", column.getName());
         }
     }
 

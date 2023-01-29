@@ -13,6 +13,7 @@ namespace ErrorCodes
 
 using ColumnIdentifier = std::string;
 using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+using ColumnIdentifierSet = std::unordered_set<ColumnIdentifier>;
 
 /** Table expression data is created for each table expression that take part in query.
   * Table expression data has information about columns that participate in query, their name to identifier mapping,
