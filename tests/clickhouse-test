@@ -1796,6 +1796,8 @@ def reportCoverageFor(args, what, query, permissive=False):
 
 
 def reportCoverage(args):
+    clickhouse_execute(args, "SYSTEM FLUSH LOGS")
+
     return (
         reportCoverageFor(
             args,
@@ -1899,11 +1901,58 @@ def reportLogStats(args):
         WHERE (now() - toIntervalMinute(mins)) < event_time AND message_format_string = ''
         GROUP BY pattern
         ORDER BY count DESC
-        LIMIT 50
+        LIMIT 30
         FORMAT TSVWithNamesAndTypes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop messages without format string (fmt::runtime):\n")
+    print(value)
+    print("\n")
+
+    query = """
+        SELECT message_format_string, count(), substr(any(message), 1, 120) AS any_message
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(120)) < event_time
+        AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
+        AND (message NOT LIKE concat('%Exception: ', s, '%'))
+        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages that does not match its format string:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        WITH ('', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue', 'Creating set.',
+              'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}', 'Found part {}', 'Loaded queue',
+              'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
+              'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
+              'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}'
+        ) AS known_short_messages
+        SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
+        FROM system.text_log
+        WHERE (now() - toIntervalMinute(120)) < event_time
+            AND (length(message_format_string) < 16
+                OR (length(message_format_string) < 30 AND message ilike '%DB::Exception%'))
+            AND message_format_string NOT IN known_short_messages
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 30 FORMAT TSVWithNamesAndTypes
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop short messages:\n")
+    print(value)
+    print("\n")
+
+    query = """
+        SELECT max((freq, message_format_string)), level
+        FROM (SELECT count() / (SELECT count() FROM system.text_log
+              WHERE (now() - toIntervalMinute(120)) < event_time) AS freq,
+              min(level) AS level, message_format_string FROM system.text_log
+              WHERE (now() - toIntervalMinute(120)) < event_time
+              GROUP BY message_format_string ORDER BY freq DESC)
+        GROUP BY level
+    """
+    value = clickhouse_execute(args, query).decode(errors="replace")
+    print("\nTop messages by level:\n")
     print(value)
     print("\n")
 
@@ -2042,7 +2091,10 @@ def main(args):
         print("All tests have finished.")
 
     if args.report_logs_stats:
-        reportLogStats(args)
+        try:
+            reportLogStats(args)
+        except Exception as e:
+            print(f"Failed to get stats about log messages: {e}")
 
     if args.report_coverage and not reportCoverage(args):
         exit_code.value = 1
