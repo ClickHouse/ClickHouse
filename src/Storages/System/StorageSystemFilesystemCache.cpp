@@ -17,6 +17,7 @@ NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
     return {
         {"cache_base_path", std::make_shared<DataTypeString>()},
         {"cache_path", std::make_shared<DataTypeString>()},
+        {"key", std::make_shared<DataTypeString>()},
         {"file_segment_range_begin", std::make_shared<DataTypeUInt64>()},
         {"file_segment_range_end", std::make_shared<DataTypeUInt64>()},
         {"size", std::make_shared<DataTypeUInt64>()},
@@ -53,15 +54,16 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
                 cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->getKind()));
 
             const auto & range = file_segment->range();
-            res_columns[2]->insert(range.left);
-            res_columns[3]->insert(range.right);
-            res_columns[4]->insert(range.size());
-            res_columns[5]->insert(FileSegment::stateToString(file_segment->state()));
-            res_columns[6]->insert(file_segment->getHitsCount());
-            res_columns[7]->insert(file_segment->getRefCount());
-            res_columns[8]->insert(file_segment->getDownloadedSize());
-            res_columns[9]->insert(file_segment->isPersistent());
-            res_columns[10]->insert(toString(file_segment->getKind()));
+            res_columns[2]->insert(file_segment->key().toString());
+            res_columns[3]->insert(range.left);
+            res_columns[4]->insert(range.right);
+            res_columns[5]->insert(range.size());
+            res_columns[6]->insert(FileSegment::stateToString(file_segment->state()));
+            res_columns[7]->insert(file_segment->getHitsCount());
+            res_columns[8]->insert(file_segment->getRefCount());
+            res_columns[9]->insert(file_segment->getDownloadedSize());
+            res_columns[10]->insert(file_segment->isPersistent());
+            res_columns[11]->insert(toString(file_segment->getKind()));
         }
     }
 }
