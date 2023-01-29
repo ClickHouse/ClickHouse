@@ -97,62 +97,21 @@ void JsonMetadataGetter::init(ContextPtr context)
 
 std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 {
-    std::vector<String> keys;
-
-    const auto & client = base_configuration.client;
-
-    Aws::S3::Model::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-    bool is_finished{false};
-    const auto bucket{base_configuration.uri.bucket};
-
-    request.SetBucket(bucket);
-
     /// DeltaLake format stores all metadata json files in _delta_log directory
     static constexpr auto deltalake_metadata_directory = "_delta_log";
-    request.SetPrefix(std::filesystem::path(table_path) / deltalake_metadata_directory);
 
-    while (!is_finished)
-    {
-        outcome = client->ListObjectsV2(request);
-        if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                quoteString(bucket),
-                quoteString(table_path),
-                backQuote(outcome.GetError().GetExceptionName()),
-                quoteString(outcome.GetError().GetMessage()));
-
-        const auto & result_batch = outcome.GetResult().GetContents();
-        for (const auto & obj : result_batch)
-        {
-            const auto & filename = obj.GetKey();
-
-            // DeltaLake metadata files have json extension
-            if (std::filesystem::path(filename).extension() == ".json")
-                keys.push_back(filename);
-        }
-
-        /// Needed in case any more results are available
-        /// if so, we will continue reading, and not read keys that were already read
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
-        /// Set to false if all of the results were returned. Set to true if more keys
-        /// are available to return. If the number of results exceeds that specified by
-        /// MaxKeys, all of the results might not be returned
-        is_finished = !outcome.GetResult().GetIsTruncated();
-    }
-
-    return keys;
+    return S3::listFiles(
+        *base_configuration.client,
+        base_configuration.uri.bucket,
+        table_path,
+        std::filesystem::path(table_path) / deltalake_metadata_directory,
+        ".json");
 }
 
 std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String & key, ContextPtr context)
 {
-    /// TODO: add parallel downloads
     S3Settings::RequestSettings request_settings;
-    request_settings.max_single_read_retries = 10;
+    request_settings.max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
         base_configuration.uri.bucket,

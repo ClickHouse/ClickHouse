@@ -71,45 +71,12 @@ String IcebergMetaParser::getNewestMetaFile() const
     /// Iceberg stores all the metadata.json in metadata directory, and the
     /// newest version has the max version name, so we should list all of them
     /// then find the newest metadata.
-    std::vector<String> metadata_files;
-
-    const auto & client = base_configuration.client;
-
-    Aws::S3::Model::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-    bool is_finished{false};
-    const auto bucket{base_configuration.uri.bucket};
-
-    request.SetBucket(bucket);
-
-    request.SetPrefix(std::filesystem::path(table_path) / metadata_directory);
-
-    while (!is_finished)
-    {
-        outcome = client->ListObjectsV2(request);
-        if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                quoteString(bucket),
-                quoteString(table_path),
-                backQuote(outcome.GetError().GetExceptionName()),
-                quoteString(outcome.GetError().GetMessage()));
-
-        const auto & result_batch = outcome.GetResult().GetContents();
-        for (const auto & obj : result_batch)
-        {
-            const auto & filename = obj.GetKey();
-
-            if (std::filesystem::path(filename).extension() == ".json")
-                metadata_files.push_back(filename);
-        }
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
-        is_finished = !outcome.GetResult().GetIsTruncated();
-    }
+    std::vector<String> metadata_files = S3::listFiles(
+        *base_configuration.client,
+        base_configuration.uri.bucket,
+        table_path,
+        std::filesystem::path(table_path) / metadata_directory,
+        ".json");
 
     if (metadata_files.empty())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
@@ -257,7 +224,7 @@ std::vector<String> IcebergMetaParser::getFilesForRead(const std::vector<String>
 std::shared_ptr<ReadBuffer> IcebergMetaParser::createS3ReadBuffer(const String & key) const
 {
     S3Settings::RequestSettings request_settings;
-    request_settings.max_single_read_retries = 10;
+    request_settings.max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
         base_configuration.uri.bucket,
