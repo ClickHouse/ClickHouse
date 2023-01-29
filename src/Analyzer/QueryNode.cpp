@@ -1,5 +1,7 @@
 #include <Analyzer/QueryNode.h>
 
+#include <fmt/core.h>
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -21,8 +23,10 @@
 namespace DB
 {
 
-QueryNode::QueryNode()
+QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
     : IQueryTreeNode(children_size)
+    , context(std::move(context_))
+    , settings_changes(std::move(settings_changes_))
 {
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
@@ -31,6 +35,10 @@ QueryNode::QueryNode()
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
 }
+
+QueryNode::QueryNode(ContextMutablePtr context_)
+    : QueryNode(std::move(context_), {} /*settings_changes*/)
+{}
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
@@ -173,6 +181,13 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
         getOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasSettingsChanges())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+    }
 }
 
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
@@ -222,7 +237,7 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
 {
-    auto result_query_node = std::make_shared<QueryNode>();
+    auto result_query_node = std::make_shared<QueryNode>(context);
 
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;

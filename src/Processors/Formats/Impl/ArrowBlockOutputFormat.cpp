@@ -21,7 +21,6 @@ ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block &
     : IOutputFormat(header_, out_)
     , stream{stream_}
     , format_settings{format_settings_}
-    , arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
 {
 }
 
@@ -65,8 +64,15 @@ void ArrowBlockOutputFormat::finalizeImpl()
             "Error while closing a table: {}", status.ToString());
 }
 
+void ArrowBlockOutputFormat::resetFormatterImpl()
+{
+    writer.reset();
+    arrow_ostream.reset();
+}
+
 void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
 {
+    arrow_ostream = std::make_shared<ArrowBufferedOutputStream>(out);
     arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
@@ -88,7 +94,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
@@ -99,7 +104,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);

@@ -41,16 +41,16 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Function " + getName() + " requires at least one argument: the size of resulting string",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least one argument: the size of resulting string", getName());
 
         if (arguments.size() > 2)
-            throw Exception("Function " + getName() + " requires at most two arguments: the size of resulting string and optional disambiguation tag",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
 
         const IDataType & length_type = *arguments[0];
         if (!isNumber(length_type))
-            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -74,7 +74,7 @@ public:
         {
             size_t length = length_column.getUInt(row_num);
             if (length > (1 << 30))
-                throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
             IColumn::Offset next_offset = offset + length + 1;
             data_to.resize(next_offset);

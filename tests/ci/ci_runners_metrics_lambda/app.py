@@ -43,13 +43,14 @@ def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
         # Only `i-deadbead123` are valid names for an instance ID
         if runner.offline and not runner.busy and runner.name.startswith("i-")
     }
+    if not ids:
+        return []
+
     result_to_delete = [
         runner
         for runner in runners
         if not ids.get(runner.name) and runner.offline and not runner.busy
     ]
-    if not ids:
-        return []
 
     client = boto3.client("ec2")
 
@@ -65,6 +66,7 @@ def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
                     InstanceIds=list(ids.keys())[i : i + inc]
                 )
             )
+            # It applied only if all ids exist in EC2
             i += inc
         except ClientError as e:
             # The list of non-existent instances is in the message:
@@ -93,7 +95,7 @@ def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
         print("Instance", runner.name, "is not alive, going to remove it")
     for instance_id, runner in ids.items():
         if instance_id not in found_instances:
-            print("Instance", instance_id, "is not alive, going to remove it")
+            print("Instance", instance_id, "is not found in EC2, going to remove it")
             result_to_delete.append(runner)
     return result_to_delete
 
@@ -334,7 +336,7 @@ def main(
     grouped_runners = group_runners_by_tag(gh_runners)
     for group, group_runners in grouped_runners.items():
         if push_to_cloudwatch:
-            print(group)
+            print(f"Pushing metrics for group '{group}'")
             push_metrics_to_cloudwatch(group_runners, "RunnersMetrics/" + group)
         else:
             print(group, f"({len(group_runners)})")

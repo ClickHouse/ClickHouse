@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 namespace DB
 {
@@ -48,26 +49,42 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     checkStackSize();
 
     auto query_plan = std::make_unique<QueryPlan>();
+
     /// Do not apply AST optimizations, because query
     /// is already optimized and some optimizations
     /// can be applied only for non-distributed tables
     /// and we can produce query, inconsistent with remote plans.
-    auto interpreter = InterpreterSelectQuery(
-        query_ast, context,
-        SelectQueryOptions(processed_stage)
-            .setShardInfo(shard_num, shard_count)
-            .ignoreASTOptimizations());
+    auto select_query_options = SelectQueryOptions(processed_stage)
+        .setShardInfo(shard_num, shard_count)
+        .ignoreASTOptimizations();
 
-    interpreter.setProperClientInfo(replica_num, replica_count);
-    if (coordinator)
+    auto update_interpreter = [&](auto & interpreter)
     {
-        interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+        interpreter.setProperClientInfo(replica_num, replica_count);
+        if (coordinator)
         {
-            return coordinator->handleRequest(request);
-        });
+            interpreter.setMergeTreeReadTaskCallbackAndClientInfo([coordinator](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            {
+                return coordinator->handleRequest(request);
+            });
+        }
+    };
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, context, select_query_options);
+        update_interpreter(interpreter);
+        query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(
+            query_ast, context,
+            select_query_options);
+        update_interpreter(interpreter);
+        interpreter.buildQueryPlan(*query_plan);
     }
 
-    interpreter.buildQueryPlan(*query_plan);
     addConvertingActions(*query_plan, header);
     return query_plan;
 }

@@ -13,6 +13,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -30,18 +31,16 @@ namespace ErrorCodes
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
 void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
 {
-    if (auto named_collection = getURLBasedDataSourceConfiguration(args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
-        s3_configuration.set(common_configuration);
-        StorageS3::processNamedCollectionResult(s3_configuration, storage_specific_args);
+        StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
     }
     else
     {
         if (args.empty() || args.size() > 6)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
+            throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto header_it = StorageURL::collectHeaders(args, s3_configuration, context);
+        auto * header_it = StorageURL::collectHeaders(args, s3_configuration.headers, context);
         if (header_it != args.end())
             args.erase(header_it);
 
@@ -128,7 +127,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         getName());
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
     auto & args = args_func.at(0)->children;
 

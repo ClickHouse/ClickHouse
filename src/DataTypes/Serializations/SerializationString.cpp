@@ -311,13 +311,20 @@ void SerializationString::serializeTextJSON(const IColumn & column, size_t row_n
 
 void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
+    if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
+    {
+        String field;
+        readJSONObjectPossiblyInvalid(field, istr);
+        ReadBufferFromString buf(field);
+        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+    }
+    else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;
         readJSONField(field, istr);
         Float64 tmp;
         ReadBufferFromString buf(field);
-        if (tryReadFloatText(tmp, buf))
+        if (tryReadFloatText(tmp, buf) && buf.eof())
             read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON String value here: {}", field);

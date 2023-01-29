@@ -52,7 +52,7 @@
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-#define DBMS_TCP_PROTOCOL_VERSION 54460
+#define DBMS_TCP_PROTOCOL_VERSION 54461
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME 54449
 
@@ -68,3 +68,5 @@
 
 /// The server will send query elapsed run time in the Progress packet.
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS 54460
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES 54461

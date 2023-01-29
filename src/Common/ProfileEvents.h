@@ -54,6 +54,7 @@ namespace ProfileEvents
         }
 
         void increment(Event event, Count amount = 1);
+        void incrementNoTrace(Event event, Count amount = 1);
 
         struct Snapshot
         {
@@ -104,6 +105,10 @@ namespace ProfileEvents
 
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
+
+    /// The same as above but ignores value of setting 'trace_profile_events'
+    /// and never sends profile event to trace log.
+    void incrementNoTrace(Event event, Count amount = 1);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);

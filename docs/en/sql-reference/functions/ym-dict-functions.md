@@ -150,4 +150,3 @@ Example: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 Accepts a UInt32 number – the region ID from the geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
 
 `ua` and `uk` both mean Ukrainian.
-

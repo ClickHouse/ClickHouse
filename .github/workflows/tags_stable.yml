@@ -34,7 +34,7 @@ jobs:
       run: |
         echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
     - name: Check out repository code
-      uses: actions/checkout@v2
+      uses: ClickHouse/checkout@v1
       with:
         ref: master
         fetch-depth: 0
@@ -61,6 +61,7 @@ jobs:
         committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
         commit-message: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
         branch: auto/${{ env.GITHUB_TAG }}
+        assignees: ${{ github.event.sender.login }}  # assign the PR to the tag pusher
         delete-branch: true
         title: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
         labels: do not test

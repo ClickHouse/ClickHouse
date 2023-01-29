@@ -389,6 +389,11 @@ public:
         zeroValue()->~Cell();
     }
 
+    void clearHasZeroFlag()
+    {
+        has_zero = false;
+    }
+
     Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
     const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
@@ -397,8 +402,9 @@ template <typename Cell>
 struct ZeroValueStorage<false, Cell>
 {
     bool hasZero() const { return false; }
-    void setHasZero() { throw DB::Exception("HashTable: logical error", DB::ErrorCodes::LOGICAL_ERROR); }
+    void setHasZero() { throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashTable: logical error"); }
     void clearHasZero() {}
+    void clearHasZeroFlag() {}
 
     Cell * zeroValue()             { return nullptr; }
     const Cell * zeroValue() const { return nullptr; }
@@ -652,6 +658,17 @@ protected:
                 ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
                 __msan_unpoison(it.ptr, sizeof(*it.ptr));
             }
+
+            /// Everything had been destroyed in the loop above, reset the flag
+            /// only, without calling destructor.
+            this->clearHasZeroFlag();
+        }
+        else
+        {
+            /// NOTE: it is OK to call dtor for trivially destructible type
+            /// even the object hadn't been initialized, so no need to has
+            /// hasZero() check.
+            this->clearHasZero();
         }
     }
 
@@ -811,7 +828,7 @@ public:
         inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
-                throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
+                throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
 
             return cell.getValue();
         }
@@ -1284,7 +1301,6 @@ public:
         Cell::State::read(rb);
 
         destroyElements();
-        this->clearHasZero();
         m_size = 0;
 
         size_t new_size = 0;
@@ -1308,7 +1324,6 @@ public:
         Cell::State::readText(rb);
 
         destroyElements();
-        this->clearHasZero();
         m_size = 0;
 
         size_t new_size = 0;
@@ -1342,7 +1357,6 @@ public:
     void clear()
     {
         destroyElements();
-        this->clearHasZero();
         m_size = 0;
 
         memset(static_cast<void*>(buf), 0, grower.bufSize() * sizeof(*buf));
@@ -1353,7 +1367,6 @@ public:
     void clearAndShrink()
     {
         destroyElements();
-        this->clearHasZero();
         m_size = 0;
         free();
     }

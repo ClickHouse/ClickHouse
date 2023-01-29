@@ -68,12 +68,13 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
     injectNonConstVirtualColumns(0, header_without_const_virtual_columns, virt_column_names);
 
-    /// Reverse order is to minimize reallocations when removing columns from the block
     for (size_t col_num = non_const_columns_offset; col_num < header_without_const_virtual_columns.columns(); ++col_num)
         non_const_virtual_column_names.emplace_back(header_without_const_virtual_columns.getByPosition(col_num).name);
 
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
+
+    LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
 
 
@@ -345,7 +346,7 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 }
 
 static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 current_preferred_block_size_bytes,
-    UInt64 current_max_block_size_rows, UInt64 current_preferred_max_column_in_block_size_bytes, double min_filtration_ratio)
+    UInt64 current_max_block_size_rows, UInt64 current_preferred_max_column_in_block_size_bytes, double min_filtration_ratio, size_t min_marks_to_read)
 {
     const MergeTreeRangeReader & current_reader = current_task.range_reader;
 
@@ -379,7 +380,7 @@ static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 cur
 
     const MergeTreeIndexGranularity & index_granularity = current_task.data_part->index_granularity;
 
-    return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
+    return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule(), min_marks_to_read);
 }
 
 
@@ -394,7 +395,7 @@ IMergeTreeSelectAlgorithm::BlockAndProgress IMergeTreeSelectAlgorithm::readFromP
     const double min_filtration_ratio = 0.00001;
 
     UInt64 recommended_rows = estimateNumRows(*task, current_preferred_block_size_bytes,
-        current_max_block_size_rows, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio);
+        current_max_block_size_rows, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio, min_marks_to_read);
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
@@ -405,9 +406,9 @@ IMergeTreeSelectAlgorithm::BlockAndProgress IMergeTreeSelectAlgorithm::readFromP
 
     const auto & sample_block = task->range_reader.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
-        throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
-                        "Have " + toString(sample_block.columns()) + " in sample block "
-                        "and " + toString(read_result.columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns got from MergeTreeRangeReader. "
+                        "Have {} in sample block and {} columns in list",
+                        toString(sample_block.columns()), toString(read_result.columns.size()));
 
     /// TODO: check columns have the same types as in header.
 
@@ -544,8 +545,7 @@ static void injectPartConstVirtualColumns(
     if (!virtual_columns.empty())
     {
         if (unlikely(rows && !task))
-            throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert virtual columns to non-empty chunk without specified task.");
 
         const IMergeTreeDataPart * part = nullptr;
         if (rows)
@@ -626,8 +626,8 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
             auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
-                throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                    row_level_column.type->getName());
             }
 
             block.erase(prewhere_info->row_level_column_name);
@@ -639,8 +639,8 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
         {
-            throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                prewhere_column.type->getName());
         }
 
         if (prewhere_info->remove_prewhere_column)
@@ -654,7 +654,8 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
                 prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
             else
                 throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter", prewhere_column.type->getName());
+                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                                "Illegal type {} of column for filter", prewhere_column.type->getName());
         }
     }
 

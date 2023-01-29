@@ -94,7 +94,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         if (!source_part_or_covering)
         {
             /// We do not have one of source parts locally, try to take some already merged part from someone.
-            LOG_DEBUG(log, "Don't have all parts (at least part {} is missing) for merge {}; will try to fetch it instead", source_part_name, entry.new_part_name);
+            LOG_DEBUG(log, "Don't have all parts (at least {} is missing) for merge {}; will try to fetch it instead. "
+                "Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
+               source_part_name, entry.new_part_name);
             return PrepareResult{
                 .prepared_successfully = false,
                 .need_to_check_missing_part_in_fetch = true,
@@ -109,10 +111,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
-            constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, fmt::runtime(message), source_part_name, source_part_or_covering->name, entry.new_part_name);
+            constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
+            String message;
+            LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+                throw Exception::createDeprecated(message, ErrorCodes::LOGICAL_ERROR);
 
             return PrepareResult{
                 .prepared_successfully = false,
@@ -170,11 +173,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
     if (future_merged_part->name != entry.new_part_name)
     {
-        throw Exception("Future merged part name " + backQuote(future_merged_part->name) + " differs from part name in log entry: "
-            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
+            backQuote(future_merged_part->name), backQuote(entry.new_part_name));
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
@@ -297,9 +300,14 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 {
     part = merge_task->getFuture().get();
 
-    /// Task is not needed
-    merge_task.reset();
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
+    /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
+    /// not able to remove the part and will throw an exception (because someone holds the pointer).
+    ///
+    /// Why we cannot reset task right after obtaining part from getFuture()? Because it holds RAII wrapper for
+    /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
+    /// and it's really needed.
+    merge_task.reset();
 
     try
     {

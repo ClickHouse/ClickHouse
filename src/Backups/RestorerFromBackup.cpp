@@ -145,7 +145,7 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 
 void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
     if (restore_coordination)
@@ -346,7 +346,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     res_table_info.has_data = backup->hasFiles(data_path_in_backup);
     res_table_info.data_path_in_backup = data_path_in_backup;
 
-    tables_dependencies.addDependencies(table_name, getDependenciesFromCreateQuery(context->getGlobalContext(), table_name, create_table_query));
+    tables_dependencies.addDependencies(table_name, getDependenciesFromCreateQuery(context, table_name, create_table_query));
 
     if (partitions)
     {
@@ -674,6 +674,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
 void RestorerFromBackup::createTables()
 {
     /// We need to create tables considering their dependencies.
+    tables_dependencies.log();
     auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
     for (const auto & table_id : tables_to_create)
     {

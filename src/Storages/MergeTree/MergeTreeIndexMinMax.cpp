@@ -34,8 +34,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(
-            "Attempt to write empty minmax index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
@@ -122,9 +121,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(
-                "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
+                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -155,11 +153,29 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
     *pos += rows_read;
 }
 
+namespace
+{
+
+KeyCondition buildCondition(const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
+{
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        NameSet array_join_name_set;
+        if (query_info.syntax_analyzer_result)
+            array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
+
+        return KeyCondition{query_info.filter_actions_dag, context, index.column_names, index.expression, array_join_name_set};
+    }
+
+    return KeyCondition{query_info, context, index.column_names, index.expression};
+}
+
+}
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const SelectQueryInfo & query, ContextPtr context)
+    const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(query, context, index.column_names, index.expression)
+    , condition(buildCondition(index, query_info, context))
 {
 }
 
@@ -173,8 +189,7 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     std::shared_ptr<MergeTreeIndexGranuleMinMax> granule
         = std::dynamic_pointer_cast<MergeTreeIndexGranuleMinMax>(idx_granule);
     if (!granule)
-        throw Exception(
-            "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Minmax index condition got a granule with the wrong type.");
     return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
 }
 

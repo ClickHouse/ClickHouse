@@ -14,10 +14,10 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-using TemporaryFile = Poco::TemporaryFile;
+using PocoTemporaryFile = Poco::TemporaryFile;
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
-std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
+std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path);
 
 
 // Determine what block device is responsible for specified path

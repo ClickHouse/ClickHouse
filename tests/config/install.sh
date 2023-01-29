@@ -103,8 +103,10 @@ ln -sf --backup=simple --suffix=_original.xml \
    $SRC_PATH/config.d/query_masking_rules.xml $DEST_SERVER_PATH/config.d/
 
 if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
+    rm -f $DEST_SERVER_PATH/config.d/zookeeper.xml ||:
     ln -sf $SRC_PATH/config.d/zookeeper_fault_injection.xml $DEST_SERVER_PATH/config.d/
 else
+    rm -f $DEST_SERVER_PATH/config.d/zookeeper_fault_injection.xml ||:
     ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 fi
 

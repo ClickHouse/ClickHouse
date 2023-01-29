@@ -3,6 +3,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Interpreters/Context.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -14,11 +16,17 @@ namespace DB
 namespace
 {
 
-class CountDistinctVisitor : public InDepthQueryTreeVisitor<CountDistinctVisitor>
+class CountDistinctVisitor : public InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>
 {
 public:
-    static void visitImpl(QueryTreeNodePtr & node)
+    using Base = InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>;
+    using Base::Base;
+
+    void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().count_distinct_optimization)
+            return;
+
         auto * query_node = node->as<QueryNode>();
 
         /// Check that query has only SELECT clause
@@ -56,7 +64,7 @@ public:
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column
-        auto subquery = std::make_shared<QueryNode>();
+        auto subquery = std::make_shared<QueryNode>(Context::createCopy(query_node->getContext()));
         subquery->getJoinTree() = query_node->getJoinTree();
         subquery->getProjection().getNodes().push_back(count_distinct_argument_column);
         subquery->getGroupBy().getNodes().push_back(count_distinct_argument_column);
@@ -69,16 +77,16 @@ public:
         auto result_type = function_node->getResultType();
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
-        function_node->resolveAsAggregateFunction(std::move(aggregate_function), std::move(result_type));
+        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         function_node->getArguments().getNodes().clear();
     }
 };
 
 }
 
-void CountDistinctPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void CountDistinctPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    CountDistinctVisitor visitor;
+    CountDistinctVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 

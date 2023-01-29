@@ -95,6 +95,11 @@ public:
         return total_values;
     }
 
+    bool empty() const
+    {
+        return samples.empty();
+    }
+
     T quantileNearest(double level)
     {
         if (samples.empty())
@@ -230,7 +235,7 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);

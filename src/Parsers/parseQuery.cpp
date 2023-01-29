@@ -3,6 +3,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -263,7 +264,19 @@ ASTPtr tryParseQuery(
 
     ASTInsertQuery * insert = nullptr;
     if (parse_res)
-        insert = res->as<ASTInsertQuery>();
+    {
+        if (auto * explain = res->as<ASTExplainQuery>())
+        {
+            if (auto explained_query = explain->getExplainedQuery())
+            {
+                insert = explained_query->as<ASTInsertQuery>();
+            }
+        }
+        else
+        {
+            insert = res->as<ASTInsertQuery>();
+        }
+    }
 
     // If parsed query ends at data for insertion. Data for insertion could be
     // in any format and not necessary be lexical correct, so we can't perform
@@ -346,7 +359,7 @@ ASTPtr parseQueryAndMovePosition(
     if (res)
         return res;
 
-    throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+    throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
 }
 
 

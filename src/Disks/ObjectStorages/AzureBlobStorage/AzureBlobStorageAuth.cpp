@@ -49,7 +49,8 @@ void validateContainerName(const String & container_name)
 
     if (!re2::RE2::FullMatch(container_name, container_name_pattern))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "AzureBlob Storage container name is not valid, should follow the format: {}, got: {}", container_name_pattern_str, container_name);
+                        "AzureBlob Storage container name is not valid, should follow the format: {}, got: {}",
+                        container_name_pattern_str, container_name);
 }
 
 

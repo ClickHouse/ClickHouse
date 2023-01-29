@@ -17,8 +17,6 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsConversion.h>
-#include <Functions/CastOverloadResolver.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -45,8 +43,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -464,40 +463,11 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                     throw;
                 }
 
-                auto cast_type_name = common_type->getName();
-                Field cast_type_constant_value(cast_type_name);
-
-                ColumnWithTypeAndName cast_column;
-                cast_column.name = calculateConstantActionNodeName(cast_type_constant_value);
-                cast_column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
-                cast_column.type = std::make_shared<DataTypeString>();
-
-                const ActionsDAG::Node * cast_type_constant_node = nullptr;
-
                 if (!left_key_node->result_type->equals(*common_type))
-                {
-                    cast_type_constant_node = &join_expression_actions->addColumn(cast_column);
-
-                    FunctionCastBase::Diagnostic diagnostic = {left_key_node->result_name, left_key_node->result_name};
-                    FunctionOverloadResolverPtr func_builder_cast
-                        = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(diagnostic);
-
-                    ActionsDAG::NodeRawConstPtrs children = {left_key_node, cast_type_constant_node};
-                    left_key_node = &join_expression_actions->addFunction(func_builder_cast, std::move(children), {});
-                }
+                    left_key_node = &join_expression_actions->addCast(*left_key_node, common_type);
 
                 if (!right_key_node->result_type->equals(*common_type))
-                {
-                    if (!cast_type_constant_node)
-                        cast_type_constant_node = &join_expression_actions->addColumn(cast_column);
-
-                    FunctionCastBase::Diagnostic diagnostic = {right_key_node->result_name, right_key_node->result_name};
-                    FunctionOverloadResolverPtr func_builder_cast
-                        = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
-
-                    ActionsDAG::NodeRawConstPtrs children = {right_key_node, cast_type_constant_node};
-                    right_key_node = &join_expression_actions->addFunction(func_builder_cast, std::move(children), {});
-                }
+                    right_key_node = &join_expression_actions->addCast(*right_key_node, common_type);
             }
 
             join_expression_actions->addOrReplaceInOutputs(*left_key_node);
@@ -671,9 +641,23 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
 {
     trySetStorageInTableJoin(right_table_expression, table_join);
 
+    auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
+
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
+    {
+        for (const auto & result_column : right_table_expression_header)
+        {
+            const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
+            if (!source_column_name)
+                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+                    "JOIN with 'Join' table engine should be performed by storage keys [{}], but column '{}' was found",
+                    fmt::join(storage->getKeyNames(), ", "), result_column.name);
+
+            table_join->setRename(*source_column_name, result_column.name);
+        }
         return storage->getJoinLocked(table_join, planner_context->getQueryContext());
+    }
 
     /** JOIN with constant.
       * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
@@ -741,7 +725,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
 }
 
 }

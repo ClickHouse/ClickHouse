@@ -3,33 +3,42 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
-#include <Analyzer/QueryTreePassManager.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Interpreters/Context_fwd.h>
-
+#include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-class InterpreterSelectQueryAnalyzer : public IInterpreter, public WithContext
+class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
 public:
     /// Initialize interpreter with query AST
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
-        const SelectQueryOptions & select_query_options_,
-        ContextPtr context_);
+        const ContextPtr & context_,
+        const SelectQueryOptions & select_query_options_);
 
     /// Initialize interpreter with query tree
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
-        const SelectQueryOptions & select_query_options_,
-        ContextPtr context_);
+        const ContextPtr & context_,
+        const SelectQueryOptions & select_query_options_);
+
+    ContextPtr getContext() const
+    {
+        return context;
+    }
 
     Block getSampleBlock();
 
     BlockIO execute() override;
 
     QueryPlan && extractQueryPlan() &&;
+
+    QueryPipelineBuilder buildQueryPipeline();
+
+    void addStorageLimits(const StorageLimitsList & storage_limits);
 
     bool supportsTransactions() const override { return true; }
 
@@ -39,10 +48,17 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
+    /// Set merge tree read task callback in context and set collaborate_with_initiator in client info
+    void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
+
+    /// Set number_of_current_replica and count_participating_replicas in client_info
+    void setProperClientInfo(size_t replica_number, size_t count_participating_replicas);
+
 private:
     ASTPtr query;
-    QueryTreeNodePtr query_tree;
+    ContextMutablePtr context;
     SelectQueryOptions select_query_options;
+    QueryTreeNodePtr query_tree;
     Planner planner;
 };
 

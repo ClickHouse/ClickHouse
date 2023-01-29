@@ -64,7 +64,9 @@ private:
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
+
         size_t size_in_bytes = 0;
+        size_t query_number = 0;
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;

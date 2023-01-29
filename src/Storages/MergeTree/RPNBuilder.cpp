@@ -172,7 +172,7 @@ ColumnWithTypeAndName RPNBuilderTreeNode::getConstantColumn() const
 
     if (ast_node)
     {
-        const auto * literal = assert_cast<const ASTLiteral *>(ast_node);
+        const auto * literal = typeid_cast<const ASTLiteral *>(ast_node);
         if (literal)
         {
             result.type = applyVisitor(FieldToDataType(), literal->value);
