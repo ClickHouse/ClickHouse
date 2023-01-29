@@ -186,7 +186,10 @@ QueryCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_
     , min_query_runtime(min_query_runtime_)
 {
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
+    {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+    }
 }
 
 void QueryCache::Writer::buffer(Chunk && partial_query_result)
@@ -205,6 +208,7 @@ void QueryCache::Writer::buffer(Chunk && partial_query_result)
     {
         chunks->clear(); /// eagerly free some space
         skip_insert = true;
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
     }
 }
 
@@ -214,12 +218,19 @@ void QueryCache::Writer::finalizeWrite()
         return;
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
+    {
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (query not expensive enough), query: {}", key.queryStringFromAst());
         return;
+    }
 
     std::lock_guard lock(mutex);
 
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
-        return; /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+    {
+        /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        return;
+    }
 
     auto sufficient_space_in_cache = [this]() TSA_REQUIRES(mutex)
     {
@@ -243,7 +254,9 @@ void QueryCache::Writer::finalizeWrite()
     }
 
     /// Insert or replace if enough space
-    if (sufficient_space_in_cache())
+    if (!sufficient_space_in_cache())
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (insufficient cache space), query: {}", key.queryStringFromAst());
+    else
     {
         cache_size_in_bytes += query_result.sizeInBytes();
         if (auto it = cache.find(key); it != cache.end())
