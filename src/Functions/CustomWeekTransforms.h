@@ -62,10 +62,7 @@ struct ToStartOfWeekImpl
 
     static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfWeek(DayNum(std::min(Int32(time_zone.toDayNum(t)), Int32(DATE_LUT_MAX_DAY_NUM))), week_mode);
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
     }
     static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -73,10 +70,7 @@ struct ToStartOfWeekImpl
     }
     static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfWeek(DayNum(std::min(d, Int32(DATE_LUT_MAX_DAY_NUM))), week_mode);
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
@@ -134,14 +128,17 @@ struct WeekTransformer
     void
     vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
+        using ValueType = typename ToVectorType::value_type;
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
+        {
             if constexpr (is_extended_result)
-                vec_to[i] = transform.executeExtendedResult(vec_from[i], week_mode, time_zone);
+                vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], week_mode, time_zone));
             else
-                vec_to[i] = transform.execute(vec_from[i], week_mode, time_zone);
+                vec_to[i] = static_cast<ValueType>(transform.execute(vec_from[i], week_mode, time_zone));
+        }
     }
 
 private:

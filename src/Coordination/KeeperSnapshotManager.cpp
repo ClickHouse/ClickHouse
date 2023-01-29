@@ -194,6 +194,9 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         // write only the root system path because of digest
         if (Coordination::matchPath(path.toView(), keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
         {
+            if (counter == snapshot.snapshot_container_size - 1)
+                break;
+
             ++it;
             continue;
         }
@@ -403,7 +406,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                             " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+                                " is different from actual children size {} for node {}",
+                                itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #endif
             }
         }

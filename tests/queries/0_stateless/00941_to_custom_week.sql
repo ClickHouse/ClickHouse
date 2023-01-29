@@ -49,3 +49,4 @@ SELECT
     toStartOfWeek(x, 3) AS w3,
     toStartOfWeek(x_t, 3) AS wt3
 FROM numbers(10);
+

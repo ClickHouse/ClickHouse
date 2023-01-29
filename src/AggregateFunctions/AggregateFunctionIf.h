@@ -5,7 +5,7 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -36,24 +36,19 @@ private:
 
 public:
     AggregateFunctionIf(AggregateFunctionPtr nested, const DataTypes & types, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_)
+        : IAggregateFunctionHelper<AggregateFunctionIf>(types, params_, nested->getResultType())
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
-            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
 
-        if (!isUInt8(types.back()))
-            throw Exception("Last argument for aggregate function " + getName() + " must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isUInt8(types.back()) && !types.back()->onlyNull())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Last argument for aggregate function {} must be UInt8", getName());
     }
 
     String getName() const override
     {
         return nested_func->getName() + "If";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return nested_func->getReturnType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -183,6 +178,11 @@ public:
         nested_func->insertResultInto(place, to, arena);
     }
 
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        nested_func->insertMergeResultInto(place, to, arena);
+    }
+
     bool allocatesMemoryInArena() const override
     {
         return nested_func->allocatesMemoryInArena();
@@ -199,12 +199,16 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
+    std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return {num_arguments - 1};
+    }
 
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override
     {
-        return nested_func->isCompilable();
+        return canBeNativeType(*this->argument_types.back()) && nested_func->isCompilable();
     }
 
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override

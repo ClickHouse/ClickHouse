@@ -65,7 +65,7 @@ public:
 
     void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context) override;
+    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
@@ -91,7 +91,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     Strings getDataPaths() const override;
 

@@ -47,8 +47,8 @@ public:
     WrappingUInt32 epoch;
     WrappingUInt32 counter;
     explicit Zxid(UInt64 _zxid)
-            : epoch(_zxid >> 32)
-            , counter(_zxid)
+            : epoch(static_cast<UInt32>(_zxid >> 32))
+            , counter(static_cast<UInt32>(_zxid))
     {}
 
     bool operator<=(const Zxid & other) const

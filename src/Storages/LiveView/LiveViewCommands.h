@@ -58,7 +58,7 @@ public:
     void validate(const IStorage & table)
     {
         if (!empty() && !dynamic_cast<const StorageLiveView *>(&table))
-            throw Exception("Wrong storage type. Must be StorageLiveView", DB::ErrorCodes::UNKNOWN_STORAGE);
+            throw Exception(DB::ErrorCodes::UNKNOWN_STORAGE, "Wrong storage type. Must be StorageLiveView");
     }
 };
 

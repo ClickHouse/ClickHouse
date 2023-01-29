@@ -349,7 +349,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             auto buffer_size = content_size - sizeof read_checksum - sizeof version;
 
             auto state_buf = nuraft::buffer::alloc(buffer_size);
-            read_buf.read(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
+            read_buf.readStrict(reinterpret_cast<char *>(state_buf->data_begin()), buffer_size);
 
             SipHash hash;
             hash.update(version);
@@ -357,16 +357,12 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 
             if (read_checksum != hash.get64())
             {
-                const auto error_string = fmt::format(
-                    "Invalid checksum while reading state from {}. Got {}, expected {}",
-                    path.generic_string(),
-                    hash.get64(),
-                    read_checksum);
+                constexpr auto error_format = "Invalid checksum while reading state from {}. Got {}, expected {}";
 #ifdef NDEBUG
-                LOG_ERROR(logger, fmt::runtime(error_string));
+                LOG_ERROR(logger, error_format, path.generic_string(), hash.get64(), read_checksum);
                 return nullptr;
 #else
-                throw Exception(ErrorCodes::CORRUPTED_DATA, error_string);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, error_format, path.generic_string(), hash.get64(), read_checksum);
 #endif
             }
 

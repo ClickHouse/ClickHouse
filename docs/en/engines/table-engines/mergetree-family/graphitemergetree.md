@@ -19,7 +19,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     Path String,
     Time DateTime,
-    Value <Numeric_type>,
+    Value Float64,
     Version <Numeric_type>
     ...
 ) ENGINE = GraphiteMergeTree(config_section)
@@ -37,7 +37,7 @@ A table for the Graphite data should have the following columns for the followin
 
 -   Time of measuring the metric. Data type: `DateTime`.
 
--   Value of the metric. Data type: any numeric.
+-   Value of the metric. Data type: `Float64`.
 
 -   Version of the metric. Data type: any numeric (ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts).
 
@@ -65,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     EventDate Date,
     Path String,
     Time DateTime,
-    Value <Numeric_type>,
+    Value Float64,
     Version <Numeric_type>
     ...
 ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)

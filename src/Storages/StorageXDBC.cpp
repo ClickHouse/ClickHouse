@@ -106,7 +106,7 @@ Pipe StorageXDBC::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -165,8 +165,8 @@ namespace
             ASTs & engine_args = args.engine_args;
 
             if (engine_args.size() != 3)
-                throw Exception("Storage " + name + " requires exactly 3 parameters: " + name + "('DSN', database or schema, table)",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Storage {} requires exactly 3 parameters: {}('DSN', database or schema, table)", name, name);
 
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());

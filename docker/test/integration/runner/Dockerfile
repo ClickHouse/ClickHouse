@@ -8,6 +8,7 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+    adduser \
     ca-certificates \
     bash \
     btrfs-progs \
@@ -83,6 +84,7 @@ RUN python3 -m pip install \
     pytest \
     pytest-order==1.0.0 \
     pytest-timeout \
+    pytest-random \
     pytest-xdist \
     pytest-repeat \
     pytz \

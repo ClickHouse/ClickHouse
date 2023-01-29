@@ -7,6 +7,9 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
+#include <Planner/PlannerContext.h>
 
 #include <memory>
 
@@ -160,6 +163,9 @@ struct ProjectionCandidate
     SortDescription group_by_elements_order_descr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
+
+    /// Because projection analysis uses a separate interpreter.
+    ContextPtr context;
 };
 
 /** Query along with some additional data,
@@ -168,7 +174,6 @@ struct ProjectionCandidate
   */
 struct SelectQueryInfo
 {
-
     SelectQueryInfo()
         : prepared_sets(std::make_shared<PreparedSets>())
     {}
@@ -177,7 +182,22 @@ struct SelectQueryInfo
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
 
+    /// Query tree
+    QueryTreeNodePtr query_tree;
+
+    /// Planner context
+    PlannerContextPtr planner_context;
+
+    /// Storage table expression
+    QueryTreeNodePtr table_expression;
+
+    /// Table expression modifiers for storage
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+
     std::shared_ptr<const StorageLimitsList> storage_limits;
+
+    /// Local storage limits
+    StorageLimits local_storage_limits;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -195,6 +215,9 @@ struct SelectQueryInfo
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
 
+    /// Filter actions dag for current storage
+    ActionsDAGPtr filter_actions_dag;
+
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;
@@ -209,6 +232,9 @@ struct SelectQueryInfo
     bool need_aggregate = false;
     PrewhereInfoPtr prewhere_info;
 
+    /// If query has aggregate functions
+    bool has_aggregates = false;
+
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     /// If not null, it means we choose a projection to execute current query.
@@ -219,6 +245,11 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+
+    bool is_parameterized_view = false;
+
+    // If limit is not 0, that means it's a trivial limit query.
+    UInt64 limit = 0;
 
     InputOrderInfoPtr getInputOrderInfo() const
     {

@@ -39,7 +39,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
@@ -77,26 +77,26 @@ public:
         auto is_table_valid = isTableValid();
         if (!is_table_valid.has_value())
         {
-            static constexpr std::string_view error_msg = "Failed to activate table because of connection issues. It will be activated "
+            static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
                                                           "once a connection is established and metadata is verified";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
             {
-                LOG_ERROR(log, fmt::runtime(error_msg));
+                LOG_ERROR(log, error_msg);
                 return;
             }
         }
 
         if (!*is_table_valid)
         {
-            static constexpr std::string_view error_msg
+            static constexpr auto error_msg
                 = "Failed to activate table because of invalid metadata in ZooKeeper. Please DETACH table";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
             {
-                LOG_ERROR(log, fmt::runtime(error_msg));
+                LOG_ERROR(log, error_msg);
                 return;
             }
         }

@@ -28,7 +28,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
     String elem = "profiles." + profile_name;
 
     if (!config.has(elem))
-        throw Exception("There is no profile '" + profile_name + "' in configuration file.", ErrorCodes::THERE_IS_NO_PROFILE);
+        throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "There is no profile '{}' in configuration file.", profile_name);
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(elem, config_keys);
@@ -47,7 +47,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
 void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config)
 {
     if (!config.has(path))
-        throw Exception("There is no path '" + path + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", path);
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(path, config_keys);
@@ -125,13 +125,12 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
         const auto & name = setting.getName();
         if (config.has(name) && !setting.isObsolete())
         {
-            throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
                 " You can add it to <profiles><default> if you want to change default value of this setting."
                 " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
                 " in the main configuration file.",
-                name, config_path),
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                name, config_path);
         }
     }
 }
@@ -148,31 +147,30 @@ std::vector<String> Settings::getAllRegisteredNames() const
 
 void Settings::set(std::string_view name, const Field & value)
 {
-    BaseSettings::set(name, value);
-
     if (name == "compatibility")
-        applyCompatibilitySetting();
+        applyCompatibilitySetting(value.get<String>());
     /// If we change setting that was changed by compatibility setting before
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
     else if (settings_changed_by_compatibility_setting.contains(name))
         settings_changed_by_compatibility_setting.erase(name);
+
+    BaseSettings::set(name, value);
 }
 
-void Settings::applyCompatibilitySetting()
+void Settings::applyCompatibilitySetting(const String & compatibility_value)
 {
     /// First, revert all changes applied by previous compatibility setting
     for (const auto & setting_name : settings_changed_by_compatibility_setting)
         resetToDefault(setting_name);
 
     settings_changed_by_compatibility_setting.clear();
-    String compatibility = getString("compatibility");
     /// If setting value is empty, we don't need to change settings
-    if (compatibility.empty())
+    if (compatibility_value.empty())
         return;
 
-    ClickHouseVersion version(compatibility);
+    ClickHouseVersion version(compatibility_value);
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)

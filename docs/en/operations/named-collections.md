@@ -130,7 +130,7 @@ SHOW TABLES FROM mydatabase;
 └────────┘
 ```
 
-### Example of using named collections with an external dictionary with source MySQL
+### Example of using named collections with a dictionary with source MySQL
 
 ```sql
 CREATE DICTIONARY dict (A Int64, B String)
@@ -213,7 +213,7 @@ SHOW TABLES FROM mydatabase
 └──────┘
 ```
 
-### Example of using named collections with an external dictionary with source POSTGRESQL
+### Example of using named collections with a dictionary with source POSTGRESQL
 
 ```sql
 CREATE DICTIONARY dict (a Int64, b String)
@@ -239,7 +239,7 @@ Example of configuration:
 <clickhouse>
     <named_collections>
         <remote1>
-            <host>localhost</host>
+            <host>remote_host</host>
             <port>9000</port>
             <database>system</database>
             <user>foo</user>
@@ -270,7 +270,7 @@ SELECT * FROM remote(remote1, database = default, table = test);
 └───┴───┘
 ```
 
-### Example of using named collections with an external dictionary with source ClickHouse
+### Example of using named collections with a dictionary with source ClickHouse
 
 ```sql
 CREATE DICTIONARY dict(a Int64, b String)
