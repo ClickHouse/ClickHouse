@@ -104,6 +104,8 @@ NYPD
 NuRaft
 ObjectId
 Ok
+OLAP
+OLTP
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -125,6 +127,8 @@ PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
+QueryResultCacheHits
+QueryResultCacheMisses
 RBAC
 RawBLOB
 RedHat
@@ -325,6 +329,7 @@ kafka
 kafkacat
 konsole
 latencies
+laion
 lexicographically
 libFuzzer
 libc
@@ -490,6 +495,7 @@ tokenization
 toml
 toolchain
 toolset
+transactionally
 tskv
 tsv
 tui

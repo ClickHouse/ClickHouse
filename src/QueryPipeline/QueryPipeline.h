@@ -4,7 +4,6 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <functional>
 
-
 namespace DB
 {
 
@@ -32,6 +31,7 @@ class SinkToStorage;
 class ISource;
 class ISink;
 class ReadProgressCallback;
+class StreamInQueryResultCacheTransform;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -104,6 +104,9 @@ public:
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
+
+    void streamIntoQueryResultCache(std::shared_ptr<StreamInQueryResultCacheTransform> transform);
+    void finalizeWriteInQueryResultCache();
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 

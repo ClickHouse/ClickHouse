@@ -6,6 +6,9 @@
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
+#include <Common/LoggingFormatStringHelpers.h>
+
+namespace Poco { class Logger; }
 
 /// This wrapper is useful to save formatted message into a String before sending it to a logger
 class LogToStrImpl
@@ -33,40 +36,9 @@ public:
 
 namespace
 {
-    template <typename... Ts> constexpr size_t numArgs(Ts &&...) { return sizeof...(Ts); }
-    template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
-    /// For implicit conversion of fmt::basic_runtime<> to char* for std::string ctor
-    template <typename T, typename... Ts> constexpr auto firstArg(fmt::basic_runtime<T> && data, Ts &&...) { return data.str.data(); }
-
     [[maybe_unused]] const ::Poco::Logger * getLogger(const ::Poco::Logger * logger) { return logger; };
     [[maybe_unused]] const ::Poco::Logger * getLogger(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); };
     [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLogger(std::unique_ptr<LogToStrImpl> && logger) { return logger; };
-
-    template<typename T> struct is_fmt_runtime : std::false_type {};
-    template<typename T> struct is_fmt_runtime<fmt::basic_runtime<T>> : std::true_type {};
-
-    /// Usually we use LOG_*(...) macros with either string literals or fmt::runtime(whatever) as a format string.
-    /// This function is useful to get a string_view to a static format string passed to LOG_* macro.
-    template <typename T> constexpr std::string_view tryGetStaticFormatString(T && x)
-    {
-        if constexpr (is_fmt_runtime<T>::value)
-        {
-            /// It definitely was fmt::runtime(something).
-            /// We are not sure about a lifetime of the string, so return empty view.
-            /// Also it can be arbitrary string, not a formatting pattern.
-            /// So returning empty pattern will not pollute the set of patterns.
-            return std::string_view();
-        }
-        else
-        {
-            /// Most likely it was a string literal.
-            /// Unfortunately, there's no good way to check if something is a string literal.
-            /// But fmtlib requires a format string to be compile-time constant unless fmt::runtime is used.
-            static_assert(std::is_nothrow_convertible<T, const char * const>::value);
-            static_assert(!std::is_pointer<T>::value);
-            return std::string_view(x);
-        }
-    }
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
@@ -85,6 +57,7 @@ namespace
     if (_is_clients_log || _logger->is((PRIORITY)))                               \
     {                                                                             \
         std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
+        formatStringCheckArgsNum(__VA_ARGS__);                                    \
         if (auto _channel = _logger->getChannel())                                \
         {                                                                         \
             std::string file_function;                                            \
