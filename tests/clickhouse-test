@@ -1796,6 +1796,8 @@ def reportCoverageFor(args, what, query, permissive=False):
 
 
 def reportCoverage(args):
+    clickhouse_execute(args, "SYSTEM FLUSH LOGS")
+
     return (
         reportCoverageFor(
             args,
