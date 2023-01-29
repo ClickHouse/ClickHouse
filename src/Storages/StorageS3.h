@@ -11,16 +11,16 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
-#include <Processors/ISource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Poco/URI.h>
-#include <Common/logger_useful.h>
-#include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
+#include <IO/S3Common.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Poco/URI.h>
+#include <Common/logger_useful.h>
 
 namespace Aws::S3
 {
@@ -33,6 +33,18 @@ namespace DB
 class PullingPipelineExecutor;
 class StorageS3SequentialSource;
 class NamedCollection;
+
+template <typename Name, typename MetaParser>
+class IStorageDataLake;
+
+struct StorageIcebergName;
+class IcebergMetaParser;
+
+struct StorageDeltaLakeName;
+class DeltaLakeMetaParser;
+
+struct StorageHudiName;
+class HudiMetaParser;
 
 class StorageS3Source : public ISource, WithContext
 {
@@ -315,9 +327,9 @@ public:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
-    friend class StorageHudi;
-    friend class StorageDeltaLake;
-    friend class StorageIceberg;
+    friend class IStorageDataLake<StorageHudiName, HudiMetaParser>;
+    friend class IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser>;
+    friend class IStorageDataLake<StorageIcebergName, IcebergMetaParser>;
 
     S3Configuration s3_configuration;
     std::vector<String> keys;
