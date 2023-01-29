@@ -219,7 +219,7 @@ InputFormatPtr FormatFactory::getInput(
 
     if (!getCreators(name).input_creator)
     {
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input (with processors)", name);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
     }
 
     const Settings & settings = context->getSettingsRef();
@@ -337,7 +337,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
@@ -374,7 +374,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     if (context->hasQueryContext() && context->getSettingsRef().log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
@@ -406,7 +406,7 @@ String FormatFactory::getContentType(
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
