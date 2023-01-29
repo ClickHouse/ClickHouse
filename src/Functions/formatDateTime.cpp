@@ -478,7 +478,7 @@ private:
             return res.size();
         }
 
-        static size_t jodaCentryOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        static size_t jodaCenturyOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             year = (year < 0 ? -year : year);
@@ -1137,7 +1137,7 @@ public:
                         reserve_size += repetitions <= 3 ? 2 : 13;
                         break;
                     case 'C':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCentryOfEra, repetitions));
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCenturyOfEra, repetitions));
                         /// Year range [1900, 2299]
                         reserve_size += std::max(repetitions, 2);
                         break;
