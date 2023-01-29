@@ -303,7 +303,6 @@ bool MergeTreeTransaction::rollback() noexcept
         part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-
     assert([&]()
     {
         std::lock_guard lock{mutex};

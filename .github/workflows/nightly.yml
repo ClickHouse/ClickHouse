@@ -107,7 +107,7 @@ jobs:
         run: |
           curl --form token="${COVERITY_TOKEN}" \
             --form email='security+coverity@clickhouse.com' \
-            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tgz" \
+            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tar.zst" \
             --form version="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::6}" \
             --form description="Nighly Scan: $(date +'%Y-%m-%dT%H:%M:%S')" \
             https://scan.coverity.com/builds?project=ClickHouse%2FClickHouse

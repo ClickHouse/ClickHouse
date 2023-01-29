@@ -558,6 +558,8 @@ and if the value is not a number, ClickHouse treats it as a string.
 If you don't want ClickHouse to try to determine complex types using some parsers and heuristics, you can disable setting `input_format_csv_use_best_effort_in_schema_inference`
 and ClickHouse will treat all columns as Strings.
 
+If setting `input_format_csv_detect_header` is enabled, ClickHouse will try to detect the header with column names (and maybe types) while inferring schema. This setting is enabled by default.
+
 **Examples:**
 
 Integers, Floats, Bools, Strings:
@@ -669,6 +671,61 @@ DESC format(CSV, '"[1,2,3]",42.42,Hello World!')
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
+Examples of header auto-detection (when `input_format_csv_detect_header` is enabled):
+
+Only names:
+```sql
+SELECT * FROM format(CSV,
+$$"number","string","array"
+42,"Hello","[1, 2, 3]"
+43,"World","[4, 5, 6]"
+$$)
+```
+
+```response
+┌─number─┬─string─┬─array───┐
+│     42 │ Hello  │ [1,2,3] │
+│     43 │ World  │ [4,5,6] │
+└────────┴────────┴─────────┘
+```
+
+Names and types:
+
+```sql
+DESC format(CSV,
+$$"number","string","array"
+"UInt32","String","Array(UInt16)"
+42,"Hello","[1, 2, 3]"
+43,"World","[4, 5, 6]"
+$$)
+```
+
+```response
+┌─name───┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ UInt32        │              │                    │         │                  │                │
+│ string │ String        │              │                    │         │                  │                │
+│ array  │ Array(UInt16) │              │                    │         │                  │                │
+└────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Note that the header can be detected only if there is at least one column with a non-String type. If all columns have String type, the header is not detected:
+
+```sql
+SELECT * FROM format(CSV,
+$$"first_column","second_column"
+"Hello","World"
+"World","Hello"
+$$)
+```
+
+```response
+┌─c1───────────┬─c2────────────┐
+│ first_column │ second_column │
+│ Hello        │ World         │
+│ World        │ Hello         │
+└──────────────┴───────────────┘
+```
+
 ## TSV/TSKV {#tsv-tskv}
 
 In TSV/TSKV formats ClickHouse extracts column value from the row according to tabular delimiters and then parses extracted value using
@@ -677,6 +734,7 @@ the recursive parser to determine the most appropriate type. If the type cannot 
 If you don't want ClickHouse to try to determine complex types using some parsers and heuristics, you can disable setting `input_format_tsv_use_best_effort_in_schema_inference`
 and ClickHouse will treat all columns as Strings.
 
+If setting `input_format_tsv_detect_header` is enabled, ClickHouse will try to detect the header with column names (and maybe types) while inferring schema. This setting is enabled by default.
 
 **Examples:**
 
@@ -799,6 +857,61 @@ DESC format(TSV, '[1,2,3]	42.42	Hello World!')
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
+Examples of header auto-detection (when `input_format_tsv_detect_header` is enabled):
+
+Only names:
+```sql
+SELECT * FROM format(TSV,
+$$number	string	array
+42	Hello	[1, 2, 3]
+43	World	[4, 5, 6]
+$$);
+```
+
+```response
+┌─number─┬─string─┬─array───┐
+│     42 │ Hello  │ [1,2,3] │
+│     43 │ World  │ [4,5,6] │
+└────────┴────────┴─────────┘
+```
+
+Names and types:
+
+```sql
+DESC format(TSV,
+$$number	string	array
+UInt32	String	Array(UInt16)
+42	Hello	[1, 2, 3]
+43	World	[4, 5, 6]
+$$)
+```
+
+```response
+┌─name───┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ UInt32        │              │                    │         │                  │                │
+│ string │ String        │              │                    │         │                  │                │
+│ array  │ Array(UInt16) │              │                    │         │                  │                │
+└────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Note that the header can be detected only if there is at least one column with a non-String type. If all columns have String type, the header is not detected:
+
+```sql
+SELECT * FROM format(TSV,
+$$first_column	second_column
+Hello	World
+World	Hello
+$$)
+```
+
+```response
+┌─c1───────────┬─c2────────────┐
+│ first_column │ second_column │
+│ Hello        │ World         │
+│ World        │ Hello         │
+└──────────────┴───────────────┘
+```
+
 ## Values {#values}
 
 In Values format ClickHouse extracts column value from the row and then parses it using
@@ -911,6 +1024,8 @@ DESC format(TSV, '[1,2,3]	42.42	Hello World!')
 In CustomSeparated format ClickHouse first extracts all column values from the row according to specified delimiters and then tries to infer
 the data type for each value according to escaping rule.
 
+If setting `input_format_custom_detect_header` is enabled, ClickHouse will try to detect the header with column names (and maybe types) while inferring schema. This setting is enabled by default.
+
 **Example**
 
 ```sql
@@ -935,6 +1050,34 @@ $$)
 │ c2   │ Nullable(String)       │              │                    │         │                  │                │
 │ c3   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Example of header auto-detection (when `input_format_custom_detect_header` is enabled):
+
+```sql
+SET format_custom_row_before_delimiter = '<row_before_delimiter>',
+       format_custom_row_after_delimiter = '<row_after_delimiter>\n',
+       format_custom_row_between_delimiter = '<row_between_delimiter>\n',
+       format_custom_result_before_delimiter = '<result_before_delimiter>\n',
+       format_custom_result_after_delimiter = '<result_after_delimiter>\n',
+       format_custom_field_delimiter = '<field_delimiter>',
+       format_custom_escaping_rule = 'Quoted'
+
+DESC format(CustomSeparated, $$<result_before_delimiter>
+<row_before_delimiter>'number'<field_delimiter>'string'<field_delimiter>'array'<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>42.42<field_delimiter>'Some string 1'<field_delimiter>[1, NULL, 3]<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>NULL<field_delimiter>'Some string 3'<field_delimiter>[1, 2, NULL]<row_after_delimiter>
+<result_after_delimiter>
+$$)
+```
+
+```response
+┌─number─┬─string────────┬─array──────┐
+│  42.42 │ Some string 1 │ [1,NULL,3] │
+│   ᴺᵁᴸᴸ │ Some string 3 │ [1,2,NULL] │
+└────────┴───────────────┴────────────┘
 ```
 
 ## Template {#template}
@@ -1193,7 +1336,7 @@ DESC format(JSONEachRow, $$
 └──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings.md#date_time_input_format)
+Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings-formats.md#date_time_input_format)
 
 ### input_format_try_infer_dates
 
@@ -1569,5 +1712,3 @@ DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}') SETTINGS allow_ex
 │ json │ Object('json') │              │                    │         │                  │                │
 └──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/interfaces/schema-inference) <!--hide-->

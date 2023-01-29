@@ -4,6 +4,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -13,6 +14,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -88,9 +90,13 @@ StorageExternalDistributed::StorageExternalDistributed(
             case ExternalStorageEngine::PostgreSQL:
             {
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
-                StoragePostgreSQLConfiguration postgres_conf;
-                postgres_conf.set(configuration);
+                StoragePostgreSQL::Configuration postgres_conf;
                 postgres_conf.addresses = addresses;
+                postgres_conf.username = configuration.username;
+                postgres_conf.password = configuration.password;
+                postgres_conf.database = configuration.database;
+                postgres_conf.table = configuration.table;
+                postgres_conf.schema = configuration.schema;
 
                 const auto & settings = context->getSettingsRef();
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
@@ -227,7 +233,9 @@ void registerStorageExternalDistributed(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         if (engine_args.size() < 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine ExternalDistributed must have at least 2 arguments: engine_name, named_collection and/or description");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Engine ExternalDistributed must have at least 2 arguments: "
+                            "engine_name, named_collection and/or description");
 
         auto engine_name = checkAndGetLiteralArgument<String>(engine_args[0], "engine_name");
         StorageExternalDistributed::ExternalStorageEngine table_engine;
@@ -239,32 +247,20 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",
-                engine_name);
+                            "External storage engine {} is not supported for StorageExternalDistributed. "
+                            "Supported engines are: MySQL, PostgreSQL, URL",
+                            engine_name);
 
         ASTs inner_engine_args(engine_args.begin() + 1, engine_args.end());
         String cluster_description;
 
         if (engine_name == "URL")
         {
-            URLBasedDataSourceConfiguration configuration;
-            if (auto named_collection = getURLBasedDataSourceConfiguration(inner_engine_args, args.getLocalContext()))
+            StorageURL::Configuration configuration;
+            if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
             {
-                auto [common_configuration, storage_specific_args] = named_collection.value();
-                configuration.set(common_configuration);
-
-                for (const auto & [name, value] : storage_specific_args)
-                {
-                    if (name == "description")
-                        cluster_description = checkAndGetLiteralArgument<String>(value, "cluster_description");
-                    else
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Unknown key-value argument {} for table engine URL", name);
-                }
-
-                if (cluster_description.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Engine ExternalDistribued must have `description` key-value argument or named collection parameter");
+                StorageURL::processNamedCollectionResult(configuration, *named_collection);
+                StorageURL::collectHeaders(engine_args, configuration.headers, args.getLocalContext());
             }
             else
             {
@@ -315,10 +311,9 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             else
             {
                 if (engine_args.size() != 6)
-                    throw Exception(
-                        "Storage ExternalDistributed requires 5 parameters: "
-                        "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                    "Storage ExternalDistributed requires 5 parameters: "
+                                    "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').");
 
                 cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
                 configuration.database = checkAndGetLiteralArgument<String>(engine_args[2], "database");

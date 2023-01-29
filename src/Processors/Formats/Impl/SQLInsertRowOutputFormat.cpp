@@ -65,27 +65,24 @@ void SQLInsertRowOutputFormat::writeRowEndDelimiter()
 {
     writeChar(')', out);
     ++rows_in_line;
-    if (rows_in_line >= format_settings.sql_insert.max_batch_size)
-    {
-        writeChar(';', out);
-        rows_in_line = 0;
-    }
 }
 
 void SQLInsertRowOutputFormat::writeRowBetweenDelimiter()
 {
-    if (rows_in_line == 0)
-        writeChar('\n', out);
+    if (rows_in_line >= format_settings.sql_insert.max_batch_size)
+    {
+        writeCString(";\n", out);
+        rows_in_line = 0;
+    }
     else
+    {
         writeCString(", ", out);
+    }
 }
 
 void SQLInsertRowOutputFormat::writeSuffix()
 {
-    if (rows_in_line != 0)
-        writeChar(';', out);
-    if (haveWrittenData())
-        writeChar('\n', out);
+    writeCString(";\n", out);
 }
 
 void SQLInsertRowOutputFormat::resetFormatterImpl()

@@ -26,6 +26,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Storages/StorageS3Settings.h>
 
 #include "TestPocoHTTPServer.h"
@@ -97,7 +98,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     client_configuration.retryStrategy = std::make_shared<NoRetryStrategy>();
 
     String server_side_encryption_customer_key_base64 = "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=";
-    DB::HeaderCollection headers;
+    DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 

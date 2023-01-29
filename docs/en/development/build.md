@@ -147,6 +147,14 @@ hash cmake
 
 ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
 
-Binaries are built for stable and LTS releases and also every commit to `master` for each pull request.
+The CI checks build the binaries on each commit to [ClickHouse](https://github.com/clickhouse/clickhouse/). To download them:
 
-To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green check mark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
+1. Open the [commits list](https://github.com/ClickHouse/ClickHouse/commits/master)
+1. Choose a **Merge pull request** commit that includes the new feature, or was added after the new feature
+1. Click the status symbol (yellow dot, red x, green check) to open the CI check list
+1. Scroll through the list until you find **ClickHouse build check x/x artifact groups are OK**
+1. Click **Details**
+1. Find the type of package for your operating system that you need and download the files.
+
+![build artifact check](images/find-build-artifact.png)
+

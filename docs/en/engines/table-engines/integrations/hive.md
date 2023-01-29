@@ -407,5 +407,3 @@ f_char:      hello world
 f_bool:      true
 day:         2021-09-18
 ```
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/hive/) <!--hide-->

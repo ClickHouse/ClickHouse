@@ -110,6 +110,7 @@ void buildLifetimeConfiguration(
 void buildLayoutConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
+    const ASTDictionarySettings * settings,
     const ASTDictionaryLayout * layout)
 {
     AutoPtr<Element> layout_element(doc->createElement("layout"));
@@ -119,6 +120,19 @@ void buildLayoutConfiguration(
 
     if (!layout->parameters)
         return;
+
+    if (settings != nullptr)
+    {
+        AutoPtr<Element> settings_element(doc->createElement("settings"));
+        root->appendChild(settings_element);
+        for (const auto & [name, value] : settings->changes)
+        {
+            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            settings_element->appendChild(setting_change_element);
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            setting_change_element->appendChild(setting_value);
+        }
+    }
 
     for (const auto & param : layout->parameters->children)
     {
@@ -602,7 +616,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
-    buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
+    buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
     buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
