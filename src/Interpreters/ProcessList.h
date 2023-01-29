@@ -40,6 +40,7 @@ struct ProcessListForUser;
 class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
+class ProcessList;
 
 
 /** List of currently executing queries.
@@ -71,6 +72,18 @@ struct QueryStatusInfo
     std::string current_database;
 };
 
+
+/// Global memory overcommit tracker for all processes
+struct GlobalOvercommitTracker : OvercommitTracker
+{
+    explicit GlobalOvercommitTracker(ProcessList * process_list_);
+    ~GlobalOvercommitTracker() override = default;
+
+protected:
+    CancelQuery pickQueryToExclude(MemoryTracker * exhausted) override;
+};
+
+
 /// Query and information about its execution.
 class QueryStatus : public WithContext
 {
@@ -79,7 +92,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
-    friend struct ::GlobalOvercommitTracker;
+    friend struct GlobalOvercommitTracker;
 
     String query;
     ClientInfo client_info;
@@ -202,7 +215,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    CancellationCode cancelQuery(bool kill);
+    CancellationCode cancelQuery(int code, const String & msg);
 
     bool isKilled() const { return is_killed; }
 
@@ -235,6 +248,20 @@ struct ProcessListForUserInfo
 
     // Optional field, filled by request.
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+};
+
+
+/// Memory overcommit tracker per user
+struct UserOvercommitTracker : OvercommitTracker
+{
+    explicit UserOvercommitTracker(ProcessList * process_list_, ProcessListForUser * user_process_list_);
+    ~UserOvercommitTracker() override = default;
+
+protected:
+    CancelQuery pickQueryToExclude(MemoryTracker * exhausted) override;
+
+private:
+    ProcessListForUser * user_process_list;
 };
 
 
@@ -274,9 +301,6 @@ struct ProcessListForUser
             user_throttler.reset();
     }
 };
-
-
-class ProcessList;
 
 
 /// Keeps iterator to process list and removes element in destructor.
@@ -338,8 +362,8 @@ public:
 protected:
     friend class ProcessListEntry;
     friend struct ::OvercommitTracker;
-    friend struct ::UserOvercommitTracker;
-    friend struct ::GlobalOvercommitTracker;
+    friend struct UserOvercommitTracker;
+    friend struct GlobalOvercommitTracker;
 
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
@@ -413,7 +437,7 @@ public:
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, int code, const String & msg);
 
     void killAllQueries();
 };

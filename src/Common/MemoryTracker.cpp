@@ -249,7 +249,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         {
             OvercommitResult overcommit_result = OvercommitResult::NONE;
             if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
-                overcommit_result = overcommit_tracker_ptr->needToStopQuery(query_tracker, size);
+                overcommit_result = overcommit_tracker_ptr->needToStopQuery(this, query_tracker, size);
 
             if (overcommit_result != OvercommitResult::MEMORY_FREED)
             {

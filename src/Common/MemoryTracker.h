@@ -180,6 +180,11 @@ public:
         description_ptr.store(description, std::memory_order_relaxed);
     }
 
+    const char * getDescription()
+    {
+        return description_ptr.load(std::memory_order_relaxed);
+    }
+
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
 

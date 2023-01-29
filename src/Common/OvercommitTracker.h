@@ -10,6 +10,7 @@
 #include <mutex>
 #include <unordered_map>
 
+
 // This struct is used for the comparison of query memory usage.
 struct OvercommitRatio
 {
@@ -59,6 +60,9 @@ enum class QueryCancellationState
     RUNNING  = 2,  // Hard limit is reached, selected query has started the process of cancellation.
 };
 
+// Callback to cancel query picked to be excluded.
+using CancelQuery = std::function<void()>;
+
 // Usually it's hard to set some reasonable hard memory limit
 // (especially, the default value). This class introduces new
 // mechanism for the limiting of memory usage.
@@ -68,7 +72,7 @@ enum class QueryCancellationState
 // is killed to free memory.
 struct OvercommitTracker : boost::noncopyable
 {
-    OvercommitResult needToStopQuery(MemoryTracker * tracker, Int64 amount);
+    OvercommitResult needToStopQuery(MemoryTracker * exhausted, MemoryTracker * tracker, Int64 amount);
 
     void tryContinueQueryExecutionAfterFree(Int64 amount);
 
@@ -79,7 +83,9 @@ struct OvercommitTracker : boost::noncopyable
 protected:
     explicit OvercommitTracker(DB::ProcessList * process_list_);
 
-    virtual void pickQueryToExcludeImpl() = 0;
+    // Pick query to be canceled due to memory limit exceeded in `exhausted` memory tracker.
+    // Returns callback to cancel that query. Callback is called after unlock of ProcessList mutex.
+    virtual CancelQuery pickQueryToExclude(MemoryTracker * exhausted) = 0;
 
     // This mutex is used to disallow concurrent access
     // to picked_tracker and cancellation_state variables.
@@ -94,21 +100,12 @@ protected:
 
     // Global mutex stored in ProcessList is used to synchronize
     // insertion and deletion of queries.
-    // OvercommitTracker::pickQueryToExcludeImpl() implementations
+    // OvercommitTracker::pickQueryToExclude() implementations
     // require this mutex to be locked, because they read list (or sublist)
     // of queries.
     DB::ProcessList * process_list;
+
 private:
-
-    void pickQueryToExclude()
-    {
-        if (cancellation_state == QueryCancellationState::NONE)
-        {
-            pickQueryToExcludeImpl();
-            cancellation_state = QueryCancellationState::SELECTED;
-        }
-    }
-
     void reset() noexcept
     {
         picked_tracker = nullptr;
@@ -132,29 +129,6 @@ private:
     size_t id_to_release; // We can release all threads with id smaller than this
 
     bool allow_release;
-};
-
-struct UserOvercommitTracker : OvercommitTracker
-{
-    explicit UserOvercommitTracker(DB::ProcessList * process_list_, DB::ProcessListForUser * user_process_list_);
-
-    ~UserOvercommitTracker() override = default;
-
-protected:
-    void pickQueryToExcludeImpl() override;
-
-private:
-    DB::ProcessListForUser * user_process_list;
-};
-
-struct GlobalOvercommitTracker : OvercommitTracker
-{
-    explicit GlobalOvercommitTracker(DB::ProcessList * process_list_);
-
-    ~GlobalOvercommitTracker() override = default;
-
-protected:
-    void pickQueryToExcludeImpl() override;
 };
 
 // This class is used to disallow tracking during logging to avoid deadlocks.

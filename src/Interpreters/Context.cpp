@@ -1656,10 +1656,10 @@ void Context::setCurrentQueryId(const String & query_id)
         client_info.initial_query_id = client_info.current_query_id;
 }
 
-void Context::killCurrentQuery() const
+void Context::killCurrentQuery(int code, const String & msg) const
 {
     if (auto elem = getProcessListElement())
-        elem->cancelQuery(true);
+        elem->cancelQuery(code, msg);
 }
 
 String Context::getDefaultFormat() const

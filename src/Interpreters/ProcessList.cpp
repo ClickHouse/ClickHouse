@@ -12,6 +12,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 #include <Common/CurrentThread.h>
 #include <Common/CancelToken.h>
 #include <IO/WriteHelpers.h>
@@ -33,6 +34,7 @@ namespace ErrorCodes
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 
@@ -378,7 +380,7 @@ QueryStatus::~QueryStatus()
     }
 }
 
-CancellationCode QueryStatus::cancelQuery(bool)
+CancellationCode QueryStatus::cancelQuery(int code, const String & msg)
 {
     if (is_killed.load())
         return CancellationCode::CancelSent;
@@ -392,7 +394,7 @@ CancellationCode QueryStatus::cancelQuery(bool)
     {
         std::lock_guard lock(thread_group->mutex);
         for (Int64 thread_id : thread_group->thread_ids)
-            CancelToken::signal(thread_id); // TODO(serxa): pass exception code and text here to be thrown by cancelled thread
+            CancelToken::signal(thread_id, code, msg);
     }
 
     std::lock_guard lock(executors_mutex);
@@ -469,7 +471,7 @@ QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_quer
 }
 
 
-CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, int code, const String & msg)
 {
     QueryStatusPtr elem;
 
@@ -493,6 +495,8 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         elem->is_cancelling = true;
     }
 
+    LOG_DEBUG(&Poco::Logger::get("ProcessList"), "Cancel query {} of user {}. Code: {}. {}. ({})", current_query_id, current_user, code, msg, ErrorCodes::getName(code));
+
     SCOPE_EXIT({
         DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -501,7 +505,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
         cancelled_cv.notify_all();
     });
 
-    return elem->cancelQuery(kill);
+    return elem->cancelQuery(code, msg);
 }
 
 
@@ -527,8 +531,7 @@ void ProcessList::killAllQueries()
     }
 
     for (auto & cancelled_process : cancelled_processes)
-        cancelled_process->cancelQuery(true);
-
+        cancelled_process->cancelQuery(ErrorCodes::QUERY_WAS_CANCELLED, "Kill all queries");
 }
 
 
@@ -659,6 +662,98 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+UserOvercommitTracker::UserOvercommitTracker(DB::ProcessList * process_list_, DB::ProcessListForUser * user_process_list_)
+    : OvercommitTracker(process_list_)
+    , user_process_list(user_process_list_)
+{}
+
+CancelQuery UserOvercommitTracker::pickQueryToExclude(MemoryTracker * exhausted)
+{
+    DB::QueryStatusPtr query_to_cancel;
+    MemoryTracker * query_tracker = nullptr;
+    OvercommitRatio current_ratio{0, 0};
+    // At this moment query list must be read only.
+    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
+    auto & queries = user_process_list->queries;
+    for (auto const & [_, query] : queries)
+    {
+        if (query->isKilled())
+            continue;
+
+        auto * memory_tracker = query->getMemoryTracker();
+        if (!memory_tracker)
+            continue;
+
+        auto ratio = memory_tracker->getOvercommitRatio();
+        if (ratio.soft_limit != 0 && current_ratio < ratio)
+        {
+            query_to_cancel = query;
+            query_tracker = memory_tracker;
+            current_ratio = ratio;
+        }
+    }
+    picked_tracker = query_tracker;
+    return [=]
+    {
+        query_to_cancel->cancelQuery(
+            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+            fmt::format(
+                "Memory limit (user) exceeded: "
+                "current: {}, maximum: {}. "
+                "Query was selected to stop by OvercommitTracker.",
+                formatReadableSizeWithBinarySuffix(query_to_cancel->getMemoryTracker()->get()),
+                formatReadableSizeWithBinarySuffix(exhausted ? exhausted->getHardLimit() : 0)));
+    };
+}
+
+GlobalOvercommitTracker::GlobalOvercommitTracker(DB::ProcessList * process_list_)
+    : OvercommitTracker(process_list_)
+{
+}
+
+CancelQuery GlobalOvercommitTracker::pickQueryToExclude(MemoryTracker * exhausted)
+{
+    DB::QueryStatusPtr query_to_cancel;
+    MemoryTracker * query_tracker = nullptr;
+    OvercommitRatio current_ratio{0, 0};
+    // At this moment query list must be read only.
+    // This is guaranteed by locking global_mutex in OvercommitTracker::needToStopQuery.
+    for (auto const & query : process_list->processes)
+    {
+        if (query->isKilled())
+            continue;
+
+        Int64 user_soft_limit = 0;
+        if (auto const * user_process_list = query->getUserProcessList())
+            user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
+        if (user_soft_limit == 0)
+            continue;
+
+        auto * memory_tracker = query->getMemoryTracker();
+        if (!memory_tracker)
+            continue;
+        auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
+        if (current_ratio < ratio)
+        {
+            query_to_cancel = query;
+            query_tracker = memory_tracker;
+            current_ratio = ratio;
+        }
+    }
+    picked_tracker = query_tracker;
+    return [=]
+    {
+        query_to_cancel->cancelQuery(
+            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+            fmt::format(
+                "Memory limit (total) exceeded: "
+                "current: {}, maximum: {}. "
+                "Query was selected to stop by OvercommitTracker.",
+                formatReadableSizeWithBinarySuffix(query_to_cancel->getMemoryTracker()->get()),
+                formatReadableSizeWithBinarySuffix(exhausted ? exhausted->getHardLimit() : 0)));
+    };
 }
 
 }

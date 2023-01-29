@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -161,7 +162,7 @@ public:
                 if (curr_process.processed)
                     continue;
 
-                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
+                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, ErrorCodes::QUERY_WAS_CANCELLED, "Query was killed");
 
                 if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
@@ -226,7 +227,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             MutableColumns res_columns = header.cloneEmptyColumns();
             for (const auto & query_desc : queries_to_stop)
             {
-                auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
+                auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, ErrorCodes::QUERY_WAS_CANCELLED, "Query was killed");
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
 

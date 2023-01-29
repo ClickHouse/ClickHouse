@@ -110,6 +110,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 
     extern const int TIMEOUT_EXCEEDED;
+
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
@@ -812,7 +814,7 @@ void HTTPHandler::processQuery(
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
             if (!request.checkPeerConnected())
-                context->killCurrentQuery();
+                context->killCurrentQuery(ErrorCodes::QUERY_WAS_CANCELLED, "Client connection is lost");
         });
     }
 
