@@ -18,6 +18,7 @@ client = cluster.add_instance(
     "clickhouse-client",
 )
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     global cluster
@@ -44,8 +45,8 @@ def test_host_regexp_multiple_ptr_v4(started_cluster):
 
     setup_ch_server(dns_server_ip)
 
-    for i in range(0, 300):
+    for _ in range(0, 300):
         response = client.query("select reverseDNSQuery('2001:4860:4860::8888')")
-        assert(response == "['dns.google']\n")
+        assert response == "['dns.google']\n"
 
 
