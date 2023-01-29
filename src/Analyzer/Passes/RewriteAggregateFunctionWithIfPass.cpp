@@ -43,7 +43,7 @@ public:
             return;
 
         auto lower_name = Poco::toLower(function_node->getFunctionName());
-        auto & if_arguments_nodes = if_node->getArguments().getNodes();
+        auto if_arguments_nodes = if_node->getArguments().getNodes();
         auto * first_const_node = if_arguments_nodes[1]->as<ConstantNode>();
         auto * second_const_node = if_arguments_nodes[2]->as<ConstantNode>();
         if (second_const_node)
@@ -63,7 +63,7 @@ public:
         }
         else if (first_const_node)
         {
-             const auto & first_const_value = first_const_node->getValue();
+            const auto & first_const_value = first_const_node->getValue();
             if (first_const_value.isNull()
                 || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.get<UInt64>() == 0))
             {
@@ -72,7 +72,7 @@ public:
                 auto not_function = std::make_shared<FunctionNode>("not");
                 auto & not_function_arguments = not_function->getArguments().getNodes();
                 not_function_arguments.push_back(std::move(if_arguments_nodes[0]));
-                not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentTypes()));
+                not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentColumns()));
 
                 function_arguments_nodes.resize(2);
                 function_arguments_nodes[0] = std::move(if_arguments_nodes[2]);
