@@ -861,7 +861,8 @@ public:
     void dropMMappedFileCache() const;
 
     /// Create a cache of query results for statements which run repeatedly.
-    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records);
+    void setQueryCache();
+    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
     void dropQueryCache() const;
 
