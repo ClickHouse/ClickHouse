@@ -435,7 +435,7 @@ def test_zip_archive_with_bad_settings():
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query(
+    assert expected_error in instance.query_and_get_error(
         f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_settings', compression_method='foobar'"
     )
     assert (
