@@ -438,7 +438,12 @@ def test_zip_archive_with_bad_settings():
     instance.query(
         f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_settings', compression_method='foobar'"
     )
-    assert instance.query("SELECT status FROM system.backups WHERE id='archive_with_bad_settings'") == "BACKUP_FAILED\n"
+    assert (
+        instance.query(
+            "SELECT status FROM system.backups WHERE id='archive_with_bad_settings'"
+        )
+        == "BACKUP_FAILED\n"
+    )
 
 
 def test_async():
