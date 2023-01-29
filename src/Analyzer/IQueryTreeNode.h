@@ -72,6 +72,9 @@ class IQueryTreeNode : public TypePromotion<IQueryTreeNode>
 public:
     virtual ~IQueryTreeNode() = default;
 
+    IQueryTreeNode & operator=(const IQueryTreeNode &) = default;
+    IQueryTreeNode & operator=(IQueryTreeNode &&) = default;
+
     /// Get query tree node type
     virtual QueryTreeNodeType getNodeType() const = 0;
 
