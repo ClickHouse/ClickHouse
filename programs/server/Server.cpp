@@ -1331,6 +1331,7 @@ try
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+            global_context->updateQueryCacheConfiguration(*config);
 #if USE_BORINGSSL
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #endif
@@ -1517,13 +1518,8 @@ try
         global_context->setMMappedFileCache(mmap_cache_size);
 
     /// A cache for query results.
-    size_t query_cache_size = config().getUInt64("query_cache.size", 1_GiB);
-    if (query_cache_size)
-        global_context->setQueryCache(
-            query_cache_size,
-            config().getUInt64("query_cache.max_entries", 1024),
-            config().getUInt64("query_cache.max_entry_size", 1_MiB),
-            config().getUInt64("query_cache.max_entry_records", 30'000'000));
+    global_context->setQueryCache();
+    global_context->updateQueryCacheConfiguration(config());
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
