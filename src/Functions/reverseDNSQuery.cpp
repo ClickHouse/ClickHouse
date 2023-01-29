@@ -37,18 +37,29 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", name);
         }
 
-        auto ip_address_input = arguments[0].column;
+        auto res_type = getReturnTypeImpl({data_type});
 
-        auto ip_address = Poco::Net::IPAddress(ip_address_input->getDataAt(0).toString());
+        if (input_rows_count == 0u)
+        {
+            return res_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
+
+        if (!isString(arguments[0].type))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires the input column to be of type String", name);
+        }
+
+        auto input_column = arguments[0].column;
+
+        auto ip_address = Poco::Net::IPAddress(input_column->getDataAt(0).toString());
 
         auto ptr_records = DNSResolver::instance().reverseResolve(ip_address);
-
-        auto res_type = getReturnTypeImpl({data_type});
 
         if (ptr_records.empty())
             return res_type->createColumnConstWithDefaultValue(input_rows_count);
 
         Array res;
+
         for (const auto & ptr_record : ptr_records)
         {
             res.push_back(ptr_record);
