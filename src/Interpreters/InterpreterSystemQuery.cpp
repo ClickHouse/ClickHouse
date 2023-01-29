@@ -295,8 +295,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SYNC_FILE_CACHE:
         {
-            // It's too heavy.
-            LOG_DEBUG(log, "will call syscall sync() function, It's too heavy.");
+            LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
             sync();
             break;
         }
