@@ -182,6 +182,9 @@ struct SelectQueryInfo
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
 
+    /// Query tree
+    QueryTreeNodePtr query_tree;
+
     /// Planner context
     PlannerContextPtr planner_context;
 
@@ -192,6 +195,9 @@ struct SelectQueryInfo
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
+
+    /// Local storage limits
+    StorageLimits local_storage_limits;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -226,6 +232,9 @@ struct SelectQueryInfo
     bool need_aggregate = false;
     PrewhereInfoPtr prewhere_info;
 
+    /// If query has aggregate functions
+    bool has_aggregates = false;
+
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     /// If not null, it means we choose a projection to execute current query.
@@ -236,6 +245,8 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+
+    bool is_parameterized_view = false;
 
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;

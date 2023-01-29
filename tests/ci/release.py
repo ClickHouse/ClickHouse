@@ -90,8 +90,9 @@ class Release:
         return self._git.run(cmd, cwd, **kwargs)
 
     def set_release_branch(self):
-        # Fetch release commit in case it does not exist locally
+        # Fetch release commit and tags in case they don't exist locally
         self.run(f"git fetch {self.repo.url} {self.release_commit}")
+        self.run(f"git fetch {self.repo.url} --tags")
 
         # Get the actual version for the commit before check
         with self._checkout(self.release_commit, True):

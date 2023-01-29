@@ -292,6 +292,34 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse/postgresql-java-client",
         ]
 
+    def _pre_pull_images(self, repo_path):
+        image_cmd = self._get_runner_image_cmd(repo_path)
+
+        cmd = (
+            "cd {repo_path}/tests/integration && "
+            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} --pre-pull --command '{command}' ".format(
+                repo_path=repo_path,
+                runner_opts=self._get_runner_opts(),
+                image_cmd=image_cmd,
+                command=r""" echo Pre Pull finished """,
+            )
+        )
+
+        for i in range(5):
+            logging.info("Pulling images before running tests. Attempt %s", i)
+            try:
+                subprocess.check_output(
+                    cmd,
+                    shell=True,
+                )
+                return
+            except subprocess.CalledProcessError as err:
+                logging.info("docker-compose pull failed: " + str(err))
+                continue
+        logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
+        # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
+        exit(13)
+
     def _can_run_with(self, path, opt):
         with open(path, "r") as script:
             for line in script:
@@ -806,6 +834,10 @@ class ClickhouseIntegrationTestsRunner:
             )
 
         self._install_clickhouse(build_path)
+
+        logging.info("Pulling images")
+        runner._pre_pull_images(repo_path)
+
         logging.info(
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),

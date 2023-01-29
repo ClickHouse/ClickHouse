@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <shared_mutex>
+#include <Common/SharedMutex.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
@@ -52,7 +52,7 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands &, ContextPtr) override;
+    void mutate(const MutationCommands &, ContextPtr, bool) override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
@@ -86,7 +86,7 @@ private:
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
-    mutable std::shared_mutex rocksdb_ptr_mx;
+    mutable SharedMutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;

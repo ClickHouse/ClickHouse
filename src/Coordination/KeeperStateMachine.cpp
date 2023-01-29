@@ -251,7 +251,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", session_id);
             }
         }
     }
@@ -264,10 +264,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(
-                    ErrorCodes::SYSTEM_ERROR,
-                    "Could not push response with session id {} into responses queue",
-                    response_for_session.session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
             }
 
         if (keeper_context->digest_enabled && request_for_session.digest)
@@ -524,8 +521,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
         true /*is_local*/);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
-            throw Exception(
-                ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
+            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
 }
 
 void KeeperStateMachine::shutdownStorage()
