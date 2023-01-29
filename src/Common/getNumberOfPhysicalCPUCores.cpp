@@ -54,7 +54,7 @@ try
     /// See https://doc.callmematthi.eu/static/webArticles/Understanding%20Linux%20_proc_cpuinfo.pdf
     std::ifstream proc_cpuinfo("/proc/cpuinfo");
 
-    if (proc_cpuinfo.fail())
+    if (!proc_cpuinfo.is_open())
         /// In obscure cases (chroot) /proc can be unmounted
         return std::thread::hardware_concurrency();
 
