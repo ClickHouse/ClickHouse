@@ -96,4 +96,4 @@ setting [query_result_cache_store_results_of_queries_with_nondeterministic_funct
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting
-[query_result_cache_share_between_users]{settings/settings.md#query-result-cache-share-between-users}.
+[query_result_cache_share_between_users](settings/settings.md#query-result-cache-share-between-users).

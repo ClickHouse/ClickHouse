@@ -56,6 +56,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
+#include <unistd.h>
 
 #include "config.h"
 
@@ -121,7 +122,7 @@ void executeCommandsAndThrowIfError(Callables && ... commands)
 {
     auto status = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
     if (status.code != 0)
-        throw Exception(status.message, status.code);
+        throw Exception::createDeprecated(status.message, status.code);
 }
 
 
@@ -288,8 +289,14 @@ BlockIO InterpreterSystemQuery::execute()
             copyData(res->out, out);
             copyData(res->err, out);
             if (!out.str().empty())
-                LOG_DEBUG(log, "The command returned output: {}", command, out.str());
+                LOG_DEBUG(log, "The command {} returned output: {}", command, out.str());
             res->wait();
+            break;
+        }
+        case Type::SYNC_FILE_CACHE:
+        {
+            LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
+            sync();
             break;
         }
         case Type::DROP_DNS_CACHE:
@@ -1131,6 +1138,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNFREEZE:
         {
             required_access.emplace_back(AccessType::SYSTEM_UNFREEZE);
+            break;
+        }
+        case Type::SYNC_FILE_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
         case Type::STOP_LISTEN_QUERIES:
