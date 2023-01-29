@@ -74,10 +74,10 @@ struct ColumnToPointsConverter
             const Float64 second = second_container[i];
 
             if (isNaN(first) || isNaN(second))
-                throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be NaN");
 
             if (std::isinf(first) || std::isinf(second))
-                throw Exception("Point's component must not be infinite", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Point's component must not be infinite");
 
             answer[i] = Point(first, second);
         }
@@ -339,7 +339,7 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
     else if (factory.get("MultiPolygon")->equals(*type))
         return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
-    throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type {}", type->getName());
 }
 
 

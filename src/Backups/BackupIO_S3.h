@@ -4,22 +4,11 @@
 
 #if USE_AWS_S3
 #include <Backups/BackupIO.h>
-#include <IO/S3Common.h>
 #include <IO/ReadSettings.h>
+#include <IO/S3Common.h>
 #include <Storages/StorageS3Settings.h>
-
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/HeadObjectRequest.h>
-#include <aws/s3/model/DeleteObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/CreateMultipartUploadRequest.h>
-#include <aws/s3/model/CompleteMultipartUploadRequest.h>
-#include <aws/s3/model/UploadPartCopyRequest.h>
-#include <aws/s3/model/AbortMultipartUploadRequest.h>
-#include <aws/s3/model/HeadObjectResult.h>
-#include <aws/s3/model/ListObjectsV2Result.h>
+
 
 namespace DB
 {
@@ -54,12 +43,15 @@ public:
     UInt64 getFileSize(const String & file_name) override;
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
+
+    void copyDataToFile(const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name) override;
+
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
     DataSourceDescription getDataSourceDescription() const override;
     bool supportNativeCopy(DataSourceDescription data_source_description) const override;
-    void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to) override;
+    void copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name) override;
 
 private:
     void copyObjectImpl(
@@ -67,7 +59,7 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
+        size_t size,
         const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
 
     void copyObjectMultipartImpl(
@@ -75,7 +67,7 @@ private:
         const String & src_key,
         const String & dst_bucket,
         const String & dst_key,
-        const Aws::S3::Model::HeadObjectResult & head,
+        size_t size,
         const std::optional<ObjectAttributes> & metadata = std::nullopt) const;
 
     void removeFilesBatch(const Strings & file_names);

@@ -7,6 +7,8 @@ import logging
 
 from github import Github
 
+from commit_status_helper import post_commit_status
+from docker_pull_helper import get_image_with_version
 from env_helper import (
     IMAGES_PATH,
     REPO_COPY,
@@ -14,10 +16,9 @@ from env_helper import (
     S3_TEST_REPORTS_BUCKET,
     TEMP_PATH,
 )
-from commit_status_helper import post_commit_status
-from docker_pull_helper import get_image_with_version
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
+from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -80,9 +81,9 @@ if __name__ == "__main__":
         "HTML report</a>"
     )
 
-    test_results = [(index_html, "Look at the report")]
+    test_result = TestResult(index_html, "Look at the report")
 
-    report_url = upload_results(s3_helper, 0, pr_info.sha, test_results, [], NAME)
+    report_url = upload_results(s3_helper, 0, pr_info.sha, [test_result], [], NAME)
 
     print(f"::notice ::Report url: {report_url}")
 
