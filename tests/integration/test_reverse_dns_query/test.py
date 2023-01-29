@@ -48,5 +48,3 @@ def test_host_regexp_multiple_ptr_v4(started_cluster):
     for _ in range(0, 300):
         response = client.query("select reverseDNSQuery('2001:4860:4860::8888')")
         assert response == "['dns.google']\n"
-
-
