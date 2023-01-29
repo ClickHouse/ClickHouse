@@ -36,6 +36,7 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 
 namespace DB
 {
@@ -245,6 +246,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
+
+    manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
