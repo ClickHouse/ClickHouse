@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Tags: replica, no-parallel, no-fasttest
 
-
 # This test checks mutations concurrent execution with concurrent inserts.
 # There was a bug in mutations finalization, when mutation finishes not after all
 # MUTATE_PART tasks execution, but after GET of already mutated part from other replica.
 # To test it we stop some replicas to delay fetch of required parts for mutation.
-# Since our replication queue executing tasks concurrently it may happen, that we dowload already mutated
+# Since our replication queue executing tasks concurrently it may happen, that we download already mutated
 # part before source part.
 
 
