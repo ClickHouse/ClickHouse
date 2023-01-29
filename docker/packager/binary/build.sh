@@ -159,7 +159,7 @@ then
     git -C "$PERF_OUTPUT"/ch log -5
     (
         cd "$PERF_OUTPUT"/..
-        tar -cv -I pigz -f /output/performance.tgz output
+        tar -cv --zstd -f /output/performance.tar.zst output
     )
 fi
 
@@ -167,15 +167,15 @@ fi
 if [ "" != "$COMBINED_OUTPUT" ]
 then
     prepare_combined_output /output
-    tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
+    tar -cv --zstd -f "$COMBINED_OUTPUT.tar.zst" /output
     rm -r /output/*
-    mv "$COMBINED_OUTPUT.tgz" /output
+    mv "$COMBINED_OUTPUT.tar.zst" /output
 fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    tar -cv -I pigz -f "coverity-scan.tgz" cov-int
-    mv "coverity-scan.tgz" /output
+    tar -cv --zstd -f "coverity-scan.tar.zst" cov-int
+    mv "coverity-scan.tar.zst" /output
 fi
 
 ccache_status

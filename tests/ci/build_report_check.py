@@ -10,13 +10,14 @@ from typing import Dict, List, Tuple
 from github import Github
 
 from env_helper import (
+    GITHUB_JOB_URL,
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
     REPORTS_PATH,
     TEMP_PATH,
 )
-from report import create_build_html_report
+from report import create_build_html_report, BuildResult, BuildResults
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import NeedsDataType, PRInfo
@@ -31,24 +32,6 @@ from rerun_helper import RerunHelper
 NEEDS_DATA_PATH = os.getenv("NEEDS_DATA_PATH", "")
 
 
-class BuildResult:
-    def __init__(
-        self,
-        compiler,
-        build_type,
-        sanitizer,
-        status,
-        elapsed_seconds,
-        with_coverage,
-    ):
-        self.compiler = compiler
-        self.build_type = build_type
-        self.sanitizer = sanitizer
-        self.status = status
-        self.elapsed_seconds = elapsed_seconds
-        self.with_coverage = with_coverage
-
-
 def group_by_artifacts(build_urls: List[str]) -> Dict[str, List[str]]:
     groups = {
         "apk": [],
@@ -59,7 +42,7 @@ def group_by_artifacts(build_urls: List[str]) -> Dict[str, List[str]]:
         "performance": [],
     }  # type: Dict[str, List[str]]
     for url in build_urls:
-        if url.endswith("performance.tgz"):
+        if url.endswith("performance.tar.zst"):
             groups["performance"].append(url)
         elif (
             url.endswith(".deb")
@@ -81,7 +64,7 @@ def group_by_artifacts(build_urls: List[str]) -> Dict[str, List[str]]:
 
 def get_failed_report(
     job_name: str,
-) -> Tuple[List[BuildResult], List[List[str]], List[str]]:
+) -> Tuple[BuildResults, List[List[str]], List[str]]:
     message = f"{job_name} failed"
     build_result = BuildResult(
         compiler="unknown",
@@ -89,14 +72,13 @@ def get_failed_report(
         sanitizer="unknown",
         status=message,
         elapsed_seconds=0,
-        with_coverage=False,
     )
     return [build_result], [[""]], [GITHUB_RUN_URL]
 
 
 def process_report(
     build_report: dict,
-) -> Tuple[List[BuildResult], List[List[str]], List[str]]:
+) -> Tuple[BuildResults, List[List[str]], List[str]]:
     build_config = build_report["build_config"]
     build_result = BuildResult(
         compiler=build_config["compiler"],
@@ -104,7 +86,6 @@ def process_report(
         sanitizer=build_config["sanitizer"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
-        with_coverage=False,
     )
     build_results = []
     build_urls = []
@@ -207,9 +188,9 @@ def main():
         logging.info("Got exactly %s builds", len(builds_report_map))
 
     # Group build artifacts by groups
-    build_results = []  # type: List[BuildResult]
-    build_artifacts = []  #
-    build_logs = []
+    build_results = []  # type: BuildResults
+    build_artifacts = []  # type: List[List[str]]
+    build_logs = []  # type: List[str]
 
     for build_report in build_reports:
         _build_results, build_artifacts_url, build_logs_url = process_report(
@@ -244,7 +225,7 @@ def main():
         branch_name = f"PR #{pr_info.number}"
         branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_info.number}"
     commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{pr_info.sha}"
-    task_url = GITHUB_RUN_URL
+    task_url = GITHUB_JOB_URL()
     report = create_build_html_report(
         build_check_name,
         build_results,

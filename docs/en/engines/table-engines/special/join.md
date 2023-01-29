@@ -86,7 +86,18 @@ When creating a table, the following settings are applied:
 [join_any_take_last_row](/docs/en/operations/settings/settings.md/#settings-join_any_take_last_row)
 #### join_use_nulls
 
-[persistent](/docs/en/operations/settings/settings.md/#persistent)
+#### persistent
+
+Disables persistency for the Join and [Set](/docs/en/engines/table-engines/special/set.md) table engines.
+
+Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+
+Default value: `1`.
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
@@ -151,4 +162,3 @@ ALTER TABLE id_val_join DELETE WHERE id = 3;
 │  1 │  21 │
 └────┴─────┘
 ```
-

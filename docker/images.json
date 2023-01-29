@@ -63,10 +63,6 @@
         "name": "clickhouse/integration-tests-runner",
         "dependent": []
     },
-    "docker/test/testflows/runner": {
-        "name": "clickhouse/testflows-runner",
-        "dependent": []
-    },
     "docker/test/fasttest": {
         "name": "clickhouse/fasttest",
         "dependent": []

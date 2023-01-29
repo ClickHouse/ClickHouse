@@ -72,13 +72,15 @@ BlockIO InterpreterDeleteQuery::execute()
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext());
+        table->mutate(mutation_commands, getContext(), false);
         return {};
     }
     else if (table->supportsLightweightDelete())
     {
         if (!getContext()->getSettingsRef().allow_experimental_lightweight_delete)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight delete mutate is experimental. Set `allow_experimental_lightweight_delete` setting to enable it");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Lightweight delete mutate is experimental. "
+                            "Set `allow_experimental_lightweight_delete` setting to enable it");
 
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
@@ -106,7 +108,7 @@ BlockIO InterpreterDeleteQuery::execute()
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
         MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), false).validate();
-        table->mutate(mutation_commands, getContext());
+        table->mutate(mutation_commands, getContext(), true);
 
         return {};
     }

@@ -1,0 +1,1 @@
+SELECT [9223372036854775806, 1048575], [], sumMap(val, [toDateTime64([CAST(1., 'Decimal(10,2)'), CAST(10.000100135803223, 'Decimal(10,2)')], NULL), CAST(-0., 'Decimal(10,2)')], cnt) FROM (SELECT toDateTime64('0.0000001023', [1025, 256], '102.5', NULL), [NULL], [CAST('a', 'FixedString(1)'), CAST('', 'FixedString(1)')] AS val, [1024, 100] AS cnt);

@@ -28,6 +28,8 @@ public:
     bool operator() (Map &) const;
     bool operator() (Object &) const;
     bool operator() (UUID &) const;
+    bool operator() (IPv4 &) const;
+    bool operator() (IPv6 &) const;
     bool operator() (AggregateFunctionStateData &) const;
     bool operator() (bool &) const;
 
