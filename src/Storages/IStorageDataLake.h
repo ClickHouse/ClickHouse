@@ -114,7 +114,7 @@ public:
     static constexpr auto name = Name::name;
     String getName() const override { return name; }
 
-    // Reads latest version of Iceberg table
+    // Reads latest version of Lake Table
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
