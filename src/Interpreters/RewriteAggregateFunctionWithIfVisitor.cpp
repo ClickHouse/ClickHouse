@@ -43,7 +43,8 @@ void RewriteAggregateFunctionWithIfMatcher::visit(const ASTFunction & func, ASTP
         {
             /// avg(if(cond, a, null)) -> avgIf(a, cond)
             /// sum(if(cond, a, 0)) -> sumIf(a, cond)
-            auto new_func = makeASTFunction(func.name + "If", if_arguments[1], if_arguments[0]);
+            auto new_func
+                = makeASTFunction(func.name + (second_literal->value.isNull() ? "IfOrNull" : "If"), if_arguments[1], if_arguments[0]);
             new_func->setAlias(func.alias);
             new_func->parameters = func.parameters;
 
@@ -59,7 +60,8 @@ void RewriteAggregateFunctionWithIfMatcher::visit(const ASTFunction & func, ASTP
             /// avg(if(cond, null, a) -> avgIf(a, !cond))
             /// sum(if(cond, 0, a) -> sumIf(a, !cond))
             auto not_func = makeASTFunction("not", if_arguments[0]);
-            auto new_func = makeASTFunction(func.name + "If", if_arguments[2], std::move(not_func));
+            auto new_func
+                = makeASTFunction(func.name + (first_literal->value.isNull() ? "IfOrNull" : "If"), if_arguments[2], std::move(not_func));
             new_func->setAlias(func.alias);
             new_func->parameters = func.parameters;
 
