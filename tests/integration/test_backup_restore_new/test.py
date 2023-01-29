@@ -430,6 +430,17 @@ def test_zip_archive_with_settings():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+def test_zip_archive_with_bad_settings():
+    backup_name = f"Disk('backups', 'archive_with_bad_settings.zip')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_settings', compression_method='foobar'"
+    )
+    assert instance.query("SELECT status FROM system.backups WHERE id='archive_with_bad_settings'") == "BACKUP_FAILED\n"
+
+
 def test_async():
     create_and_fill_table()
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
