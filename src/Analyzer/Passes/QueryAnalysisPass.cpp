@@ -1804,7 +1804,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         subquery_context->setSettings(subquery_settings);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node, subquery_context, options);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, options);
 
         auto io = interpreter->execute();
 
