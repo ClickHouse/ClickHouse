@@ -1,12 +1,13 @@
 #pragma once
 
-#include <Core/QueryProcessingStage.h>
-#include <Interpreters/StorageID.h>
-#include <Storages/IStorage_fwd.h>
-#include <Storages/StorageSnapshot.h>
 #include <Client/ConnectionPool.h>
+#include <Core/QueryProcessingStage.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Storages/StorageSnapshot.h>
 
 namespace DB
 {
@@ -46,7 +47,10 @@ public:
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
         bool lazy = false;
-        UInt32 local_delay = 0;
+        time_t local_delay = 0;
+
+        /// Set only if parallel reading from replicas is used.
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator;
     };
 
     using Shards = std::vector<Shard>;
@@ -76,16 +80,14 @@ public:
         std::unique_ptr<QueryPlan> remote_plan;
     };
 
-    ShardPlans createForShardWithParallelReplicas(
+    void createForShardWithParallelReplicas(
         const Cluster::ShardInfo & shard_info,
         const ASTPtr & query_ast,
         const StorageID & main_table,
-        const ASTPtr & table_function_ptr,
-        const ThrottlerPtr & throttler,
         ContextPtr context,
         UInt32 shard_count,
-        const std::shared_ptr<const StorageLimitsList> & storage_limits
-    );
+        std::vector<QueryPlanPtr> & local_plans,
+        Shards & remote_shards);
 
 private:
     const Block header;

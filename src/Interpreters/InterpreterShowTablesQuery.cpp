@@ -105,13 +105,21 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     }
 
     if (query.temporary && !query.from.empty())
-        throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
     String database = getContext()->resolveDatabase(query.from);
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
-    rewritten_query << "SELECT name FROM system.";
+
+    if (query.full)
+    {
+        rewritten_query << "SELECT name, engine FROM system.";
+    }
+    else
+    {
+        rewritten_query << "SELECT name FROM system.";
+    }
 
     if (query.dictionaries)
         rewritten_query << "dictionaries ";
@@ -123,7 +131,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary)
     {
         if (query.dictionaries)
-            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
         rewritten_query << "is_temporary";
     }
     else

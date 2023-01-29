@@ -1,5 +1,5 @@
 #pragma once
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_PARQUET
 #    include <Processors/Formats/IOutputFormat.h>
@@ -36,6 +36,7 @@ public:
 private:
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     const FormatSettings format_settings;
 

@@ -59,13 +59,15 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
         const String path = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+        auto data_part_storage = data_part_info_for_read->getDataPartStorage();
+
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-                std::string(fs::path(data_part_info_for_read->getDataPartStorage()->getFullPath()) / path),
-                [this, path]()
+                std::string(fs::path(data_part_storage->getFullPath()) / path),
+                [this, path, data_part_storage]()
                 {
-                    return data_part_info_for_read->getDataPartStorage()->readFile(
+                    return data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt);
@@ -87,7 +89,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         {
             auto buffer =
                 std::make_unique<CompressedReadBufferFromFile>(
-                    data_part_info_for_read->getDataPartStorage()->readFile(
+                    data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt),

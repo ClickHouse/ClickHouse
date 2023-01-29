@@ -43,7 +43,7 @@ protected:
 
     virtual String serviceFileName() const = 0;
 
-    virtual size_t getDefaultPort() const = 0;
+    virtual unsigned getDefaultPort() const = 0;
 
     virtual bool startBridgeManually() const = 0;
 

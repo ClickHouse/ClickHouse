@@ -7,7 +7,7 @@
 
 namespace DB::QueryPlanOptimizations
 {
-size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 {
     /// check if it is preliminary distinct node
     DistinctStep * pre_distinct = nullptr;
@@ -22,7 +22,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     /// walk through the plan
     /// (1) check if nodes below preliminary distinct preserve sorting
     /// (2) gather transforming steps to update their sorting properties later
-    std::vector<ITransformingStep *> steps2update;
+    std::vector<ITransformingStep *> steps_to_update;
     QueryPlan::Node * node = parent_node;
     while (!node->children.empty())
     {
@@ -34,7 +34,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         if (!traits.preserves_sorting)
             return 0;
 
-        steps2update.push_back(step);
+        steps_to_update.push_back(step);
 
         node = node->children.front();
     }
@@ -42,6 +42,12 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
     /// check if we read from MergeTree
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_merge_tree)
+        return 0;
+
+    /// if reading from merge tree doesn't provide any output order, we can do nothing
+    /// it means that no ordering can provided or supported for a particular sorting key
+    /// for example, tuple() or sipHash(string)
+    if (read_from_merge_tree->getOutputStream().sort_description.empty())
         return 0;
 
     /// find non-const columns in DISTINCT
@@ -84,11 +90,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
-    while (!steps2update.empty())
+    while (!steps_to_update.empty())
     {
-        steps2update.back()->updateInputStream(*input_stream);
-        input_stream = &steps2update.back()->getOutputStream();
-        steps2update.pop_back();
+        steps_to_update.back()->updateInputStream(*input_stream);
+        input_stream = &steps_to_update.back()->getOutputStream();
+        steps_to_update.pop_back();
     }
 
     return 0;
