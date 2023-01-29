@@ -108,7 +108,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     future_mutated_part->parts.push_back(source_part);
     future_mutated_part->part_info = new_part_info;
     future_mutated_part->updatePath(storage, reserved_space.get());
-    future_mutated_part->type = source_part->getType();
+    future_mutated_part->part_format = source_part->getFormat();
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
@@ -194,6 +194,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
+    auto & data_part_storage = new_part->getDataPartStorage();
+    if (data_part_storage.hasActiveTransaction())
+        data_part_storage.precommitTransaction();
+
     storage.renameTempPartAndReplace(new_part, *transaction_ptr);
 
     try

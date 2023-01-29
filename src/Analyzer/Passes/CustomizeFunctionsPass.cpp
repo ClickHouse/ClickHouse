@@ -16,12 +16,11 @@ namespace DB
 namespace
 {
 
-class CustomizeFunctionsVisitor : public InDepthQueryTreeVisitor<CustomizeFunctionsVisitor>
+class CustomizeFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<CustomizeFunctionsVisitor>
 {
 public:
-    explicit CustomizeFunctionsVisitor(ContextPtr & context_)
-        : context(context_)
-    {}
+    using Base = InDepthQueryTreeVisitorWithContext<CustomizeFunctionsVisitor>;
+    using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
@@ -29,7 +28,7 @@ public:
         if (!function_node)
             return;
 
-        const auto & settings = context->getSettingsRef();
+        const auto & settings = getSettings();
 
         /// After successful function replacement function name and function name lowercase must be recalculated
         auto function_name = function_node->getFunctionName();
@@ -154,19 +153,16 @@ public:
 
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function = FunctionFactory::instance().get(function_name, context);
+        auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
-
-private:
-    ContextPtr & context;
 };
 
 }
 
 void CustomizeFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    CustomizeFunctionsVisitor visitor(context);
+    CustomizeFunctionsVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
 
