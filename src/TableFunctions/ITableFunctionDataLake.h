@@ -15,7 +15,6 @@
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Interpreters/parseColumnsListForTableFunction.h>
 #    include <Parsers/ASTLiteral.h>
-#    include <Storages/StorageIceberg.h>
 #    include <Storages/StorageURL.h>
 #    include <Storages/checkAndGetLiteralArgument.h>
 
@@ -51,7 +50,7 @@ protected:
         if (configuration.structure != "auto")
             columns = parseColumnsListFromString(configuration.structure, context);
 
-        StoragePtr storage = std::make_shared<StorageIceberg>(
+        StoragePtr storage = std::make_shared<Storage>(
             configuration, StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription{}, String{}, context, std::nullopt);
 
         storage->startup();
