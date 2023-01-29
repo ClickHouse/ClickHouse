@@ -41,3 +41,9 @@ SELECT countIf(number % 2 != 0) FROM numbers(100);
 EXPLAIN SYNTAX SELECT sumIf(123, number % 2 == 0) FROM numbers(100);
 EXPLAIN SYNTAX SELECT sum(if(number % 2 == 0, 123, 0)) FROM numbers(100);
 EXPLAIN SYNTAX SELECT sum(if(number % 2 == 0, 0, 123)) FROM numbers(100);
+
+set allow_experimental_analyzer = true;
+
+EXPLAIN QUERY TREE run_passes=1 SELECT sumIf(123, number % 2 == 0) FROM numbers(100);
+EXPLAIN QUERY TREE run_passes=1 SELECT sum(if(number % 2 == 0, 123, 0)) FROM numbers(100);
+EXPLAIN QUERY TREE run_passes=1 SELECT sum(if(number % 2 == 0, 0, 123)) FROM numbers(100);
