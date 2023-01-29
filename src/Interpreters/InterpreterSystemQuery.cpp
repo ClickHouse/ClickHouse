@@ -56,6 +56,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
+#include <unistd.h>
 
 #include "config.h"
 
@@ -290,6 +291,12 @@ BlockIO InterpreterSystemQuery::execute()
             if (!out.str().empty())
                 LOG_DEBUG(log, "The command {} returned output: {}", command, out.str());
             res->wait();
+            break;
+        }
+        case Type::SYNC_FILE_CACHE:
+        {
+            LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
+            sync();
             break;
         }
         case Type::DROP_DNS_CACHE:
@@ -1131,6 +1138,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNFREEZE:
         {
             required_access.emplace_back(AccessType::SYSTEM_UNFREEZE);
+            break;
+        }
+        case Type::SYNC_FILE_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
         case Type::STOP_LISTEN_QUERIES:
