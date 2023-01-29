@@ -49,8 +49,8 @@ Chunk ParquetBlockInputFormat::generate()
     if (is_stopped)
         return {};
 
-    for (; row_group_current < row_group_total && skip_row_groups.contains(row_group_current); ++row_group_current)
-        ;
+    while (row_group_current < row_group_total && skip_row_groups.contains(row_group_current))
+        ++row_group_current;
 
     if (row_group_current >= row_group_total)
         return res;
@@ -79,6 +79,7 @@ Chunk ParquetBlockInputFormat::generate()
     if (format_settings.defaults_for_omitted_fields)
         for (const auto & column_idx : missing_columns)
             block_missing_values.setBits(column_idx, res.getNumRows());
+
     return res;
 }
 
