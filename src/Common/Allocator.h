@@ -207,8 +207,9 @@ private:
         if (size >= MMAP_THRESHOLD)
         {
             if (alignment > mmap_min_alignment)
-                throw DB::Exception(fmt::format("Too large alignment {}: more than page size when allocating {}.",
-                    ReadableSize(alignment), ReadableSize(size)), DB::ErrorCodes::BAD_ARGUMENTS);
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                                    "Too large alignment {}: more than page size when allocating {}.",
+                                    ReadableSize(alignment), ReadableSize(size));
 
             buf = mmap(getMmapHint(), size, PROT_READ | PROT_WRITE,
                        mmap_flags, -1, 0);
@@ -281,14 +282,6 @@ private:
 #endif
 };
 
-/** When using AllocatorWithStackMemory, located on the stack,
-  *  GCC 4.9 mistakenly assumes that we can call `free` from a pointer to the stack.
-  * In fact, the combination of conditions inside AllocatorWithStackMemory does not allow this.
-  */
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
-#endif
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
@@ -366,7 +359,3 @@ extern template class Allocator<false, false>;
 extern template class Allocator<true, false>;
 extern template class Allocator<false, true>;
 extern template class Allocator<true, true>;
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif

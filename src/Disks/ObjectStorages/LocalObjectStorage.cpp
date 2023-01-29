@@ -1,8 +1,6 @@
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <Common/FileCache.h>
-#include <Common/FileCacheFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -104,13 +102,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     LOG_TEST(log, "Write object: {}", path);
     return std::make_unique<WriteBufferFromFile>(path, buf_size, flags);
-}
-
-void LocalObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
-{
-    fs::directory_iterator end_it;
-    for (auto it = fs::directory_iterator(path); it != end_it; ++it)
-        children.emplace_back(it->path().filename(), it->file_size());
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object)

@@ -62,11 +62,15 @@ public:
     /// Current log storage size
     uint64_t size() const;
 
+    uint64_t last_durable_index() override;
+
     /// Flush batch of appended entries
     void end_of_append_batch(uint64_t start_index, uint64_t count) override;
 
     /// Get entry with latest config in logstore
     nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
+
+    void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server);
 
 private:
     mutable std::mutex changelog_lock;

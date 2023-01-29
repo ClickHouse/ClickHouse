@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string>
 #include <Core/Defines.h>
-#include <Common/FileCache_fwd.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
 
 namespace DB
@@ -76,6 +76,8 @@ struct ReadSettings
     /// For 'pread_threadpool' method. Lower is more priority.
     size_t priority = 0;
 
+    bool load_marks_asynchronously = true;
+
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
@@ -88,7 +90,7 @@ struct ReadSettings
     /// they will do it. But this behaviour can be changed with this setting.
     bool enable_filesystem_cache_on_lower_level = true;
 
-    size_t max_query_cache_size = (128UL * 1024 * 1024 * 1024);
+    size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_query_cache = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
@@ -102,6 +104,9 @@ struct ReadSettings
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
+
+    /// Monitoring
+    bool for_object_storage = false; // to choose which profile events should be incremented
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {

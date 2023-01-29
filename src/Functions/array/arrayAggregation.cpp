@@ -132,9 +132,8 @@ struct ArrayAggregateImpl
 
         if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
         {
-            throw Exception(
-                "array aggregation function cannot be performed on type " + expression_return->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregation function cannot be performed on type {}",
+                expression_return->getName());
         }
 
         return result;
@@ -223,7 +222,7 @@ struct ArrayAggregateImpl
                         if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
-                        res[i] = DecimalUtils::convertTo<ResultType>(product, result_scale);
+                        res[i] = DecimalUtils::convertTo<ResultType>(product, static_cast<UInt32>(result_scale));
                     }
                     else
                     {
@@ -332,7 +331,7 @@ struct ArrayAggregateImpl
                 if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
-                res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, result_scale);
+                res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, static_cast<UInt32>(result_scale));
             }
             else
             {
@@ -368,7 +367,7 @@ struct ArrayAggregateImpl
             executeType<Decimal128>(mapped, offsets, res))
             return res;
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}" + mapped->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
     }
 };
 

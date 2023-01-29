@@ -1,13 +1,14 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #include <chrono>
 #include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
+#include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
@@ -49,10 +50,10 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     String root_ca_file_property = "openSSL.server.caConfig";
 
     if (!config.has(certificate_file_property))
-        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
 
     if (!config.has(private_key_file_property))
-        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
 
     asio_opts.enable_ssl_ = true;
     asio_opts.server_cert_file_ = config.getString(certificate_file_property);
@@ -105,7 +106,8 @@ KeeperServer::KeeperServer(
     const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_)
+    SnapshotsQueue & snapshots_queue_,
+    KeeperSnapshotManagerS3 & snapshot_manager_s3)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
@@ -125,6 +127,7 @@ KeeperServer::KeeperServer(
         configuration_and_settings_->snapshot_storage_path,
         coordination_settings,
         keeper_context,
+        config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
@@ -263,6 +266,7 @@ void KeeperServer::forceRecovery()
 void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     nuraft::raft_params params;
+    params.parallel_log_appending_ = true;
     params.heart_beat_interval_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->heart_beat_interval_ms.totalMilliseconds(), "heart_beat_interval_ms", log);
     params.election_timeout_lower_bound_ = getValueOrMaxInt32AndLogWarning(
@@ -281,8 +285,9 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.client_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds(), "operation_timeout_ms", log);
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
-    params.auto_forwarding_req_timeout_
-        = std::max<uint64_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, std::numeric_limits<int32_t>::max());
+    params.auto_forwarding_req_timeout_ = std::max<int32_t>(
+        static_cast<int32_t>(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2),
+        std::numeric_limits<int32_t>::max());
     params.auto_forwarding_req_timeout_
         = getValueOrMaxInt32AndLogWarning(coordination_settings->operation_timeout_ms.totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
@@ -296,8 +301,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 #if USE_SSL
         setSSLParams(asio_opts);
 #else
-        throw Exception(
-            "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
     }
 
@@ -320,7 +324,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-            return;
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
@@ -348,6 +352,8 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 
+    state_manager->getLogStore()->setRaftServer(raft_instance);
+
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
     nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
@@ -370,6 +376,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     {
         auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, next_log_idx);
 
+        size_t preprocessed = 0;
         LOG_INFO(log, "Preprocessing {} log entries", log_entries->size());
         auto idx = state_machine->last_commit_index() + 1;
         for (const auto & entry : *log_entries)
@@ -378,7 +385,12 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
                 state_machine->pre_commit(idx, entry->get_buf());
 
             ++idx;
+            ++preprocessed;
+
+            if (preprocessed % 50000 == 0)
+                LOG_TRACE(log, "Preprocessed {}/{} entries", preprocessed, log_entries->size());
         }
+        LOG_INFO(log, "Preprocessing done");
     }
 
     loadLatestConfig();
@@ -436,9 +448,9 @@ void KeeperServer::shutdownRaftServer()
 
 void KeeperServer::shutdown()
 {
-    state_machine->shutdownStorage();
-    state_manager->flushAndShutDownLogStore();
     shutdownRaftServer();
+    state_manager->flushAndShutDownLogStore();
+    state_machine->shutdownStorage();
 }
 
 namespace
@@ -514,7 +526,7 @@ bool KeeperServer::isFollower() const
 
 bool KeeperServer::isLeaderAlive() const
 {
-    return raft_instance->is_leader_alive();
+    return raft_instance && raft_instance->is_leader_alive();
 }
 
 /// TODO test whether taking failed peer in count
@@ -611,7 +623,9 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf);
                 request_for_session.zxid = next_zxid;
-                state_machine->preprocess(request_for_session);
+                if (!state_machine->preprocess(request_for_session))
+                    return nuraft::cb_func::ReturnCode::ReturnNull;
+
                 request_for_session.digest = state_machine->getNodesDigest();
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 break;
@@ -697,7 +711,7 @@ void KeeperServer::waitInit()
 
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
-        throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
+        LOG_WARNING(log, "Failed to wait for RAFT initialization in {}ms, will continue in background", timeout);
 }
 
 std::vector<int64_t> KeeperServer::getDeadSessions()
@@ -893,6 +907,44 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
     result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;
+}
+
+uint64_t KeeperServer::createSnapshot()
+{
+    uint64_t log_idx = raft_instance->create_snapshot();
+    if (log_idx != 0)
+        LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
+    else
+        LOG_WARNING(log, "Failed to schedule snapshot creation task.");
+    return log_idx;
+}
+
+KeeperLogInfo KeeperServer::getKeeperLogInfo()
+{
+    KeeperLogInfo log_info;
+    auto log_store = state_manager->load_log_store();
+    if (log_store)
+    {
+        log_info.first_log_idx = log_store->start_index();
+        log_info.first_log_term = log_store->term_at(log_info.first_log_idx);
+    }
+
+    if (raft_instance)
+    {
+        log_info.last_log_idx = raft_instance->get_last_log_idx();
+        log_info.last_log_term = raft_instance->get_last_log_term();
+        log_info.last_committed_log_idx = raft_instance->get_committed_log_idx();
+        log_info.leader_committed_log_idx = raft_instance->get_leader_committed_log_idx();
+        log_info.target_committed_log_idx = raft_instance->get_target_committed_log_idx();
+        log_info.last_snapshot_idx = raft_instance->get_last_snapshot_idx();
+    }
+
+    return log_info;
+}
+
+bool KeeperServer::requestLeader()
+{
+    return isLeader() || raft_instance->request_leadership();
 }
 
 }

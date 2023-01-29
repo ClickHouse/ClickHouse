@@ -34,13 +34,13 @@ QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 void QueryPlan::checkInitialized() const
 {
     if (!isInitialized())
-        throw Exception("QueryPlan was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was not initialized");
 }
 
 void QueryPlan::checkNotCompleted() const
 {
     if (isCompleted())
-        throw Exception("QueryPlan was already completed", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was already completed");
 }
 
 bool QueryPlan::isCompleted() const
@@ -58,8 +58,7 @@ const DataStream & QueryPlan::getCurrentDataStream() const
 void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
-        throw Exception("Cannot unite plans because current QueryPlan is already initialized",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
 
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();
@@ -195,7 +194,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
 
@@ -333,8 +332,8 @@ static void explainStep(
     {
         if (step.hasOutputStream())
         {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_mode << ")";
-            if (step.getOutputStream().sort_mode != DataStream::SortMode::None)
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
+            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
             {
                 settings.out << ": ";
                 dumpSortDescription(step.getOutputStream().sort_description, settings.out);
@@ -447,8 +446,14 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
+    /// optimization need to be applied before "mergeExpressions" optimization
+    /// it removes redundant sorting steps, but keep underlying expressions,
+    /// so "mergeExpressions" optimization handles them afterwards
+    if (optimization_settings.remove_redundant_sorting)
+        QueryPlanOptimizations::tryRemoveRedundantSorting(root);
+
+    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

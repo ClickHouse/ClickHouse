@@ -9,4 +9,3 @@ slug: /ru/operations/system-tables/functions
 
 -   `name` (`String`) – Имя функции.
 -   `is_aggregate` (`UInt8`) – Признак, является ли функция агрегатной.
-

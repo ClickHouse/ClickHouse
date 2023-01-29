@@ -35,25 +35,26 @@ public:
     };
 
     BackupImpl(
-        const String & backup_name_,
+        const String & backup_name_for_logging_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
         const ContextPtr & context_);
 
     BackupImpl(
-        const String & backup_name_,
+        const String & backup_name_for_logging_,
         const ArchiveParams & archive_params_,
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupWriter> writer_,
         const ContextPtr & context_,
-        bool is_internal_backup_ = false,
-        const std::shared_ptr<IBackupCoordination> & coordination_ = {},
-        const std::optional<UUID> & backup_uuid_ = {});
+        bool is_internal_backup_,
+        const std::shared_ptr<IBackupCoordination> & coordination_,
+        const std::optional<UUID> & backup_uuid_,
+        bool deduplicate_files_);
 
     ~BackupImpl() override;
 
-    const String & getName() const override { return backup_name; }
+    const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
@@ -107,7 +108,7 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    const String backup_name;
+    const String backup_name_for_logging;
     const ArchiveParams archive_params;
     const bool use_archives;
     const OpenMode open_mode;
@@ -122,7 +123,7 @@ private:
     size_t num_files = 0;
     UInt64 uncompressed_size = 0;
     UInt64 compressed_size = 0;
-    UInt64 version;
+    int version;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
@@ -130,8 +131,9 @@ private:
     std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
     String lock_file_name;
-    size_t num_files_written = 0;
+    std::atomic<size_t> num_files_written = 0;
     bool writing_finalized = false;
+    bool deduplicate_files = true;
     const Poco::Logger * log;
 };
 

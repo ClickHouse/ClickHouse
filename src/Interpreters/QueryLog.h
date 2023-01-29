@@ -7,6 +7,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 
+
 namespace ProfileEvents
 {
     class Counters;
@@ -73,10 +74,12 @@ struct QueryLogElement
     std::unordered_set<String> used_functions;
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
+    std::set<String> used_row_policies;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
+    std::string_view exception_format_string{};
 
     ClientInfo client_info;
 

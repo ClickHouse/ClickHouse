@@ -44,7 +44,9 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 {
     if (UInt64 maybe_block_number = tryParseFileName(file_name_))
         return maybe_block_number;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'", file_name_);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'",
+                    file_name_);
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(
@@ -77,7 +79,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
             *out << "\n";
         }
         *out << "commands: ";
-        commands.writeText(*out);
+        commands.writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
         if (tid.isPrehistoric())
         {
@@ -205,7 +207,7 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
     }
 
     out << "commands: ";
-    commands.writeText(out);
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
 
     return std::make_shared<BackupEntryFromMemory>(out.str());

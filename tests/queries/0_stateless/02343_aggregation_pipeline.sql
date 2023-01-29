@@ -1,8 +1,14 @@
+-- produces different pipeline if enabled
+set enable_memory_bound_merging_of_aggregation_results = 0;
+
 set max_threads = 16;
 set prefer_localhost_replica = 1;
 set optimize_aggregation_in_order = 0;
+set max_block_size = 65505;
 
 -- { echoOn }
+
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number;
 
 explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number;
 

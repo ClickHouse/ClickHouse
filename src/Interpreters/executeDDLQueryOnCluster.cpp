@@ -55,6 +55,8 @@ bool isSupportedAlterType(int type)
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
+    OpenTelemetry::SpanHolder span(__FUNCTION__);
+
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
 
@@ -66,18 +68,18 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     auto * query = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
     if (!query)
     {
-        throw Exception("Distributed execution is not supported for such DDL queries", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed execution is not supported for such DDL queries");
     }
 
     if (!context->getSettingsRef().allow_distributed_ddl)
-        throw Exception("Distributed DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the user");
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->children)
         {
             if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
-                throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }
 
@@ -88,6 +90,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         cluster = context->getCluster(query->cluster);
     }
 
+    span.addAttribute("clickhouse.cluster", query->cluster);
+
     /// TODO: support per-cluster grant
     context->checkAccess(AccessType::CLUSTER);
 
@@ -96,7 +100,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// Enumerate hosts which will be used to send query.
     auto addresses = cluster->filterAddressesByShardOrReplica(params.only_shard_num, params.only_replica_num);
     if (addresses.empty())
-        throw Exception("No hosts defined to execute distributed DDL query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts defined to execute distributed DDL query");
 
     std::vector<HostID> hosts;
     hosts.reserve(addresses.size());
@@ -129,7 +133,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         assert(use_local_default_database || !host_default_databases.empty());
 
         if (use_local_default_database && !host_default_databases.empty())
-            throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mixed local default DB and shard default DB in DDL query");
 
         if (use_local_default_database)
         {
@@ -164,6 +168,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
+    entry.tracing_context = OpenTelemetry::CurrentContext();
     String node_path = ddl_worker.enqueueQuery(entry);
 
     return getDistributedDDLStatus(node_path, entry, context);
@@ -387,15 +392,14 @@ Chunk DDLQueryStatusSource::generate()
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();
 
-            constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
+            constexpr auto msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
                                                 "There are {} unfinished hosts ({} of them are currently active), "
                                                 "they are going to execute the query in background";
             if (throw_on_timeout)
             {
                 if (!first_exception)
-                    first_exception = std::make_unique<Exception>(
-                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
-                        ErrorCodes::TIMEOUT_EXCEEDED);
+                    first_exception = std::make_unique<Exception>(Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                        msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts));
 
                 /// For Replicated database print a list of unfinished hosts as well. Will return empty block on next iteration.
                 if (is_replicated_database)
@@ -418,12 +422,10 @@ Chunk DDLQueryStatusSource::generate()
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)
-                first_exception = std::make_unique<Exception>(
-                    fmt::format(
+                first_exception = std::make_unique<Exception>(Exception(ErrorCodes::UNFINISHED,
                         "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
                         " since it was finished (or its lifetime is expired)",
-                        node_path),
-                    ErrorCodes::UNFINISHED);
+                        node_path));
             return {};
         }
 
@@ -459,8 +461,8 @@ Chunk DDLQueryStatusSource::generate()
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
 
                 auto [host, port] = parseHostAndPort(host_id);
-                first_exception = std::make_unique<Exception>(
-                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
+                first_exception = std::make_unique<Exception>(Exception(status.code,
+                    "There was an error on [{}:{}]: {}", host, port, status.message));
             }
 
             ++num_hosts_finished;
@@ -562,12 +564,16 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     if (database_name != query_on_cluster->cluster)
         return false;
 
-    auto db = DatabaseCatalog::instance().tryGetDatabase(database_name);
-    if (!db || db->getEngineName() != "Replicated")
-        return false;
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (database && database->shouldReplicateQuery(context, query_ptr))
+    {
+        /// It's Replicated database and query is replicated on database level,
+        /// so ON CLUSTER clause is redundant.
+        query_on_cluster->cluster.clear();
+        return true;
+    }
 
-    query_on_cluster->cluster.clear();
-    return true;
+    return false;
 }
 
 }

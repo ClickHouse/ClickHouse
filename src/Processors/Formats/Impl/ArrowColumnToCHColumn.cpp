@@ -69,7 +69,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_DATA;
 }
 
@@ -82,7 +81,7 @@ static ColumnWithTypeAndName readColumnWithNumericData(std::shared_ptr<arrow::Ch
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
         if (chunk->length() == 0)
@@ -108,7 +107,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
     PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
 
     size_t chars_t_size = 0;
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
@@ -123,7 +122,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
     column_chars_t.reserve(chars_t_size);
     column_offsets.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
@@ -146,12 +145,12 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
 static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
-    auto internal_type = std::make_shared<DataTypeUInt8>();
+    auto internal_type = DataTypeFactory::instance().get("Bool");
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BooleanArray & chunk = dynamic_cast<arrow::BooleanArray &>(*(arrow_column->chunk(chunk_i)));
         if (chunk.length() == 0)
@@ -163,7 +162,7 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
         for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
             column_data.emplace_back(chunk.Value(bool_i));
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -173,7 +172,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
     PaddedPODArray<Int32> & column_data = assert_cast<ColumnVector<Int32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::Date32Array & chunk = dynamic_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
 
@@ -198,7 +197,7 @@ static ColumnWithTypeAndName readColumnWithDate64Data(std::shared_ptr<arrow::Chu
     auto & column_data = assert_cast<ColumnVector<UInt32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         auto & chunk = dynamic_cast<arrow::Date64Array &>(*(arrow_column->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
@@ -219,7 +218,7 @@ static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::
     auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = dynamic_cast<const arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
@@ -230,6 +229,40 @@ static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
+template <typename TimeType, typename TimeArray>
+static ColumnWithTypeAndName readColumnWithTimeData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    const auto & arrow_type = static_cast<const TimeType &>(*(arrow_column->type()));
+    const UInt8 scale = arrow_type.unit() * 3;
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
+    auto internal_column = internal_type->createColumn();
+    internal_column->reserve(arrow_column->length());
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = dynamic_cast<TimeArray &>(*(arrow_column->chunk(chunk_i)));
+        if (chunk.length() == 0)
+            continue;
+
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+        {
+            assert_cast<DataTypeDateTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
+        }
+    }
+
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+static ColumnWithTypeAndName readColumnWithTime32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    return readColumnWithTimeData<arrow::Time32Type, arrow::Time32Array>(arrow_column, column_name);
+}
+
+static ColumnWithTypeAndName readColumnWithTime64Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    return readColumnWithTimeData<arrow::Time64Type, arrow::Time64Array>(arrow_column, column_name);
+}
+
 template <typename DecimalType, typename DecimalArray>
 static ColumnWithTypeAndName readColumnWithDecimalDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, DataTypePtr internal_type)
 {
@@ -238,7 +271,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataImpl(std::shared_ptr<arrow
     auto & column_data = column.getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         auto & chunk = dynamic_cast<DecimalArray &>(*(arrow_column->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
@@ -274,7 +307,7 @@ static ColumnPtr readByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray>
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
     bytemap_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->num_chunks()); ++chunk_i)
+    for (int chunk_i = 0; chunk_i != arrow_column->num_chunks(); ++chunk_i)
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
 
@@ -290,14 +323,31 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
     ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
     offsets_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    uint64_t start_offset = 0u;
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
         auto & arrow_offsets = dynamic_cast<arrow::Int32Array &>(*arrow_offsets_array);
-        auto start = offsets_data.back();
+
+        /*
+         * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
+         * When it is shared, the offsets will be monotonically increasing. Otherwise, the offsets will be zero based.
+         * In order to account for both cases, the starting offset is updated whenever a zero-based offset is found.
+         * More info can be found in: https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm and
+         * https://github.com/ClickHouse/ClickHouse/pull/43297
+         * */
+        if (list_chunk.offset() == 0)
+        {
+            start_offset = offsets_data.back();
+        }
+
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
-            offsets_data.emplace_back(start + arrow_offsets.Value(i));
+        {
+            auto offset = arrow_offsets.Value(i);
+            offsets_data.emplace_back(start_offset + offset);
+        }
     }
     return offsets_column;
 }
@@ -322,7 +372,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
     column_data.reserve(arrow_column->length());
     NumericType shift = is_nullable ? 2 : 1;
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
         if (chunk->length() == 0)
@@ -336,7 +386,9 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         for (int64_t i = 0; i != chunk->length(); ++i)
         {
             if (data[i] < 0 || data[i] >= dict_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Index {} in Dictionary column is out of bounds, dictionary size is {}", Int64(data[i]), UInt64(dict_size));
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                                "Index {} in Dictionary column is out of bounds, dictionary size is {}",
+                                Int64(data[i]), UInt64(dict_size));
         }
 
         /// If dictionary type is not nullable and arrow dictionary contains default type
@@ -416,7 +468,8 @@ static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> 
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
             case ARROW_NUMERIC_TYPE: \
             { \
-                    return readColumnWithIndexesDataImpl<CPP_NUMERIC_TYPE>(arrow_column, "", default_value_index, dict_size, is_nullable).column; \
+                    return readColumnWithIndexesDataImpl<CPP_NUMERIC_TYPE>(\
+                        arrow_column, "", default_value_index, static_cast<CPP_NUMERIC_TYPE>(dict_size), is_nullable).column; \
             }
         FOR_ARROW_INDEXES_TYPES(DISPATCH)
 #    undef DISPATCH
@@ -429,11 +482,26 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
 {
     arrow::ArrayVector array_vector;
     array_vector.reserve(arrow_column->num_chunks());
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
-        std::shared_ptr<arrow::Array> chunk = list_chunk.values();
-        array_vector.emplace_back(std::move(chunk));
+
+        /*
+         * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
+         * Therefore, simply appending arrow::ListArray::values() could lead to duplicated data to be appended.
+         * To properly handle this, arrow::ListArray::values() needs to be sliced based on the chunk offsets.
+         * arrow::ListArray::Flatten does that. More info on: https://lists.apache.org/thread/rrwfb9zo2dc58dhd9rblf20xd7wmy7jm and
+         * https://github.com/ClickHouse/ClickHouse/pull/43297
+         * */
+        auto flatten_result = list_chunk.Flatten();
+        if (flatten_result.ok())
+        {
+            array_vector.emplace_back(flatten_result.ValueOrDie());
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to flatten chunk '{}' of column of type '{}' ", chunk_i, arrow_column->type()->id());
+        }
     }
     return std::make_shared<arrow::ChunkedArray>(array_vector);
 }
@@ -548,7 +616,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             auto arrow_type = arrow_column->type();
             auto * arrow_struct_type = assert_cast<arrow::StructType *>(arrow_type.get());
             std::vector<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
-            for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+            for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
             {
                 arrow::StructArray & struct_chunk = dynamic_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
                 for (int i = 0; i < arrow_struct_type->num_fields(); ++i)
@@ -597,7 +665,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             if (!dict_info.values)
             {
                 arrow::ArrayVector dict_array;
-                for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+                for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
                 {
                     arrow::DictionaryArray & dict_chunk = dynamic_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
                     dict_array.emplace_back(dict_chunk.dictionary());
@@ -622,7 +690,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             }
 
             arrow::ArrayVector indexes_array;
-            for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+            for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
             {
                 arrow::DictionaryArray & dict_chunk = dynamic_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
                 indexes_array.emplace_back(dict_chunk.indices());
@@ -639,6 +707,14 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return readColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, column_name);
         FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
+        case arrow::Type::TIME32:
+        {
+            return readColumnWithTime32Data(arrow_column, column_name);
+        }
+        case arrow::Type::TIME64:
+        {
+            return readColumnWithTime64Data(arrow_column, column_name);
+        }
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
         case arrow::Type::NA:
@@ -660,13 +736,15 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             }
 
             throw Exception(
-                ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported {} type '{}' of an input column '{}'. If it happens during schema inference and you want to skip columns with "
-                "unsupported types, you can enable setting input_format_{}_skip_columns_with_unsupported_types_in_schema_inference",
-                format_name,
-                arrow_column->type()->name(),
-                column_name,
-                boost::algorithm::to_lower_copy(format_name));
+                            ErrorCodes::UNKNOWN_TYPE,
+                            "Unsupported {} type '{}' of an input column '{}'. "
+                            "If it happens during schema inference and you want to skip columns with "
+                            "unsupported types, you can enable setting input_format_{}"
+                            "_skip_columns_with_unsupported_types_in_schema_inference",
+                            format_name,
+                            arrow_column->type()->name(),
+                            column_name,
+                            boost::algorithm::to_lower_copy(format_name));
         }
     }
 }
@@ -735,7 +813,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
 {
 }
 
-void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
+void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows)
 {
     NameToColumnPtr name_to_column_ptr;
     for (auto column_name : table->ColumnNames())
@@ -749,16 +827,12 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         name_to_column_ptr[std::move(column_name)] = arrow_column;
     }
 
-    arrowColumnsToCHChunk(res, name_to_column_ptr);
+    arrowColumnsToCHChunk(res, name_to_column_ptr, num_rows);
 }
 
-void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
+void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows)
 {
-    if (unlikely(name_to_column_ptr.empty()))
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Columns is empty");
-
     Columns columns_list;
-    UInt64 num_rows = name_to_column_ptr.begin()->second->length();
     columns_list.reserve(header.columns());
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
     bool skipped = false;

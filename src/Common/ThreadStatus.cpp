@@ -1,9 +1,9 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -189,13 +189,10 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description) const
+void ThreadStatus::assertState(ThreadState permitted_state, const char * description) const
 {
-    for (auto permitted_state : permitted_states)
-    {
-        if (getCurrentState() == permitted_state)
-            return;
-    }
+    if (getCurrentState() == permitted_state)
+        return;
 
     if (description)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);

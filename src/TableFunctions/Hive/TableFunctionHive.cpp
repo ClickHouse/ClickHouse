@@ -32,13 +32,10 @@ namespace DB
 
         ASTs & args = args_func.at(0)->children;
 
-        const auto message = fmt::format(
-            "The signature of function {} is:\n"
-            " - hive_url, hive_database, hive_table, structure, partition_by_keys",
-            getName());
-
         if (args.size() != 5)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, message);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "The signature of function {} is:\n - hive_url, hive_database, hive_table, structure, partition_by_keys",
+                            getName());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
@@ -61,7 +58,7 @@ namespace DB
         ColumnsDescription /*cached_columns_*/) const
     {
         const Settings & settings = context_->getSettings();
-        ParserLambdaExpression partition_by_parser;
+        ParserExpression partition_by_parser;
         ASTPtr partition_by_ast = parseQuery(
             partition_by_parser,
             "(" + partition_by_def + ")",
