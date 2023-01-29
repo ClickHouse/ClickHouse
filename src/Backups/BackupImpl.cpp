@@ -777,7 +777,10 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         .base_checksum = 0,
     };
 
-    increaseProcessedSize(info);
+    {
+        std::lock_guard lock{mutex};
+        increaseProcessedSize(info);
+    }
 
     /// Empty file, nothing to backup
     if (info.size == 0 && deduplicate_files)
@@ -991,7 +994,6 @@ void BackupImpl::increaseUncompressedSize(const FileInfo & info)
 
 void BackupImpl::increaseProcessedSize(UInt64 file_size) const
 {
-    std::lock_guard lock{mutex};
     processed_files_size += file_size;
     ++num_processed_files;
 }
