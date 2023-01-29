@@ -1854,6 +1854,8 @@ class ClickHouseCluster:
             exec_cmd = ["docker", "exec"]
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
+            if "privileged" in kwargs:
+                exec_cmd += ["--privileged"]
             result = subprocess_check_call(
                 exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
             )
@@ -3003,6 +3005,8 @@ services:
             - NET_ADMIN
             - IPC_LOCK
             - SYS_NICE
+            # for umount/mount on fly
+            - SYS_ADMIN
         depends_on: {depends_on}
         user: '{user}'
         env_file:
