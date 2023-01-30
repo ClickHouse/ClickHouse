@@ -59,6 +59,7 @@ private:
 struct StorageDeltaLakeName
 {
     static constexpr auto name = "DeltaLake";
+    static constexpr auto data_directory_prefix = "";
 };
 
 using StorageDeltaLake = IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser>;

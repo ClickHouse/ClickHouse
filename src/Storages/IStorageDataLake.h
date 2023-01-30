@@ -155,8 +155,7 @@ public:
         MetaParser parser{base_configuration, table_path, context};
 
         auto keys = parser.getFiles();
-        static constexpr auto iceberg_data_directory = "data";
-        auto new_uri = std::filesystem::path(base_configuration.uri.uri.toString()) / iceberg_data_directory
+        auto new_uri = std::filesystem::path(base_configuration.uri.uri.toString()) / Name::data_directory_prefix
             / MetaParser::generateQueryFromKeys(keys, configuration.format);
 
         LOG_DEBUG(log, "New uri: {}", new_uri.c_str());
@@ -203,13 +202,10 @@ public:
         {
             /// Supported signatures:
             ///
-            /// xx('url')
-            /// xx('url', 'format')
-            /// xx('url', 'format', 'compression')
+            /// xx('url', 'aws_access_key_id', 'aws_secret_access_key')
             /// xx('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
-            /// xx('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
 
-            if (engine_args.empty() || engine_args.size() > 5)
+            if (engine_args.empty() || engine_args.size() < 4)
                 throw Exception(
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Storage {} requires 1 to 5 arguments: "
@@ -224,22 +220,11 @@ public:
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
             configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
-            if (engine_args.size() >= 4)
-            {
-                configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-                configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
-            }
+            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
+            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
 
-            if (engine_args.size() == 3 || engine_args.size() == 5)
-            {
-                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args.back(), "compression_method");
-                configuration.format = checkAndGetLiteralArgument<String>(engine_args[engine_args.size() - 2], "format");
-            }
-            else if (engine_args.size() != 1)
-            {
-                configuration.compression_method = "auto";
-                configuration.format = checkAndGetLiteralArgument<String>(engine_args.back(), "format");
-            }
+            if (engine_args.size() == 4)
+                configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
         }
 
         if (configuration.format == "auto")

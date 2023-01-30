@@ -35,6 +35,7 @@ private:
 struct StorageHudiName
 {
     static constexpr auto name = "Hudi";
+    static constexpr auto data_directory_prefix = "";
 };
 
 using StorageHudi = IStorageDataLake<StorageHudiName, HudiMetaParser>;
