@@ -41,24 +41,47 @@ private:
         InputPort * input_port = nullptr;
         OutputPort * output_port = nullptr;
         bool is_finished = false;
+
+        /// When limit and offset are negative,
+        /// a input port is finished does not mean its output port need to be finished.
+        bool is_input_port_finished = false;
+        bool is_output_port_finished = false;
     };
 
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
+    size_t num_finished_input_port = 0; /// used when limit and offset are negative
+    size_t num_finished_output_port = 0; /// used when limit and offset are negative
 
     bool limit_is_unreachable;
     bool is_negative;
-    std::list<PortsData> queue; /// used when limit and offset are negative, storing at least rows_to_keep rows
+
+    struct QueueElement
+    {
+        Chunk chunk;
+        size_t port;
+    };
+
+    /// Used when limit and offset are negative, storing at least rows_to_keep rows
+    std::list<QueueElement> queue;
     UInt64 rows_in_queue = 0;
-    UInt64 rows_to_keep; /// used when limit and offset are negative, equals to limit + offset or offset when limit is unreachable
+
+    /// Used when limit and offset are negative,
+    /// equals to limit + offset or offset when limit is unreachable
+    UInt64 rows_to_keep;
 
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
 
-    bool popWithoutCut();
-    PortsData queuePop();
-    void queuePush(PortsData & data);
+    bool canPopWithoutCut();
+    QueueElement queuePop();
+    void queuePush(QueueElement & data);
+    void skipFinishedPorts();
+    Status loopPop();
+
+    Status prepareNonNegative(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/);
+    Status prepareNegative(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/);
 
 public:
     LimitTransform(
@@ -70,8 +93,8 @@ public:
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
-    Status preparePair(PortsData & data);
-    Status preparePairNegative(PortsData & data);
+    Status preparePairNonNegative(PortsData & data);
+    void preparePairNegative(size_t pos);
     void splitChunk(PortsData & data);
 
     InputPort & getInputPort() { return inputs.front(); }

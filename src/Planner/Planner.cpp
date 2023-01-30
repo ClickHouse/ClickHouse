@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_LIMIT_EXPRESSION;
 }
 
 /** ClickHouse query planner.
@@ -828,6 +829,9 @@ void Planner::buildQueryPlanIfNeeded()
             /// Validated during parser stage
             if (!query_node.hasOrderBy())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
+
+            if (is_limit_negative)
+                throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Negative LIMIT WITH TIES");
 
             limit_with_ties_sort_description = sort_description;
         }

@@ -34,11 +34,85 @@ OffsetTransform::OffsetTransform(
 
 IProcessor::Status OffsetTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
 {
+    return is_negative ? prepareNegative(updated_input_ports, updated_output_ports) : prepareNonNegative(updated_input_ports, updated_output_ports);
+}
+
+IProcessor::Status OffsetTransform::prepareNegative(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+{
+    if (num_finished_input_port == ports_data.size())
+        return loopPop();
+
+    bool has_full_port = false;
+
+    /// Return chunks before offset if cut is not needed.
+    while (true)
+    {
+        skipFinishedPorts();
+
+        if (num_finished_output_port == ports_data.size())
+        {
+            for (auto & data : ports_data)
+            {
+                if (!data.is_input_port_finished)
+                    data.input_port->close();
+            }
+
+            queue.clear();
+            return Status::Finished;
+        }
+
+        if (!canPopWithoutCut())
+            break;
+
+        /// Check can push
+        if (!ports_data[queue.front().port].output_port->canPush())
+        {
+            has_full_port = true;
+            break;
+        }
+
+        /// Pop chunk from queue and push it to its output port
+        QueueElement & front = queue.front();
+        rows_in_queue -= front.chunk.getNumRows();
+        ports_data[front.port].output_port->push(std::move(front.chunk));
+        queue.pop_front();
+        has_full_port = true;
+    }
+
+    for (auto pos : updated_input_ports)
+        preparePairNegative(pos);
+
+    for (auto pos : updated_output_ports)
+        preparePairNegative(pos);
+
+    if (num_finished_output_port == ports_data.size())
+    {
+        for (auto & data : ports_data)
+        {
+            if (!data.is_input_port_finished)
+                data.input_port->close();
+        }
+
+        queue.clear();
+        return Status::Finished;
+    }
+
+    if (num_finished_input_port == ports_data.size())
+        return loopPop();
+
+    if (has_full_port)
+        return Status::PortFull;
+
+    return Status::NeedData;
+}
+
+IProcessor::Status OffsetTransform::prepareNonNegative(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+{
     bool has_full_port = false;
 
     auto process_pair = [&](size_t pos)
     {
-        auto status = is_negative ? preparePairNegative(ports_data[pos]) : preparePair(ports_data[pos]);
+        auto status = preparePairNonNegative(ports_data[pos]);
 
         switch (status)
         {
@@ -71,44 +145,9 @@ IProcessor::Status OffsetTransform::prepare(const PortNumbers & updated_input_po
     for (auto pos : updated_output_ports)
         process_pair(pos);
 
-    /// All inputs finished
-    if (is_negative && num_finished_port_pairs == ports_data.size())
-    {
-        /// skip finished output port
-        while (!queue.empty() && rows_in_queue > offset && queue.front().output_port->isFinished())
-        {
-            PortsData pop(std::move(queue.front()));
-            queue.pop_front();
-            rows_in_queue -= pop.current_chunk.getNumRows();
-            pop.current_chunk.clear();
-        }
-
-        if (!queue.empty() && rows_in_queue > offset)
-        {
-            if (!queue.front().output_port->canPush())
-                return Status::PortFull;
-
-            /// Pop chunk from queue and return
-            PortsData pop(queuePop());
-            pop.output_port->push(std::move(pop.current_chunk));
-            return Status::PortFull;
-        }
-    }
-
     /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
     if (num_finished_port_pairs == ports_data.size())
-    {
-        if (is_negative)
-        {
-            queue.clear();
-            for (auto & data : ports_data)
-            {
-                data.output_port->finish();
-            }
-        }
-
         return Status::Finished;
-    }
 
     if (has_full_port)
         return Status::PortFull;
@@ -125,102 +164,150 @@ OffsetTransform::Status OffsetTransform::prepare()
     return prepare({0}, {0});
 }
 
-OffsetTransform::Status OffsetTransform::preparePairNegative(PortsData & data)
+void OffsetTransform::preparePairNegative(size_t pos)
 {
+    PortsData & data = ports_data[pos];
     auto & output = *data.output_port;
     auto & input = *data.input_port;
 
-    /// Check can output.
-
     if (output.isFinished())
     {
-        input.close();
-        return Status::Finished;
-    }
+        if (!data.is_output_port_finished)
+        {
+            num_finished_output_port++;
+            data.is_output_port_finished = true;
+        }
 
-    if (!output.canPush())
-    {
-        input.setNotNeeded();
-        return Status::PortFull;
-    }
+        if (!data.is_input_port_finished)
+        {
+            num_finished_input_port++;
+            data.is_input_port_finished = true;
+            if (!input.isFinished())
+                input.close();
+        }
 
-    if (popWithoutCut())
-    {
-        PortsData pop(queuePop());
-        pop.output_port->push(std::move(pop.current_chunk));
-        return Status::PortFull;
+        return;
     }
 
     /// Check can input.
-
     if (input.isFinished())
     {
-        return Status::Finished;
+        if (!data.is_input_port_finished)
+        {
+            num_finished_input_port++;
+            data.is_input_port_finished = true;
+        }
+        return;
     }
 
+    /// Check input has data.
     input.setNeeded();
     if (!input.hasData())
-        return Status::NeedData;
+        return;
 
-    data.current_chunk = input.pull(true);
-
-    /// Push chunk into queue
-    PortsData to_push;
-    to_push.current_chunk = std::move(data.current_chunk);
-    to_push.output_port = data.output_port;
+    /// Push chunk into queue.
+    QueueElement to_push;
+    to_push.chunk = input.pull(true);
+    to_push.port = pos;
     queuePush(to_push);
 
-    /// Extract queue length
-    if (popWithoutCut())
+    if (input.isFinished())
     {
-        PortsData pop(queuePop());
-        pop.output_port->push(std::move(pop.current_chunk));
-
-        if (input.isFinished() && !data.is_finished)
+        if (!data.is_input_port_finished)
         {
-            data.is_finished = true;
-            ++num_finished_port_pairs;
+            num_finished_input_port++;
+            data.is_input_port_finished = true;
         }
-        else
-            input.setNeeded();
-
-        return Status::PortFull;
+        return;
     }
 
-    if (input.isFinished())
-        return Status::Finished;
-
     input.setNeeded();
-    return Status::NeedData;
 }
 
-void OffsetTransform::queuePush(PortsData & data)
+/// Push a chunk to the queue.
+void OffsetTransform::queuePush(QueueElement & element)
 {
-    rows_in_queue += data.current_chunk.getNumRows();
-    queue.emplace_back(std::move(data));
+    rows_in_queue += element.chunk.getNumRows();
+    queue.emplace_back(std::move(element));
 }
 
-bool OffsetTransform::popWithoutCut()
+/// Pop chunks from the queue as many as possible then push them to their ports.
+OffsetTransform::Status OffsetTransform::loopPop()
 {
-    return !queue.empty() && offset <= rows_in_queue - queue.front().current_chunk.getNumRows();
-}
-
-OffsetTransform::PortsData OffsetTransform::queuePop()
-{
-    if (popWithoutCut())
+    while (true)
     {
-        PortsData pop(std::move(queue.front()));
+        skipFinishedPorts();
+
+        if (num_finished_output_port == ports_data.size())
+        {
+            queue.clear();
+            return Status::Finished;
+        }
+
+        if (rows_in_queue <= offset)
+        {
+            for (auto & data : ports_data)
+            {
+                if (!data.is_output_port_finished)
+                    data.output_port->finish();
+            }
+
+            queue.clear();
+            return Status::Finished;
+        }
+
+        if (!ports_data[queue.front().port].output_port->canPush())
+            return Status::PortFull;
+
+        /// Pop chunk from the queue and push it to its output port
+        QueueElement pop(queuePop());
+        ports_data[pop.port].output_port->push(std::move(pop.chunk));
+    }
+}
+
+bool OffsetTransform::canPopWithoutCut()
+{
+    return !queue.empty() && offset <= rows_in_queue - queue.front().chunk.getNumRows();
+}
+
+/// Discard closed output ports' chunks in the queue.
+void OffsetTransform::skipFinishedPorts()
+{
+    while (num_finished_output_port < ports_data.size() &&
+           rows_in_queue > offset &&
+           ports_data[queue.front().port].output_port->isFinished())
+    {
+        QueueElement & front = queue.front();
+
+        if (!ports_data[front.port].is_output_port_finished)
+        {
+            num_finished_output_port++;
+            ports_data[front.port].is_output_port_finished = true;
+        }
+
+        rows_in_queue -= front.chunk.getNumRows();
         queue.pop_front();
-        rows_in_queue -= pop.current_chunk.getNumRows();
+    }
+}
+
+/// When offset is negative, pop chunks from the queue if all input ports are finished.
+/// Cut operation will not occur more than once.
+OffsetTransform::QueueElement OffsetTransform::queuePop()
+{
+    if (canPopWithoutCut())
+    {
+        QueueElement pop(std::move(queue.front()));
+        queue.pop_front();
+        rows_in_queue -= pop.chunk.getNumRows();
         return pop;
     }
 
-    PortsData pop(std::move(queue.front()));
+    QueueElement pop(std::move(queue.front()));
     queue.pop_front();
-    rows_in_queue -= pop.current_chunk.getNumRows();
-    UInt64 num_columns = pop.current_chunk.getNumColumns();
-    UInt64 num_rows = pop.current_chunk.getNumRows();
-    Columns columns = pop.current_chunk.detachColumns();
+    rows_in_queue -= pop.chunk.getNumRows();
+    UInt64 num_columns = pop.chunk.getNumColumns();
+    UInt64 num_rows = pop.chunk.getNumRows();
+    Columns columns = pop.chunk.detachColumns();
 
     ///           <--------> rows_in_queue
     /// <---------> pop
@@ -230,11 +317,11 @@ OffsetTransform::PortsData OffsetTransform::queuePop()
     UInt64 length = rows_in_queue + num_rows - offset;
     for (UInt64 i = 0; i < num_columns; ++i)
         columns[i] = columns[i]->cut(0, length);
-    pop.current_chunk.setColumns(std::move(columns), length);
+    pop.chunk.setColumns(std::move(columns), length);
     return pop;
 }
 
-OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
+OffsetTransform::Status OffsetTransform::preparePairNonNegative(PortsData & data)
 {
     auto & output = *data.output_port;
     auto & input = *data.input_port;
