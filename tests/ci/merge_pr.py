@@ -151,9 +151,17 @@ def parse_args() -> argparse.Namespace:
         "status and green commit statuses could be done",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="if set, the script won't merge the PR, just check the conditions",
+    )
+    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
+    )
+    parser.add_argument(
+        "--check-running-workflows", default=True, help=argparse.SUPPRESS
     )
     parser.add_argument(
         "--no-check-running-workflows",
@@ -162,6 +170,7 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="(dangerous) if set, skip checking for running workflows for the PR head",
     )
+    parser.add_argument("--check-green", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-check-green",
         dest="check_green",
@@ -252,7 +261,8 @@ def main():
             return
 
     logging.info("Merging the PR")
-    pr.merge()
+    if not args.dry_run:
+        pr.merge()
 
 
 if __name__ == "__main__":
