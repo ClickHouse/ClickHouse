@@ -17,7 +17,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -231,7 +231,7 @@ bool isStorageTouchedByMutations(
     InterpreterSelectQuery interpreter(
         select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
     auto io = interpreter.execute();
-    PullingPipelineExecutor executor(io.pipeline);
+    PullingAsyncPipelineExecutor executor(io.pipeline);
 
     Block block;
     while (executor.pull(block)) {}
