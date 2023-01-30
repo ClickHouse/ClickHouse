@@ -86,6 +86,7 @@ BlockIO InterpreterDeleteQuery::execute()
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
         String alter_query =
             "ALTER TABLE " + table->getStorageID().getFullTableName()
+            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
             + " UPDATE `_row_exists` = 0 WHERE " + serializeAST(*delete_query.predicate);
 
         ParserAlterQuery parser;
