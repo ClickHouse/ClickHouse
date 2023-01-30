@@ -1632,6 +1632,43 @@ SELECT * FROM test_table
 └───┘
 ```
 
+## insert_keeper_max_retries
+
+The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error or timeout considered for retries.
+
+Possible values:
+
+- 0 or a positive integer
+
+Default value: 0 (disabled)
+
+Keeper request retry will be done after some timeout. The timeout is controlled by settings `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
+The first retry will be done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as following:
+timeout = min(max_timeout, latest_timeout *2).
+So, for example, if `insert_keeper_retry_initial_backoff_ms`=100, `insert_keeper_retry_max_backoff_ms` = 10000 and `insert_keeper_max_retries`=8 then timeouts will be 100, 200, 400, ..., 6400, 10000.
+
+Apart from fault tolerance, it aims to provide better user experience, - avoid returning a user an error during INSERT execution if keeper is restarted (for example, due to upgrade)
+
+## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms}
+
+Initial timeout(in milliseconds) to retry failed Keeper request during INSERT query execution
+
+Possible values:
+
+- 0 or a positive integer
+
+Default value: 100 milliseconds
+
+## insert_keeper_retry_max_backoff_ms {#insert_keeper_retry_max_backoff_ms}
+
+Max timeout(in milliseconds) to retry failed Keeper request during INSERT into Rquery execution
+
+Possible values:
+
+- 0 or a positive integer
+
+Default value: 0 (disabled)
+
 ## max_network_bytes {#settings-max-network-bytes}
 
 Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
@@ -2334,7 +2371,8 @@ Default value: 8.
 
 ## background_schedule_pool_size {#background_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md/#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
+Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/
+/#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
 
