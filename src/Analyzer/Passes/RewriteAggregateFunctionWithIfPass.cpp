@@ -91,11 +91,13 @@ public:
     }
 
 private:
-    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types, bool need_or_null)
+    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types, bool contains_null)
     {
+        std::cout << "before withif:" << function_node.dumpTree() << std::endl;
         AggregateFunctionProperties properties;
+        auto result_type = function_node.getResultType();
         auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node.getFunctionName() + (need_or_null ? "IfOrNull" : "If"),
+            function_node.getFunctionName() + (contains_null && result_type->canBeInsideNullable() ? "IfOrNull" : "If"),
             argument_types,
             function_node.getAggregateFunction()->getParameters(),
             properties);
