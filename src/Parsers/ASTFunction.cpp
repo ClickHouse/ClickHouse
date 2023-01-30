@@ -65,7 +65,8 @@ namespace
         {
             /// Result constructed by default means no arguments will be hidden.
             size_t start = static_cast<size_t>(-1);
-            size_t count = 0;
+            size_t count = 0; /// Mostly it's either 0 or 1. There are only a few cases where `count` can be greater than 1 (e.g. see `encrypt`).
+                              /// In all known cases secret arguments are consequent.
             bool are_named = false; /// Arguments like `password = 'password'` are considered as named arguments.
         };
 
@@ -83,7 +84,7 @@ namespace
                 result.start = index;
                 result.are_named = argument_is_named;
             }
-            chassert(index >= result.start);
+            chassert(index >= result.start); /// We always check arguments consequently.
             result.count = index + 1 - result.start;
             if (!argument_is_named)
                 result.are_named = false;
@@ -124,7 +125,7 @@ namespace
 
         void findMySQLFunctionSecretArguments()
         {
-            if (isCollectionNameArgument(0))
+            if (isNamedCollectionName(0))
             {
                 /// mysql(named_collection, ..., password = 'password', ...)
                 findSecretNamedArgument("password", 1);
@@ -141,7 +142,7 @@ namespace
             /// s3Cluster('cluster_name', 'url', ...) has 'url' as its second argument.
             size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
-            if (!is_cluster_function && isCollectionNameArgument(0))
+            if (!is_cluster_function && isNamedCollectionName(0))
             {
                 /// s3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
                 findSecretNamedArgument("secret_access_key", 1);
@@ -219,7 +220,7 @@ namespace
 
         void findRemoteFunctionSecretArguments()
         {
-            if (isCollectionNameArgument(0))
+            if (isNamedCollectionName(0))
             {
                 /// remote(named_collection, ..., password = 'password', ...)
                 findSecretNamedArgument("password", 1);
@@ -358,7 +359,7 @@ namespace
 
         void findExternalDistributedTableEngineSecretArguments()
         {
-            if (isCollectionNameArgument(1))
+            if (isNamedCollectionName(1))
             {
                 /// ExternalDistributed('engine', named_collection, ..., password = 'password', ...)
                 findSecretNamedArgument("password", 2);
@@ -372,7 +373,7 @@ namespace
 
         void findS3TableEngineSecretArguments()
         {
-            if (isCollectionNameArgument(0))
+            if (isNamedCollectionName(0))
             {
                 /// S3(named_collection, ..., secret_access_key = 'secret_access_key')
                 findSecretNamedArgument("secret_access_key", 1);
@@ -406,7 +407,7 @@ namespace
 
         void findMySQLDatabaseSecretArguments()
         {
-            if (isCollectionNameArgument(0))
+            if (isNamedCollectionName(0))
             {
                 /// MySQL(named_collection, ..., password = 'password', ...)
                 findSecretNamedArgument("password", 1);
@@ -429,7 +430,7 @@ namespace
         }
 
         /// Whether a specified argument can be the name of a named collection?
-        bool isCollectionNameArgument(size_t arg_idx) const
+        bool isNamedCollectionName(size_t arg_idx) const
         {
             if (arguments->size() <= arg_idx)
                 return false;
