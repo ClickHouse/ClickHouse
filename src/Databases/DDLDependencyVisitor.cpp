@@ -2,6 +2,7 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
@@ -175,7 +176,7 @@ namespace
         /// Finds dependencies of a function.
         void visitFunction(const ASTFunction & function)
         {
-            if (function.name == "joinGet" || function.name == "dictHas" || function.name == "dictIsIn" || function.name.starts_with("dictGet"))
+            if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
             {
                 /// dictGet('dict_name', attr_names, id_expr)
                 /// dictHas('dict_name', id_expr)

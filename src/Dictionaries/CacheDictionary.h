@@ -4,7 +4,6 @@
 #include <chrono>
 #include <cmath>
 #include <mutex>
-#include <shared_mutex>
 #include <utility>
 #include <vector>
 
@@ -14,6 +13,7 @@
 
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
+#include <Common/SharedMutex.h>
 #include <Common/CurrentMetrics.h>
 
 #include <Dictionaries/IDictionary.h>
@@ -206,7 +206,7 @@ private:
     /// This lock is used for the inner cache state update function lock it for
     /// write, when it need to update cache state all other functions just
     /// readers. Surprisingly this lock is also used for last_exception pointer.
-    mutable std::shared_mutex rw_lock;
+    mutable SharedMutex rw_lock;
 
     mutable std::exception_ptr last_exception;
     mutable std::atomic<size_t> error_count {0};

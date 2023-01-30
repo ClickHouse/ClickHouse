@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -34,6 +33,9 @@ public:
     {
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
+            return;
+
+        if (column_node->getColumnName() == "__grouping_set")
             return;
 
         auto column_source_node = column_node->getColumnSource();
@@ -104,9 +106,6 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContext & 
             bool storage_is_remote = table_function_node->getStorage()->isRemote();
             table_expression_data.setIsRemote(storage_is_remote);
         }
-
-        if (table_expression_data.isRemote())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Remote storages are not supported");
     }
 
     CollectSourceColumnsVisitor collect_source_columns_visitor(planner_context);

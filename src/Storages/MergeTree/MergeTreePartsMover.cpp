@@ -205,7 +205,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 MergeTreeMutableDataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part) const
 {
     if (moves_blocker.isCancelled())
-        throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
     auto settings = data->getSettings();
     auto part = moving_part.part;
@@ -240,7 +240,8 @@ MergeTreeMutableDataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEn
         cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME);
     }
 
-    auto cloned_part = data->createPart(part->name, cloned_part_storage);
+    MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage);
+    auto cloned_part = std::move(builder).withPartFormatFromDisk().build();
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getDataPartStorage().getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
@@ -253,7 +254,7 @@ MergeTreeMutableDataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEn
 void MergeTreePartsMover::swapClonedPart(const MergeTreeMutableDataPartPtr & cloned_part) const
 {
     if (moves_blocker.isCancelled())
-        throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
+        throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
 
     auto active_part = data->getActiveContainingPart(cloned_part->name);
 
