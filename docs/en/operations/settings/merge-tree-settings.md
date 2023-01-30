@@ -106,14 +106,20 @@ Possible values:
 Default value: 1.
 
 The delay (in milliseconds) for `INSERT` is calculated by the formula:
-
 ```code
 max_k = parts_to_throw_insert - parts_to_delay_insert
 k = 1 + parts_count_in_partition - parts_to_delay_insert
 delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
 ```
+For example, if a partition has 299 active parts and parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` is delayed for `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000` milliseconds.
 
-For example if a partition has 299 active parts and parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` is delayed for `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000` milliseconds.
+Starting from version 23.1 formula has been changed to:
+```code
+allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert
+parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
+delay_milliseconds = max(min_delay_to_insert_ms, (max_delay_to_insert * 1000) * parts_over_threshold / allowed_parts_over_threshold)
+```
+For example, if a partition has 224 active parts and parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, min_delay_to_insert_ms = 10, `INSERT` is delayed for `max( 10, 1 * 1000 * (224 - 150 + 1) / (300 - 150) ) = 500` milliseconds.
 
 ## max_parts_in_total {#max-parts-in-total}
 
@@ -175,6 +181,59 @@ Default value: 604800 (1 week).
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
 
 The time is relative to the time of the most recent record, not to the wall time. If it's the only record it will be stored forever.
+
+## replicated_deduplication_window_for_async_inserts {#replicated-deduplication-window-for-async-inserts}
+
+The number of most recently async inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
+
+Possible values:
+
+-   Any positive integer.
+-   0 (disable deduplication for async_inserts)
+
+Default value: 10000.
+
+The [Async Insert](./settings.md#async-insert) command will be cached in one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md), when writing into replicated tables, ClickHouse writes the hash sums of each insert into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window_for_async_inserts` blocks. The oldest hash sums are removed from ClickHouse Keeper.
+A large number of `replicated_deduplication_window_for_async_inserts` slows down `Async Inserts` because it needs to compare more entries.
+The hash sum is calculated from the composition of the field names and types and the data of the insert (stream of bytes).
+
+## replicated_deduplication_window_seconds_for_async_inserts {#replicated-deduplication-window-seconds-for-async_inserts}
+
+The number of seconds after which the hash sums of the async inserts are removed from ClickHouse Keeper.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 604800 (1 week).
+
+Similar to [replicated_deduplication_window_for_async_inserts](#replicated-deduplication-window-for-async-inserts), `replicated_deduplication_window_seconds_for_async_inserts` specifies how long to store hash sums of blocks for async insert deduplication. Hash sums older than `replicated_deduplication_window_seconds_for_async_inserts` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window_for_async_inserts`.
+
+The time is relative to the time of the most recent record, not to the wall time. If it's the only record it will be stored forever.
+
+## use_async_block_ids_cache {#use-async-block-ids-cache}
+
+If true, we cache the hash sums of the async inserts.
+
+Possible values:
+
+- true, false
+
+Default value: false.
+
+A block bearing multiple async inserts will generate multiple hash sums. When some of the inserts are duplicated, keeper will only return one duplicated hash sum in one RPC, which will cause unnecessary RPC retries. This cache will watch the hash sums path in Keeper. If updates are watched in the Keeper, the cache will update as soon as possible, so that we are able to filter the duplicated inserts in the memory.
+
+## async_block_ids_cache_min_update_interval_ms
+
+The minimum interval (in milliseconds) to update the `use_async_block_ids_cache`
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 100.
+
+Normally, the `use_async_block_ids_cache` updates as soon as there are updates in the watching keeper path. However, the cache updates might be too frequent and become a heavy burden. This minimum interval prevents the cache from updating too fast. Note that if we set this value too long, the block with duplicated inserts will have a longer retry time. 
 
 ## max_replicated_logs_to_keep
 

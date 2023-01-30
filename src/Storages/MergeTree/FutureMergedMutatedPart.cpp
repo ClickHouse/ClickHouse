@@ -16,20 +16,23 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 
     size_t sum_rows = 0;
     size_t sum_bytes_uncompressed = 0;
-    MergeTreeDataPartType future_part_type = MergeTreeDataPartType::Unknown;
+    MergeTreeDataPartType future_part_type;
+    MergeTreeDataPartStorageType future_part_storage_type;
     for (const auto & part : parts_)
     {
         sum_rows += part->rows_count;
         sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
         future_part_type = std::min(future_part_type, part->getType());
+        future_part_storage_type = std::min(future_part_storage_type, part->getDataPartStorage().getType());
     }
 
-    auto chosen_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
-    future_part_type = std::min(future_part_type, chosen_type);
-    assign(std::move(parts_), future_part_type);
+    auto chosen_format = parts_.front()->storage.choosePartFormatOnDisk(sum_bytes_uncompressed, sum_rows);
+    future_part_type = std::min(future_part_type, chosen_format.part_type);
+    future_part_storage_type = std::min(future_part_storage_type, chosen_format.storage_type);
+    assign(std::move(parts_), {future_part_type, future_part_storage_type});
 }
 
-void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type)
+void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartFormat future_part_format)
 {
     if (parts_.empty())
         return;
@@ -39,9 +42,8 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         const MergeTreeData::DataPartPtr & first_part = parts_.front();
 
         if (part->partition.value != first_part->partition.value)
-            throw Exception(
-                "Attempting to merge parts " + first_part->name + " and " + part->name + " that are in different partitions",
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempting to merge parts {} and {} that are in different partitions",
+                first_part->name, part->name);
     }
 
     parts = std::move(parts_);
@@ -54,7 +56,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
         max_mutation = std::max(max_mutation, part->info.mutation);
     }
 
-    type = future_part_type;
+    part_format = future_part_format;
     part_info.partition_id = parts.front()->info.partition_id;
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;

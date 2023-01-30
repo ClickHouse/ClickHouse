@@ -73,6 +73,7 @@
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
 #include <Storages/System/StorageSystemTransactions.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
+#include <Storages/System/StorageSystemQueryResultCache.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
@@ -175,6 +176,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards");
     attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts");
     attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache");
+    attach<StorageSystemQueryResultCache>(context, system_database, "query_result_cache");
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
     attach<StorageSystemCertificates>(context, system_database, "certificates");
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");

@@ -151,7 +151,7 @@ namespace
                     continue;   /// Drain delayed notifications.
             }
 
-            throw Exception("Logical error: read wrong number of bytes from pipe", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: read wrong number of bytes from pipe");
         }
     }
 

@@ -143,8 +143,8 @@ private:
                 match == IdentifierSemantic::ColumnMatch::DBAndTable)
             {
                 if (rewritten)
-                    throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name() + "'",
-                                    ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                    throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Failed to rewrite distributed table names. Ambiguous column '{}'",
+                                    identifier.name());
                 /// Table has an alias. So we set a new name qualified by table alias.
                 IdentifierSemantic::setColumnLongName(identifier, table);
                 rewritten = true;
@@ -154,15 +154,15 @@ private:
 
     static void visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
     {
-        auto & identifier = node.children[0]->as<ASTTableIdentifier &>();
+        auto & identifier = node.qualifier->as<ASTIdentifier &>();
         bool rewritten = false;
         for (const auto & table : data)
         {
             if (identifier.name() == table.table)
             {
                 if (rewritten)
-                    throw Exception("Failed to rewrite distributed table. Ambiguous column '" + identifier.name() + "'",
-                                    ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                    throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Failed to rewrite distributed table. Ambiguous column '{}'",
+                                    identifier.name());
                 identifier.setShortName(table.alias);
                 rewritten = true;
             }
@@ -241,7 +241,7 @@ bool JoinedTables::resolveTables()
     bool include_materialized_cols = include_all_columns || settings.asterisk_include_materialized_columns;
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols);
     if (tables_with_columns.size() != table_expressions.size())
-        throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected tables count");
 
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
@@ -250,9 +250,10 @@ bool JoinedTables::resolveTables()
             const auto & t = tables_with_columns[i];
             if (t.table.table.empty() && t.table.alias.empty())
             {
-                throw Exception("No alias for subquery or table function in JOIN (set joined_subquery_requires_alias=0 to disable restriction). While processing '"
-                    + table_expressions[i]->formatForErrorMessage() + "'",
-                    ErrorCodes::ALIAS_REQUIRED);
+                throw Exception(ErrorCodes::ALIAS_REQUIRED,
+                                "No alias for subquery or table function "
+                                "in JOIN (set joined_subquery_requires_alias=0 to disable restriction). "
+                                "While processing '{}'", table_expressions[i]->formatForErrorMessage());
             }
         }
     }

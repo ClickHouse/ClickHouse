@@ -30,7 +30,7 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (::arrow::Status _s = (status); !_s.ok())                   \
-            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
@@ -49,8 +49,8 @@ Chunk ParquetBlockInputFormat::generate()
     if (is_stopped)
         return {};
 
-    for (; row_group_current < row_group_total && skip_row_groups.contains(row_group_current); ++row_group_current)
-        ;
+    while (row_group_current < row_group_total && skip_row_groups.contains(row_group_current))
+        ++row_group_current;
 
     if (row_group_current >= row_group_total)
         return res;
@@ -62,12 +62,13 @@ Chunk ParquetBlockInputFormat::generate()
     arrow::Status get_batch_reader_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &rbr);
 
     if (!get_batch_reader_status.ok())
-        throw ParsingException{"Error while reading Parquet data: " + get_batch_reader_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}",
+                               get_batch_reader_status.ToString());
 
     arrow::Status read_status = rbr->ReadAll(&table);
 
     if (!read_status.ok())
-        throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
 
     ++row_group_current;
 
@@ -78,6 +79,7 @@ Chunk ParquetBlockInputFormat::generate()
     if (format_settings.defaults_for_omitted_fields)
         for (const auto & column_idx : missing_columns)
             block_missing_values.setBits(column_idx, res.getNumRows());
+
     return res;
 }
 
