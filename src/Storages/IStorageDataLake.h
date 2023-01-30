@@ -143,7 +143,7 @@ public:
     static StorageS3::S3Configuration getBaseConfiguration(const StorageS3Configuration & configuration)
     {
         return {configuration.url, configuration.auth_settings, configuration.request_settings, configuration.headers};
-}
+    }
 
     static StorageS3Configuration getAdjustedS3Configuration(
         const ContextPtr & context,
@@ -205,11 +205,10 @@ public:
             /// xx('url', 'aws_access_key_id', 'aws_secret_access_key')
             /// xx('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
 
-            if (engine_args.empty() || engine_args.size() < 4)
+            if (engine_args.empty() || engine_args.size() < 3)
                 throw Exception(
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Storage {} requires 1 to 5 arguments: "
-                    "url, [access_key_id, secret_access_key], name of used format and [compression_method]",
+                    "Storage {} requires 3 or 4 arguments: url, access_key_id, secret_access_key, [format]",
                     name);
 
             auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers, local_context);
