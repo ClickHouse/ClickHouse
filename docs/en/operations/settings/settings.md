@@ -1634,23 +1634,24 @@ SELECT * FROM test_table
 
 ## insert_keeper_max_retries
 
-The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error or timeout considered for retries.
+The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout or request timeout considered for retries.
 
 Possible values:
 
-- 0 or a positive integer
+-   Positive integer.
+-   0 — Retries are disabled
 
-Default value: 0 (disabled)
+Default value: 0
 
-Keeper request retry will be done after some timeout. The timeout is controlled by settings `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
-The first retry will be done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as following:
+Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
+The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as following:
 ```
 timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
 ```
 
-For example, if `insert_keeper_retry_initial_backoff_ms`=100, `insert_keeper_retry_max_backoff_ms`=10000 and `insert_keeper_max_retries`=8 then timeouts will be `100, 200, 400, ..., 3200, 6400, 10000`.
+For example, if `insert_keeper_retry_initial_backoff_ms=100`, `insert_keeper_retry_max_backoff_ms=10000` and `insert_keeper_max_retries=8` then timeouts will be `100, 200, 400, 800, 1600, 3200, 6400, 10000`.
 
-Apart from fault tolerance, it aims to provide better user experience, - avoid returning a user an error during INSERT execution if keeper is restarted (for example, due to upgrade)
+Apart from fault tolerance, the retries aims to provide better user experience, - they allow to avoid returning a user an error during INSERT execution if Keeper is restarted, for example, due to upgrade.
 
 ## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms}
 
