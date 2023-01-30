@@ -181,42 +181,90 @@ public:
     struct FormatSettings
     {
         WriteBuffer & ostr;
-        bool hilite = false;
         bool one_line;
     private:
-        bool always_quote_identifiers = false;
-        IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        bool always_quote_identifiers;
+        IdentifierQuotingStyle identifier_quoting_style;
+
+        bool hilite;
+        static const char * hilite_keyword;
+        static const char * hilite_identifier;
+        static const char * hilite_function;
+        static const char * hilite_operator;
+        static const char * hilite_alias;
+        static const char * hilite_substitution;
+        static const char * hilite_none;
+        static const char * hilite_metacharacter;
+
+        /**
+         * To be used in RAII style, just like std::lock_guard with std::mutex.
+         */
+        class Hiliter
+        {
+            friend struct FormatSettings;
+            DB::WriteBuffer & ostr;
+            bool hilite;
+            const char * hilite_type_none;
+            Hiliter(DB::WriteBuffer & ostr_, bool hilite_, const char * hilite_type);
+            Hiliter(const Hiliter & other) = delete;
+            Hiliter(Hiliter && other) = delete;
+            Hiliter & operator=(const Hiliter & other) = delete;
+            Hiliter & operator=(Hiliter && other) = delete;
+            ~Hiliter();
+        };
+        Hiliter createHiliter(const char * hilite_type) const;
     public:
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
         // Newline or whitespace.
         char nl_or_ws;
+    private:
+        void writePossiblyHilited(std::string_view str, const char * hilite_type) const;
 
+        void writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias = false) const;
+    public:
         FormatSettings(WriteBuffer & ostr_, bool one_line_, bool always_quote_identifiers_ = false,
-                       IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks)
+                       IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks, bool hilite_ = false)
             : ostr(ostr_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
-            identifier_quoting_style(identifier_quoting_style_)
+            identifier_quoting_style(identifier_quoting_style_), hilite(hilite_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
-            : ostr(ostr_), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(other.always_quote_identifiers), identifier_quoting_style(other.identifier_quoting_style),
+            : ostr(ostr_), one_line(other.one_line), always_quote_identifiers(other.always_quote_identifiers),
+            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
             show_secrets(other.show_secrets)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
         FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
-            : ostr(other.ostr), hilite(other.hilite), one_line(other.one_line),
-            always_quote_identifiers(always_quote_identifiers_), identifier_quoting_style(other.identifier_quoting_style),
+            : ostr(other.ostr), one_line(other.one_line), always_quote_identifiers(always_quote_identifiers_),
+            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
             show_secrets(other.show_secrets)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
+        void writeKeyword(std::string_view str) const;
+        void writeFunction(std::string_view str) const;
+        void writeOperator(std::string_view str) const;
+        void writeSubstitution(std::string_view str) const;
+
+        /** A special hack. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
+          *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
+          * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
+          * With highlighting we make it clearly obvious.
+          *
+          * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware
+          *  that . is a metacharacter.
+          */
+        void writeStringLiteralWithMetacharacters(const String & str, const char * metacharacters) const;
+
         void writeIdentifier(const String & name) const;
+        void writeAlias(const String & name) const;
+        void writeProbablyBackQuotedIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -279,15 +327,6 @@ public:
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
-
-    /// For syntax highlighting.
-    static const char * hilite_keyword;
-    static const char * hilite_identifier;
-    static const char * hilite_function;
-    static const char * hilite_operator;
-    static const char * hilite_alias;
-    static const char * hilite_substitution;
-    static const char * hilite_none;
 
 protected:
     bool childrenHaveSecretParts() const;

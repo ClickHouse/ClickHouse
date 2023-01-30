@@ -21,7 +21,8 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "DESCRIBE FILESYSTEM CACHE" << (settings.hilite ? hilite_none : "") << " " << cache_name;
+        settings.writeKeyword("DESCRIBE FILESYSTEM CACHE ");
+        settings.ostr << cache_name;
     }
 };
 

@@ -23,23 +23,21 @@ ASTPtr ASTCreateFunctionQuery::clone() const
 
 void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
+    settings.writeKeyword("CREATE ");
 
     if (or_replace)
-        settings.ostr << "OR REPLACE ";
+        settings.writeKeyword("OR REPLACE ");
 
-    settings.ostr << "FUNCTION ";
+    settings.writeKeyword("FUNCTION ");
 
     if (if_not_exists)
-        settings.ostr << "IF NOT EXISTS ";
+        settings.writeKeyword("IF NOT EXISTS ");
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
-
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
+    settings.writeProbablyBackQuotedIdentifier(getFunctionName());
 
     formatOnCluster(settings);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword(" AS ");
     function_core->formatImpl(settings, state, frame);
 }
 

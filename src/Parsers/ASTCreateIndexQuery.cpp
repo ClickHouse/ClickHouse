@@ -36,13 +36,12 @@ void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, Forma
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
+    settings.ostr << indent_str;
 
-    settings.ostr << "CREATE INDEX " << (if_not_exists ? "IF NOT EXISTS " : "");
+    settings.writeKeyword("CREATE INDEX ");
+    settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
     index_name->formatImpl(settings, state, frame);
-    settings.ostr << " ON ";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword(" ON ");
 
     if (table)
     {

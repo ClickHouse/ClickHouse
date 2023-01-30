@@ -86,19 +86,18 @@ void ASTSystemQuery::setTable(const String & name)
 
 void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM ";
-    settings.ostr << typeToString(type) << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("SYSTEM ");
+    settings.writeKeyword(typeToString(type));
 
     auto print_database_table = [&]
     {
         settings.ostr << " ";
         if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
-                          << (settings.hilite ? hilite_none : "") << ".";
+            settings.writeProbablyBackQuotedIdentifier(getDatabase());
+            settings.ostr << ".";
         }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getTable())
-                      << (settings.hilite ? hilite_none : "");
+        settings.writeProbablyBackQuotedIdentifier(getTable());
     };
 
     auto print_drop_replica = [&]
@@ -106,38 +105,32 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         settings.ostr << " " << quoteString(replica);
         if (table)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"
-                          << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" FROM TABLE");
             print_database_table();
         }
         else if (!replica_zk_path.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM ZKPATH "
-                          << (settings.hilite ? hilite_none : "") << quoteString(replica_zk_path);
+            settings.writeKeyword(" FROM ZKPATH ");
         }
         else if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM DATABASE "
-                          << (settings.hilite ? hilite_none : "");
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
-                          << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" FROM DATABASE ");
+            settings.writeProbablyBackQuotedIdentifier(getDatabase());
         }
     };
 
     auto print_on_volume = [&]
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON VOLUME "
-                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(storage_policy)
-                      << (settings.hilite ? hilite_none : "")
-                      << "."
-                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(volume)
-                      << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" ON VOLUME ");
+        settings.writeProbablyBackQuotedIdentifier(storage_policy);
+        settings.ostr << ".";
+        settings.writeProbablyBackQuotedIdentifier(volume);
     };
 
     auto print_identifier = [&](const String & identifier)
     {
-        settings.ostr << " " << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
-                      << (settings.hilite ? hilite_none : "");
+        settings.ostr << " ";
+        settings.writeProbablyBackQuotedIdentifier(identifier);
     };
 
     if (!cluster.empty())
@@ -192,19 +185,18 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::SUSPEND)
     {
-         settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
-            << (settings.hilite ? hilite_none : "") << seconds
-            << (settings.hilite ? hilite_keyword : "") << " SECOND"
-            << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" FOR ");
+        settings.ostr << seconds;
+        settings.writeKeyword(" SECONDS");
     }
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_path.empty())
-            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
+            settings.ostr << " " << filesystem_cache_path;
     }
     else if (type == Type::UNFREEZE)
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(backup_name);
+        settings.writeProbablyBackQuotedIdentifier(backup_name);
     }
 }
 

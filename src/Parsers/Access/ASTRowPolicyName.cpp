@@ -16,9 +16,9 @@ void ASTRowPolicyName::formatImpl(const FormatSettings & settings, FormatState &
     const String & database = full_name.database;
     const String & table_name = full_name.table_name;
     const String & short_name = full_name.short_name;
-    settings.ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                  << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
-                  << backQuoteIfNeed(table_name);
+    settings.ostr << backQuoteIfNeed(short_name);
+    settings.writeKeyword(" ON ");
+    settings.ostr << (database.empty() ? String{} : backQuoteIfNeed(database) + ".") << backQuoteIfNeed(table_name);
 
     formatOnCluster(settings);
 }
@@ -61,8 +61,8 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
     if (same_short_name)
     {
         const String & short_name = full_names[0].short_name;
-        settings.ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                      << (settings.hilite ? hilite_none : "");
+        settings.ostr << backQuoteIfNeed(short_name);
+        settings.writeKeyword(" ON ");
 
         bool need_comma = false;
         for (const auto & full_name : full_names)
@@ -89,7 +89,7 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
 
         const String & database = full_names[0].database;
         const String & table_name = full_names[0].table_name;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" ON ");
         if (!database.empty())
             settings.ostr << backQuoteIfNeed(database) + ".";
         settings.ostr << backQuoteIfNeed(table_name);
@@ -104,8 +104,8 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
             const String & short_name = full_name.short_name;
             const String & database = full_name.database;
             const String & table_name = full_name.table_name;
-            settings.ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                          << (settings.hilite ? hilite_none : "");
+            settings.ostr << backQuoteIfNeed(short_name);
+            settings.writeKeyword(" ON ");
             if (!database.empty())
                 settings.ostr << backQuoteIfNeed(database) + ".";
             settings.ostr << backQuoteIfNeed(table_name);

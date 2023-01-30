@@ -11,8 +11,8 @@ namespace
     {
         if (is_id)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ID" << (settings.hilite ? IAST::hilite_none : "") << "("
-                          << quoteString(str) << ")";
+            settings.writeKeyword("ID");
+            settings.ostr << "(" << quoteString(str) << ")";
         }
         else
         {
@@ -25,7 +25,7 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
 {
     if (empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword("NONE");
         return;
     }
 
@@ -35,8 +35,7 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
     {
         if (std::exchange(need_comma, true))
             settings.ostr << ", ";
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_keyword_any ? "ANY" : "ALL")
-                      << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword(use_keyword_any ? "ANY" : "ALL");
     }
     else
     {
@@ -51,13 +50,13 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "CURRENT_USER" << (settings.hilite ? IAST::hilite_none : "");
+            settings.writeKeyword("CURRENT_USER");
         }
     }
 
     if (except_current_user || !except_names.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword(" EXCEPT ");
         need_comma = false;
 
         for (const auto & name : except_names)
@@ -71,7 +70,7 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "CURRENT_USER" << (settings.hilite ? IAST::hilite_none : "");
+            settings.writeKeyword("CURRENT_USER");
         }
     }
 }

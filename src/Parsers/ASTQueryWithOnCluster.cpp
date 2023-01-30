@@ -30,8 +30,8 @@ void ASTQueryWithOnCluster::formatOnCluster(const IAST::FormatSettings & setting
 {
     if (!cluster.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON CLUSTER " << (settings.hilite ? IAST::hilite_none : "")
-        << backQuoteIfNeed(cluster);
+        settings.writeKeyword(" ON CLUSTER ");
+        settings.ostr << backQuoteIfNeed(cluster);
     }
 }
 

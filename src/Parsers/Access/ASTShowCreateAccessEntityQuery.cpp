@@ -49,7 +49,8 @@ ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 
 void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CREATE " << getKeyword() << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("SHOW CREATE ");
+    settings.writeKeyword(getKeyword());
 
     if (!names.empty())
         formatNames(names, settings);
@@ -67,7 +68,7 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & sett
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" ON ");
         settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
         settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }

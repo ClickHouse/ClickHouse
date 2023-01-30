@@ -46,17 +46,14 @@ void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
 
 void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
         expression->formatImpl(settings, state, frame);
         settings.ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
+    settings.writeKeyword("COLUMNS");
+    settings.ostr << "(" << quoteString(original_pattern) << ")";
 
     if (transformers)
     {
@@ -122,15 +119,14 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 
 void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
         expression->formatImpl(settings, state, frame);
         settings.ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    settings.writeKeyword("COLUMNS");
+    settings.ostr << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
@@ -201,11 +197,10 @@ void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) 
 
 void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
     qualifier->formatImpl(settings, state, frame);
 
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    settings.writeKeyword(".COLUMNS");
+    settings.ostr << "(";
     settings.ostr << quoteString(original_pattern);
     settings.ostr << ")";
 
@@ -247,9 +242,10 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 
 void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
     qualifier->formatImpl(settings, state, frame);
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+
+    settings.writeKeyword(".COLUMNS");
+    settings.ostr << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {

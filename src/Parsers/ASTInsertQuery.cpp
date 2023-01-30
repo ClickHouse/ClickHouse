@@ -50,26 +50,24 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 {
     frame.need_parens = false;
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO ";
+    settings.writeKeyword("INSERT INTO ");
     if (table_function)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
+        settings.writeKeyword("FUNCTION ");
         table_function->formatImpl(settings, state, frame);
         if (partition_by)
         {
-            settings.ostr << " PARTITION BY ";
+            settings.writeKeyword(" PARTITION BY ");
             partition_by->formatImpl(settings, state, frame);
         }
     }
     else if (table_id)
     {
-        settings.ostr << (settings.hilite ? hilite_none : "")
-                      << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+        settings.ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_none : "")
-                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
     }
 
     if (columns)
@@ -81,22 +79,19 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 
     if (infile)
     {
-        settings.ostr
-            << (settings.hilite ? hilite_keyword : "")
-            << " FROM INFILE "
-            << (settings.hilite ? hilite_none : "")
-            << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
+        settings.writeKeyword(" FROM INFILE ");
+        settings.ostr << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
         if (compression)
-            settings.ostr
-                << (settings.hilite ? hilite_keyword : "")
-                << " COMPRESSION "
-                << (settings.hilite ? hilite_none : "")
-                << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+        {
+            settings.writeKeyword(" COMPRESSION ");
+            settings.ostr << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+        }
     }
 
     if (settings_ast)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+        settings.ostr << settings.nl_or_ws;
+        settings.writeKeyword("SETTINGS ");
         settings_ast->formatImpl(settings, state, frame);
     }
 
@@ -127,13 +122,14 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     {
         if (!format.empty())
         {
-            settings.ostr << delim
-                          << (settings.hilite ? hilite_keyword : "") << "FORMAT " << (settings.hilite ? hilite_none : "") << format;
+            settings.ostr << delim;
+            settings.writeKeyword("FORMAT ");
+            settings.ostr << format;
         }
         else if (!infile)
         {
-            settings.ostr << delim
-                          << (settings.hilite ? hilite_keyword : "") << "VALUES" << (settings.hilite ? hilite_none : "");
+            settings.ostr << delim;
+            settings.writeKeyword("VALUES");
         }
     }
 }

@@ -23,19 +23,19 @@ namespace
 
     void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
-                      << quoteString(new_name);
+        settings.writeKeyword(" RENAME TO ");
+        settings.ostr << quoteString(new_name);
     }
 
     void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
     {
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        format.writeKeyword(" SETTINGS ");
         settings.format(format);
     }
 
     void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword(" TO ");
         roles.format(settings);
     }
 }
@@ -65,20 +65,19 @@ void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, Fo
 {
     if (attach)
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH SETTINGS PROFILE" << (format.hilite ? hilite_none : "");
+        format.writeKeyword("ATTACH SETTINGS PROFILE");
     }
     else
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER SETTINGS PROFILE" : "CREATE SETTINGS PROFILE")
-                      << (format.hilite ? hilite_none : "");
+        format.writeKeyword(alter ? "ALTER SETTINGS PROFILE" : "CREATE SETTINGS PROFILE");
     }
 
     if (if_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
+        format.writeKeyword(" IF EXISTS");
     else if (if_not_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
+        format.writeKeyword(" IF NOT EXISTS");
     else if (or_replace)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
+        format.writeKeyword(" OR REPLACE");
 
     formatNames(names, format);
     formatOnCluster(format);

@@ -31,21 +31,25 @@ protected:
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
         std::string nl_or_ws = settings.one_line ? " " : "\n";
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
+        settings.ostr << indent_str;
+        settings.writeKeyword("CHECK TABLE ");
 
         if (table)
         {
             if (database)
             {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(getDatabase()) << (settings.hilite ? hilite_none : "");
+                settings.ostr << indent_str;
+                settings.writeKeyword(backQuoteIfNeed(getDatabase()));
                 settings.ostr << ".";
             }
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(getTable()) << (settings.hilite ? hilite_none : "");
+            settings.ostr << indent_str;
+            settings.writeKeyword(backQuoteIfNeed(getTable()));
         }
 
         if (partition)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
+            settings.ostr << indent_str;
+            settings.writeKeyword(" PARTITION ");
             partition->formatImpl(settings, state, frame);
         }
     }

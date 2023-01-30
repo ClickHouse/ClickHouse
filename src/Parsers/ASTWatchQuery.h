@@ -42,17 +42,16 @@ protected:
     {
         std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-        s.ostr << (s.hilite ? hilite_keyword : "") << "WATCH " << (s.hilite ? hilite_none : "")
-            << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        s.writeKeyword("WATCH ");
+        s.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (is_watch_events)
-        {
-            s.ostr << " " << (s.hilite ? hilite_keyword : "") << "EVENTS" << (s.hilite ? hilite_none : "");
-        }
+            s.writeKeyword(" EVENTS");
 
         if (limit_length)
         {
-            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
+            s.ostr << s.nl_or_ws << indent_str;
+            s.writeKeyword("LIMIT ");
             limit_length->formatImpl(s, state, frame);
         }
     }

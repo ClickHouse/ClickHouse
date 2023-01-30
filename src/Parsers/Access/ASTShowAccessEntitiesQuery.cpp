@@ -26,7 +26,7 @@ String ASTShowAccessEntitiesQuery::getID(char) const
 
 void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << getKeyword() << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("SHOW ");
 
     if (!short_name.empty())
         settings.ostr << " " << backQuoteIfNeed(short_name);
@@ -35,7 +35,7 @@ void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" ON ");
         settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
         settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }

@@ -22,7 +22,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
 void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (is_standalone)
-        format.ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
+        format.writeKeyword("SET ");
 
     bool first = true;
 

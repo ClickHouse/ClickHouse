@@ -19,40 +19,36 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state) const
 void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     children.front()->formatImpl(settings, state, frame);
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-        << (direction == -1 ? " DESC" : " ASC")
-        << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword(direction == -1 ? " DESC" : " ASC");
 
     if (nulls_direction_was_explicitly_specified)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << " NULLS "
-            << (nulls_direction == direction ? "LAST" : "FIRST")
-            << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" NULLS ");
+        settings.writeKeyword(nulls_direction == direction ? "LAST" : "FIRST");
     }
 
     if (collation)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " COLLATE " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" COLLATE ");
         collation->formatImpl(settings, state, frame);
     }
 
     if (with_fill)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH FILL" << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" WITH FILL");
         if (fill_from)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" FROM ");
             fill_from->formatImpl(settings, state, frame);
         }
         if (fill_to)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" TO ");
             fill_to->formatImpl(settings, state, frame);
         }
         if (fill_step)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STEP " << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" STEP ");
             fill_step->formatImpl(settings, state, frame);
         }
     }

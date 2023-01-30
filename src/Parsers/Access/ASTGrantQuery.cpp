@@ -29,7 +29,7 @@ namespace
 
     void formatONClause(const String & database, bool any_database, const String & table, bool any_table, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword("ON ");
         if (any_database)
         {
             settings.ostr << "*.*";
@@ -61,7 +61,7 @@ namespace
                 if (!std::exchange(no_output, false))
                     settings.ostr << ", ";
 
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
+                settings.writeKeyword(keyword);
                 if (!element.any_column)
                     formatColumnNames(element.columns, settings);
             }
@@ -83,7 +83,10 @@ namespace
         }
 
         if (no_output)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (settings.hilite ? IAST::hilite_none : "") << "*.*";
+        {
+            settings.writeKeyword("USAGE ON ");
+            settings.ostr << "*.*";
+        }
     }
 }
 
@@ -110,10 +113,9 @@ ASTPtr ASTGrantQuery::clone() const
 
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach_mode ? "ATTACH " : "")
-                  << (settings.hilite ? hilite_keyword : "") << ((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "") << (settings.hilite ? hilite_none : "")
-                  << (settings.hilite ? hilite_keyword : "") << (is_revoke ? "REVOKE" : "GRANT")
-                  << (settings.hilite ? IAST::hilite_none : "");
+    settings.writeKeyword(attach_mode ? "ATTACH " : "");
+    settings.writeKeyword((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "");
+    settings.writeKeyword(is_revoke ? "REVOKE" : "GRANT");
 
     if (!access_rights_elements.sameOptions())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
@@ -126,9 +128,9 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     if (is_revoke)
     {
         if (grant_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " GRANT OPTION FOR" << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" GRANT OPTION FOR");
         else if (admin_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " ADMIN OPTION FOR" << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" ADMIN OPTION FOR");
     }
 
     settings.ostr << " ";
@@ -143,16 +145,15 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     else
         formatElementsWithoutOptions(access_rights_elements, settings);
 
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (is_revoke ? " FROM " : " TO ")
-                  << (settings.hilite ? IAST::hilite_none : "");
+    settings.writeKeyword(is_revoke ? " FROM " : " TO ");
     grantees->format(settings);
 
     if (!is_revoke)
     {
         if (grant_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH GRANT OPTION" << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" WITH GRANT OPTION");
         else if (admin_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" WITH ADMIN OPTION");
     }
 }
 

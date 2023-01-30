@@ -7,26 +7,26 @@ namespace DB
 
 void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "")
-                  << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    settings.writeKeyword("OPTIMIZE TABLE ");
+    settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
     formatOnCluster(settings);
 
     if (partition)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " PARTITION " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" PARTITION ");
         partition->formatImpl(settings, state, frame);
     }
 
     if (final)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FINAL" << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" FINAL");
 
     if (deduplicate)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" DEDUPLICATE");
 
     if (deduplicate_by_columns)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" BY ");
         deduplicate_by_columns->formatImpl(settings, state, frame);
     }
 }

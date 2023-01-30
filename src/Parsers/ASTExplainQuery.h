@@ -112,7 +112,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(toString(kind));
 
         if (ast_settings)
         {

@@ -40,10 +40,9 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 
 void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << AccessEntityTypeInfo::get(type).name
-                  << (if_exists ? " IF EXISTS" : "")
-                  << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("DROP ");
+    settings.writeKeyword(AccessEntityTypeInfo::get(type).name);
+    settings.writeKeyword(if_exists ? " IF EXISTS" : "");
 
     if (type == AccessEntityType::ROW_POLICY)
     {

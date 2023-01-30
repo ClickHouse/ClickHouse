@@ -17,12 +17,12 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
 
 void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE NAMED COLLECTION ";
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("CREATE NAMED COLLECTION ");
+    settings.writeProbablyBackQuotedIdentifier(collection_name);
 
     formatOnCluster(settings);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword(" AS ");
     bool first = true;
     for (const auto & change : changes)
     {

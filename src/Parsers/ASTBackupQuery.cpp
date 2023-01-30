@@ -17,8 +17,7 @@ namespace
 
     void formatPartitions(const ASTs & partitions, const IAST::FormatSettings & format)
     {
-        format.ostr << " " << (format.hilite ? IAST::hilite_keyword : "") << ((partitions.size() == 1) ? "PARTITION" : "PARTITIONS") << " "
-                    << (format.hilite ? IAST::hilite_none : "");
+        format.writeKeyword((partitions.size() == 1) ? "PARTITION " : "PARTITIONS ");
         bool need_comma = false;
         for (const auto & partition : partitions)
         {
@@ -34,8 +33,8 @@ namespace
         if (except_databases.empty())
             return;
 
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT "
-                    << (except_databases.size() == 1 ? "DATABASE" : "DATABASES") << " " << (format.hilite ? IAST::hilite_none : "");
+        format.writeKeyword(" EXCEPT ");
+        format.writeKeyword(except_databases.size() == 1 ? "DATABASE " : "DATABASES ");
 
         bool need_comma = false;
         for (const auto & database_name : except_databases)
@@ -51,8 +50,8 @@ namespace
         if (except_tables.empty())
             return;
 
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (except_tables.size() == 1 ? "TABLE" : "TABLES") << " "
-                    << (format.hilite ? IAST::hilite_none : "");
+        format.writeKeyword(" EXCEPT ");
+        format.writeKeyword(except_tables.size() == 1 ? "TABLE " : "TABLES ");
 
         bool need_comma = false;
         for (const auto & table_name : except_tables)
@@ -72,7 +71,7 @@ namespace
         {
             case ElementType::TABLE:
             {
-                format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "TABLE " << (format.hilite ? IAST::hilite_none : "");
+                format.writeKeyword("TABLE ");
 
                 if (!element.database_name.empty())
                     format.ostr << backQuoteIfNeed(element.database_name) << ".";
@@ -80,7 +79,7 @@ namespace
 
                 if ((element.new_table_name != element.table_name) || (element.new_database_name != element.database_name))
                 {
-                    format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
+                    format.writeKeyword(" AS ");
                     if (!element.new_database_name.empty())
                         format.ostr << backQuoteIfNeed(element.new_database_name) << ".";
                     format.ostr << backQuoteIfNeed(element.new_table_name);
@@ -93,12 +92,12 @@ namespace
 
             case ElementType::TEMPORARY_TABLE:
             {
-                format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "TEMPORARY TABLE " << (format.hilite ? IAST::hilite_none : "");
+                format.writeKeyword("TEMPORARY TABLE ");
                 format.ostr << backQuoteIfNeed(element.table_name);
 
                 if (element.new_table_name != element.table_name)
                 {
-                    format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
+                    format.writeKeyword(" AS ");
                     format.ostr << backQuoteIfNeed(element.new_table_name);
                 }
                 break;
@@ -106,14 +105,12 @@ namespace
 
             case ElementType::DATABASE:
             {
-                format.ostr << (format.hilite ? IAST::hilite_keyword : "");
-                format.ostr << "DATABASE ";
-                format.ostr << (format.hilite ? IAST::hilite_none : "");
+                format.writeKeyword("DATABASE ");
                 format.ostr << backQuoteIfNeed(element.database_name);
 
                 if (element.new_database_name != element.database_name)
                 {
-                    format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " AS " << (format.hilite ? IAST::hilite_none : "");
+                    format.writeKeyword(" AS ");
                     format.ostr << backQuoteIfNeed(element.new_database_name);
                 }
 
@@ -123,7 +120,7 @@ namespace
 
             case ElementType::ALL:
             {
-                format.ostr << (format.hilite ? IAST::hilite_keyword : "") << "ALL" << (format.hilite ? IAST::hilite_none : "");
+                format.writeKeyword("ALL");
                 formatExceptDatabases(element.except_databases, format);
                 formatExceptTables(element.except_tables, format);
                 break;
@@ -147,7 +144,7 @@ namespace
         if (!settings && !base_backup_name && !cluster_host_ids)
             return;
 
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        format.writeKeyword(" SETTINGS ");
         bool empty = true;
 
         if (base_backup_name)
@@ -267,13 +264,12 @@ ASTPtr ASTBackupQuery::clone() const
 
 void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
-    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ")
-                << (format.hilite ? hilite_none : "");
+    format.writeKeyword((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 
     formatElements(elements, format);
     formatOnCluster(format);
 
-    format.ostr << (format.hilite ? hilite_keyword : "") << ((kind == Kind::BACKUP) ? " TO " : " FROM ") << (format.hilite ? hilite_none : "");
+    format.writeKeyword((kind == Kind::BACKUP) ? " TO " : " FROM ");
     backup_name->format(format);
 
     if (settings || base_backup_name)

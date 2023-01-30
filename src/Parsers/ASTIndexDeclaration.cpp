@@ -38,9 +38,9 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
         expr->formatImpl(s, state, frame);
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
+    s.writeKeyword(" TYPE ");
     type->formatImpl(s, state, frame);
-    s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
+    s.writeKeyword(" GRANULARITY ");
     s.ostr << granularity;
 }
 

@@ -72,13 +72,15 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
 
     if (null_modifier)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
-                      << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
+        settings.ostr << ' ';
+        settings.writeKeyword(*null_modifier ? "" : "NOT ");
+        settings.writeKeyword("NULL");
     }
 
     if (default_expression)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "");
+        settings.ostr << ' ';
+        settings.writeKeyword(default_specifier);
         if (!ephemeral_default)
         {
             settings.ostr << ' ';
@@ -88,7 +90,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
 
     if (comment)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
+        settings.writeKeyword(" COMMENT ");
         comment->formatImpl(settings, state, frame);
     }
 
@@ -100,13 +102,13 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
 
     if (ttl)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "TTL" << (settings.hilite ? hilite_none : "") << ' ';
+        settings.writeKeyword(" TTL ");
         ttl->formatImpl(settings, state, frame);
     }
 
     if (collation)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COLLATE" << (settings.hilite ? hilite_none : "") << ' ';
+        settings.writeKeyword(" COLLATE ");
         collation->formatImpl(settings, state, frame);
     }
 }

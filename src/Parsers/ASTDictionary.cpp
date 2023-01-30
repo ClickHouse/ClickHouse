@@ -20,18 +20,12 @@ void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
                                     FormatState &,
                                     FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "RANGE"
-                  << (settings.hilite ? hilite_none : "")
-                  << "("
-                  << (settings.hilite ? hilite_keyword : "")
-                  << "MIN "
-                  << (settings.hilite ? hilite_none : "")
-                  << min_attr_name << " "
-                  << (settings.hilite ? hilite_keyword : "")
-                  << "MAX "
-                  << (settings.hilite ? hilite_none : "")
-                  << max_attr_name << ")";
+    settings.writeKeyword("RANGE");
+    settings.ostr << "(";
+    settings.writeKeyword("MIN ");
+    settings.ostr << min_attr_name << " ";
+    settings.writeKeyword("MAX ");
+    settings.ostr << max_attr_name << ")";
 }
 
 
@@ -48,18 +42,12 @@ void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
                                        FormatState &,
                                        FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "LIFETIME"
-                  << (settings.hilite ? hilite_none : "")
-                  << "("
-                  << (settings.hilite ? hilite_keyword : "")
-                  << "MIN "
-                  << (settings.hilite ? hilite_none : "")
-                  << min_sec << " "
-                  << (settings.hilite ? hilite_keyword : "")
-                  << "MAX "
-                  << (settings.hilite ? hilite_none : "")
-                  << max_sec << ")";
+    settings.writeKeyword("LIFETIME");
+    settings.ostr << "(";
+    settings.writeKeyword("MIN ");
+    settings.ostr << min_sec << " ";
+    settings.writeKeyword("MAX ");
+    settings.ostr << max_sec << ")";
 }
 
 
@@ -77,13 +65,9 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                                      FormatState & state,
                                      FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "LAYOUT"
-                  << (settings.hilite ? hilite_none : "")
-                  << "("
-                  << (settings.hilite ? hilite_keyword : "")
-                  << Poco::toUpper(layout_type)
-                  << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("LAYOUT");
+    settings.ostr << "(";
+    settings.writeKeyword(Poco::toUpper(layout_type));
 
     if (has_brackets)
         settings.ostr << "(";
@@ -108,11 +92,8 @@ void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
                                         FormatState &,
                                         FormatStateStacked) const
 {
-
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "SETTINGS"
-                  << (settings.hilite ? hilite_none : "")
-                  << "(";
+    settings.writeKeyword("SETTINGS");
+    settings.ostr << "(";
     for (auto it = changes.begin(); it != changes.end(); ++it)
     {
         if (it != changes.begin())
@@ -120,7 +101,7 @@ void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
 
         settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }
-    settings.ostr << (settings.hilite ? hilite_none : "") << ")";
+    settings.ostr << ")";
 }
 
 
@@ -154,17 +135,17 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
 {
     if (primary_key)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "PRIMARY KEY "
-            << (settings.hilite ? hilite_none : "");
+        settings.ostr << settings.nl_or_ws;
+        settings.writeKeyword("PRIMARY KEY ");
         primary_key->formatImpl(settings, state, frame);
     }
 
     if (source)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SOURCE("
-            << (settings.hilite ? hilite_none : "");
+        settings.ostr << settings.nl_or_ws;
+        settings.writeKeyword("SOURCE(");
         source->formatImpl(settings, state, frame);
-        settings.ostr << ")";
+        settings.writeKeyword(")");
     }
 
     if (lifetime)

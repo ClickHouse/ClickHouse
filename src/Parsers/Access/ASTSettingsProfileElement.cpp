@@ -13,8 +13,8 @@ namespace
     {
         if (is_id)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ID" << (settings.hilite ? IAST::hilite_none : "") << "("
-                          << quoteString(str) << ")";
+            settings.writeKeyword("ID");
+            settings.ostr << "(" << quoteString(str) << ")";
         }
         else
         {
@@ -27,8 +27,8 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
 {
     if (!parent_profile.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_inherit_keyword ? "INHERIT" : "PROFILE") << " "
-                      << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword(use_inherit_keyword ? "INHERIT" : "PROFILE");
+        settings.ostr << " ";
         formatProfileNameOrID(parent_profile, id_mode, settings);
         return;
     }
@@ -42,14 +42,14 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
 
     if (!min_value.isNull())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MIN " << (settings.hilite ? IAST::hilite_none : "")
-                      << applyVisitor(FieldVisitorToString{}, min_value);
+        settings.writeKeyword(" MIN ");
+        settings.ostr << applyVisitor(FieldVisitorToString{}, min_value);
     }
 
     if (!max_value.isNull())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX " << (settings.hilite ? IAST::hilite_none : "")
-                      << applyVisitor(FieldVisitorToString{}, max_value);
+        settings.writeKeyword(" MAX ");
+        settings.ostr << applyVisitor(FieldVisitorToString{}, max_value);
     }
 
     if (writability)
@@ -57,16 +57,13 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
         switch (*writability)
         {
             case SettingConstraintWritability::WRITABLE:
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WRITABLE"
-                            << (settings.hilite ? IAST::hilite_none : "");
+                settings.writeKeyword(" WRITABLE");
                 break;
             case SettingConstraintWritability::CONST:
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CONST"
-                            << (settings.hilite ? IAST::hilite_none : "");
+                settings.writeKeyword(" CONST");
                 break;
             case SettingConstraintWritability::CHANGEABLE_IN_READONLY:
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " CHANGEABLE_IN_READONLY"
-                            << (settings.hilite ? IAST::hilite_none : "");
+                settings.writeKeyword(" CHANGEABLE_IN_READONLY");
                 break;
             case SettingConstraintWritability::MAX: break;
         }
@@ -87,7 +84,7 @@ void ASTSettingsProfileElements::formatImpl(const FormatSettings & settings, For
 {
     if (empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword("NONE");
         return;
     }
 

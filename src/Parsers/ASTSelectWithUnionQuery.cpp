@@ -58,9 +58,10 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                          << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
-                          << (settings.hilite ? hilite_none : "");
+        {
+            settings.ostr << settings.nl_or_ws << indent_str;
+            settings.writeKeyword(mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1]));
+        }
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {

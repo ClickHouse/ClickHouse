@@ -6,14 +6,6 @@
 namespace DB
 {
 
-static void writeAlias(const String & name, const ASTWithAlias::FormatSettings & settings)
-{
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (settings.hilite ? IAST::hilite_alias : "");
-    settings.writeIdentifier(name);
-    settings.ostr << (settings.hilite ? IAST::hilite_none : "");
-}
-
-
 void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
@@ -33,7 +25,8 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
 
         if (!alias.empty())
         {
-            writeAlias(alias, settings);
+            settings.writeKeyword(" AS ");
+            settings.writeAlias(alias);
             if (frame.need_parens)
                 settings.ostr << ')';
         }

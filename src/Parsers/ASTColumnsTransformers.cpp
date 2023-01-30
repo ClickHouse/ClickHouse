@@ -46,8 +46,7 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 
 void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
-
+    settings.writeKeyword("APPLY ");
     if (!column_name_prefix.empty())
         settings.ostr << "(";
 
@@ -165,7 +164,8 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("EXCEPT");
+    settings.writeKeyword(is_strict ? " STRICT " : " ");
 
     if (children.size() > 1)
         settings.ostr << "(";
@@ -292,7 +292,8 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     expr->formatImpl(settings, state, frame);
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
+    settings.writeKeyword(" AS ");
+    settings.ostr << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
@@ -312,7 +313,8 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("REPLACE");
+    settings.writeKeyword(is_strict ? " STRICT " : " ");
 
     if (children.size() > 1)
         settings.ostr << "(";

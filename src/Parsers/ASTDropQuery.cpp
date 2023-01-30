@@ -34,33 +34,30 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
-        settings.ostr << "DROP ";
+        settings.writeKeyword("DROP ");
     else if (kind == ASTDropQuery::Kind::Detach)
-        settings.ostr << "DETACH ";
+        settings.writeKeyword("DETACH ");
     else if (kind == ASTDropQuery::Kind::Truncate)
-        settings.ostr << "TRUNCATE ";
+        settings.writeKeyword("TRUNCATE ");
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
     if (temporary)
-        settings.ostr << "TEMPORARY ";
+        settings.writeKeyword("TEMPORARY ");
 
 
     if (!table && database)
-        settings.ostr << "DATABASE ";
+        settings.writeKeyword("DATABASE ");
     else if (is_dictionary)
-        settings.ostr << "DICTIONARY ";
+        settings.writeKeyword("DICTIONARY ");
     else if (is_view)
-        settings.ostr << "VIEW ";
+        settings.writeKeyword("VIEW ");
     else
-        settings.ostr << "TABLE ";
+        settings.writeKeyword("TABLE ");
 
     if (if_exists)
-        settings.ostr << "IF EXISTS ";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword("IF EXISTS ");
 
     if (!table && database)
         settings.ostr << backQuoteIfNeed(getDatabase());
@@ -73,7 +70,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << " PERMANENTLY";
 
     if (sync)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" SYNC");
 }
 
 }

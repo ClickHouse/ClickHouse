@@ -10,16 +10,17 @@ void ASTTransactionControl::formatImpl(const FormatSettings & format /*state*/, 
     switch (action)
     {
         case BEGIN:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "BEGIN TRANSACTION" << (format.hilite ? hilite_none : "");
+            format.writeKeyword("BEGIN TRANSACTION");
             break;
         case COMMIT:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "COMMIT" << (format.hilite ? hilite_none : "");
+            format.writeKeyword("COMMIT");
             break;
         case ROLLBACK:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "ROLLBACK" << (format.hilite ? hilite_none : "");
+            format.writeKeyword("ROLLBACK");
             break;
         case SET_SNAPSHOT:
-            format.ostr << (format.hilite ? hilite_keyword : "") << "SET TRANSACTION SNAPSHOT " << (format.hilite ? hilite_none : "") << snapshot;
+            format.writeKeyword("SET TRANSACTION SNAPSHOT ");
+            format.ostr << snapshot;
             break;
     }
 }

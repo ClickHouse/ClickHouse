@@ -72,29 +72,26 @@ protected:
     {
         if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword("RENAME DATABASE ");
 
             if (elements.at(0).if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+                settings.writeKeyword("IF EXISTS ");
 
             settings.ostr << backQuoteIfNeed(elements.at(0).from.database);
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" TO ");
             settings.ostr << backQuoteIfNeed(elements.at(0).to.database);
             formatOnCluster(settings);
             return;
         }
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "");
         if (exchange && dictionary)
-            settings.ostr << "EXCHANGE DICTIONARIES ";
+            settings.writeKeyword("EXCHANGE DICTIONARIES ");
         else if (exchange)
-            settings.ostr << "EXCHANGE TABLES ";
+            settings.writeKeyword("EXCHANGE TABLES ");
         else if (dictionary)
-            settings.ostr << "RENAME DICTIONARY ";
+            settings.writeKeyword("RENAME DICTIONARY ");
         else
-            settings.ostr << "RENAME TABLE ";
-
-        settings.ostr << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword("RENAME TABLE ");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {
@@ -102,10 +99,10 @@ protected:
                 settings.ostr << ", ";
 
             if (it->if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
-            settings.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table)
-                << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "")
-                << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
+                settings.writeKeyword("IF EXISTS ");
+            settings.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table);
+            settings.writeKeyword(exchange ? " AND " : " TO ");
+            settings.ostr << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
         }
 
         formatOnCluster(settings);

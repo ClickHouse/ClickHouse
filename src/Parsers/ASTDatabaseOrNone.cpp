@@ -8,7 +8,7 @@ void ASTDatabaseOrNone::formatImpl(const FormatSettings & settings, FormatState 
 {
     if (none)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+        settings.writeKeyword("NONE");
         return;
     }
     settings.ostr << backQuoteIfNeed(database_name);

@@ -12,8 +12,8 @@ ASTPtr ASTDropNamedCollectionQuery::clone() const
 
 void ASTDropNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP NAMED COLLECTION ";
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("DROP NAMED COLLECTION ");
+    settings.writeProbablyBackQuotedIdentifier(collection_name);
     formatOnCluster(settings);
 }
 

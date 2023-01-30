@@ -31,19 +31,22 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
 
     if (out_file)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
+        s.ostr << s.nl_or_ws;
+        s.writeKeyword("INTO OUTFILE ");
         out_file->formatImpl(s, state, frame);
     }
 
     if (format)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
+        s.ostr << s.nl_or_ws;
+        s.writeKeyword("FORMAT ");
         format->formatImpl(s, state, frame);
     }
 
     if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
+        s.ostr << s.nl_or_ws;
+        s.writeKeyword("SETTINGS ");
         settings_ast->formatImpl(s, state, frame);
     }
 }

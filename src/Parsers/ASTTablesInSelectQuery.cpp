@@ -126,20 +126,19 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
 
     if (final)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
-            << "FINAL" << (settings.hilite ? hilite_none : "");
+        settings.ostr << settings.nl_or_ws << indent_str;
+        settings.writeKeyword("FINAL");
     }
 
     if (sample_size)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
-            << "SAMPLE " << (settings.hilite ? hilite_none : "");
+        settings.ostr << settings.nl_or_ws << indent_str;
+        settings.writeKeyword("SAMPLE ");
         sample_size->formatImpl(settings, state, frame);
 
         if (sample_offset)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << ' '
-                << "OFFSET " << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword(" OFFSET ");
             sample_offset->formatImpl(settings, state, frame);
         }
     }
@@ -148,7 +147,6 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
 
 void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     if (kind != JoinKind::Comma)
@@ -162,7 +160,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
         case JoinLocality::Local:
             break;
         case JoinLocality::Global:
-            settings.ostr << "GLOBAL ";
+            settings.writeKeyword("GLOBAL ");
             break;
     }
 
@@ -174,19 +172,19 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
                 break;
             case JoinStrictness::RightAny:
             case JoinStrictness::Any:
-                settings.ostr << "ANY ";
+                settings.writeKeyword("ANY ");
                 break;
             case JoinStrictness::All:
-                settings.ostr << "ALL ";
+                settings.writeKeyword("ALL ");
                 break;
             case JoinStrictness::Asof:
-                settings.ostr << "ASOF ";
+                settings.writeKeyword("ASOF ");
                 break;
             case JoinStrictness::Semi:
-                settings.ostr << "SEMI ";
+                settings.writeKeyword("SEMI ");
                 break;
             case JoinStrictness::Anti:
-                settings.ostr << "ANTI ";
+                settings.writeKeyword("ANTI ");
                 break;
         }
     }
@@ -194,26 +192,24 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
     switch (kind)
     {
         case JoinKind::Inner:
-            settings.ostr << "INNER JOIN";
+            settings.writeKeyword("INNER JOIN");
             break;
         case JoinKind::Left:
-            settings.ostr << "LEFT JOIN";
+            settings.writeKeyword("LEFT JOIN");
             break;
         case JoinKind::Right:
-            settings.ostr << "RIGHT JOIN";
+            settings.writeKeyword("RIGHT JOIN");
             break;
         case JoinKind::Full:
-            settings.ostr << "FULL OUTER JOIN";
+            settings.writeKeyword("FULL OUTER JOIN");
             break;
         case JoinKind::Cross:
-            settings.ostr << "CROSS JOIN";
+            settings.writeKeyword("CROSS JOIN");
             break;
         case JoinKind::Comma:
             settings.ostr << ",";
             break;
     }
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
 
@@ -224,14 +220,14 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
 
     if (using_expression_list)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" USING ");
         settings.ostr << "(";
         using_expression_list->formatImpl(settings, state, frame);
         settings.ostr << ")";
     }
     else if (on_expression)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" ON ");
         on_expression->formatImpl(settings, state, frame);
     }
 }
@@ -250,10 +246,9 @@ void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & sta
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
     frame.expression_list_prepend_whitespace = true;
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-        << settings.nl_or_ws
-        << indent_str
-        << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
+    settings.ostr << settings.nl_or_ws << indent_str;
+    settings.writeKeyword(kind == Kind::Left ? "LEFT " : "");
+    settings.writeKeyword("ARRAY JOIN");
 
     settings.one_line
         ? expression_list->formatImpl(settings, state, frame)

@@ -45,27 +45,27 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
 
     if (default_value)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "DEFAULT" << (settings.hilite ? hilite_none : "") << ' ';
+        settings.writeKeyword(" DEFAULT ");
         default_value->formatImpl(settings, state, frame);
     }
 
     if (expression)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "EXPRESSION" << (settings.hilite ? hilite_none : "") << ' ';
+        settings.writeKeyword(" EXPRESSION ");
         expression->formatImpl(settings, state, frame);
     }
 
     if (hierarchical)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "HIERARCHICAL";
+        settings.writeKeyword(" HIERARCHICAL");
 
     if (bidirectional)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "BIDIRECTIONAL";
+        settings.writeKeyword(" BIDIRECTIONAL");
 
     if (injective)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "INJECTIVE";
+        settings.writeKeyword(" INJECTIVE");
 
     if (is_object_id)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "IS_OBJECT_ID";
+        settings.writeKeyword(" IS_OBJECT_ID");
 }
 
 }

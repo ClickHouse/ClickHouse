@@ -27,12 +27,10 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
     FormatSettings settings(settings_, true);
     String nl_or_nothing = settings.one_line ? "" : "\n";
     String nl_or_ws = settings.one_line ? " " : "\n";
-    String hl_keyword = settings.hilite ? hilite_keyword : "";
-    String hl_none = settings.hilite ? hilite_none : "";
 
     if (is_standalone)
     {
-        settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
+        settings.writeKeyword("TABLE OVERRIDE ");
         ASTIdentifier(table_name).formatImpl(settings, state, frame);
     }
     if (!columns && (!storage || storage->children.empty()))
@@ -49,7 +47,9 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
     {
         FormatStateStacked columns_frame = override_frame;
         columns_frame.expression_list_always_start_on_new_line = true;
-        settings.ostr << indent_str << hl_keyword << "COLUMNS" << hl_none << nl_or_ws << indent_str << "(";
+        settings.ostr << indent_str;
+        settings.writeKeyword("COLUMNS");
+        settings.ostr << nl_or_ws << indent_str << "(";
         columns->formatImpl(settings, state, columns_frame);
         settings.ostr << nl_or_nothing << indent_str << ")";
         ++override_elems;
@@ -61,8 +61,9 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
             if (elem)
             {
                 settings.ostr << (override_elems++ ? nl_or_ws : "")
-                              << indent_str
-                              << hl_keyword << elem_name << hl_none << ' ';
+                              << indent_str;
+                settings.writeKeyword(elem_name);
+                settings.ostr << ' ';
                 elem->formatImpl(settings, state, override_frame);
             }
         };

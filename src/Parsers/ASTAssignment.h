@@ -29,12 +29,8 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
 
-        settings.ostr << (settings.hilite ? hilite_identifier : "");
         settings.writeIdentifier(column_name);
-        settings.ostr << (settings.hilite ? hilite_none : "");
-
-        settings.ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
-
+        settings.writeOperator(" = ");
         expression()->formatImpl(settings, state, frame);
     }
 };

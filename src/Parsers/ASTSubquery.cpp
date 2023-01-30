@@ -36,9 +36,7 @@ void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, Format
     ///   (select 1 in ((select 1) as sub))
     if (!cte_name.empty())
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "");
         settings.writeIdentifier(cte_name);
-        settings.ostr << (settings.hilite ? hilite_none : "");
         return;
     }
 

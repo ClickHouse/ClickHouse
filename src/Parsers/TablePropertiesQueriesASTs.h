@@ -88,8 +88,9 @@ class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDa
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
-                    << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+        settings.writeKeyword(ASTExistsDatabaseQueryIDAndQueryNames::Query);
+        settings.ostr << " ";
+        settings.writeKeyword(backQuoteIfNeed(getDatabase()));
     }
 };
 
@@ -98,8 +99,9 @@ class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShow
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
-                      << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+        settings.writeKeyword(ASTShowCreateDatabaseQueryIDAndQueryNames::Query);
+        settings.ostr << " ";
+        settings.writeKeyword(backQuoteIfNeed(getDatabase()));
     }
 };
 
@@ -126,8 +128,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-                      << "DESCRIBE TABLE" << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword("DESCRIBE TABLE");
         table_expression->formatImpl(settings, state, frame);
     }
 

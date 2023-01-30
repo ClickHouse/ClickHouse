@@ -14,12 +14,12 @@ ASTPtr ASTAlterNamedCollectionQuery::clone() const
 
 void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "Alter NAMED COLLECTION ";
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("Alter NAMED COLLECTION ");
+    settings.writeProbablyBackQuotedIdentifier(collection_name);
     formatOnCluster(settings);
     if (!changes.empty())
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SET " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" SET ");
         bool first = true;
         for (const auto & change : changes)
         {
@@ -37,7 +37,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & setti
     }
     if (!delete_keys.empty())
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " DELETE " << (settings.hilite ? hilite_none : "");
+        settings.writeKeyword(" DELETE ");
         bool first = true;
         for (const auto & key : delete_keys)
         {

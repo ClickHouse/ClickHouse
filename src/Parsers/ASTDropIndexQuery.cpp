@@ -31,13 +31,12 @@ void ASTDropIndexQuery::formatQueryImpl(const FormatSettings & settings, FormatS
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
+    settings.ostr << indent_str;
 
-    settings.ostr << "DROP INDEX " << (if_exists ? "IF EXISTS " : "");
+    settings.writeKeyword("DROP INDEX ");
+    settings.writeKeyword(if_exists ? "IF EXISTS " : "");
     index_name->formatImpl(settings, state, frame);
-    settings.ostr << " ON ";
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword(" ON ");
 
     if (table)
     {

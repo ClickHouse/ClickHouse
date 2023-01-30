@@ -6,9 +6,8 @@ namespace DB
 
 void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
 {
-    IAST::FormatSettings settings(buf, one_line);
-    settings.hilite = hilite;
-
+    IAST::FormatSettings settings(buf, one_line, false,
+                                  IdentifierQuotingStyle::Backticks, hilite);
     ast.format(settings);
 }
 

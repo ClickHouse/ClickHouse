@@ -39,7 +39,7 @@ void ASTPartition::formatImpl(const FormatSettings & settings, FormatState & sta
             settings.ostr << "ALL";
         else
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
+            settings.writeKeyword("ID ");
             WriteBufferFromOwnString id_buf;
             writeQuoted(id, id_buf);
             settings.ostr << id_buf.str();

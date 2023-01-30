@@ -26,10 +26,9 @@ void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, 
     {
         if (it != children.begin())
         {
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                          << fromOperator(final_operator)
-                          << (settings.hilite ? hilite_none : "")
-                          << settings.nl_or_ws;
+            settings.ostr << settings.nl_or_ws << indent_str;
+            settings.writeKeyword(fromOperator(final_operator));
+            settings.ostr << settings.nl_or_ws;
         }
 
         (*it)->formatImpl(settings, state, frame);

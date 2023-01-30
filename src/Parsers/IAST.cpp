@@ -19,15 +19,6 @@ namespace ErrorCodes
 }
 
 
-const char * IAST::hilite_keyword      = "\033[1m";
-const char * IAST::hilite_identifier   = "\033[0;36m";
-const char * IAST::hilite_function     = "\033[0;33m";
-const char * IAST::hilite_operator     = "\033[1;33m";
-const char * IAST::hilite_alias        = "\033[0;32m";
-const char * IAST::hilite_substitution = "\033[1;36m";
-const char * IAST::hilite_none         = "\033[0m";
-
-
 IAST::~IAST()
 {
     /** Create intrusive linked list of children to delete.
@@ -210,9 +201,97 @@ String IAST::getColumnNameWithoutAlias() const
     return write_buffer.str();
 }
 
+const char * IAST::FormatSettings::hilite_keyword      = "\033[1m";
+const char * IAST::FormatSettings::hilite_identifier   = "\033[0;36m";
+const char * IAST::FormatSettings::hilite_function     = "\033[0;33m";
+const char * IAST::FormatSettings::hilite_operator     = "\033[1;33m";
+const char * IAST::FormatSettings::hilite_alias        = "\033[0;32m";
+const char * IAST::FormatSettings::hilite_substitution = "\033[1;36m";
+const char * IAST::FormatSettings::hilite_metacharacter = "\033[1;35m";
+const char * IAST::FormatSettings::hilite_none         = "\033[0m";
 
-void IAST::FormatSettings::writeIdentifier(const String & name) const
+IAST::FormatSettings::Hiliter::Hiliter(DB::WriteBuffer & ostr_, bool hilite_, const char * hilite_type) : ostr(ostr_), hilite(hilite_)
 {
+    if (hilite)
+        ostr << hilite_type;
+}
+
+IAST::FormatSettings::Hiliter::~Hiliter()
+{
+    if (hilite)
+        ostr << IAST::FormatSettings::hilite_none;
+}
+
+IAST::FormatSettings::Hiliter IAST::FormatSettings::createHiliter(const char * hilite_type) const
+{
+    return {ostr, hilite, hilite_type};
+}
+
+void IAST::FormatSettings::writePossiblyHilited(std::string_view str, const char * hilite_type) const
+{
+    Hiliter hiliter = createHiliter(hilite_type);
+    ostr << str;
+}
+
+void IAST::FormatSettings::writeKeyword(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormatSettings::hilite_keyword);
+}
+
+void IAST::FormatSettings::writeFunction(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormatSettings::hilite_function);
+}
+
+void IAST::FormatSettings::writeOperator(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormatSettings::hilite_operator);
+}
+
+void IAST::FormatSettings::writeSubstitution(std::string_view str) const
+{
+    writePossiblyHilited(str, IAST::FormatSettings::hilite_substitution);
+}
+
+void IAST::FormatSettings::writeStringLiteralWithMetacharacters(const String & str, const char * metacharacters) const
+{
+    if (!hilite)
+    {
+        ostr << str;
+        return;
+    }
+
+    unsigned escaping = 0;
+    for (auto c : str)
+    {
+        if (c == '\\')
+        {
+            ostr << c;
+            if (escaping == 2)
+                escaping = 0;
+            ++escaping;
+        }
+        else if (nullptr != strchr(metacharacters, c))
+        {
+            if (escaping == 2) /// Properly escaped metacharacter
+                ostr << c;
+            else /// Unescaped metacharacter
+                ostr << hilite_metacharacter << c << hilite_none;
+            escaping = 0;
+        }
+        else
+        {
+            ostr << c;
+            escaping = 0;
+        }
+    }
+}
+
+void IAST::FormatSettings::writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias) const
+{
+    const char * hilite_type = should_hilite_as_alias ? IAST::FormatSettings::hilite_alias : IAST::FormatSettings::hilite_identifier;
+    Hiliter hiliter = createHiliter(hilite_type);
+
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
@@ -249,6 +328,22 @@ void IAST::FormatSettings::writeIdentifier(const String & name) const
             break;
         }
     }
+}
+
+void IAST::FormatSettings::writeIdentifier(const String & name) const
+{
+    writeIdentifierOrAlias(name);
+}
+
+void IAST::FormatSettings::writeAlias(const String & name) const
+{
+    writeIdentifierOrAlias(name, true);
+}
+
+void IAST::FormatSettings::writeProbablyBackQuotedIdentifier(const String & name) const
+{
+    Hiliter hiliter = createHiliter(hilite_identifier);
+    writeProbablyBackQuotedString(name, ostr);
 }
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const

@@ -32,7 +32,7 @@ ASTPtr ASTDeleteQuery::clone() const
 
 void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DELETE FROM " << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword("DELETE FROM ");
 
     if (database)
     {
@@ -41,7 +41,7 @@ void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
     settings.ostr << backQuoteIfNeed(getTable());
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+    settings.writeKeyword(" WHERE ");
     predicate->formatImpl(settings, state, frame);
 }
 
