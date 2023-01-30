@@ -46,7 +46,7 @@ static String formatFloat(const Float64 x)
     const auto result = DoubleConverter<true>::instance().ToShortest(x, &builder);
 
     if (!result)
-        throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");
 
     return { buffer, buffer + builder.position() };
 }

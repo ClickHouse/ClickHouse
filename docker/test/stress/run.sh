@@ -128,18 +128,12 @@ EOL
 
 function stop()
 {
+    local max_tries="${1:-90}"
     local pid
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    clickhouse stop $max_tries --do-not-kill && return
-
-    if [ -n "$1" ]
-    then
-        # temporarily disable it in BC check
-        clickhouse stop --force
-        return
-    fi
+    clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
     kill -TERM "$(pidof gdb)" ||:
@@ -465,7 +459,8 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
             clickhouse stop --force
         )
 
-        stop 1
+        # Use bigger timeout for previous version
+        stop 300
         mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
 
         # Start new server
@@ -533,6 +528,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "MutateFromLogEntryTask" \
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
+                   -e "TOO_MANY_PARTS" \
             /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | rg -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
             || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
@@ -598,7 +594,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
-find . -type f -name 'core.*' | while read core; do
+find . -type f -maxdepth 1 -name 'core.*' | while read core; do
     zstd --threads=0 $core
     mv $core.zst /test_output/
 done

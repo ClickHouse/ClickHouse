@@ -60,7 +60,7 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
     std::lock_guard lock(mutex);
     auto it = table_name_to_path.find(table_name);
     if (it == table_name_to_path.end())
-        throw Exception("Table " + table_name + " not found in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} not found in database {}", table_name, database_name);
     assert(it->second != data_path && !it->second.empty());
     return it->second;
 }
@@ -82,7 +82,7 @@ void DatabaseAtomic::drop(ContextPtr)
     }
     catch (...)
     {
-        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
+        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
     fs::remove_all(getMetadataPath());
 }
@@ -169,7 +169,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         }
 
         if (!allowMoveTableToOtherDatabaseEngine(to_database))
-            throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
     if (exchange && !supportsAtomicRename())
@@ -212,7 +212,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             return;
         if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table_.get()))
             if (mv->hasInnerTable())
-                throw Exception("Cannot move MaterializedView with inner table to other database", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move MaterializedView with inner table to other database");
     };
 
     String table_data_path;
@@ -342,7 +342,7 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
 
     if (table_id.uuid != actual_table_id.uuid)
-        throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
+        throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot alter table because it was renamed");
 
     auto txn = query_context->getZooKeeperMetadataTransaction();
     if (txn && !query_context->isInternalSubquery())
@@ -366,7 +366,7 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
     if (detached_tables.contains(uuid))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table with UUID {}, "
-                        "because it was detached but still used by some query. Retry later.", toString(uuid));
+                        "because it was detached but still used by some query. Retry later.", uuid);
 }
 
 void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
@@ -405,8 +405,8 @@ void DatabaseAtomic::assertCanBeDetached(bool cleanup)
     }
     std::lock_guard lock(mutex);
     if (!detached_tables.empty())
-        throw Exception("Database " + backQuoteIfNeed(database_name) + " cannot be detached, "
-                        "because some tables are still in use. Retry later.", ErrorCodes::DATABASE_NOT_EMPTY);
+        throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Database {} cannot be detached, because some tables are still in use. "
+                        "Retry later.", backQuoteIfNeed(database_name));
 }
 
 DatabaseTablesIteratorPtr
@@ -477,7 +477,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
     catch (...)
     {
-        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
+        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
 }
 
@@ -490,7 +490,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     }
     catch (...)
     {
-        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
+        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
 }
 
@@ -535,7 +535,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
     catch (...)
     {
-        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
+        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
 
     auto new_name_escaped = escapeForFileName(new_name);

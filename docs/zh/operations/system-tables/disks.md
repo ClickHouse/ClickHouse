@@ -16,7 +16,7 @@ slug: /zh/operations/system-tables/disks
 **示例**
 
 ```sql
-:) SELECT * FROM system.disks;
+SELECT * FROM system.disks;
 ```
 
 ```text

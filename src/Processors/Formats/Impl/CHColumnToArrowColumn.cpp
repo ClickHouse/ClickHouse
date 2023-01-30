@@ -85,7 +85,7 @@ namespace DB
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
-            throw Exception{fmt::format("Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString()), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString());
     }
 
     template <typename NumericType, typename ArrowBuilderType>
@@ -179,7 +179,7 @@ namespace DB
                 if (need_rescale)
                 {
                     if (common::mulOverflow(value, rescale_multiplier, value))
-                        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                 }
                 status = builder.Append(value);
             }
@@ -295,8 +295,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return extractIndexesImpl<UInt64>(column, start, end, shift);
             default:
-                throw Exception(fmt::format("Indexes column must be ColumnUInt, got {}.", column->getName()),
-                                ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column must be ColumnUInt, got {}.", column->getName());
         }
     }
 
@@ -590,11 +589,8 @@ namespace DB
     #undef DISPATCH
         else
         {
-            throw Exception
-                {
-                    fmt::format("Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name),
-                    ErrorCodes::UNKNOWN_TYPE
-                };
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                    "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name);
         }
     }
 
@@ -641,8 +637,7 @@ namespace DB
             case TypeIndex::UInt64:
                 return arrow::int64();
             default:
-                throw Exception(fmt::format("Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName()),
-                                      ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for getUniqueIndex must be ColumnUInt, got {}.", indexes_column->getName());
         }
     }
 

@@ -11,7 +11,7 @@ The `theilsU` function calculates the [Theil's U uncertainty coefficient](https:
 **Syntax**
 
 ``` sql
-contingency(column1, column2)
+theilsU(column1, column2)
 ```
 
 **Arguments**
