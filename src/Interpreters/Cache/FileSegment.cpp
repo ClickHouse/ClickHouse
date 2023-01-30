@@ -465,6 +465,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         reserved = cache->tryReserve(key(), offset(), size_to_reserve);
         if (reserved)
         {
+            /// FIXME: this mutex must be taken under key lock because othersize there is a race.
             auto lock = segment_guard.lock();
             reserved_size += size_to_reserve;
         }
