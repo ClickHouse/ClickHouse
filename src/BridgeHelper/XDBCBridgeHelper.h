@@ -64,7 +64,7 @@ public:
             ContextPtr context_,
             Poco::Timespan http_timeout_,
             const std::string & connection_string_,
-            bool use_connection_pooling_=true)
+            bool use_connection_pooling_)
         : IXDBCBridgeHelper(context_->getGlobalContext())
         , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
         , connection_string(connection_string_)
