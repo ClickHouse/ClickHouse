@@ -205,6 +205,7 @@ struct PositionImpl
         /// Fastpath when needle is empty
         if (needle.empty())
         {
+            /// When needle is empty and start_pos doesn't exist, always return 1
             if (start_pos == nullptr)
             {
                 for (auto & x : res)
@@ -217,6 +218,7 @@ struct PositionImpl
             const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos);
             if (start_pos_const)
             {
+                /// When needle is empty and start_pos is constant
                 UInt64 start = std::max(start_pos_const->getUInt(0), UInt64(1));
                 for (size_t i = 0; i < rows; ++i)
                 {
@@ -230,6 +232,7 @@ struct PositionImpl
                 return;
             }
 
+            /// When needle is empty and start_pos is not constant
             for (size_t i = 0; i < rows; ++i)
             {
                 size_t haystack_size = Impl::countChars(
