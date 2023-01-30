@@ -1,11 +1,7 @@
--- Tags: distributed, no-parallel, no-replicated-database
+-- Tags: distributed, no-replicated-database
 -- Tag no-replicated-database: ON CLUSTER is not allowed
 
 SET distributed_ddl_output_mode='throw';
-
-DROP DATABASE IF EXISTS 02541_db ON CLUSTER test_shard_localhost;
-CREATE DATABASE 02541_db ON CLUSTER test_shard_localhost;
-USE 02541_db;
 
 CREATE TABLE t1_local ON CLUSTER test_shard_localhost(partition_col_1 String, tc1 int,tc2 int) ENGINE=MergeTree() PARTITION BY partition_col_1 ORDER BY tc1;
 
@@ -25,5 +21,3 @@ DELETE FROM t1_local ON CLUSTER test_shard_localhost WHERE tc1 = 1;
 SELECT * FROM t1_local ORDER BY tc1, tc2;
 
 -- { echoOff }
-
-DROP DATABASE 02541_db ON CLUSTER test_shard_localhost;
