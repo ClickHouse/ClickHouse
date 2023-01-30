@@ -111,7 +111,7 @@ namespace MySQLReplication
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
-                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
+                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "ParseQueryEvent: Unsupported query event: {}", query);
             typ = QUERY_EVENT_XA;
             if (!query.starts_with("XA COMMIT"))
                 transaction_complete = false;
@@ -247,7 +247,7 @@ namespace MySQLReplication
                     break;
                 }
                 default:
-                    throw ReplicationError("ParseMetaData: Unhandled data type:" + std::to_string(typ), ErrorCodes::UNKNOWN_EXCEPTION);
+                    throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION, "ParseMetaData: Unhandled data type: {}", std::to_string(typ));
             }
         }
     }
@@ -601,7 +601,7 @@ namespace MySQLReplication
                             DecimalType res(0);
 
                             if (payload.eof())
-                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+                                throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
                             if ((*payload.position() & 0x80) == 0)
                                 mask = static_cast<UInt32>(-1);
@@ -770,8 +770,8 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        throw ReplicationError(
-                            "ParseRow: Unhandled MySQL field type:" + std::to_string(field_type), ErrorCodes::UNKNOWN_EXCEPTION);
+                        throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION,
+                            "ParseRow: Unhandled MySQL field type: {}", std::to_string(field_type));
                 }
             }
             null_index++;
@@ -873,7 +873,7 @@ namespace MySQLReplication
                 break;
             }
             default:
-                throw ReplicationError("Position update with unsupported event", ErrorCodes::LOGICAL_ERROR);
+                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "Position update with unsupported event");
         }
     }
 
@@ -895,17 +895,17 @@ namespace MySQLReplication
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
         if (payload.eof())
-            throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF.");
 
         UInt16 header = static_cast<unsigned char>(*payload.position());
         switch (header)
         {
             case PACKET_EOF:
-                throw ReplicationError("Master maybe lost", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ReplicationError(ErrorCodes::CANNOT_READ_ALL_DATA, "Master maybe lost");
             case PACKET_ERR:
                 ERRPacket err;
                 err.readPayloadWithUnpacked(payload);
-                throw ReplicationError(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
+                throw ReplicationError::createDeprecated(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
         }
         // skip the generic response packets header flag.
         payload.ignore(1);

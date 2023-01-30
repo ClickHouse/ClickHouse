@@ -35,7 +35,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     const auto & args_func = ast_function->as<ASTFunction &>();
 
     if (!args_func.arguments)
-        throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function 'mysql' must have arguments.");
 
     auto & args = args_func.arguments->children;
 
@@ -67,8 +67,8 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
 
     const auto columns = tables_and_columns.find(configuration->table);
     if (columns == tables_and_columns.end())
-        throw Exception("MySQL table " + (configuration->database.empty() ? "" : (backQuote(configuration->database) + "."))
-            + backQuote(configuration->table) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
+                        (configuration->database.empty() ? "" : (backQuote(configuration->database) + "." + backQuote(configuration->table))));
 
     return columns->second;
 }

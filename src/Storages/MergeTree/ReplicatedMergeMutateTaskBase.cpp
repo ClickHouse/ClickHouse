@@ -46,19 +46,19 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
                 retryable_error = true;
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, fmt::runtime(e.message()));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
                 retryable_error = true;
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, fmt::runtime(e.displayText()));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
                 retryable_error = true;
                 storage.cleanup_thread.wakeup();
             }

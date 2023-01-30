@@ -45,7 +45,7 @@ public:
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                getName(), toString(arguments.size()));
+                getName(), arguments.size());
 
         if (!isString(arguments[0].type))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for type String", getName());
@@ -73,9 +73,8 @@ public:
         const ColumnPtr column = arguments[0].column;
         const ColumnString * column_src = checkAndGetColumn<ColumnString>(column.get());
         if (!column_src)
-            throw Exception(
-                fmt::format("Illegal column {} of argument of function {}", arguments[0].column->getName(), getName()),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
 
         String default_result;
 
@@ -95,8 +94,8 @@ public:
                 const ColumnConst * default_col = checkAndGetColumn<ColumnConst>(default_column.get());
 
                 if (!default_col)
-                    throw Exception(
-                        "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                        arguments[1].column->getName(), getName());
 
                 default_result = default_col->getValue<String>();
             }
