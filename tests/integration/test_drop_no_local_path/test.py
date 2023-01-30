@@ -55,4 +55,4 @@ def test_drop_no_local_path(setup_nodes):
 
     drop_table_directory("join_table")
 
-    instance.query("TRUNCATE TABLE join_table")
+    instance.query("TRUNCATE TABLE join_table", timeout=10)
