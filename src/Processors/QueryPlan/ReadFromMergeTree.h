@@ -226,29 +226,22 @@ private:
     template<typename TSource>
     ProcessorPtr createSource(const RangesInDataPart & part, const Names & required_columns, bool use_uncompressed_cache, bool has_limit_below_one_block);
 
-    Pipe spreadMarkRangesAmongStreams(
-        RangesInDataParts && parts_with_ranges,
-        const Names & column_names);
+    Pipe spreadMarkRanges(
+        RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection);
 
-    Pipe spreadMarkRangesAmongStreamsImpl(RangesInDataParts && parts_with_ranges, const Names & column_names, size_t num_streams);
+    Pipe groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection);
+
+    Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
+        size_t num_streams,
         const Names & column_names,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
-    Pipe spreadMarkRangesAmongStreamsWithOrderImpl(
-        RangesInDataParts && parts_with_ranges,
-        const Names & column_names,
-        const InputOrderInfoPtr & input_order_info,
-        size_t num_streams,
-        bool need_preliminary_merge);
-
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts,
-        const Names & column_names,
-        ActionsDAGPtr & out_projection);
+        RangesInDataParts && parts, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
