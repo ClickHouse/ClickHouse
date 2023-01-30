@@ -80,8 +80,8 @@ public:
             auto is_query_result_cache_related_setting = [](const auto & change)
             {
                 return change.name == "allow_experimental_query_result_cache"
-                    || change.name.starts_with("use_query_result_cache")
-                    || change.name.starts_with("query_result_cache");
+                    || change.name.starts_with("query_result_cache")
+                    || change.name.ends_with("query_result_cache");
             };
 
             std::erase_if(set_clause->changes, is_query_result_cache_related_setting);

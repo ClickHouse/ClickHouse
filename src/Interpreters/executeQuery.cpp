@@ -722,7 +722,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_result_cache = context->getQueryResultCache();
                 bool read_result_from_query_result_cache = false; /// a query must not read from *and* write to the query result cache at the same time
                 if (query_result_cache != nullptr
-                    && (settings.allow_experimental_query_result_cache && settings.use_query_result_cache && settings.use_query_result_cache_passive_usage)
+                    && (settings.allow_experimental_query_result_cache && settings.use_query_result_cache && settings.enable_reads_from_query_result_cache)
                     && res.pipeline.pulling())
                 {
                     QueryResultCache::Key key(
@@ -743,7 +743,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 /// then add a processor on top of the pipeline which stores the result in the query result cache.
                 if (!read_result_from_query_result_cache
                     && query_result_cache != nullptr
-                    && settings.allow_experimental_query_result_cache && settings.use_query_result_cache && settings.use_query_result_cache_active_usage
+                    && settings.allow_experimental_query_result_cache && settings.use_query_result_cache && settings.enable_writes_to_query_result_cache
                     && res.pipeline.pulling()
                     && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
@@ -910,7 +910,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     ast,
                                     allow_experimental_query_result_cache = settings.allow_experimental_query_result_cache,
                                     use_query_result_cache = settings.use_query_result_cache,
-                                    use_query_result_cache_active_usage = settings.use_query_result_cache_active_usage,
+                                    enable_writes_to_query_result_cache = settings.enable_writes_to_query_result_cache,
                                     query_result_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
                                     log_queries_min_type = settings.log_queries_min_type,
@@ -926,7 +926,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_result_cache = context->getQueryResultCache();
                 if (query_result_cache != nullptr
                     && pulling_pipeline
-                    && allow_experimental_query_result_cache && use_query_result_cache && use_query_result_cache_active_usage
+                    && allow_experimental_query_result_cache && use_query_result_cache && enable_writes_to_query_result_cache
                     && (!astContainsNonDeterministicFunctions(ast, context) || query_result_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     query_pipeline.finalizeWriteInQueryResultCache();

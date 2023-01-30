@@ -18,7 +18,7 @@ SELECT COUNT(*) FROM system.query_result_cache;
 -- Run the same SELECT but with different SETTINGS. We want its result to be served from the QRC (--> passive mode, achieve it by
 -- disabling active mode)
 SELECT '---';
-SELECT 1 SETTINGS use_query_result_cache = true, use_query_result_cache_active_usage = false, max_threads = 16;
+SELECT 1 SETTINGS use_query_result_cache = true, enable_writes_to_query_result_cache = false, max_threads = 16;
 
 -- Technically, both SELECT queries have different ASTs, leading to different QRC keys. QRC does some AST normalization (erase all
 -- QRC-related settings) such that the keys match regardless. Verify by checking that the second query caused a QRC hit.
@@ -26,6 +26,6 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['QueryResultCacheHits'], ProfileEvents['QueryResultCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'
-  AND query = 'SELECT 1 SETTINGS use_query_result_cache = true, use_query_result_cache_active_usage = false, max_threads = 16;';
+  AND query = 'SELECT 1 SETTINGS use_query_result_cache = true, enable_writes_to_query_result_cache = false, max_threads = 16;';
 
 SYSTEM DROP QUERY RESULT CACHE;

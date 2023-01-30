@@ -13,7 +13,7 @@ SELECT COUNT(*) FROM system.query_result_cache;
 SELECT '-----';
 
 -- Try to retrieve query result from empty QRC using the passive mode. Do this by disabling the active mode. The cache should still be empty (no insert).
-SELECT 1 SETTINGS use_query_result_cache = true, use_query_result_cache_active_usage = false;
+SELECT 1 SETTINGS use_query_result_cache = true, enable_writes_to_query_result_cache = false;
 SELECT COUNT(*) FROM system.query_result_cache;
 
 SELECT '-----';
@@ -29,13 +29,13 @@ SELECT '-----';
 -- Get rid of log of previous SELECT
 DROP TABLE system.query_log SYNC;
 
-SELECT 1 SETTINGS use_query_result_cache = true, use_query_result_cache_active_usage = false;
+SELECT 1 SETTINGS use_query_result_cache = true, enable_writes_to_query_result_cache = false;
 SELECT COUNT(*) FROM system.query_result_cache;
 
 SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['QueryResultCacheHits'], ProfileEvents['QueryResultCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'
-  AND query = 'SELECT 1 SETTINGS use_query_result_cache = true, use_query_result_cache_active_usage = false;';
+  AND query = 'SELECT 1 SETTINGS use_query_result_cache = true, enable_writes_to_query_result_cache = false;';
 
 SYSTEM DROP QUERY RESULT CACHE;
