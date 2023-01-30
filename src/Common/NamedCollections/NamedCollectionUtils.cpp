@@ -187,7 +187,7 @@ public:
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Value with key `{}` is used twice in the SET query",
+                    "Value with key `{}` is used twice in the SET query (collection name: {})",
                     name, query.collection_name);
             }
         }

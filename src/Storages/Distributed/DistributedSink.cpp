@@ -128,7 +128,7 @@ DistributedSink::DistributedSink(
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
-        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
     context->getClientInfo().distributed_depth += 1;
     random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
 }
@@ -265,7 +265,7 @@ void DistributedSink::waitForJobs()
         if (static_cast<UInt64>(watch.elapsedSeconds()) > insert_timeout)
         {
             ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
-            throw Exception("Synchronous distributed insert timeout exceeded.", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Synchronous distributed insert timeout exceeded.");
         }
     }
 
@@ -359,12 +359,12 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 {
                     /// Skip replica_index in case of internal replication
                     if (shard_job.replicas_jobs.size() != 1)
-                        throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
                     auto results = shard_info.pool->getManyChecked(timeouts, &settings, PoolMode::GET_ONE, main_table.getQualifiedName());
                     if (results.empty() || results.front().entry.isNull())
-                        throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}", toString(job.shard_index));
 
                     job.connection_entry = std::move(results.front().entry);
                 }
@@ -374,11 +374,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
                     const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
                     if (!connection_pool)
-                        throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
 
                     job.connection_entry = connection_pool->get(timeouts, &settings);
                     if (job.connection_entry.isNull())
-                        throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
                 }
 
                 if (throttler)
@@ -635,7 +635,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.prefer_localhost_replica,
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
-                throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory name for async inserts is empty");
             writeToShard(shard_info, block_to_send, {path});
         }
     }
@@ -828,7 +828,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
     for (const auto & dir_name : dir_names)
     {
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name, /* startup= */ false);
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
         directory_monitor.addAndSchedule(file_size, sleep_ms.totalMilliseconds());
     }
 }

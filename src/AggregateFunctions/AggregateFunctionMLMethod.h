@@ -344,7 +344,7 @@ public:
         else if (weights_updater_name == "Adam")
             new_weights_updater = std::make_shared<Adam>();
         else
-            throw Exception("Illegal name of weights updater (should have been checked earlier)", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal name of weights updater (should have been checked earlier)");
 
         new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gradient_computer, new_weights_updater);
     }
@@ -369,16 +369,15 @@ public:
         ContextPtr context) const override
     {
         if (arguments.size() != param_num + 1)
-            throw Exception(
-                "Predict got incorrect number of arguments. Got: " + std::to_string(arguments.size())
-                    + ". Required: " + std::to_string(param_num + 1),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Predict got incorrect number of arguments. Got: {}. Required: {}",
+                arguments.size(), param_num + 1);
 
         /// This cast might be correct because column type is based on getReturnTypeToPredict.
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
-            throw Exception("Cast of column of predictions is incorrect. getReturnTypeToPredict must return same value as it is casted to",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cast of column of predictions is incorrect. "
+                            "getReturnTypeToPredict must return same value as it is casted to");
 
         this->data(place).predict(column->getData(), arguments, offset, limit, context);
     }
