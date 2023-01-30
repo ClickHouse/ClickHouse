@@ -116,12 +116,18 @@ if(WITH_SASL_OAUTHBEARER)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c")
 endif()
 
+## there is a conflict with the cJSON library from aws-s3
+# so normally we link cJSON lirary from contrib/aws (which have some extra patches to be thread safe)
+# but if we don't use aws-s3, we need to link the cJSON library from librdkafka (hacky)
+# which is (potentially) not thread safe (see https://github.com/confluentinc/librdkafka/issues/4159 ),
+if(NOT ENABLE_AWS_S3)
+   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/cJSON.c")
+endif()
+
 add_library(_rdkafka ${SRCS})
 add_library(ch_contrib::rdkafka ALIAS _rdkafka)
 target_compile_options(_rdkafka PRIVATE -fno-sanitize=undefined)
-
-add_library(_rdkafka_cjson ${RDKAFKA_SOURCE_DIR}/cJSON.c)
-target_compile_definitions(_rdkafka_cjson PRIVATE -DCJSON_HIDE_SYMBOLS)
+target_compile_definitions(_rdkafka PRIVATE -DCJSON_HIDE_SYMBOLS)
 
 # target_include_directories(_rdkafka SYSTEM PUBLIC include)
 target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include") # for "librdkafka/rdkafka.h"
@@ -133,7 +139,6 @@ target_link_libraries(_rdkafka
     ch_contrib::zlib
     ch_contrib::zstd
     OpenSSL::Crypto OpenSSL::SSL
-    _rdkafka_cjson
 )
 if(WITH_SASL_CYRUS)
     target_link_libraries(_rdkafka PRIVATE ch_contrib::sasl2)
