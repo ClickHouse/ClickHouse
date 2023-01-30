@@ -40,7 +40,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
     {
-        std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+        std::string indent_str = s.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
         s.writeKeyword("WATCH ");
         s.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
@@ -50,7 +50,8 @@ protected:
 
         if (limit_length)
         {
-            s.ostr << s.nl_or_ws << indent_str;
+            s.nlOrWs();
+            s.ostr << indent_str;
             s.writeKeyword("LIMIT ");
             limit_length->formatImpl(s, state, frame);
         }

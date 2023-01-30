@@ -39,44 +39,44 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
 {
     if (engine)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("ENGINE");
         s.ostr << " = ";
         engine->formatImpl(s, state, frame);
     }
     if (partition_by)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("PARTITION BY ");
         partition_by->formatImpl(s, state, frame);
     }
     if (primary_key)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("PRIMARY KEY ");
         primary_key->formatImpl(s, state, frame);
     }
     if (order_by)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("ORDER BY ");
         order_by->formatImpl(s, state, frame);
     }
     if (sample_by)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("SAMPLE BY ");
         sample_by->formatImpl(s, state, frame);
     }
     if (ttl_table)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("TTL ");
         ttl_table->formatImpl(s, state, frame);
     }
     if (settings)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("SETTINGS ");
         settings->formatImpl(s, state, frame);
     }
@@ -186,12 +186,7 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
     }
 
     if (!list.children.empty())
-    {
-        if (s.one_line)
-            list.formatImpl(s, state, frame);
-        else
-            list.formatImplMultiline(s, state, frame);
-    }
+        s.isOneLine() ? list.formatImpl(s, state, frame) : list.formatImplMultiline(s, state, frame);
 }
 
 
@@ -252,13 +247,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
         if (table_overrides)
         {
-            settings.ostr << settings.nl_or_ws;
+            settings.nlOrWs();
             table_overrides->formatImpl(settings, state, frame);
         }
 
         if (comment)
         {
-            settings.ostr << settings.nl_or_ws;
+            settings.nlOrWs();
             settings.writeKeyword("COMMENT ");
             comment->formatImpl(settings, state, frame);
         }
@@ -369,10 +364,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (columns_list && !columns_list->empty())
         {
             frame.expression_list_always_start_on_new_line = true;
-            settings.ostr << (settings.one_line ? " (" : "\n(");
+            settings.nlOrWs();
+            settings.ostr << "(";
             FormatStateStacked frame_nested = frame;
             columns_list->formatImpl(settings, state, frame_nested);
-            settings.ostr << (settings.one_line ? ")" : "\n)");
+            settings.nlOrNothing();
+            settings.ostr << ")";
             frame.expression_list_always_start_on_new_line = false; //-V519
         }
 
@@ -384,21 +381,24 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (columns_list && !columns_list->empty() && !as_table_function)
     {
-        settings.ostr << (settings.one_line ? " (" : "\n(");
+        settings.nlOrWs();
+        settings.ostr << "(";
         FormatStateStacked frame_nested = frame;
         columns_list->formatImpl(settings, state, frame_nested);
-        settings.ostr << (settings.one_line ? ")" : "\n)");
+        settings.nlOrNothing();
+        settings.ostr << ")";
     }
 
     if (dictionary_attributes_list)
     {
-        settings.ostr << (settings.one_line ? " (" : "\n(");
+        settings.nlOrWs();
+        settings.ostr << "(";
         FormatStateStacked frame_nested = frame;
-        if (settings.one_line)
-            dictionary_attributes_list->formatImpl(settings, state, frame_nested);
-        else
+        settings.isOneLine() ?
+            dictionary_attributes_list->formatImpl(settings, state, frame_nested) :
             dictionary_attributes_list->formatImplMultiline(settings, state, frame_nested);
-        settings.ostr << (settings.one_line ? ")" : "\n)");
+        settings.nlOrNothing();
+        settings.ostr << ")";
     }
 
     frame.expression_list_always_start_on_new_line = false; //-V519
@@ -444,7 +444,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     {
         settings.writeKeyword(" AS");
         settings.writeKeyword(comment ? "(" : "");
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         select->formatImpl(settings, state, frame);
         settings.writeKeyword(comment ? ")" : "");
     }
@@ -452,7 +452,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (comment)
     {
         settings.writeKeyword("COMMENT ");
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         comment->formatImpl(settings, state, frame);
     }
 }

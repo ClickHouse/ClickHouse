@@ -25,8 +25,6 @@ ASTPtr ASTTableOverride::clone() const
 void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState & state, FormatStateStacked frame) const
 {
     FormatSettings settings(settings_, true);
-    String nl_or_nothing = settings.one_line ? "" : "\n";
-    String nl_or_ws = settings.one_line ? " " : "\n";
 
     if (is_standalone)
     {
@@ -39,9 +37,11 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
     if (is_standalone)
     {
         ++override_frame.indent;
-        settings.ostr << nl_or_ws << '(' << nl_or_nothing;
+        settings.nlOrWs();
+        settings.ostr << '(';
+        settings.nlOrNothing();
     }
-    String indent_str = settings.one_line ? "" : String(4 * override_frame.indent, ' ');
+    String indent_str = settings.isOneLine() ? "" : String(4 * override_frame.indent, ' ');
     size_t override_elems = 0;
     if (columns)
     {
@@ -49,9 +49,11 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
         columns_frame.expression_list_always_start_on_new_line = true;
         settings.ostr << indent_str;
         settings.writeKeyword("COLUMNS");
-        settings.ostr << nl_or_ws << indent_str << "(";
+        settings.nlOrWs();
+        settings.ostr << indent_str << "(";
         columns->formatImpl(settings, state, columns_frame);
-        settings.ostr << nl_or_nothing << indent_str << ")";
+        settings.nlOrNothing();
+        settings.ostr << indent_str << ")";
         ++override_elems;
     }
     if (storage)
@@ -60,8 +62,9 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
         {
             if (elem)
             {
-                settings.ostr << (override_elems++ ? nl_or_ws : "")
-                              << indent_str;
+                if (override_elems++)
+                    settings.nlOrWs();
+                settings.ostr << indent_str;
                 settings.writeKeyword(elem_name);
                 settings.ostr << ' ';
                 elem->formatImpl(settings, state, override_frame);
@@ -75,7 +78,10 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
     }
 
     if (is_standalone)
-        settings.ostr << nl_or_nothing << ')';
+    {
+        settings.nlOrNothing();
+        settings.ostr << ')';
+    }
 }
 
 ASTPtr ASTTableOverrideList::clone() const
@@ -134,7 +140,8 @@ void ASTTableOverrideList::formatImpl(const FormatSettings & settings, FormatSta
     {
         if (it != children.begin())
         {
-            settings.ostr << (settings.one_line ? ", " : ",\n");
+            settings.ostr << ",";
+            settings.nlOrWs();
         }
 
         (*it)->formatImpl(settings, state, frame);

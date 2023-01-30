@@ -46,7 +46,7 @@ StorageMeiliSearch::StorageMeiliSearch(
 String convertASTtoStr(ASTPtr ptr)
 {
     WriteBufferFromOwnString out;
-    IAST::FormatSettings settings(out, true, true,IdentifierQuotingStyle::BackticksMySQL);
+    IAST::FormatSettings settings(out, true, true, IdentifierQuotingStyle::BackticksMySQL);
     ptr->format(settings);
     return out.str();
 }

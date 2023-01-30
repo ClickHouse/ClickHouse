@@ -550,16 +550,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (auto * query = tryGetQueryArgument())
     {
-        std::string nl_or_nothing = settings.one_line ? "" : "\n";
-        std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+        std::string indent_str = settings.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
         settings.writeFunction(name);
         settings.writeFunction("(");
-        settings.ostr << nl_or_nothing;
+        settings.nlOrNothing();
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
         ++frame_nested.indent;
         query->formatImpl(settings, state, frame_nested);
-        settings.ostr << nl_or_nothing << indent_str;
+        settings.nlOrNothing();
+        settings.ostr << indent_str;
         settings.writeFunction(")");
         return;
     }
@@ -817,22 +817,24 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (!written && name == "viewIfPermitted"sv)
             {
                 /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
-                const auto * nl_or_nothing = settings.one_line ? "" : "\n";
-                auto indent0 = settings.one_line ? "" : String(4u * frame.indent, ' ');
-                auto indent1 = settings.one_line ? "" : String(4u * (frame.indent + 1), ' ');
-                auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
+                auto indent0 = settings.isOneLine() ? "" : String(4u * frame.indent, ' ');
+                auto indent1 = settings.isOneLine() ? "" : String(4u * (frame.indent + 1), ' ');
+                auto indent2 = settings.isOneLine() ? "" : String(4u * (frame.indent + 2), ' ');
                 settings.writeFunction(name);
                 settings.writeFunction("(");
-                settings.ostr << nl_or_nothing;
+                settings.nlOrNothing();
                 FormatStateStacked frame_nested = frame;
                 frame_nested.need_parens = false;
                 frame_nested.indent += 2;
                 arguments->children[0]->formatImpl(settings, state, frame_nested);
-                settings.ostr << settings.nl_or_ws << indent1;
+                settings.nlOrWs();
+                settings.ostr << indent1;
                 settings.writeKeyword("ELSE ");
-                settings.ostr << nl_or_nothing << indent2;
+                settings.nlOrNothing();
+                settings.ostr << indent2;
                 arguments->children[1]->formatImpl(settings, state, frame_nested);
-                settings.ostr << nl_or_nothing << indent0;
+                settings.nlOrNothing();
+                settings.ostr << indent0;
                 settings.writeKeyword(")");
                 return;
             }

@@ -106,7 +106,7 @@ ASTPtr ASTTablesInSelectQuery::clone() const
 void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
     if (database_and_table_name)
     {
@@ -120,19 +120,22 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
     }
     else if (subquery)
     {
-        settings.ostr << settings.nl_or_ws << indent_str;
+        settings.nlOrWs();
+        settings.ostr << indent_str;
         subquery->formatImpl(settings, state, frame);
     }
 
     if (final)
     {
-        settings.ostr << settings.nl_or_ws << indent_str;
+        settings.nlOrWs();
+        settings.ostr << indent_str;
         settings.writeKeyword("FINAL");
     }
 
     if (sample_size)
     {
-        settings.ostr << settings.nl_or_ws << indent_str;
+        settings.nlOrWs();
+        settings.ostr << indent_str;
         settings.writeKeyword("SAMPLE ");
         sample_size->formatImpl(settings, state, frame);
 
@@ -147,11 +150,12 @@ void ASTTableExpression::formatImpl(const FormatSettings & settings, FormatState
 
 void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
     if (kind != JoinKind::Comma)
     {
-        settings.ostr << settings.nl_or_ws << indent_str;
+        settings.nlOrWs();
+        settings.ostr << indent_str;
     }
 
     switch (locality)
@@ -243,14 +247,14 @@ void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & sta
 
 void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
     frame.expression_list_prepend_whitespace = true;
 
-    settings.ostr << settings.nl_or_ws << indent_str;
+    settings.nlOrWs(); settings.ostr << indent_str;
     settings.writeKeyword(kind == Kind::Left ? "LEFT " : "");
     settings.writeKeyword("ARRAY JOIN");
 
-    settings.one_line
+    settings.isOneLine()
         ? expression_list->formatImpl(settings, state, frame)
         : expression_list->as<ASTExpressionList &>().formatImplMultiline(settings, state, frame);
 }
@@ -277,7 +281,7 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
 
 void ASTTablesInSelectQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
     for (const auto & child : children)
         child->formatImpl(settings, state, frame);

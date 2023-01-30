@@ -16,11 +16,12 @@ ASTPtr ASTWithElement::clone() const
 
 void ASTWithElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
     settings.writeAlias(name);
     settings.writeKeyword(" AS");
-    settings.ostr << settings.nl_or_ws << indent_str;
+    settings.nlOrWs();
+    settings.ostr << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(settings, state, frame);
 }
 

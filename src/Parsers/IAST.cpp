@@ -346,6 +346,21 @@ void IAST::FormatSettings::writeProbablyBackQuotedIdentifier(const String & name
     writeProbablyBackQuotedString(name, ostr);
 }
 
+bool IAST::FormatSettings::isOneLine() const
+{
+    return one_line;
+}
+
+void IAST::FormatSettings::nlOrWs() const
+{
+    ostr << (one_line ? '\n' : ' ');
+}
+
+void IAST::FormatSettings::nlOrNothing() const
+{
+    ostr << (one_line ? "\n" : "");
+}
+
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
     String indent_str(indent, '-');

@@ -34,7 +34,7 @@ void ASTCreateIndexQuery::formatQueryImpl(const FormatSettings & settings, Forma
 {
     frame.need_parens = false;
 
-    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
 
     settings.ostr << indent_str;
 

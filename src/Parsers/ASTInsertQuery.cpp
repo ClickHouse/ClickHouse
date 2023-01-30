@@ -90,7 +90,7 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 
     if (settings_ast)
     {
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         settings.writeKeyword("SETTINGS ");
         settings_ast->formatImpl(settings, state, frame);
     }
@@ -105,16 +105,20 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     ///     SETTINGS max_threads=1
     ///     VALUES
     ///
-    char delim = settings_ast ? settings.nl_or_ws : ' ';
-
     if (select)
     {
-        settings.ostr << delim;
+        if (settings_ast)
+            settings.nlOrWs();
+        else
+            settings.ostr << ' ';
         select->formatImpl(settings, state, frame);
     }
     else if (watch)
     {
-        settings.ostr << delim;
+        if (settings_ast)
+            settings.nlOrWs();
+        else
+            settings.ostr << ' ';
         watch->formatImpl(settings, state, frame);
     }
 
@@ -122,13 +126,19 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     {
         if (!format.empty())
         {
-            settings.ostr << delim;
+            if (settings_ast)
+                settings.nlOrWs();
+            else
+                settings.ostr << ' ';
             settings.writeKeyword("FORMAT ");
             settings.ostr << format;
         }
         else if (!infile)
         {
-            settings.ostr << delim;
+            if (settings_ast)
+                settings.nlOrWs();
+            else
+                settings.ostr << ' ';
             settings.writeKeyword("VALUES");
         }
     }

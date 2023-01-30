@@ -52,33 +52,35 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
 {
     frame.current_select = this;
     frame.need_parens = false;
-    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = s.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
     if (with())
     {
         s.ostr << indent_str;
         s.writeKeyword("WITH ");
-        s.one_line ? with()->formatImpl(s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        s.ostr << s.nl_or_ws;
+        s.isOneLine() ? with()->formatImpl(s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        s.nlOrWs();
     }
 
     s.ostr << indent_str;
     s.writeKeyword("SELECT ");
 
-    s.one_line ? select()->formatImpl(s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+    s.isOneLine() ? select()->formatImpl(s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
 
     if (groupBy())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr << indent_str;
         s.writeKeyword("GROUP BY ");
-        s.one_line ? groupBy()->formatImpl(s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        s.isOneLine() ? groupBy()->formatImpl(s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (orderBy())
     {
         /// Let's convert the ASTFunction into ASTExpressionList, which generates consistent format
         /// between GROUP BY and ORDER BY projection definition.
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr << indent_str;
         s.writeKeyword("ORDER BY ");
         ASTPtr order_by;
         if (auto * func = orderBy()->as<ASTFunction>())
@@ -88,7 +90,7 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
             order_by = std::make_shared<ASTExpressionList>();
             order_by->children.push_back(orderBy());
         }
-        s.one_line ? order_by->formatImpl(s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+        s.isOneLine() ? order_by->formatImpl(s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 }
 

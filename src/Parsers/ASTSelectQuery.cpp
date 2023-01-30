@@ -58,54 +58,59 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     frame.need_parens = false;
     frame.expression_list_prepend_whitespace = true;
 
-    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = s.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
+    std::string extra_indent_str = s.isOneLine() ? "" : "    ";
 
     if (with())
     {
         s.ostr << indent_str;
         s.writeKeyword("WITH");
-        s.one_line
+        s.isOneLine()
             ? with()->formatImpl(s, state, frame)
             : with()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
     }
 
     s.ostr << indent_str;
     s.writeKeyword("SELECT");
     s.writeKeyword(distinct ? " DISTINCT" : "");
 
-    s.one_line
+    s.isOneLine()
         ? select()->formatImpl(s, state, frame)
         : select()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
 
     if (tables())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("FROM");
         tables()->formatImpl(s, state, frame);
     }
 
     if (prewhere())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("PREWHERE ");
         prewhere()->formatImpl(s, state, frame);
     }
 
     if (where())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("WHERE ");
         where()->formatImpl(s, state, frame);
     }
 
     if (!group_by_all && groupBy())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("GROUP BY");
         if (!group_by_with_grouping_sets)
         {
-            s.one_line
+            s.isOneLine()
             ? groupBy()->formatImpl(s, state, frame)
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
         }
@@ -113,17 +118,20 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_all)
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("GROUP BY ALL");
     }
     if (group_by_with_rollup)
     {
-        s.ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ");
+        s.nlOrWs();
+        s.ostr  << indent_str << extra_indent_str;
         s.writeKeyword("WITH ROLLUP");
     }
     if (group_by_with_cube)
     {
-        s.ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ");
+        s.nlOrWs();
+        s.ostr  << indent_str << extra_indent_str;
         s.writeKeyword("WITH CUBE");
     }
 
@@ -135,10 +143,11 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;
         nested_frame.indent++;
-        s.ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ");
+        s.nlOrWs();
+        s.ostr  << indent_str << extra_indent_str;
         s.writeKeyword("GROUPING SETS");
         s.ostr << " (";
-        s.one_line
+        s.isOneLine()
         ? groupBy()->formatImpl(s, state, nested_frame)
         : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, nested_frame);
         s.ostr << ")";
@@ -146,34 +155,39 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_totals)
     {
-        s.ostr << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ");
+        s.nlOrWs();
+        s.ostr  << indent_str << extra_indent_str;
         s.writeKeyword("WITH TOTALS");
     }
     if (having())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("HAVING ");
         having()->formatImpl(s, state, frame);
     }
 
     if (window())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.ostr << ("WINDOW");
         window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (orderBy())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("ORDER BY");
-        s.one_line
+        s.isOneLine()
             ? orderBy()->formatImpl(s, state, frame)
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
 
         if (interpolate())
         {
-            s.ostr << s.nl_or_ws << indent_str;
+            s.nlOrWs();
+            s.ostr  << indent_str;
             s.writeKeyword("INTERPOLATE");
             if (!interpolate()->children.empty())
             {
@@ -186,7 +200,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (limitByLength())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("LIMIT ");
         if (limitByOffset())
         {
@@ -195,14 +210,15 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         }
         limitByLength()->formatImpl(s, state, frame);
         s.writeKeyword(" BY");
-        s.one_line
+        s.isOneLine()
             ? limitBy()->formatImpl(s, state, frame)
             : limitBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (limitLength())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("LIMIT ");
         if (limitOffset())
         {
@@ -212,20 +228,23 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         limitLength()->formatImpl(s, state, frame);
         if (limit_with_ties)
         {
-            s.ostr << s.nl_or_ws << indent_str;
+            s.nlOrWs();
+            s.ostr  << indent_str;
             s.writeKeyword(" WITH TIES");
         }
     }
     else if (limitOffset())
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("OFFSET ");
         limitOffset()->formatImpl(s, state, frame);
     }
 
     if (settings() && assert_cast<ASTSetQuery *>(settings().get())->print_in_format)
     {
-        s.ostr << s.nl_or_ws << indent_str;
+        s.nlOrWs();
+        s.ostr  << indent_str;
         s.writeKeyword("SETTINGS ");
         settings()->formatImpl(s, state, frame);
     }

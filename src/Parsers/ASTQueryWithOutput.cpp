@@ -27,25 +27,25 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
 {
     formatQueryImpl(s, state, frame);
 
-    std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');
+    std::string indent_str = s.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
 
     if (out_file)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("INTO OUTFILE ");
         out_file->formatImpl(s, state, frame);
     }
 
     if (format)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("FORMAT ");
         format->formatImpl(s, state, frame);
     }
 
     if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
     {
-        s.ostr << s.nl_or_ws;
+        s.nlOrWs();
         s.writeKeyword("SETTINGS ");
         settings_ast->formatImpl(s, state, frame);
     }

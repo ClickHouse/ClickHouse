@@ -20,15 +20,16 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
 
 void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            settings.ostr << settings.nl_or_ws << indent_str;
+            settings.nlOrWs();
+            settings.ostr << indent_str;
             settings.writeKeyword(fromOperator(final_operator));
-            settings.ostr << settings.nl_or_ws;
+            settings.nlOrWs();
         }
 
         (*it)->formatImpl(settings, state, frame);

@@ -30,7 +30,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 
 void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
     auto mode_to_str = [&](auto mode)
     {
@@ -59,13 +59,15 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     {
         if (it != list_of_selects->children.begin())
         {
-            settings.ostr << settings.nl_or_ws << indent_str;
+            settings.nlOrWs();
+            settings.ostr << indent_str;
             settings.writeKeyword(mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1]));
         }
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            settings.ostr << settings.nl_or_ws << indent_str;
+            settings.nlOrWs();
+            settings.ostr << indent_str;
 
             if (node->list_of_selects->children.size() == 1)
             {
@@ -81,7 +83,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
         else
         {
             if (it != list_of_selects->children.begin())
-                settings.ostr << settings.nl_or_ws;
+                settings.nlOrWs();
             (*it)->formatImpl(settings, state, frame);
         }
     }

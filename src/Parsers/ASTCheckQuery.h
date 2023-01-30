@@ -26,10 +26,7 @@ struct ASTCheckQuery : public ASTQueryWithTableAndOutput
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        std::string nl_or_nothing = settings.one_line ? "" : "\n";
-
-        std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        std::string nl_or_ws = settings.one_line ? " " : "\n";
+        std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
 
         settings.ostr << indent_str;
         settings.writeKeyword("CHECK TABLE ");

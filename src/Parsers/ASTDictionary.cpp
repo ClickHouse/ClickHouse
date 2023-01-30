@@ -135,14 +135,14 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
 {
     if (primary_key)
     {
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         settings.writeKeyword("PRIMARY KEY ");
         primary_key->formatImpl(settings, state, frame);
     }
 
     if (source)
     {
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         settings.writeKeyword("SOURCE(");
         source->formatImpl(settings, state, frame);
         settings.writeKeyword(")");
@@ -150,25 +150,25 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
 
     if (lifetime)
     {
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         lifetime->formatImpl(settings, state, frame);
     }
 
     if (layout)
     {
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         layout->formatImpl(settings, state, frame);
     }
 
     if (range)
     {
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         range->formatImpl(settings, state, frame);
     }
 
     if (dict_settings)
     {
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         dict_settings->formatImpl(settings, state, frame);
     }
 }

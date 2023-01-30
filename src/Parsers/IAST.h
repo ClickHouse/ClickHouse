@@ -181,8 +181,8 @@ public:
     struct FormatSettings
     {
         WriteBuffer & ostr;
-        bool one_line;
     private:
+        bool one_line;
         bool always_quote_identifiers;
         IdentifierQuotingStyle identifier_quoting_style;
 
@@ -212,39 +212,25 @@ public:
             ~Hiliter();
         };
         Hiliter createHiliter(const char * hilite_type) const;
+        void writePossiblyHilited(std::string_view str, const char * hilite_type) const;
+        void writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias = false) const;
     public:
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
-
-        // Newline or whitespace.
-        char nl_or_ws;
-    private:
-        void writePossiblyHilited(std::string_view str, const char * hilite_type) const;
-
-        void writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias = false) const;
     public:
         FormatSettings(WriteBuffer & ostr_, bool one_line_, bool always_quote_identifiers_ = false,
                        IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks, bool hilite_ = false)
             : ostr(ostr_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
-            identifier_quoting_style(identifier_quoting_style_), hilite(hilite_)
-        {
-            nl_or_ws = one_line ? ' ' : '\n';
-        }
+            identifier_quoting_style(identifier_quoting_style_), hilite(hilite_) {}
 
         FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
             : ostr(ostr_), one_line(other.one_line), always_quote_identifiers(other.always_quote_identifiers),
             identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
-            show_secrets(other.show_secrets)
-        {
-            nl_or_ws = one_line ? ' ' : '\n';
-        }
+            show_secrets(other.show_secrets) {}
 
         FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
             : ostr(other.ostr), one_line(other.one_line), always_quote_identifiers(always_quote_identifiers_),
             identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
-            show_secrets(other.show_secrets)
-        {
-            nl_or_ws = one_line ? ' ' : '\n';
-        }
+            show_secrets(other.show_secrets) {}
 
         void writeKeyword(std::string_view str) const;
         void writeFunction(std::string_view str) const;
@@ -264,6 +250,11 @@ public:
         void writeIdentifier(const String & name) const;
         void writeAlias(const String & name) const;
         void writeProbablyBackQuotedIdentifier(const String & name) const;
+
+        bool isOneLine() const;
+        // Newline or whitespace.
+        void nlOrWs() const;
+        void nlOrNothing() const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.

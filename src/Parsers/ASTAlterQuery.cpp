@@ -474,7 +474,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
         settings.writeKeyword("MODIFY QUERY ");
-        settings.ostr << settings.nl_or_ws;
+        settings.nlOrWs();
         select->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
@@ -559,7 +559,7 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 {
     frame.need_parens = false;
 
-    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+    std::string indent_str = settings.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
     settings.ostr << indent_str;
 
     switch (alter_object)

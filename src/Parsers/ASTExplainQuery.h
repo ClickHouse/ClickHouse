@@ -122,17 +122,17 @@ protected:
 
         if (query)
         {
-            settings.ostr << settings.nl_or_ws;
+            settings.nlOrWs();
             query->formatImpl(settings, state, frame);
         }
         if (table_function)
         {
-            settings.ostr << settings.nl_or_ws;
+            settings.nlOrWs();
             table_function->formatImpl(settings, state, frame);
         }
         if (table_override)
         {
-            settings.ostr << settings.nl_or_ws;
+            settings.nlOrWs();
             table_override->formatImpl(settings, state, frame);
         }
     }
