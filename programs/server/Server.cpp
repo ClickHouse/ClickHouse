@@ -128,6 +128,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -749,6 +753,19 @@ try
         config().getUInt("max_thread_pool_size", 10000),
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000));
+
+#if USE_AZURE_BLOB_STORAGE
+    /// It makes sense to deinitialize libxml after joining of all threads
+    /// in global pool because libxml uses thread-local memory allocations via
+    /// 'pthread_key_create' and 'pthread_setspecific' which should be deallocated
+    /// at 'pthread_exit'. Deinitialization of libxml leads to call of 'pthread_key_delete'
+    /// and if it is done before joining of threads, allocated memory will not be freed
+    /// and there may be memory leaks in threads that used libxml.
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
 
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
