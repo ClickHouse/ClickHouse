@@ -75,42 +75,6 @@ size_t countPartitions(const MergeTreeData::DataPartsVector & prepared_parts)
     return countPartitions(prepared_parts, get_partition_id);
 }
 
-template <typename ReadFunc>
-Pipe outputPerPartitionIfRequested(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, bool output_each_partition_through_separate_port, ReadFunc read)
-{
-    if (parts_with_ranges.empty())
-        return {};
-
-    if (!output_each_partition_through_separate_port)
-    {
-        return read(std::move(parts_with_ranges), num_streams);
-    }
-    else
-    {
-        const size_t partitions_cnt = countPartitions(parts_with_ranges);
-        const size_t partitions_per_stream = std::max<size_t>(1, partitions_cnt / num_streams);
-        num_streams = std::max<size_t>(1, num_streams / partitions_cnt);
-
-        Pipes pipes;
-        for (auto begin = parts_with_ranges.begin(), end = begin; end != parts_with_ranges.end(); begin = end)
-        {
-            for (size_t i = 0; i < partitions_per_stream; ++i)
-                end = std::find_if(
-                    end,
-                    parts_with_ranges.end(),
-                    [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
-
-            RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
-
-            pipes.emplace_back(read(std::move(partition_parts), num_streams));
-            if (!pipes.back().empty())
-                pipes.back().resize(1);
-        }
-
-        return Pipe::unitePipes(std::move(pipes));
-    }
-}
 }
 
 namespace ProfileEvents
@@ -491,8 +455,7 @@ struct PartRangesReadInfo
 
 }
 
-Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsImpl(
-    RangesInDataParts && parts_with_ranges, const Names & column_names, size_t num_streams)
+Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
@@ -506,27 +469,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsImpl(
     {
         /// Reduce the number of num_streams if the data is small.
         if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read && parts_with_ranges.size() < num_streams)
-            num_streams = std::max(
-                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+            num_streams = std::max((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
     }
 
-    return read(
-        std::move(parts_with_ranges),
-        column_names,
-        ReadType::Default,
-        num_streams,
-        info.min_marks_for_concurrent_read,
-        info.use_uncompressed_cache);
-}
-
-Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, const Names & column_names)
-{
-    auto read = [this, &column_names](RangesInDataParts && parts_with_ranges_, size_t num_streams_)
-    {
-        return spreadMarkRangesAmongStreamsImpl(std::move(parts_with_ranges_), column_names, num_streams_);
-    };
-    return outputPerPartitionIfRequested(
-        std::move(parts_with_ranges), requested_num_streams, output_each_partition_through_separate_port, read);
+    return read(std::move(parts_with_ranges), column_names, ReadType::Default,
+                num_streams, info.min_marks_for_concurrent_read, info.use_uncompressed_cache);
 }
 
 static ActionsDAGPtr createProjection(const Block & header)
@@ -537,24 +484,45 @@ static ActionsDAGPtr createProjection(const Block & header)
     return projection;
 }
 
-Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderImpl(
+Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
-    const Names & column_names,
-    const InputOrderInfoPtr & input_order_info,
     size_t num_streams,
-    bool need_preliminary_merge)
+    const Names & column_names,
+    ActionsDAGPtr & out_projection,
+    const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
+    Pipes res;
+
     if (info.sum_marks == 0)
         return {};
 
+    /// PREWHERE actions can remove some input columns (which are needed only for prewhere condition).
+    /// In case of read-in-order, PREWHERE is executed before sorting. But removed columns could be needed for sorting key.
+    /// To fix this, we prohibit removing any input in prewhere actions. Instead, projection actions will be added after sorting.
+    /// See 02354_read_in_order_prewhere.sql as an example.
+    bool have_input_columns_removed_after_prewhere = false;
+    if (prewhere_info && prewhere_info->prewhere_actions)
+    {
+        auto & outputs = prewhere_info->prewhere_actions->getOutputs();
+        std::unordered_set<const ActionsDAG::Node *> outputs_set(outputs.begin(), outputs.end());
+        for (const auto * input : prewhere_info->prewhere_actions->getInputs())
+        {
+            if (!outputs_set.contains(input))
+            {
+                outputs.push_back(input);
+                have_input_columns_removed_after_prewhere = true;
+            }
+        }
+    }
+
     /// Let's split ranges to avoid reading much data.
-    auto split_ranges = [rows_granularity = data_settings->index_granularity, max_block_size = max_block_size]
-        (const auto & ranges, int direction)
+    auto split_ranges
+        = [rows_granularity = data_settings->index_granularity, max_block_size = max_block_size](const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
         const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
@@ -599,10 +567,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderImpl(
     };
 
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
+    bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
 
     Pipes pipes;
 
-    for (size_t i = 0; i < requested_num_streams && !parts_with_ranges.empty(); ++i)
+    for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
     {
         size_t need_marks = min_marks_per_stream;
         RangesInDataParts new_parts;
@@ -617,21 +586,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderImpl(
             size_t & marks_in_part = info.sum_marks_in_parts.back();
 
             /// We will not take too few rows from a part.
-            if (marks_in_part >= info.min_marks_for_concurrent_read &&
-                need_marks < info.min_marks_for_concurrent_read)
+            if (marks_in_part >= info.min_marks_for_concurrent_read && need_marks < info.min_marks_for_concurrent_read)
                 need_marks = info.min_marks_for_concurrent_read;
 
             /// Do not leave too few rows in the part.
-            if (marks_in_part > need_marks &&
-                marks_in_part - need_marks < info.min_marks_for_concurrent_read)
+            if (marks_in_part > need_marks && marks_in_part - need_marks < info.min_marks_for_concurrent_read)
                 need_marks = marks_in_part;
 
             MarkRanges ranges_to_get_from_part;
 
             /// We take full part if it contains enough marks or
             /// if we know limit and part contains less than 'limit' rows.
-            bool take_full_part = marks_in_part <= need_marks
-                || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
+            bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
 
             /// We take the whole part if it is small enough.
             if (take_full_part)
@@ -668,12 +634,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderImpl(
             new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
         }
 
-        auto read_type = input_order_info->direction == 1
-                       ? ReadFromMergeTree::ReadType::InOrder
-                       : ReadFromMergeTree::ReadType::InReverseOrder;
+        auto read_type
+            = input_order_info->direction == 1 ? ReadFromMergeTree::ReadType::InOrder : ReadFromMergeTree::ReadType::InReverseOrder;
 
-        pipes.emplace_back(readInOrder(std::move(new_parts), column_names, read_type,
-                                        info.use_uncompressed_cache, input_order_info->limit));
+        pipes.emplace_back(
+            readInOrder(std::move(new_parts), column_names, read_type, info.use_uncompressed_cache, input_order_info->limit));
     }
 
     Block pipe_header;
@@ -699,7 +664,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderImpl(
 
         auto sorting_key_expr = std::make_shared<ExpressionActions>(sorting_key_prefix_expr);
 
-        auto add_merge = [&](Pipe & pipe)
+        auto merge_streams = [&](Pipe & pipe)
         {
             pipe.addSimpleTransform([sorting_key_expr](const Block & header)
                                     { return std::make_shared<ExpressionTransform>(header, sorting_key_expr); });
@@ -713,69 +678,26 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrderImpl(
             }
         };
 
-        if (!output_each_partition_through_separate_port)
-            for (auto & pipe : pipes)
-                add_merge(pipe);
+        if (!pipes.empty() && output_each_partition_through_separate_port)
+        {
+            /// In contrast with usual aggregation in order that allocates separate AggregatingTransform for each data part,
+            /// aggregation of partitioned data uses the same AggregatingTransform for all parts of the same partition.
+            /// Thus we need to merge all partition parts into a single sorted stream.
+            Pipe pipe = Pipe::unitePipes(std::move(pipes));
+            merge_streams(pipe);
+            out_projection = createProjection(pipe_header);
+            return pipe;
+        }
 
-        Pipe pipe = Pipe::unitePipes(std::move(pipes));
-
-        /// In contrast with usual aggregation in order that allocates separate AggregatingTransform for each data part,
-        /// aggregation of partitioned data uses the same AggregatingTransform for all parts of the same partition.
-        /// Thus we need to merge all partition parts into a single sorted stream.
-        if (output_each_partition_through_separate_port)
-            add_merge(pipe);
-
-        return pipe;
+        for (auto & pipe : pipes)
+            merge_streams(pipe);
     }
+
+    if (!pipes.empty() && (need_preliminary_merge || have_input_columns_removed_after_prewhere))
+        /// Drop temporary columns, added by 'sorting_key_prefix_expr'
+        out_projection = createProjection(pipe_header);
 
     return Pipe::unitePipes(std::move(pipes));
-}
-
-Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
-    RangesInDataParts && parts_with_ranges,
-    const Names & column_names,
-    ActionsDAGPtr & out_projection,
-    const InputOrderInfoPtr & input_order_info)
-{
-    if (parts_with_ranges.empty())
-        return {};
-
-    /// PREWHERE actions can remove some input columns (which are needed only for prewhere condition).
-    /// In case of read-in-order, PREWHERE is executed before sorting. But removed columns could be needed for sorting key.
-    /// To fix this, we prohibit removing any input in prewhere actions. Instead, projection actions will be added after sorting.
-    /// See 02354_read_in_order_prewhere.sql as an example.
-    bool have_input_columns_removed_after_prewhere = false;
-    if (prewhere_info && prewhere_info->prewhere_actions)
-    {
-        auto & outputs = prewhere_info->prewhere_actions->getOutputs();
-        std::unordered_set<const ActionsDAG::Node *> outputs_set(outputs.begin(), outputs.end());
-        for (const auto * input : prewhere_info->prewhere_actions->getInputs())
-        {
-            if (!outputs_set.contains(input))
-            {
-                outputs.push_back(input);
-                have_input_columns_removed_after_prewhere = true;
-            }
-        }
-    }
-
-    const auto & settings = context->getSettingsRef();
-    bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
-
-    auto read
-        = [this, &column_names, &input_order_info, need_preliminary_merge](RangesInDataParts && parts_with_ranges_, size_t num_streams_)
-    {
-        return spreadMarkRangesAmongStreamsWithOrderImpl(
-            std::move(parts_with_ranges_), column_names, input_order_info, num_streams_, need_preliminary_merge);
-    };
-    Pipe pipe = outputPerPartitionIfRequested(
-        std::move(parts_with_ranges), requested_num_streams, output_each_partition_through_separate_port, read);
-
-    if (!pipe.empty() && (need_preliminary_merge || have_input_columns_removed_after_prewhere))
-        /// Drop temporary columns, added by 'sorting_key_prefix_expr'
-        out_projection = createProjection(pipe.getHeader());
-
-    return pipe;
 }
 
 static void addMergingFinal(
@@ -831,16 +753,14 @@ static void addMergingFinal(
 
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges,
-    const Names & column_names,
-    ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
-    size_t num_streams = requested_num_streams;
+    assert(num_streams == requested_num_streams);
     if (num_streams > settings.max_final_threads)
         num_streams = settings.max_final_threads;
 
@@ -1395,6 +1315,84 @@ bool ReadFromMergeTree::isQueryWithFinal() const
         return select.final();
 }
 
+Pipe ReadFromMergeTree::spreadMarkRanges(
+    RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection)
+{
+    bool final = isQueryWithFinal();
+    const auto & input_order_info = query_info.getInputOrderInfo();
+
+    Names column_names_to_read = result.column_names_to_read;
+
+    if (!final && result.sampling.use_sampling)
+    {
+        /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
+        /// Skip this if final was used, because such columns were already added from PK.
+        std::vector<String> add_columns = result.sampling.filter_expression->getRequiredColumns().getNames();
+        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+        ::sort(column_names_to_read.begin(), column_names_to_read.end());
+        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+    }
+
+    if (final)
+    {
+        if (output_each_partition_through_separate_port)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
+
+        /// Add columns needed to calculate the sorting expression and the sign.
+        std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
+        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+
+        if (!data.merging_params.sign_column.empty())
+            column_names_to_read.push_back(data.merging_params.sign_column);
+        if (!data.merging_params.version_column.empty())
+            column_names_to_read.push_back(data.merging_params.version_column);
+
+        ::sort(column_names_to_read.begin(), column_names_to_read.end());
+        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection);
+    }
+    else if (input_order_info)
+    {
+        return spreadMarkRangesAmongStreamsWithOrder(
+            std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, input_order_info);
+    }
+    else
+    {
+        return spreadMarkRangesAmongStreams(std::move(parts_with_ranges), num_streams, column_names_to_read);
+    }
+}
+
+Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection)
+{
+    auto && parts_with_ranges = std::move(result.parts_with_ranges);
+
+    if (parts_with_ranges.empty())
+        return {};
+
+    const size_t partitions_cnt = countPartitions(parts_with_ranges);
+    const size_t partitions_per_stream = std::max<size_t>(1, partitions_cnt / requested_num_streams);
+    const size_t num_streams = std::max<size_t>(1, requested_num_streams / partitions_cnt);
+
+    Pipes pipes;
+    for (auto begin = parts_with_ranges.begin(), end = begin; end != parts_with_ranges.end(); begin = end)
+    {
+        for (size_t i = 0; i < partitions_per_stream; ++i)
+            end = std::find_if(
+                end,
+                parts_with_ranges.end(),
+                [&end](const auto & part) { return end->data_part->info.partition_id != part.data_part->info.partition_id; });
+
+        RangesInDataParts partition_parts{std::make_move_iterator(begin), std::make_move_iterator(end)};
+
+        pipes.emplace_back(spreadMarkRanges(std::move(partition_parts), num_streams, result, result_projection));
+        if (!pipes.back().empty())
+            pipes.back().resize(1);
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto result = getAnalysisResult();
@@ -1429,60 +1427,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// NOTE: It may lead to double computation of expressions.
     ActionsDAGPtr result_projection;
 
-    Names column_names_to_read = std::move(result.column_names_to_read);
-    bool final = isQueryWithFinal();
-
-    if (!final && result.sampling.use_sampling)
-    {
-        /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
-        /// Skip this if final was used, because such columns were already added from PK.
-        std::vector<String> add_columns = result.sampling.filter_expression->getRequiredColumns().getNames();
-        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-        ::sort(column_names_to_read.begin(), column_names_to_read.end());
-        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()),
-                                   column_names_to_read.end());
-    }
-
-    Pipe pipe;
-
-    const auto & input_order_info = query_info.getInputOrderInfo();
-
-    if (final)
-    {
-        if (output_each_partition_through_separate_port)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
-
-        /// Add columns needed to calculate the sorting expression and the sign.
-        std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
-        column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-
-        if (!data.merging_params.sign_column.empty())
-            column_names_to_read.push_back(data.merging_params.sign_column);
-        if (!data.merging_params.version_column.empty())
-            column_names_to_read.push_back(data.merging_params.version_column);
-
-        ::sort(column_names_to_read.begin(), column_names_to_read.end());
-        column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
-
-        pipe = spreadMarkRangesAmongStreamsFinal(
-            std::move(result.parts_with_ranges),
-            column_names_to_read,
-            result_projection);
-    }
-    else if (input_order_info)
-    {
-        pipe = spreadMarkRangesAmongStreamsWithOrder(
-            std::move(result.parts_with_ranges),
-            column_names_to_read,
-            result_projection,
-            input_order_info);
-    }
-    else
-    {
-        pipe = spreadMarkRangesAmongStreams(
-            std::move(result.parts_with_ranges),
-            column_names_to_read);
-    }
+    Pipe pipe = output_each_partition_through_separate_port
+        ? groupStreamsByPartition(result, result_projection)
+        : spreadMarkRanges(std::move(result.parts_with_ranges), requested_num_streams, result, result_projection);
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);
