@@ -1644,7 +1644,7 @@ Possible values:
 Default value: 0
 
 Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
-The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as following:
+The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
 ```
 timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
 ```
