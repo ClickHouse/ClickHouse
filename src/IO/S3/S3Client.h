@@ -13,11 +13,18 @@
 
 #include <IO/S3Common.h>
 
-namespace DB::S3
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace S3
 {
 
 namespace Model = Aws::S3::Model;
-
 
 class S3Client : public Aws::S3::S3Client
 {
@@ -125,6 +132,8 @@ private:
 
     Poco::Logger * log;
 };
+
+}
 
 }
 

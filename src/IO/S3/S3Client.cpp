@@ -15,7 +15,15 @@
 
 #include <Common/logger_useful.h>
 
-namespace DB::S3
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace S3
 {
 
 bool S3Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
@@ -243,6 +251,8 @@ const URI * S3Client::getURIForBucketAssumeLocked(const std::string & bucket) co
         return &it->second;
 
     return nullptr;
+}
+
 }
 
 }
