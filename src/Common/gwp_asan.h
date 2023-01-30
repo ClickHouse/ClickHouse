@@ -14,15 +14,21 @@ namespace Memory
 
 #if USE_GWP_ASAN
 static gwp_asan::GuardedPoolAllocator GuardedAlloc;
-#endif
 
-inline ALWAYS_INLINE void initGWPAsan()
+static struct InitGwpAsan
 {
-#if USE_GWP_ASAN
-    gwp_asan::options::initOptions();
-    gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
-    GuardedAlloc.init(opts);
+    InitGwpAsan()
+    {
+         gwp_asan::options::initOptions();
+         gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
+         GuardedAlloc.init(opts);
+    }
+
+    static bool isInit()
+    {
+        return GuardedAlloc.getAllocatorState()->GuardedPagePoolEnd != 0;
+    }
+} init_gwp_asan;
 #endif
-}
 
 }

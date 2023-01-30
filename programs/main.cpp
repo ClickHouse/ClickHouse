@@ -19,7 +19,6 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/gwp_asan.h>
 #include <Common/IO.h>
 
 #include <base/phdr_cache.h>
@@ -464,8 +463,6 @@ int main(int argc_, char ** argv_)
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
-
-    Memory::initGWPAsan();
 
     std::vector<char *> argv(argv_, argv_ + argc_);
 
