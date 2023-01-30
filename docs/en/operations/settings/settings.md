@@ -1666,7 +1666,7 @@ Default value: 100
 
 ## insert_keeper_retry_max_backoff_ms {#insert_keeper_retry_max_backoff_ms}
 
-Maximum timeout(in milliseconds) to retry failed Keeper request during INSERT into Rquery execution
+Maximum timeout (in milliseconds) to retry a failed Keeper request during INSERT query execution
 
 Possible values:
 
