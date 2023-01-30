@@ -2377,8 +2377,7 @@ Default value: 8.
 
 ## background_schedule_pool_size {#background_schedule_pool_size}
 
-Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/
-/#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
+Sets the number of threads performing background tasks for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables, [Kafka](../../engines/table-engines/integrations/kafka.md) streaming, [DNS cache updates](../../operations/server-configuration-parameters/settings.md/#server-settings-dns-cache-update-period). This setting is applied at ClickHouse server start and can’t be changed in a user session.
 
 Possible values:
 
