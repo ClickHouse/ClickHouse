@@ -1634,7 +1634,7 @@ SELECT * FROM test_table
 
 ## insert_keeper_max_retries
 
-The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout or request timeout considered for retries.
+The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
 
 Possible values:
 
