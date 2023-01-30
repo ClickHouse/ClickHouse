@@ -55,6 +55,7 @@ private:
 struct StorageIcebergName
 {
     static constexpr auto name = "Iceberg";
+    static constexpr auto data_directory_prefix = "data";
 };
 
 using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetaParser>;
