@@ -388,6 +388,20 @@ ColumnPtr fillColumnWithRandomData(
 
             return column;
         }
+        case TypeIndex::IPv4:
+        {
+            auto column = ColumnIPv4::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(IPv4), rng);
+            return column;
+        }
+        case TypeIndex::IPv6:
+        {
+            auto column = ColumnIPv6::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(IPv6), rng);
+            return column;
+        }
 
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
