@@ -40,6 +40,12 @@ public:
     /// Returns the number of unique files in the backup.
     virtual size_t getNumFiles() const = 0;
 
+    /// Returns the number of files were processed for backup or restore
+    virtual size_t getNumProcessedFiles() const = 0;
+
+    // Returns the total size of processed files for backup or restore
+    virtual UInt64 getProcessedFilesSize() const = 0;
+
     /// Returns the total size of unique files in the backup.
     virtual UInt64 getUncompressedSize() const = 0;
 

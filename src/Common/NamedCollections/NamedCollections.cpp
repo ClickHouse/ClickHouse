@@ -436,11 +436,13 @@ template String NamedCollection::get<String>(const NamedCollection::Key & key) c
 template UInt64 NamedCollection::get<UInt64>(const NamedCollection::Key & key) const;
 template Int64 NamedCollection::get<Int64>(const NamedCollection::Key & key) const;
 template Float64 NamedCollection::get<Float64>(const NamedCollection::Key & key) const;
+template bool NamedCollection::get<bool>(const NamedCollection::Key & key) const;
 
 template String NamedCollection::getOrDefault<String>(const NamedCollection::Key & key, const String & default_value) const;
 template UInt64 NamedCollection::getOrDefault<UInt64>(const NamedCollection::Key & key, const UInt64 & default_value) const;
 template Int64 NamedCollection::getOrDefault<Int64>(const NamedCollection::Key & key, const Int64 & default_value) const;
 template Float64 NamedCollection::getOrDefault<Float64>(const NamedCollection::Key & key, const Float64 & default_value) const;
+template bool NamedCollection::getOrDefault<bool>(const NamedCollection::Key & key, const bool & default_value) const;
 
 template void NamedCollection::set<String, true>(const NamedCollection::Key & key, const String & value);
 template void NamedCollection::set<String, false>(const NamedCollection::Key & key, const String & value);
@@ -450,6 +452,7 @@ template void NamedCollection::set<Int64, true>(const NamedCollection::Key & key
 template void NamedCollection::set<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
 template void NamedCollection::set<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
 template void NamedCollection::set<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
+template void NamedCollection::set<bool, false>(const NamedCollection::Key & key, const bool & value);
 
 template void NamedCollection::setOrUpdate<String, true>(const NamedCollection::Key & key, const String & value);
 template void NamedCollection::setOrUpdate<String, false>(const NamedCollection::Key & key, const String & value);
@@ -459,6 +462,7 @@ template void NamedCollection::setOrUpdate<Int64, true>(const NamedCollection::K
 template void NamedCollection::setOrUpdate<Int64, false>(const NamedCollection::Key & key, const Int64 & value);
 template void NamedCollection::setOrUpdate<Float64, true>(const NamedCollection::Key & key, const Float64 & value);
 template void NamedCollection::setOrUpdate<Float64, false>(const NamedCollection::Key & key, const Float64 & value);
+template void NamedCollection::setOrUpdate<bool, false>(const NamedCollection::Key & key, const bool & value);
 
 template void NamedCollection::remove<true>(const Key & key);
 template void NamedCollection::remove<false>(const Key & key);
