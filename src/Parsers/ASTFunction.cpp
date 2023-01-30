@@ -828,11 +828,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 frame_nested.need_parens = false;
                 frame_nested.indent += 2;
                 arguments->children[0]->formatImpl(settings, state, frame_nested);
-                settings.ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "");
-                settings.writeKeyword(" ELSE ");
+                settings.ostr << settings.nl_or_ws << indent1;
+                settings.writeKeyword("ELSE ");
                 settings.ostr << nl_or_nothing << indent2;
                 arguments->children[1]->formatImpl(settings, state, frame_nested);
-                settings.ostr << nl_or_nothing << indent0 << ")";
+                settings.ostr << nl_or_nothing << indent0;
+                settings.writeKeyword(")");
                 return;
             }
         }

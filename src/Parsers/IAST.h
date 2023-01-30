@@ -204,7 +204,6 @@ public:
             friend struct FormatSettings;
             DB::WriteBuffer & ostr;
             bool hilite;
-            const char * hilite_type_none;
             Hiliter(DB::WriteBuffer & ostr_, bool hilite_, const char * hilite_type);
             Hiliter(const Hiliter & other) = delete;
             Hiliter(Hiliter && other) = delete;
