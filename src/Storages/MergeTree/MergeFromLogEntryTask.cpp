@@ -115,7 +115,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             String message;
             LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, message);
+                throw Exception::createDeprecated(message, ErrorCodes::LOGICAL_ERROR);
 
             return PrepareResult{
                 .prepared_successfully = false,
@@ -173,7 +173,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
     if (future_merged_part->name != entry.new_part_name)
     {
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
