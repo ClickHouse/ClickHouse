@@ -95,7 +95,15 @@ void BackgroundSchedulePoolTaskInfo::execute()
         executing = true;
     }
 
-    function();
+    try
+    {
+        function();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false && "Tasks in BackgroundSchedulePool cannot throw");
+    }
     UInt64 milliseconds = watch.elapsedMilliseconds();
 
     /// If the task is executed longer than specified time, it will be logged.
