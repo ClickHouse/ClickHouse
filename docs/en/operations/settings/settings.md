@@ -1303,8 +1303,8 @@ Default value: `3`.
 
 ## use_query_result_cache {#use-query-result-cache}
 
-If turned on, SELECT queries may utilize the [query result cache](../query-result-cache.md). Parameters [use_query_result_cache_passive_usage](#use-query-result-cache-passive-usage)
-and [use_query_result_cache_active_usage](#use-query-result-cache-active-usage) control in more detail how the cache is used.
+If turned on, SELECT queries may utilize the [query result cache](../query-result-cache.md). Parameters [enable_reads_from_query_result_cache](#enable-reads-from-query-result-cache)
+and [enable_writes_to_query_result_cache](#enable-writes-to-query-result-cache) control in more detail how the cache is used.
 
 Possible values:
 
@@ -1313,7 +1313,7 @@ Possible values:
 
 Default value: `0`.
 
-## use_query_result_cache_passive_usage {#use-query-result-cache-passive-usage}
+## enable_reads_from_query_result_cache {#enable-reads-from-query-result-cache}
 
 If turned on, results of SELECT queries are retrieved from the [query result cache](../query-result-cache.md).
 
@@ -1324,7 +1324,7 @@ Possible values:
 
 Default value: `1`.
 
-## use_query_result_cache_active_usage {#use-query-result-cache-active-usage}
+## enable_writes_to_query_result_cache {#enable-writes-to-query-result-cache}
 
 If turned on, results of SELECT queries are stored in the [query result cache](../query-result-cache.md).
 

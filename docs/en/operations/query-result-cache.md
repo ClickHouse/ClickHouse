@@ -54,19 +54,20 @@ SETTINGS use_query_result_cache = true;
 will store the query result in the query result cache. Subsequent executions of the same query (also with parameter `use_query_result_cache
 = true`) will read the computed result from the cache and return it immediately.
 
-The way the cache is utilized can be configured in more detail using settings [use_query_result_cache_active_usage](settings/settings.md#use_query_result_cache_active_usage) and
-[use_query_result_cache_passive_usage](settings/settings.md#use_query_result_cache_active_usage) (both `true` by default). Active usage
-means that query results are stored in the cache, whereas passive usage means that the database should try to retrieve query results from
-the cache. For example, the following query will use the cache only passively, i.e. attempt to read from it but not store its result in it:
+The way the cache is utilized can be configured in more detail using settings [enable_writes_to_query_result_cache](settings/settings.md#enable-writes-to-query-result-cache)
+and [enable_reads_from_query_result_cache](settings/settings.md#enable-reads-from-query-result-cache) (both `true` by default). The first
+settings controls whether query results are stored in the cache, whereas the second parameter determines if the database should try to
+retrieve query results from the cache. For example, the following query will use the cache only passively, i.e. attempt to read from it but
+not store its result in it:
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
 FROM table
-SETTINGS use_query_result_cache = true, use_query_result_cache_active_usage = false;
+SETTINGS use_query_result_cache = true, enable_writes_to_query_result_cache = false;
 ```
 
-For maximum control, it is generally recommended to provide settings "use_query_result_cache", "use_query_result_cache_active_usage" and
-"use_query_result_cache_passive_usage" only with specific queries. It is also possible to enable caching at user or profile level (e.g. via
+For maximum control, it is generally recommended to provide settings "use_query_result_cache", "enable_writes_to_query_result_cache" and
+"enable_reads_from_query_result_cache" only with specific queries. It is also possible to enable caching at user or profile level (e.g. via
 `SET use_query_result_cache = true`) but one should keep in mind that all `SELECT` queries including monitoring or debugging queries to
 system tables may return cached results then.
 
