@@ -46,3 +46,24 @@ create view nv_regular_mt_table AS SELECT * FROM mv_regular_mt_table;
 
 set force_select_final=1;
 select count() from nv_regular_mt_table;
+
+-- join on mix of tables that support / do not support select final
+create table if not exists left_table (x String) engine=ReplacingMergeTree() ORDER BY x;
+create table if not exists middle_table (x String) engine=MergeTree() ORDER BY x;
+create table if not exists right_table (x String) engine=ReplacingMergeTree() ORDER BY x;
+
+insert into left_table values ('abc');
+insert into left_table values ('abc');
+insert into left_table values ('abc');
+
+insert into middle_table values ('abc');
+insert into middle_table values ('abc');
+
+insert into right_table values ('abc');
+insert into right_table values ('abc');
+insert into right_table values ('abc');
+
+-- Expected output is 2 because middle table does not support final
+select count() from left_table
+    inner join middle_table on left_table.x = middle_table.x
+    inner join right_table on middle_table.x = right_table.x;
