@@ -1865,6 +1865,17 @@ Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse config
 </clickhouse>
 ```
 
+For security and isolation reasons, the model evaluation does not run in the server process but in the clickhouse-library-bridge process.
+At the first execution of `catboostEvaluate()`, the server starts the library bridge process if it is not running already. Both processes
+communicate using a HTTP interface. By default, port `9012` is used. A different port can be specified as follows - this is useful if port
+`9012` is already assigned to a different service.
+
+``` xml
+<library_bridge>
+    <port>9019</port>
+</library_bridge>
+```
+
 2. Train a catboost model using libcatboost
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.

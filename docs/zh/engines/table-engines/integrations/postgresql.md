@@ -142,5 +142,3 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 <!-- -   [`postgresql` 表函数](../../../sql-reference/table-functions/postgresql.md) -->
 -   [使用 PostgreSQL 作为外部字典的来源](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
-
-[原始文章](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->

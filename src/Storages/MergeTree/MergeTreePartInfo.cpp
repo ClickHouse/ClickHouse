@@ -18,7 +18,7 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
     if (auto part_opt = tryParsePartName(part_name, format_version))
         return *part_opt;
     else
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {} for format version: {}", part_name, format_version);
 }
 
 void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
@@ -143,7 +143,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
         || !checkChar('_', in)
         || !tryReadIntText(max_yyyymmdd, in))
     {
-        throw Exception("Unexpected part name: " + part_name, ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
     }
 
     const auto & date_lut = DateLUT::instance();
@@ -155,7 +155,7 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
     auto max_month = date_lut.toNumYYYYMM(max_date);
 
     if (min_month != max_month)
-        throw Exception("Part name " + part_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Part name {} contains different months", part_name);
 }
 
 
@@ -167,7 +167,25 @@ bool MergeTreePartInfo::contains(const String & outer_part_name, const String & 
 }
 
 
-String MergeTreePartInfo::getPartName() const
+String MergeTreePartInfo::getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const
+{
+    if (format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        return getPartNameV1();
+
+    /// We cannot just call getPartNameV0 because it requires extra arguments, but at least we can warn about it.
+    chassert(false);  /// Catch it in CI. Feel free to remove this line.
+    throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Trying to get part name in new format for old format version. "
+                    "Either some new feature is incompatible with deprecated *MergeTree definition syntax or it's a bug.");
+}
+
+
+String MergeTreePartInfo::getPartNameForLogs() const
+{
+    /// We don't care about format version here
+    return getPartNameV1();
+}
+
+String MergeTreePartInfo::getPartNameV1() const
 {
     WriteBufferFromOwnString wb;
 

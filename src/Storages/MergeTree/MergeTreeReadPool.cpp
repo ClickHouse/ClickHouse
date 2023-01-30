@@ -201,6 +201,10 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
     for (const auto i : collections::range(0, parts.size()))
     {
         const auto & part = parts[i];
+#ifndef NDEBUG
+        assertSortedAndNonIntersecting(part.ranges);
+#endif
+
         bool part_on_remote_disk = part.data_part->isStoredOnRemoteDisk();
         is_part_on_remote_disk[i] = part_on_remote_disk;
         do_not_steal_tasks |= part_on_remote_disk;
@@ -217,7 +221,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
             column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
-            : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);
+            : IMergeTreeSelectAlgorithm::getSizePredictor(part.data_part, task_columns, sample_block);
 
         auto & per_part = per_part_params.emplace_back();
 
@@ -315,7 +319,7 @@ void MergeTreeReadPool::fillPerThreadInfo(
                 while (need_marks > 0)
                 {
                     if (part.ranges.empty())
-                        throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among threads");
 
                     MarkRange & range = part.ranges.front();
 

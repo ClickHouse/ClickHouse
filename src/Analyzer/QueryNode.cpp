@@ -1,5 +1,7 @@
 #include <Analyzer/QueryNode.h>
 
+#include <fmt/core.h>
+
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -21,8 +23,10 @@
 namespace DB
 {
 
-QueryNode::QueryNode()
+QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
     : IQueryTreeNode(children_size)
+    , context(std::move(context_))
+    , settings_changes(std::move(settings_changes_))
 {
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
@@ -31,6 +35,10 @@ QueryNode::QueryNode()
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
 }
+
+QueryNode::QueryNode(ContextMutablePtr context_)
+    : QueryNode(std::move(context_), {} /*settings_changes*/)
+{}
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
@@ -54,6 +62,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_group_by_with_totals)
         buffer << ", is_group_by_with_totals: " << is_group_by_with_totals;
 
+    if (is_group_by_all)
+        buffer << ", is_group_by_all: " << is_group_by_all;
+
     std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
@@ -67,12 +78,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
-
-    if (constant_value)
-    {
-        buffer << ", constant_value: " << constant_value->getValue().dump();
-        buffer << ", constant_value_type: " << constant_value->getType()->getName();
-    }
 
     if (hasWith())
     {
@@ -117,7 +122,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getWhere()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
-    if (hasGroupBy())
+    if (!is_group_by_all && hasGroupBy())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "GROUP BY\n";
         getGroupBy().dumpTreeImpl(buffer, format_state, indent + 4);
@@ -176,18 +181,18 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << '\n' << std::string(indent + 2, ' ') << "OFFSET\n";
         getOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasSettingsChanges())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+    }
 }
 
 bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
-
-    if (constant_value && rhs_typed.constant_value && *constant_value != *rhs_typed.constant_value)
-        return false;
-    else if (constant_value && !rhs_typed.constant_value)
-        return false;
-    else if (!constant_value && rhs_typed.constant_value)
-        return false;
 
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
@@ -198,7 +203,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
         is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
-        is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets;
+        is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
+        is_group_by_all == rhs_typed.is_group_by_all;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -226,22 +232,12 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_rollup);
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
-
-    if (constant_value)
-    {
-        auto constant_dump = applyVisitor(FieldVisitorToString(), constant_value->getValue());
-        state.update(constant_dump.size());
-        state.update(constant_dump);
-
-        auto constant_value_type_name = constant_value->getType()->getName();
-        state.update(constant_value_type_name.size());
-        state.update(constant_value_type_name);
-    }
+    state.update(is_group_by_all);
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
 {
-    auto result_query_node = std::make_shared<QueryNode>();
+    auto result_query_node = std::make_shared<QueryNode>(context);
 
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
@@ -251,9 +247,9 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
+    result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
-    result_query_node->constant_value = constant_value;
 
     return result_query_node;
 }
@@ -267,6 +263,7 @@ ASTPtr QueryNode::toASTImpl() const
     select_query->group_by_with_rollup = is_group_by_with_rollup;
     select_query->group_by_with_cube = is_group_by_with_cube;
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
+    select_query->group_by_all = is_group_by_all;
 
     if (hasWith())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST());
@@ -283,7 +280,7 @@ ASTPtr QueryNode::toASTImpl() const
     if (getWhere())
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST());
 
-    if (hasGroupBy())
+    if (!is_group_by_all && hasGroupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST());
 
     if (hasHaving())

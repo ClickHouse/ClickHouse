@@ -79,10 +79,11 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception("LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.",
-                            DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+            throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW,
+                            "LIVE VIEWs are only supported for queries from tables, "
+                            "but there is no table name in select query.");
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
 
         inner_subquery = ast_select->list_of_selects->children.at(0)->clone();
 
@@ -293,18 +294,18 @@ StorageLiveView::StorageLiveView(
     setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
-        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
     /// Default value, if only table name exist in the query
     if (query.select->list_of_selects->children.size() != 1)
-        throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
 
     inner_query = query.select->list_of_selects->children.at(0);
 
     auto inner_query_tmp = inner_query->clone();
     select_table_id = extractDependentTable(inner_query_tmp, getContext(), table_id_.table_name, inner_subquery);
 
-    DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
+    DatabaseCatalog::instance().addViewDependency(select_table_id, table_id_);
 
     if (query.live_view_periodic_refresh)
     {
@@ -434,11 +435,11 @@ bool StorageLiveView::getNewBlocks()
 void StorageLiveView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
-    if (!dependencies.empty())
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (!view_ids.empty())
     {
-        StorageID dependent_table_id = dependencies.front();
-        throw Exception("Table has dependency " + dependent_table_id.getNameForLogs(), ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        StorageID view_id = *view_ids.begin();
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table has dependency {}", view_id);
     }
 }
 
@@ -455,7 +456,7 @@ void StorageLiveView::shutdown()
     if (is_periodically_refreshed)
         periodic_refresh_task->deactivate();
 
-    DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
+    DatabaseCatalog::instance().removeViewDependency(select_table_id, getStorageID());
 }
 
 StorageLiveView::~StorageLiveView()
@@ -466,10 +467,9 @@ StorageLiveView::~StorageLiveView()
 void StorageLiveView::drop()
 {
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 
     std::lock_guard lock(mutex);
-    is_dropped = true;
     condition.notify_all();
 }
 
@@ -607,9 +607,8 @@ void registerStorageLiveView(StorageFactory & factory)
     factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
     {
         if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
-            throw Exception(
-                "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
-                ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
 
         return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
     });

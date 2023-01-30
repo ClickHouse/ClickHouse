@@ -54,12 +54,12 @@ public:
         {
             planner_context.registerSet(set_key, PlannerSet(storage_set->getSet()));
         }
-        else if (auto constant_value = in_second_argument->getConstantValueOrNull())
+        else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = makeSetForConstantValue(
                 in_first_argument->getResultType(),
-                constant_value->getValue(),
-                constant_value->getType(),
+                constant_node->getValue(),
+                constant_node->getResultType(),
                 settings);
 
             planner_context.registerSet(set_key, PlannerSet(std::move(set)));

@@ -26,4 +26,3 @@ skewSamp(expr)
 ``` sql
 SELECT skewSamp(value) FROM series_with_value_column;
 ```
-

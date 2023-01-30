@@ -16,6 +16,8 @@
 
 #include <base/find_symbols.h>
 
+#include <Access/AccessControl.h>
+
 #include "config_version.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -28,9 +30,10 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -38,6 +41,8 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
@@ -258,6 +263,10 @@ try
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
 
+    /// Set user password complexity rules
+    auto & access_control = global_context->getAccessControl();
+    access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
+
     if (is_interactive && !delayed_interactive)
     {
         runInteractive();
@@ -348,17 +357,9 @@ void Client::connect()
         }
         catch (const Exception & e)
         {
-            /// It is typical when users install ClickHouse, type some password and instantly forget it.
-            /// This problem can't be fixed with reconnection so it is not attempted
-            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
             {
-                std::cerr << std::endl
-                          << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                          << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                          << "and deleting this file will reset the password." << std::endl
-                          << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                          << std::endl;
+                /// This problem can't be fixed with reconnection so it is not attempted
                 throw;
             }
             else
@@ -718,7 +719,7 @@ bool Client::processWithFuzzing(const String & full_query)
             // uniformity.
             // Surprisingly, this is a client exception, because we get the
             // server exception w/o throwing (see onReceiveException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -829,6 +830,20 @@ bool Client::processWithFuzzing(const String & full_query)
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
         ast_buf.next();
+        if (const auto * insert = query->as<ASTInsertQuery>())
+        {
+            /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
+            if (insert->hasInlinedData())
+            {
+                String bytes;
+                {
+                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    WriteBufferFromString write_buf(bytes);
+                    copyData(*read_buf, write_buf);
+                }
+                std::cout << std::endl << bytes;
+            }
+        }
         std::cout << std::endl << std::endl;
 
         try
@@ -839,7 +854,7 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -953,7 +968,7 @@ void Client::processOptions(const OptionsDescription & options_description,
             if (external_tables.back().file == "-")
                 ++number_of_external_tables_with_stdin_source;
             if (number_of_external_tables_with_stdin_source > 1)
-                throw Exception("Two or more external tables has stdin (-) set as --file field", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
         }
         catch (const Exception & e)
         {
@@ -1006,7 +1021,7 @@ void Client::processOptions(const OptionsDescription & options_description,
     }
 
     if (options.count("config-file") && options.count("config"))
-        throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
@@ -1197,14 +1212,14 @@ void Client::readArguments(
                     /// param_name value
                     ++arg_num;
                     if (arg_num >= argc)
-                        throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter requires value");
                     arg = argv[arg_num];
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
                 else
                 {
                     if (equal_pos == 0)
-                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
 
                     /// param_name=value
                     query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
@@ -1218,7 +1233,7 @@ void Client::readArguments(
                 {
                     ++arg_num;
                     if (arg_num >= argc)
-                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host argument requires value");
                     arg = argv[arg_num];
                     host_arg = "--host=";
                     host_arg.append(arg);
@@ -1250,7 +1265,7 @@ void Client::readArguments(
                     port_arg.push_back('=');
                     ++arg_num;
                     if (arg_num >= argc)
-                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Port argument requires value");
                     arg = argv[arg_num];
                     port_arg.append(arg);
                 }

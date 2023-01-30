@@ -233,9 +233,9 @@ void MergeTreeBlockSizePredictor::startBlock()
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
 {
     if (columns.size() != sample_block.columns())
-        throw Exception("Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
-                        "Have " + toString(sample_block.columns()) + " in sample block "
-                        "and " + toString(columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
+                        "Have {} in sample block and {} columns in list",
+                        toString(sample_block.columns()), toString(columns.size()));
 
     if (!is_initialized_in_update)
     {
@@ -246,8 +246,8 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
     if (num_rows < block_size_rows)
     {
-        throw Exception("Updated block has less rows (" + toString(num_rows) + ") than previous one (" + toString(block_size_rows) + ")",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Updated block has less rows ({}) than previous one ({})",
+                        num_rows, block_size_rows);
     }
 
     size_t diff_rows = num_rows - block_size_rows;
@@ -315,7 +315,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 1. Columns for row level filter
         if (prewhere_info->row_level_filter)
         {
-            Names row_filter_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
+            Names row_filter_column_names = prewhere_info->row_level_filter->getRequiredColumnsNames();
+            injectRequiredColumns(
+                data_part_info_for_reader, storage_snapshot, with_subcolumns, row_filter_column_names);
             result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
             pre_name_set.insert(row_filter_column_names.begin(), row_filter_column_names.end());
         }
@@ -323,7 +325,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 2. Columns for prewhere
         Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
 
-        const auto injected_pre_columns = injectRequiredColumns(
+        injectRequiredColumns(
              data_part_info_for_reader, storage_snapshot, with_subcolumns, all_pre_column_names);
 
         for (const auto & name : all_pre_column_names)

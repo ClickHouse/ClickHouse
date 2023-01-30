@@ -12,15 +12,22 @@ namespace DB
 namespace
 {
 
-class IfChainToMultiIfPassVisitor : public InDepthQueryTreeVisitor<IfChainToMultiIfPassVisitor>
+class IfChainToMultiIfPassVisitor : public InDepthQueryTreeVisitorWithContext<IfChainToMultiIfPassVisitor>
 {
 public:
-    explicit IfChainToMultiIfPassVisitor(FunctionOverloadResolverPtr multi_if_function_ptr_)
-        : multi_if_function_ptr(std::move(multi_if_function_ptr_))
+    using Base = InDepthQueryTreeVisitorWithContext<IfChainToMultiIfPassVisitor>;
+    using Base::Base;
+
+    explicit IfChainToMultiIfPassVisitor(FunctionOverloadResolverPtr multi_if_function_ptr_, ContextPtr context)
+        : Base(std::move(context))
+        , multi_if_function_ptr(std::move(multi_if_function_ptr_))
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_if_chain_to_multiif)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "if" || function_node->getArguments().getNodes().size() != 3)
             return;
@@ -55,8 +62,8 @@ public:
             return;
 
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
-        multi_if_function->resolveAsFunction(multi_if_function_ptr, std::make_shared<DataTypeUInt8>());
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
+        multi_if_function->resolveAsFunction(multi_if_function_ptr->build(multi_if_function->getArgumentColumns()));
         node = std::move(multi_if_function);
     }
 
@@ -68,7 +75,8 @@ private:
 
 void IfChainToMultiIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    IfChainToMultiIfPassVisitor visitor(FunctionFactory::instance().get("multiIf", context));
+    auto multi_if_function_ptr = FunctionFactory::instance().get("multiIf", context);
+    IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }
 

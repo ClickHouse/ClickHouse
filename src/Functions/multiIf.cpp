@@ -50,6 +50,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
@@ -79,8 +81,7 @@ public:
         };
 
         if (!(args.size() >= 3 && args.size() % 2 == 1))
-            throw Exception{"Invalid number of arguments for function " + getName(),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
 
         for_conditions([&](const DataTypePtr & arg)
         {
@@ -99,9 +100,8 @@ public:
             }
 
             if (!WhichDataType(nested_type).isUInt8())
-                throw Exception{"Illegal type " + arg->getName() + " of argument (condition) "
-                    "of function " + getName() + ". Must be UInt8.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument (condition) of function {}. "
+                    "Must be UInt8.", arg->getName(), getName());
         });
 
         DataTypes types_of_branches;

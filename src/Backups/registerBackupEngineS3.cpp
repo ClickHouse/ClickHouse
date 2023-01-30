@@ -69,9 +69,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 s3_uri = fs::path(s3_uri) / config.getString(config_prefix + ".filename");
 
             if (args.size() > 1)
-                throw Exception(
-                    "Backup S3 requires 1 or 2 arguments: named_collection, [filename]",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
 
             if (args.size() == 1)
                 s3_uri = fs::path(s3_uri) / args[0].safeGet<String>();
@@ -79,9 +77,8 @@ void registerBackupEngineS3(BackupFactory & factory)
         else
         {
             if ((args.size() != 1) && (args.size() != 3))
-                throw Exception(
-                    "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
 
             s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)
@@ -110,16 +107,25 @@ void registerBackupEngineS3(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderS3>(S3::URI{Poco::URI{s3_uri}}, access_key_id, secret_access_key, params.context);
+            auto reader = std::make_shared<BackupReaderS3>(S3::URI{s3_uri}, access_key_id, secret_access_key, params.context);
             return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, reader, params.context);
         }
         else
         {
-            auto writer = std::make_shared<BackupWriterS3>(S3::URI{Poco::URI{s3_uri}}, access_key_id, secret_access_key, params.context);
-            return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, writer, params.context, params.is_internal_backup, params.backup_coordination, params.backup_uuid);
+            auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri}, access_key_id, secret_access_key, params.context);
+            return std::make_unique<BackupImpl>(
+                backup_name_for_logging,
+                archive_params,
+                params.base_backup_info,
+                writer,
+                params.context,
+                params.is_internal_backup,
+                params.backup_coordination,
+                params.backup_uuid,
+                params.deduplicate_files);
         }
 #else
-        throw Exception("S3 support is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
 #endif
     };
 

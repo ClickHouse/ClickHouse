@@ -1159,4 +1159,40 @@ If s is empty, the result is 0. If the first character is not an ASCII character
 
 
 
+## concatWithSeparator
 
+Returns the concatenation strings separated by string separator. If any of the argument values is `NULL`, the function returns `NULL`.
+
+**Syntax**
+
+``` sql
+concatWithSeparator(sep, expr1, expr2, expr3...)
+```
+
+**Arguments**
+-   sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned values**
+-   The concatenated String.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT concatWithSeparator('a', '1', '2', '3', '4')
+```
+
+Result:
+
+``` text
+┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
+│ 1a2a3a4                           │
+└───────────────────────────────────┘
+```
+
+## concatWithSeparatorAssumeInjective
+Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
+
+The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.

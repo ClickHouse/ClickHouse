@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Common/AsynchronousMetrics.h>
 #include <IO/WriteBuffer.h>
 
 #include <Poco/Util/AbstractConfiguration.h>

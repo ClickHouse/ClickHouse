@@ -9,6 +9,7 @@
 #    include <Common/quoteString.h>
 
 #    include <IO/WriteBufferFromString.h>
+#    include <IO/HTTPHeaderEntries.h>
 #    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/Version.h>
@@ -26,6 +27,8 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/GetObjectAttributesRequest.h>
+#    include <aws/s3/model/GetObjectRequest.h>
 #    include <aws/s3/model/HeadObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
@@ -39,7 +42,11 @@
 
 namespace ProfileEvents
 {
+    extern const Event S3GetObjectAttributes;
+    extern const Event S3GetObjectMetadata;
     extern const Event S3HeadObject;
+    extern const Event DiskS3GetObjectAttributes;
+    extern const Event DiskS3GetObjectMetadata;
     extern const Event DiskS3HeadObject;
 }
 
@@ -125,7 +132,7 @@ public:
         const auto & [level, prio] = convertLogLevel(log_level);
         if (tag_loggers.contains(tag))
         {
-            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
+            LOG_IMPL(tag_loggers[tag], level, prio, fmt::runtime(message));
         }
         else
         {
@@ -149,13 +156,12 @@ class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
     static constexpr char EC2_IMDS_TOKEN_TTL_HEADER[] = "x-aws-ec2-metadata-token-ttl-seconds";
 
-    static constexpr char EC2_DEFAULT_METADATA_ENDPOINT[] = "http://169.254.169.254";
-
 public:
     /// See EC2MetadataClient.
 
-    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
         : Aws::Internal::AWSHttpResourceClient(client_configuration)
+        , endpoint(endpoint_)
         , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
     {
     }
@@ -180,7 +186,7 @@ public:
         {
             std::lock_guard locker(token_mutex);
 
-            LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
+            LOG_TRACE(logger, "Getting default credentials for ec2 instance from {}", endpoint);
             auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
             credentials_string = result.GetPayload();
             if (result.GetResponseCode() == Aws::Http::HttpResponseCode::UNAUTHORIZED)
@@ -286,11 +292,49 @@ public:
     }
 
 private:
-    const Aws::String endpoint = EC2_DEFAULT_METADATA_ENDPOINT;
+    const Aws::String endpoint;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
     Poco::Logger * logger;
 };
+
+std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+{
+    Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
+    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
+    if (ec2_metadata_service_endpoint.empty())
+    {
+        Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
+        if (ec2_metadata_service_endpoint_mode.length() == 0)
+        {
+            ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
+        }
+        else
+        {
+            if (ec2_metadata_service_endpoint_mode.length() == 4)
+            {
+                if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv4"))
+                {
+                    ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
+                }
+                else if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv6"))
+                {
+                    ec2_metadata_service_endpoint = "http://[fd00:ec2::254]";
+                }
+                else
+                {
+                    LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
+                }
+            }
+            else
+            {
+                LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
+            }
+        }
+    }
+    LOG_INFO(logger, "Using IMDS endpoint: {}", ec2_metadata_service_endpoint);
+    return std::make_shared<AWSEC2MetadataClient>(client_configuration, ec2_metadata_service_endpoint.c_str());
+}
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -646,7 +690,7 @@ public:
 
                 aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
-                auto ec2_metadata_client = std::make_shared<AWSEC2MetadataClient>(aws_client_configuration);
+                auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
                 auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !use_insecure_imds_request);
 
                 AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
@@ -660,6 +704,92 @@ public:
         AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
     }
 };
+
+/// Extracts the endpoint from a constructed S3 client.
+String getEndpoint(const Aws::S3::S3Client & client)
+{
+    const auto * endpoint_provider = dynamic_cast<const Aws::S3::Endpoint::S3DefaultEpProviderBase *>(const_cast<Aws::S3::S3Client &>(client).accessEndpointProvider().get());
+    if (!endpoint_provider)
+        return {};
+    String endpoint;
+    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
+    return endpoint;
+}
+
+/// Performs a request to get the size and last modification time of an object.
+/// The function performs either HeadObject or GetObjectAttributes request depending on the endpoint.
+std::pair<std::optional<DB::S3::ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
+    const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+{
+    auto endpoint = getEndpoint(client);
+    bool use_get_object_attributes_request = (endpoint.find(".amazonaws.com") != String::npos);
+
+    if (use_get_object_attributes_request)
+    {
+        /// It's better not to use `HeadObject` requests for AWS S3 because they don't work well with the global region.
+        /// Details: `HeadObject` request never returns a response body (even if there is an error) however
+        /// if the request was sent without specifying a region in the endpoint (i.e. for example "https://test.s3.amazonaws.com/mydata.csv"
+        /// instead of "https://test.s3-us-west-2.amazonaws.com/mydata.csv") then that response body is one of the main ways
+        /// to determine the correct region and try to repeat the request again with the correct region.
+        /// For any other request type (`GetObject`, `ListObjects`, etc.) AWS SDK does that because they have response bodies,
+        /// but for `HeadObject` there is no response body so this way doesn't work. That's why we use `GetObjectAttributes` request instead.
+        /// See https://github.com/aws/aws-sdk-cpp/issues/1558 and also the function S3ErrorMarshaller::ExtractRegion() for more information.
+
+        ProfileEvents::increment(ProfileEvents::S3GetObjectAttributes);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectAttributes);
+
+        Aws::S3::Model::GetObjectAttributesRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        if (!version_id.empty())
+            req.SetVersionId(version_id);
+
+        req.SetObjectAttributes({Aws::S3::Model::ObjectAttributes::ObjectSize});
+
+        auto outcome = client.GetObjectAttributes(req);
+        if (outcome.IsSuccess())
+        {
+            const auto & result = outcome.GetResult();
+            DB::S3::ObjectInfo object_info;
+            object_info.size = static_cast<size_t>(result.GetObjectSize());
+            object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
+            return {object_info, {}};
+        }
+
+        return {std::nullopt, outcome.GetError()};
+    }
+    else
+    {
+        /// By default we use `HeadObject` requests.
+        /// We cannot just use `GetObjectAttributes` requests always because some S3 providers (e.g. Minio)
+        /// don't support `GetObjectAttributes` requests.
+
+        ProfileEvents::increment(ProfileEvents::S3HeadObject);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
+        Aws::S3::Model::HeadObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        if (!version_id.empty())
+            req.SetVersionId(version_id);
+
+        auto outcome = client.HeadObject(req);
+        if (outcome.IsSuccess())
+        {
+            const auto & result = outcome.GetResult();
+            DB::S3::ObjectInfo object_info;
+            object_info.size = static_cast<size_t>(result.GetContentLength());
+            object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
+            return {object_info, {}};
+        }
+
+        return {std::nullopt, outcome.GetError()};
+    }
+}
 
 }
 
@@ -700,7 +830,7 @@ namespace S3
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
-        HeaderCollection headers,
+        HTTPHeaderEntries headers,
         bool use_environment_credentials,
         bool use_insecure_imds_request)
     {
@@ -759,7 +889,7 @@ namespace S3
             put_request_throttler);
     }
 
-    URI::URI(const Poco::URI & uri_)
+    URI::URI(const std::string & uri_)
     {
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
@@ -777,16 +907,32 @@ namespace S3
         static constexpr auto OBS = "OBS";
         static constexpr auto OSS = "OSS";
 
-        uri = uri_;
+        uri = Poco::URI(uri_);
+
         storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
         /// Extract object version ID from query string.
+        bool has_version_id = false;
         for (const auto & [query_key, query_value] : uri.getQueryParameters())
             if (query_key == "versionId")
+            {
                 version_id = query_value;
+                has_version_id = true;
+            }
+
+        /// Poco::URI will ignore '?' when parsing the path, but if there is a vestionId in the http parameter,
+        /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
+        /// If no "vertionId" in the http parameter, '?' can be used as a wildcard.
+        /// It is necessary to encode '?' to avoid deletion during parsing path.
+        if (!has_version_id && uri_.find('?') != String::npos)
+        {
+            String uri_with_question_mark_encode;
+            Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
+            uri = Poco::URI(uri_with_question_mark_encode);
+        }
 
         String name;
         String endpoint_authority_from_uri;
@@ -805,7 +951,9 @@ namespace S3
 
             boost::to_upper(name);
             if (name != S3 && name != COS && name != OBS && name != OSS)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
+                                quoteString(name));
 
             if (name == S3)
                 storage_name = name;
@@ -831,43 +979,91 @@ namespace S3
         /// S3 specification requires at least 3 and at most 63 characters in bucket name.
         /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
         if (bucket.length() < 3 || bucket.length() > 63)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 
-
-    S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    bool isNotFoundError(Aws::S3::S3Errors error)
     {
-        ProfileEvents::increment(ProfileEvents::S3HeadObject);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
+    }
 
-        Aws::S3::Model::HeadObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
-
-        if (outcome.IsSuccess())
+    ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
+    {
+        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
+        if (object_info)
         {
-            auto read_result = outcome.GetResultWithOwnership();
-            return {.size = static_cast<size_t>(read_result.GetContentLength()), .last_modification_time = read_result.GetLastModified().Millis() / 1000};
+            return *object_info;
         }
         else if (throw_on_error)
         {
-            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            throw DB::Exception(ErrorCodes::S3_ERROR,
+                "Failed to get object attributes: {}. HTTP response code: {}",
+                error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
         }
         return {};
     }
 
-    size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
+    size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
     {
-        return getObjectInfo(client_ptr, bucket, key, version_id, throw_on_error, for_disk_s3).size;
+        return getObjectInfo(client, bucket, key, version_id, for_disk_s3, throw_on_error).size;
     }
 
+    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+    {
+        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
+        if (object_info)
+            return true;
+
+        if (isNotFoundError(error.GetErrorType()))
+            return false;
+
+        throw S3Exception(error.GetErrorType(),
+            "Failed to check existence of key {} in bucket {}: {}",
+            key, bucket, error.GetMessage());
+    }
+
+    void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, std::string_view description)
+    {
+        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
+        if (object_info)
+            return;
+        throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
+                          (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
+    }
+
+    std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
+    {
+        ProfileEvents::increment(ProfileEvents::S3GetObjectMetadata);
+        if (for_disk_s3)
+            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectMetadata);
+
+        /// We must not use the `HeadObject` request, see the comment about `HeadObjectRequest` in S3Common.h.
+
+        Aws::S3::Model::GetObjectRequest req;
+        req.SetBucket(bucket);
+        req.SetKey(key);
+
+        /// Only the first byte will be read.
+        /// We don't need that first byte but the range should be set otherwise the entire object will be read.
+        req.SetRange("bytes=0-0");
+
+        if (!version_id.empty())
+            req.SetVersionId(version_id);
+
+        auto outcome = client.GetObject(req);
+
+        if (outcome.IsSuccess())
+            return outcome.GetResult().GetMetadata();
+
+        if (!throw_on_error)
+            return {};
+
+        const auto & error = outcome.GetError();
+        throw S3Exception(error.GetErrorType(),
+            "Failed to get metadata of key {} in bucket {}: {}",
+            key, bucket, error.GetMessage());
+    }
 }
 
 }
@@ -900,7 +1096,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".use_insecure_imds_request"))
         use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
 
-    HeaderCollection headers;
+    HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
     for (const std::string & subkey : subconfig_keys)
@@ -910,8 +1106,8 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
             auto header_str = config.getString(config_elem + "." + subkey);
             auto delimiter = header_str.find(':');
             if (delimiter == std::string::npos)
-                throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
-            headers.emplace_back(HttpHeader{header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos)});
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
+            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
         }
     }
 
