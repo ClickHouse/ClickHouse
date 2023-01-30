@@ -95,6 +95,32 @@ Result:
 └───────────────────────────────┘
 ```
 
+Rules when needle is empty, which is also applied for other functions like: positionCaseInsensitive, positionUTF8, positionCaseInsensitiveUTF8
+- When `needle` is empty and `start_pos` doesn't exist, always returns 1;
+- When `needle` is empty and `start_pos` exists:
+    - When `start_pos` >= 1 and `start_pos` <= `char_length(haystack)`, returns `start_pos`;
+    - When `start_pos` = 0, returns 1;
+    - When `start_pos` = `char_length(haystack) + 1`, returns `char_length(haystack)`;
+    - Otherwise returns 0.
+
+``` sql
+SELECT
+    position('abc', ''),
+    position('abc', '', 0),
+    position('abc', '', 1),
+    position('abc', '', 2),
+    position('abc', '', 3),
+    position('abc', '', 4),
+    position('abc', '', 5)
+```
+
+``` text
+┌─position('abc', '')─┬─position('abc', '', 0)─┬─position('abc', '', 1)─┬─position('abc', '', 2)─┬─position('abc', '', 3)─┬─position('abc', '', 4)─┬─position('abc', '', 5)─┐
+│                   1 │                      1 │                      1 │                      2 │                      3 │                      4 │                      0 │
+└─────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┘
+```
+
+
 **Examples for POSITION(needle IN haystack) syntax**
 
 Query:
