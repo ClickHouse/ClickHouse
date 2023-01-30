@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/DNSResolver.h>
 #include <Poco/Net/IPAddress.h>
+#include <Interpreters/Context.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -14,12 +16,14 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 class ReverseDNSQuery : public IFunction
 {
 public:
     static constexpr auto name = "reverseDNSQuery";
+    static constexpr auto allow_function_config_name = "allow_reverse_dns_query_function";
 
     static FunctionPtr create(ContextPtr)
     {
@@ -33,6 +37,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & data_type, size_t input_rows_count) const override
     {
+        if (!Context::getGlobalContextInstance()->getConfigRef().getBool(allow_function_config_name, false))
+        {
+            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Function {} is not allowed because {} is not set", name, allow_function_config_name);
+        }
+
         if (arguments.empty())
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", name);
