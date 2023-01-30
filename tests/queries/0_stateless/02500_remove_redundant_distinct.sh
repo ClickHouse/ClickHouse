@@ -5,8 +5,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 OPTIMIZATION_SETTING="query_plan_remove_redundant_distinct"
-DISABLE_OPTIMIZATION="SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET allow_experimental_analyzer=1;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET allow_experimental_analyzer=1;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled $OPTIMIZATION_SETTING"
 query="SELECT DISTINCT *
@@ -56,4 +56,17 @@ FROM
     SELECT DISTINCT number AS n
     FROM numbers(2)
 ) SETTINGS joined_subquery_requires_alias=0"
+run_query "$query"
+
+echo "-- DISTINCT duplicates with several columns"
+query="SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT *
+    FROM
+    (
+        SELECT DISTINCT number as a, 2*number as b
+        FROM numbers(3)
+    )
+)"
 run_query "$query"

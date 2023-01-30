@@ -1,14 +1,14 @@
 -- Disabled query_plan_remove_redundant_distinct
-Expression (Projection)
-  Distinct
+Expression (Project names)
+  Distinct (DISTINCT)
     Distinct (Preliminary DISTINCT)
-      Expression ((Before ORDER BY + Projection))
-        Distinct
+      Expression ((Projection + (Change column names to column identifiers + Project names)))
+        Distinct (DISTINCT)
           Distinct (Preliminary DISTINCT)
-            Expression ((Before ORDER BY + Projection))
-              Distinct
+            Expression ((Projection + (Change column names to column identifiers + Project names)))
+              Distinct (DISTINCT)
                 Distinct (Preliminary DISTINCT)
-                  Expression (Before ORDER BY)
+                  Expression ((Projection + Change column names to column identifiers))
                     ReadFromStorage (SystemNumbers)
 -- Enabled query_plan_remove_redundant_distinct
 -- DISTINCT is only in most inner subquery
@@ -24,10 +24,10 @@ FROM
     )
 )
 -- explain
-Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Projection)))))
-  Distinct
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + Project names)))))))
+  Distinct (DISTINCT)
     Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
+      Expression ((Projection + Change column names to column identifiers))
         ReadFromStorage (SystemNumbers)
 -- execute
 0
@@ -43,21 +43,22 @@ SELECT DISTINCT number FROM
 )
 ORDER BY number
 -- explain
-Expression (Projection)
-  Distinct
+Expression (Project names)
+  Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
-      Distinct (Preliminary DISTINCT)
-        Union
-          Expression ((Before ORDER BY + Projection))
-            Distinct
-              Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
-                  ReadFromStorage (SystemNumbers)
-          Expression (( + Projection))
-            Distinct
-              Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
-                  ReadFromStorage (SystemNumbers)
+      Expression (Before ORDER BY)
+        Distinct (Preliminary DISTINCT)
+          Union
+            Expression ((Projection + (Change column names to column identifiers + Project names)))
+              Distinct (DISTINCT)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromStorage (SystemNumbers)
+            Expression (( + ( + Project names)))
+              Distinct (DISTINCT)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromStorage (SystemNumbers)
 -- execute
 0
 1
@@ -74,21 +75,45 @@ FROM
     FROM numbers(2)
 ) SETTINGS joined_subquery_requires_alias=0
 -- explain
-Expression (Projection)
-  Distinct
+Expression (Project names)
+  Distinct (DISTINCT)
     Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
+      Expression ((Projection + DROP unused columns after JOIN))
         Join (JOIN FillRightFirst)
-          Expression ((Before JOIN + Projection))
-            Distinct
+          Expression ((Change column names to column identifiers + Project names))
+            Distinct (DISTINCT)
               Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
+                Expression ((Projection + Change column names to column identifiers))
                   ReadFromStorage (SystemNumbers)
-          Expression ((Joined actions + (Rename joined columns + Projection)))
-            Distinct
+          Expression ((Change column names to column identifiers + Project names))
+            Distinct (DISTINCT)
               Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
+                Expression ((Projection + Change column names to column identifiers))
                   ReadFromStorage (SystemNumbers)
 -- execute
 0	0
+0	1
+1	0
 1	1
+-- DISTINCT duplicates with several columns
+-- query
+SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT *
+    FROM
+    (
+        SELECT DISTINCT number as a, 2*number as b
+        FROM numbers(3)
+    )
+)
+-- explain
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + Project names)))))))
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + Change column names to column identifiers))
+        ReadFromStorage (SystemNumbers)
+-- execute
+0	0
+1	2
+2	4

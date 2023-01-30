@@ -1,5 +1,8 @@
 #include <memory>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -9,30 +12,30 @@
 namespace DB::QueryPlanOptimizations
 {
 
-// template <typename... T>
-// FMT_NODISCARD FMT_INLINE auto format(format_string<T...> fmt, T&&... args)
 constexpr bool debug_logging_enabled = true;
 
-template <typename... Args>
-void logDebug(const char * format, Args &&... args)
+void logDebug(const String & prefix, const String & message)
 {
     if constexpr (debug_logging_enabled)
     {
-        LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), format, args...);
+        LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{}: {}", prefix, message);
     }
 }
 
-static std::set<std::string_view> getDistinctColumns(const DistinctStep * distinct)
+namespace
 {
-    /// find non-const columns in DISTINCT
-    const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputStream().header.getColumnsWithTypeAndName();
-    std::set<std::string_view> non_const_columns;
-    for (const auto & column : distinct_columns)
+    std::set<std::string_view> getDistinctColumns(const DistinctStep * distinct)
     {
-        if (!isColumnConst(*column.column))
-            non_const_columns.emplace(column.name);
+        /// find non-const columns in DISTINCT
+        const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputStream().header.getColumnsWithTypeAndName();
+        std::set<std::string_view> non_const_columns;
+        for (const auto & column : distinct_columns)
+        {
+            if (!isColumnConst(*column.column))
+                non_const_columns.emplace(column.name);
+        }
+        return non_const_columns;
     }
-    return non_const_columns;
 }
 
 size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/)
@@ -48,15 +51,21 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
 
     distinct_node = parent_node->children.front();
 
+    std::vector<ActionsDAGPtr> dag_stack;
     const DistinctStep * inner_distinct_step = nullptr;
     QueryPlan::Node * node = distinct_node;
     while (!node->children.empty())
     {
-        const IQueryPlanStep* current_step = node->step.get();
+        const IQueryPlanStep * current_step = node->step.get();
 
         /// don't try to remove DISTINCT after union or join
-        if (typeid_cast<const UnionStep*>(current_step) || typeid_cast<const JoinStep*>(current_step))
+        if (typeid_cast<const UnionStep *>(current_step) || typeid_cast<const JoinStep *>(current_step))
             break;
+
+        if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)
+            dag_stack.push_back(expr->getExpression());
+        if (const auto * const filter = typeid_cast<const FilterStep *>(current_step); filter)
+            dag_stack.push_back(filter->getExpression());
 
         node = node->children.front();
         inner_distinct_step = typeid_cast<DistinctStep *>(node->step.get());
@@ -74,13 +83,42 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
     if (inner_distinct_step->isPreliminary())
         return 0;
 
-    /// try to remove outer distinct step
-    if (getDistinctColumns(distinct_step) != getDistinctColumns(inner_distinct_step))
+    const auto distinct_columns = getDistinctColumns(distinct_step);
+    auto inner_distinct_columns = getDistinctColumns(inner_distinct_step);
+    if (distinct_columns.size() != inner_distinct_columns.size())
         return 0;
 
-    chassert(!distinct_node->children.empty());
+    /// build actions DAG to compare DISTINCT columns
+    ActionsDAGPtr path_actions;
+    if (!dag_stack.empty())
+    {
+        path_actions = dag_stack.back();
+        dag_stack.pop_back();
+    }
+    while (!dag_stack.empty())
+    {
+        ActionsDAGPtr clone = dag_stack.back()->clone();
+        dag_stack.pop_back();
+        path_actions->mergeInplace(std::move(*clone));
+    }
 
-    /// delete current distinct
+    logDebug("mergedDAG\n", path_actions->dumpDAG());
+
+    for (const auto & column : distinct_columns)
+    {
+        const auto * alias_node = path_actions->getOriginalNodeForOutputAlias(String(column));
+        if (!alias_node)
+            return 0;
+
+        auto it = inner_distinct_columns.find(alias_node->result_name);
+        if (it == inner_distinct_columns.end())
+            return 0;
+
+        inner_distinct_columns.erase(it);
+    }
+
+    /// remove current distinct
+    chassert(!distinct_node->children.empty());
     parent_node->children[0] = distinct_node->children.front();
 
     return 1;
