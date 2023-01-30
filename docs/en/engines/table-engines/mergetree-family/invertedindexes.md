@@ -49,19 +49,20 @@ where `N` specifies the tokenizer:
 Being a type of skipping index, inverted indexes can be dropped or added to a column after table creation:
 
 ``` sql
-ALTER TABLE tbl DROP INDEX inv_idx;
-ALTER TABLE tbl ADD INDEX inv_idx(s) TYPE inverted(2) GRANULARITY 1;
+ALTER TABLE tab DROP INDEX inv_idx;
+ALTER TABLE tab ADD INDEX inv_idx(s) TYPE inverted(2) GRANULARITY 1;
 ```
 
 To use the index, no special functions or syntax are required. Typical string search predicates automatically leverage the index. As
 examples, consider:
 
 ```sql
-SELECT * from tab WHERE s == 'Hello World;
-SELECT * from tab WHERE s IN (‘Hello’, ‘World’);
-SELECT * from tab WHERE s LIKE ‘%Hello%’;
-SELECT * from tab WHERE multiSearchAny(s, ‘Hello’, ‘World’);
-SELECT * from tab WHERE hasToken(s, ‘Hello’);
+INSERT INTO tab(key, str) values (1, 'Hello World');
+SELECT * from tab WHERE str == 'Hello World';
+SELECT * from tab WHERE str IN ('Hello', 'World');
+SELECT * from tab WHERE str LIKE '%Hello%';
+SELECT * from tab WHERE multiSearchAny(str, ['Hello', 'World']);
+SELECT * from tab WHERE hasToken(str, 'Hello');
 ```
 
 The inverted index also works on columns of type `Array(String)`, `Array(FixedString)`, `Map(String)` and `Map(String)`.
