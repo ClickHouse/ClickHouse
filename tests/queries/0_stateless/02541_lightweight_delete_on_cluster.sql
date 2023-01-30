@@ -1,6 +1,8 @@
 -- Tags: distributed, no-parallel, no-replicated-database
 -- Tag no-replicated-database: ON CLUSTER is not allowed
 
+SET distributed_ddl_output_mode='throw';
+
 DROP DATABASE IF EXISTS 02541_db ON CLUSTER test_shard_localhost;
 CREATE DATABASE 02541_db ON CLUSTER test_shard_localhost;
 USE 02541_db;
