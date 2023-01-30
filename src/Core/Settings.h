@@ -542,7 +542,7 @@ class IColumn;
     \
     M(Bool, use_query_result_cache, false, "Enable the query result cache", 0) \
     M(Bool, enable_writes_to_query_result_cache, true, "Enable storing results of SELECT queries in the query result cache", 0) \
-    M(Bool, enable_reads_from_query_result_cache, true, "Enable retrieval of results of SELECT queries from the query result cache", 0) \
+    M(Bool, enable_reads_from_query_result_cache, true, "Enable reading results of SELECT queries from the query result cache", 0) \
     M(Bool, query_result_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query result cache", 0) \
     M(UInt64, query_result_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query result cache", 0) \
     M(Milliseconds, query_result_cache_min_query_duration, 0, "Minimum time in milliseconds for a query to run for its result to be stored in the query result cache.", 0) \
