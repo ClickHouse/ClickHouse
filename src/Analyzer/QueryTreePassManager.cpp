@@ -153,10 +153,6 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     for (size_t i = 0; i < passes_size; ++i)
     {
         passes[i]->run(query_tree_node, current_context);
-        std::cout << "after pass " << passes[i]->getName() << std::endl;
-        std::cout << "tree:" << query_tree_node->dumpTree() << std::endl;
-        std::cout << std::endl;
-
 #ifndef NDEBUG
         ValidationChecker(passes[i]->getName()).visit(query_tree_node);
 #endif

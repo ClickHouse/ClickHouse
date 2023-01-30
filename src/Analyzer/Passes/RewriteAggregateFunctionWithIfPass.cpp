@@ -60,9 +60,7 @@ public:
                 function_arguments_nodes[0] = std::move(if_arguments_nodes[1]);
                 function_arguments_nodes[1] = std::move(if_arguments_nodes[0]);
                 resolveAsAggregateFunctionWithIf(
-                    *function_node,
-                    {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()},
-                    second_const_value.isNull());
+                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
             }
         }
         else if (first_const_node)
@@ -83,21 +81,18 @@ public:
                 function_arguments_nodes[0] = std::move(if_arguments_nodes[2]);
                 function_arguments_nodes[1] = std::move(not_function);
                 resolveAsAggregateFunctionWithIf(
-                    *function_node,
-                    {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()},
-                    first_const_value.isNull());
+                    *function_node, {function_arguments_nodes[0]->getResultType(), function_arguments_nodes[1]->getResultType()});
             }
         }
     }
 
 private:
-    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types, bool contains_null)
+    static inline void resolveAsAggregateFunctionWithIf(FunctionNode & function_node, const DataTypes & argument_types)
     {
-        std::cout << "before withif:" << function_node.dumpTree() << std::endl;
-        AggregateFunctionProperties properties;
         auto result_type = function_node.getResultType();
+        AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node.getFunctionName() + (contains_null && result_type->canBeInsideNullable() ? "IfOrNull" : "If"),
+            function_node.getFunctionName() + (result_type->isNullable() ? "IfOrNull" : "If"),
             argument_types,
             function_node.getAggregateFunction()->getParameters(),
             properties);
