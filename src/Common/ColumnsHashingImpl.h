@@ -6,7 +6,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -348,11 +347,10 @@ public:
         return data.hash(keyHolderGetKey(key_holder));
     }
 
-    ALWAYS_INLINE bool isNullAt(size_t row) const {
+    ALWAYS_INLINE bool isNullAt(size_t row) const
+    {
         return assert_cast<const ColumnUInt8 &>(*null_map).getData()[row] != 0;
     }
-
-
 protected:
     Cache cache;
     const IColumn * null_map;

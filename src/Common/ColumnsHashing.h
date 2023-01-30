@@ -16,7 +16,6 @@
 #include <memory>
 #include <cassert>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -107,13 +106,13 @@ struct HashMethodOneNumberNullable
     using Base::getHash;
 
     /// Is used for default implementation in HashMethodBase.
-    Key getKeyHolder(size_t row, Arena &) const {
+    Key getKeyHolder(size_t row, Arena &) const
+    {
         return unalignedLoad<FieldType>(vec + row * sizeof(FieldType));
     }
 
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 };
-
 
 /// For the case when there is one string key.
 template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false>

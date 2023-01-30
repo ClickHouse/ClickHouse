@@ -181,7 +181,6 @@ using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTw
         TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr, DefaultHash<StringRef>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
 
-
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -234,17 +233,14 @@ struct AggregationMethodOneNumberNullable
     using Data = TData;
     using Key = typename Data::key_type;
     using Mapped = typename Data::mapped_type;
-    
     Data data;
 
     AggregationMethodOneNumberNullable() = default;
 
-    explicit AggregationMethodOneNumberNullable(size_t size_hint) : data(size_hint) { }
+    explicit AggregationMethodOneNumberNullable(size_t size_hint) : data(size_hint) {}
 
     template <typename Other>
-    explicit AggregationMethodOneNumberNullable(const Other & other) : data(other.data)
-    {
-    }
+    explicit AggregationMethodOneNumberNullable(const Other & other) : data(other.data) {}
 
     /// To use one `Method` in different threads, use different `State`.
     using State = ColumnsHashing::HashMethodOneNumberNullable<typename Data::value_type,
@@ -269,8 +265,6 @@ struct AggregationMethodOneNumberNullable
         column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
-
-
 
 /// For the case where there is one string key.
 template <typename TData>
