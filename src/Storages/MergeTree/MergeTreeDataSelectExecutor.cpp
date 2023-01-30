@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -170,9 +171,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
         if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
             && !metadata_for_reading->projections.empty())
-            throw Exception(
-                "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
-                ErrorCodes::PROJECTION_NOT_USED);
+            throw Exception(ErrorCodes::PROJECTION_NOT_USED,
+                            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1");
 
         return plan;
     }
@@ -385,9 +385,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     : static_cast<size_t>(settings.max_threads);
 
                 InputOrderInfoPtr group_by_info = query_info.projection->input_order_info;
+                SortDescription sort_description_for_merging;
                 SortDescription group_by_sort_description;
                 if (group_by_info && settings.optimize_aggregation_in_order)
+                {
                     group_by_sort_description = getSortDescriptionFromGroupBy(select_query);
+                    sort_description_for_merging = group_by_info->sort_description_for_merging;
+                }
                 else
                     group_by_info = nullptr;
 
@@ -406,9 +410,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     temporary_data_merge_threads,
                     /* storage_has_evenly_distributed_read_= */ false,
                     /* group_by_use_nulls */ false,
-                    std::move(group_by_info),
+                    std::move(sort_description_for_merging),
                     std::move(group_by_sort_description),
-                    should_produce_results_in_order_of_bucket_number);
+                    should_produce_results_in_order_of_bucket_number,
+                    settings.enable_memory_bound_merging_of_aggregation_results);
                 query_plan->addStep(std::move(aggregating_step));
             };
 
@@ -461,6 +466,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name),
         query_info.storage_limits);
     plan->addStep(std::move(step));
+    plan->addInterpreterContext(query_info.projection->context);
     return plan;
 }
 
@@ -513,14 +519,14 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         relative_sample_size.assign(sample_size_ratio->numerator, sample_size_ratio->denominator);
 
         if (relative_sample_size < 0)
-            throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative sample size");
 
         relative_sample_offset = 0;
         if (sample_offset_ratio)
             relative_sample_offset.assign(sample_offset_ratio->numerator, sample_offset_ratio->denominator);
 
         if (relative_sample_offset < 0)
-            throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative sample offset");
 
         /// Convert absolute value of the sampling (in form `SAMPLE 1000000` - how many rows to
         /// read) into the relative `SAMPLE 0.1` (how much data to read).
@@ -539,7 +545,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             relative_sample_size = 0;
 
         if (relative_sample_offset > 0 && RelativeSize(0) == relative_sample_size)
-            throw Exception("Sampling offset is incorrect because no sampling", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Sampling offset is incorrect because no sampling");
 
         if (relative_sample_offset > 1)
         {
@@ -616,10 +622,9 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         }
 
         if (size_of_universum == RelativeSize(0))
-            throw Exception(
-                "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
-                    + ". Must be one unsigned integer type",
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Invalid sampling column type in storage parameters: {}. Must be one unsigned integer type",
+                sampling_column_type->getName());
 
         if (settings.parallel_replicas_count > 1)
         {
@@ -688,7 +693,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             {
                 if (!key_condition.addCondition(
                         sampling_key.column_names[0], Range::createLeftBounded(lower, true, sampling_key.data_types[0]->isNullable())))
-                    throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -706,7 +711,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             {
                 if (!key_condition.addCondition(
                         sampling_key.column_names[0], Range::createRightBounded(upper, false, sampling_key.data_types[0]->isNullable())))
-                    throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sampling column not in primary key");
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
                 args->children.push_back(sampling_key_ast);
@@ -784,14 +789,11 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 {
     const Settings & settings = context->getSettingsRef();
 
-    /// TODO: Analyzer syntax analyzer result
-    if (settings.allow_experimental_analyzer)
-        return;
-
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
-    if (metadata_snapshot->hasPartitionKey())
+
+    if (metadata_snapshot->hasPartitionKey() && !settings.allow_experimental_analyzer)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
@@ -803,19 +805,9 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
         {
-            String msg = "Neither MinMax index by columns (";
-            bool first = true;
-            for (const String & col : minmax_columns_names)
-            {
-                if (first)
-                    first = false;
-                else
-                    msg += ", ";
-                msg += col;
-            }
-            msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
-
-            throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
+            throw Exception(ErrorCodes::INDEX_NOT_USED,
+                "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
+                fmt::join(minmax_columns_names, ", "));
         }
     }
 
@@ -1113,6 +1105,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                    );
                     if (thread_group)
                         CurrentThread::attachToIfDetached(thread_group);
 
@@ -1690,6 +1686,12 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
+
+    PostingsCacheForStore cache_in_store;
+
+    if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
+        cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
+
     for (size_t i = 0; i < ranges.size(); ++i)
     {
         const MarkRange & index_range = index_ranges[i];
@@ -1703,6 +1705,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
             // Cast to Ann condition
             auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
             if (ann_condition != nullptr)
@@ -1729,7 +1732,13 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
             }
 
-            if (!condition->mayBeTrueOnGranule(granule))
+            bool result = false;
+            if (!gin_filter_condition)
+                result = condition->mayBeTrueOnGranule(granule);
+            else
+                result = cache_in_store.store ? gin_filter_condition->mayBeTrueOnGranuleInPart(granule, cache_in_store) : true;
+
+            if (!result)
             {
                 ++granules_dropped;
                 continue;
@@ -1975,7 +1984,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             {
                 auto result = temp_part_uuids.insert(part->uuid);
                 if (!result.second)
-                    throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a part with the same UUID on the same replica.");
             }
 
             selected_parts.push_back(part_or_projection);
@@ -2009,7 +2018,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         /// Second attempt didn't help, throw an exception
         if (!select_parts(parts))
-            throw Exception("Found duplicate UUIDs while processing query.", ErrorCodes::DUPLICATED_PART_UUIDS);
+            throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
 }
 

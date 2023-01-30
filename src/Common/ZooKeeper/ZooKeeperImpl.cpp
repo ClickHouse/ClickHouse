@@ -342,7 +342,6 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
-
     /// It makes sense (especially, for async requests) to inject a fault in two places:
     /// pushRequest (before request is sent) and receiveEvent (after request was executed).
     if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
@@ -466,7 +465,7 @@ void ZooKeeper::connect(
     }
     else
     {
-        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
+        LOG_INFO(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
     }
 }
 
@@ -509,7 +508,9 @@ void ZooKeeper::receiveHandshake()
         /// It's better for faster failover than just connection drop.
         /// Implemented in clickhouse-keeper.
         if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
-            throw Exception(Error::ZCONNECTIONLOSS, "Keeper server rejected the connection during the handshake. Possibly it's overloaded, doesn't see leader or stale");
+            throw Exception(Error::ZCONNECTIONLOSS,
+                            "Keeper server rejected the connection during the handshake. "
+                            "Possibly it's overloaded, doesn't see leader or stale");
         else
             throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
     }
@@ -676,7 +677,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                 {
                     throw Exception(Error::ZOPERATIONTIMEOUT, "Operation timeout (no response) for request {} for path: {}",
-                                    earliest_operation->request->getOpNum(), earliest_operation->request->getPath());
+                        toString(earliest_operation->request->getOpNum()), earliest_operation->request->getPath());
                 }
                 waited_us += max_wait_us;
                 if (waited_us >= args.session_timeout_ms * 1000)
@@ -867,11 +868,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     /// If some thread (send/receive) already finalizing session don't try to do it
     bool already_started = finalization_started.test_and_set();
 
-    LOG_TEST(log, "Finalizing session {}: finalization_started={}, queue_finished={}, reason={}",
-             session_id, already_started, requests_queue.isFinished(), reason);
-
     if (already_started)
         return;
+
+    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
+             session_id, already_started, requests_queue.isFinished(), reason);
 
     auto expire_session_if_not_expired = [&]
     {

@@ -487,7 +487,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         rename_to->formatImpl(settings, state, frame);
     }
     else
-        throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 }
 
 bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const
@@ -509,7 +509,7 @@ bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) con
 
 bool ASTAlterQuery::isSettingsAlter() const
 {
-    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING);
+    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING) || isOneCommandTypeOnly(ASTAlterCommand::RESET_SETTING);
 }
 
 bool ASTAlterQuery::isFreezeAlter() const

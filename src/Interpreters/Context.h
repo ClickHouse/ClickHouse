@@ -14,10 +14,14 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/ThreadPool.h>
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/ColumnsDescription.h>
+#include <IO/IResourceManager.h>
+
+#include <Server/HTTP/HTTPContext.h>
 
 
 #include "config.h"
@@ -63,6 +67,7 @@ using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class BackgroundSchedulePool;
 class MergeList;
+class MovesList;
 class ReplicatedFetchList;
 class Cluster;
 class Compiler;
@@ -77,6 +82,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryLog;
+class QueryResultCache;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
@@ -106,6 +112,7 @@ class AccessControl;
 class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
+class SettingsProfileElements;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -235,6 +242,7 @@ private:
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
+    bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
@@ -370,9 +378,6 @@ private:
 
     inline static ContextPtr global_context_instance;
 
-    /// A flag, used to mark if reader needs to apply deleted rows mask.
-    bool apply_deleted_mask = true;
-
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
 public:
@@ -460,7 +465,9 @@ public:
 
     void addWarningMessage(const String & msg) const;
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name, size_t max_size);
+    void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
+    void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
+    void setTemporaryStoragePath(const String & path, size_t max_size);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -533,6 +540,10 @@ public:
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
+
+    /// Resource management related
+    ResourceManagerPtr getResourceManager() const;
+    ClassifierPtr getClassifier() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -625,7 +636,7 @@ public:
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    void killCurrentQuery();
+    void killCurrentQuery() const;
 
     bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
@@ -653,10 +664,12 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
     void checkSettingsConstraints(const SettingChange & change) const;
     void checkSettingsConstraints(const SettingsChanges & changes) const;
     void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
+    void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
     void resetSettingsToDefaultValue(const std::vector<String> & names);
@@ -775,6 +788,9 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
+    MovesList & getMovesList();
+    const MovesList & getMovesList() const;
+
     ReplicatedFetchList & getReplicatedFetchList();
     const ReplicatedFetchList & getReplicatedFetchList() const;
 
@@ -843,6 +859,11 @@ public:
     void setMMappedFileCache(size_t cache_size_in_num_entries);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void dropMMappedFileCache() const;
+
+    /// Create a cache of query results for statements which run repeatedly.
+    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records);
+    std::shared_ptr<QueryResultCache> getQueryResultCache() const;
+    void dropQueryResultCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -954,9 +975,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool applyDeletedMask() const { return apply_deleted_mask; }
-    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -1071,6 +1089,55 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+};
+
+struct HTTPContext : public IHTTPContext
+{
+    explicit HTTPContext(ContextPtr context_)
+        : context(Context::createCopy(context_))
+    {}
+
+    uint64_t getMaxHstsAge() const override
+    {
+        return context->getSettingsRef().hsts_max_age;
+    }
+
+    uint64_t getMaxUriSize() const override
+    {
+        return context->getSettingsRef().http_max_uri_size;
+    }
+
+    uint64_t getMaxFields() const override
+    {
+        return context->getSettingsRef().http_max_fields;
+    }
+
+    uint64_t getMaxFieldNameSize() const override
+    {
+        return context->getSettingsRef().http_max_field_name_size;
+    }
+
+    uint64_t getMaxFieldValueSize() const override
+    {
+        return context->getSettingsRef().http_max_field_value_size;
+    }
+
+    uint64_t getMaxChunkSize() const override
+    {
+        return context->getSettingsRef().http_max_chunk_size;
+    }
+
+    Poco::Timespan getReceiveTimeout() const override
+    {
+        return context->getSettingsRef().http_receive_timeout;
+    }
+
+    Poco::Timespan getSendTimeout() const override
+    {
+        return context->getSettingsRef().http_send_timeout;
+    }
+
+    ContextPtr context;
 };
 
 }

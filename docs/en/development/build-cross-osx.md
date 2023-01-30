@@ -1,15 +1,15 @@
 ---
 slug: /en/development/build-cross-osx
 sidebar_position: 66
-title: How to Build ClickHouse on Linux for Mac OS X 
-sidebar_label: Build on Linux for Mac OS X
+title: How to Build ClickHouse on Linux for macOS
+sidebar_label: Build on Linux for macOS
 ---
 
 
 This is for the case when you have a Linux machine and want to use it to build `clickhouse` binary that will run on OS X. 
-This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with [another instruction](../development/build-osx.md).
+This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on macOS, then proceed with [another instruction](../development/build-osx.md).
 
-The cross-build for Mac OS X is based on the [Build instructions](../development/build.md), follow them first.
+The cross-build for macOS is based on the [Build instructions](../development/build.md), follow them first.
 
 ## Install Clang-14
 

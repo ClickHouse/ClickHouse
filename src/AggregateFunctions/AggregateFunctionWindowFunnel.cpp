@@ -28,20 +28,24 @@ AggregateFunctionPtr
 createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
     if (params.empty())
-        throw Exception{"Aggregate function " + name + " requires at least one parameter: <window>, [option, [option, ...]]", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Aggregate function {} requires at least one parameter: <window>, [option, [option, ...]]",
+                        name);
 
     if (arguments.size() < 2)
-        throw Exception("Aggregate function " + name + " requires one timestamp argument and at least one event condition.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Aggregate function {} requires one timestamp argument and at least one event condition.", name);
 
     if (arguments.size() > max_events + 1)
-        throw Exception("Too many event arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many event arguments for aggregate function {}", name);
 
     for (const auto i : collections::range(1, arguments.size()))
     {
         const auto * cond_arg = arguments[i].get();
         if (!isUInt8(cond_arg))
-            throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) + " of aggregate function "
-                    + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of argument {} of aggregate function {}, must be UInt8",
+                            cond_arg->getName(), toString(i + 1), name);
     }
 
     AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionWindowFunnel, Data>(*arguments[0], arguments, params));
@@ -53,9 +57,9 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     else if (which.isDateTime())
         return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(arguments, params);
 
-    throw Exception{"Illegal type " + arguments.front().get()->getName()
-            + " of first argument of aggregate function " + name + ", must be Unsigned Number, Date, DateTime",
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of aggregate function {}, must "
+                    "be Unsigned Number, Date, DateTime", arguments.front().get()->getName(), name);
 }
 
 }

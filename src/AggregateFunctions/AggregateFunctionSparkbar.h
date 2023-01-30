@@ -261,7 +261,7 @@ private:
 public:
     AggregateFunctionSparkbar(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar>(
-        arguments, params)
+        arguments, params, std::make_shared<DataTypeString>())
     {
         width = params.at(0).safeGet<UInt64>();
         if (params.size() == 3)
@@ -281,11 +281,6 @@ public:
     String getName() const override
     {
         return "sparkbar";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeString>();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * /*arena*/) const override

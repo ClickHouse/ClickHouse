@@ -58,6 +58,9 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 /// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
 size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 
+/// Remove redundant sorting
+void tryRemoveRedundantSorting(QueryPlan::Node * root);
+
 /// Put some steps under union, so that plan optimisation could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
@@ -92,6 +95,11 @@ using Stack = std::vector<Frame>;
 /// Second pass optimizations
 void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
+
+/// Enable memory bound merging of aggregation states for remote queries
+/// in case it was enabled for local plan
+void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &);
 
 }
 

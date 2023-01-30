@@ -221,7 +221,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::finishGroup()
 void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & cursor)
 {
     if (!is_group_started)
-        throw Exception("Can't add a row to the group because it was not started.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't add a row to the group because it was not started.");
 
     for (auto & desc : def.columns_to_aggregate)
         desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->getRow());
@@ -236,7 +236,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::addRow(SortCursor & curs
 Chunk AggregatingSortedAlgorithm::AggregatingMergedData::pull()
 {
     if (is_group_started)
-        throw Exception("Can't pull chunk because group was not finished.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't pull chunk because group was not finished.");
 
     auto chunk = MergedData::pull();
     postprocessChunk(chunk, def);

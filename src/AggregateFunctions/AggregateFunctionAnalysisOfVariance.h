@@ -37,10 +37,10 @@ class AggregateFunctionAnalysisOfVariance final : public IAggregateFunctionDataH
 {
 public:
     explicit AggregateFunctionAnalysisOfVariance(const DataTypes & arguments, const Array & params)
-    : IAggregateFunctionDataHelper(arguments, params)
+        : IAggregateFunctionDataHelper(arguments, params, createResultType())
     {}
 
-    DataTypePtr getReturnType() const override
+    DataTypePtr createResultType() const
     {
         DataTypes types {std::make_shared<DataTypeNumber<Float64>>(), std::make_shared<DataTypeNumber<Float64>>() };
         Strings names {"f_statistic", "p_value"};
@@ -78,7 +78,7 @@ public:
     {
         auto f_stat = data(place).getFStatistic();
         if (std::isinf(f_stat) || isNaN(f_stat) || f_stat < 0)
-            throw Exception("F statistic is not defined or infinite for these arguments", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "F statistic is not defined or infinite for these arguments");
 
         auto p_value = data(place).getPValue(f_stat);
 

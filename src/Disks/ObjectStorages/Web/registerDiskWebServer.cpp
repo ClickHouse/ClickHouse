@@ -5,6 +5,9 @@
 #include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Common/assert_cast.h>
+#include <Common/Macros.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
@@ -23,7 +26,7 @@ void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        String uri{config.getString(config_prefix + ".endpoint")};
+        String uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
         if (!uri.ends_with('/'))

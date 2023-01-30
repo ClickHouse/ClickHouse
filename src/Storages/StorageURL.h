@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -18,6 +19,7 @@ class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 struct ConnectionTimeouts;
+class NamedCollection;
 
 /**
  * This class represents table engine for external urls.
@@ -45,7 +47,7 @@ public:
         const String & format,
         const String & uri,
         CompressionMethod compression_method,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
 
@@ -62,7 +64,7 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
+        const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by = nullptr);
 
@@ -74,7 +76,7 @@ protected:
     // For `url` table function, we use settings from current query context.
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+    HTTPHeaderEntries headers;
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
 
@@ -103,7 +105,7 @@ private:
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings & urls,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const HTTPHeaderEntries & headers,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
@@ -118,7 +120,7 @@ private:
 
     static std::optional<time_t> getLastModificationTime(
         const String & url,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const HTTPHeaderEntries & headers,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
 };
@@ -163,7 +165,7 @@ public:
         const String & comment,
         ContextPtr context_,
         const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
+        const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr);
 
@@ -179,9 +181,23 @@ public:
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
-    static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
+    struct Configuration
+    {
+        std::string url;
+        std::string http_method;
 
-    static ASTs::iterator collectHeaders(ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context);
+        std::string format = "auto";
+        std::string compression_method = "auto";
+        std::string structure = "auto";
+
+        HTTPHeaderEntries headers;
+    };
+
+    static Configuration getConfiguration(ASTs & args, ContextPtr context);
+
+    static ASTs::iterator collectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context);
+
+    static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 };
 
 

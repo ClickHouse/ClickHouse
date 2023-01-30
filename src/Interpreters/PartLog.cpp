@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
@@ -100,6 +101,7 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
 
         {"database", std::make_shared<DataTypeString>()},
         {"table", std::make_shared<DataTypeString>()},
+        {"table_uuid", std::make_shared<DataTypeUUID>()},
         {"part_name", std::make_shared<DataTypeString>()},
         {"partition_id", std::make_shared<DataTypeString>()},
         {"part_type", std::make_shared<DataTypeString>()},
@@ -137,6 +139,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(database_name);
     columns[i++]->insert(table_name);
+    columns[i++]->insert(table_uuid);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
     columns[i++]->insert(part_type.toString());
@@ -205,6 +208,7 @@ bool PartLog::addNewParts(
 
             elem.database_name = table_id.database_name;
             elem.table_name = table_id.table_name;
+            elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();

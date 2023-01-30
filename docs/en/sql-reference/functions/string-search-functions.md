@@ -351,13 +351,15 @@ In all `multiSearch*` functions the number of needles should be less than 2<sup>
 
 ## match(haystack, pattern)
 
-Checks whether the string matches the regular expression `pattern` in `re2` syntax. `Re2` has a more limited [syntax](https://github.com/google/re2/wiki/Syntax) than Perl regular expressions.
+Checks whether string `haystack` matches the regular expression `pattern`. The pattern is an [re2 regular expression](https://github.com/google/re2/wiki/Syntax) which has a more limited syntax than Perl regular expressions.
 
-Returns 0 if it does not match, or 1 if it matches.
+Returns 1 in case of a match, and 0 otherwise.
 
 Matching is based on UTF-8, e.g. `.` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes. The regular expression must not contain null bytes.
-If the haystack or pattern contain a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
+If the haystack or pattern contain a sequence of bytes that are not valid UTF-8, the behavior is undefined.
 No automatic Unicode normalization is performed, if you need it you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
+
+Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
 
 For patterns to search for substrings in a string, it is better to use LIKE or ‘position’, since they work much faster.
 
@@ -573,7 +575,7 @@ Result:
 
 **See Also**
 
--   [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+
 
 ## ngramDistance(haystack, needle)
 

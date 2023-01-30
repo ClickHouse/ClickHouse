@@ -16,7 +16,7 @@ class TableFunctionS3Cluster;
 
 /* deltaLake(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary DeltaLake table on S3.
  */
-class TableFunctionDelta : public ITableFunction
+class TableFunctionDeltaLake : public ITableFunction
 {
 public:
     static constexpr auto name = "deltaLake";

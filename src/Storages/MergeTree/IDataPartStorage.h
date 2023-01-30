@@ -1,13 +1,17 @@
 #pragma once
 #include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
-#include <Storages/MergeTree/MergeTreeDataPartState.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/WriteMode.h>
 #include <boost/core/noncopyable.hpp>
 #include <memory>
 #include <optional>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 
 namespace DB
 {
@@ -19,7 +23,6 @@ struct CanRemoveDescription
 {
     bool can_remove_anything;
     NameSet files_not_to_remove;
-
 };
 
 using CanRemoveCallback = std::function<CanRemoveDescription()>;
@@ -38,6 +41,9 @@ public:
 
     /// Name of the file that the iterator currently points to.
     virtual std::string name() const = 0;
+
+    /// Path of the file that the iterator currently points to.
+    virtual std::string path() const = 0;
 
     virtual ~IDataPartStorageIterator() = default;
 };
@@ -73,6 +79,8 @@ class IDataPartStorage : public boost::noncopyable
 public:
     virtual ~IDataPartStorage() = default;
 
+    virtual MergeTreeDataPartStorageType getType() const = 0;
+
     /// Methods to get path components of a data part.
     virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
     virtual std::string getRelativePath() const = 0;  ///                          'database/table/moving/all_1_5_1'
@@ -82,7 +90,7 @@ public:
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
-    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name) = 0;
+    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
     virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
@@ -111,8 +119,6 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
 
-    virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
-
     struct ProjectionChecksums
     {
         const std::string & name;
@@ -127,7 +133,6 @@ public:
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        MergeTreeDataPartState state,
         Poco::Logger * log) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
@@ -151,7 +156,6 @@ public:
     virtual void syncRevision(UInt64 revision) const = 0;
     virtual UInt64 getRevision() const = 0;
 
-    virtual std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const = 0;
     /// Get a path for internal disk if relevant. It is used mainly for logging.
     virtual std::string getDiskPath() const = 0;
 
@@ -165,6 +169,28 @@ public:
     /// Return some uniq string for file.
     /// Required for distinguish different copies of the same part on remote FS.
     virtual String getUniqueId() const = 0;
+
+
+    /// Represents metadata which is required for fetching of part.
+    struct ReplicatedFilesDescription
+    {
+        using InputBufferGetter = std::function<std::unique_ptr<ReadBuffer>()>;
+
+        struct ReplicatedFileDescription
+        {
+            InputBufferGetter input_buffer_getter;
+            size_t file_size;
+        };
+
+        std::map<String, ReplicatedFileDescription> files;
+
+        /// Unique string that is used to distinguish different
+        /// copies of the same part on remote disk
+        String unique_id;
+    };
+
+    virtual ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const = 0;
+    virtual ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const = 0;
 
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.
@@ -209,7 +235,16 @@ public:
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
+        WriteMode mode,
         const WriteSettings & settings) = 0;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & name,
+        size_t buf_size,
+        const WriteSettings & settings)
+    {
+        return writeFile(name, buf_size, WriteMode::Rewrite, settings);
+    }
 
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
@@ -234,16 +269,20 @@ public:
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
     ///               'moving/tmp_all_1_2_1' -> 'all_1_2_1'
     virtual void rename(
-        const std::string & new_root_path,
-        const std::string & new_part_dir,
+        std::string new_root_path,
+        std::string new_part_dir,
         Poco::Logger * log,
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
+
 
     /// Starts a transaction of mutable operations.
     virtual void beginTransaction() = 0;
     /// Commits a transaction of mutable operations.
     virtual void commitTransaction() = 0;
+    /// Prepares transaction to commit.
+    /// It may be flush of buffered data or similar.
+    virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
 };
 
@@ -270,5 +309,10 @@ public:
 private:
     MutableDataPartStoragePtr storage;
 };
+
+inline bool isFullPartStorage(const IDataPartStorage & storage)
+{
+    return storage.getType() == MergeTreeDataPartStorageType::Full;
+}
 
 }

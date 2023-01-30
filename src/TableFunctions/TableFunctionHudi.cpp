@@ -31,9 +31,9 @@ void TableFunctionHudi::parseArgumentsImpl(
     const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & base_configuration)
 {
     if (args.empty() || args.size() > 6)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
+        throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto header_it = StorageURL::collectHeaders(args, base_configuration, context);
+    auto * header_it = StorageURL::collectHeaders(args, base_configuration.headers, context);
     if (header_it != args.end())
         args.erase(header_it);
 
@@ -130,7 +130,7 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+        return StorageHudi::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);
@@ -139,8 +139,7 @@ ColumnsDescription TableFunctionHudi::getActualTableStructure(ContextPtr context
 StoragePtr TableFunctionHudi::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    Poco::URI uri(configuration.url);
-    S3::URI s3_uri(uri);
+    S3::URI s3_uri(configuration.url);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")
