@@ -58,7 +58,9 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
                 access_control->checkSettingNameIsAllowed(setting_name);
             /// Check if a CHANGEABLE_IN_READONLY is allowed.
             if (ast.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY && !access_control->doesSettingsConstraintsReplacePrevious())
-                throw Exception("CHANGEABLE_IN_READONLY for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "CHANGEABLE_IN_READONLY for {} "
+                                "is not allowed unless settings_constraints_replace_previous is enabled", setting_name);
         }
 
         value = ast.value;

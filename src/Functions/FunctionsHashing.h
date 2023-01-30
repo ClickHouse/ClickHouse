@@ -453,7 +453,7 @@ struct JavaHashImpl
     static ReturnType apply(T x)
     {
         if (std::is_unsigned_v<T>)
-            throw Exception("Unsigned types are not supported", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsigned types are not supported");
         const size_t size = sizeof(T);
         const char * data = reinterpret_cast<const char *>(&x);
         return apply(data, size);
@@ -469,7 +469,7 @@ struct JavaHashImpl
 
     static ReturnType combineHashes(Int32, Int32)
     {
-        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Java hash is not combineable for multiple arguments");
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -493,7 +493,7 @@ struct JavaHashUTF16LEImpl
         }
 
         if (size % 2 != 0)
-            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arguments for javaHashUTF16LE must be in the form of UTF-16");
 
         UInt32 h = 0;
         for (size_t i = 0; i < size; i += 2)
@@ -504,7 +504,7 @@ struct JavaHashUTF16LEImpl
 
     static Int32 combineHashes(Int32, Int32)
     {
-        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Java hash is not combineable for multiple arguments");
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -525,7 +525,7 @@ struct HiveHashImpl
 
     static Int32 combineHashes(Int32, Int32)
     {
-        throw Exception("Hive hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Hive hash is not combineable for multiple arguments");
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -669,7 +669,7 @@ struct ImplBLAKE3
         {
             auto err_st = std::string(err_msg);
             blake3_free_char_pointer(err_msg);
-            throw Exception("Function returned error message: " + err_st, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function returned error message: {}", err_st);
         }
     }
     #endif
@@ -692,8 +692,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeFixedString>(Impl::length);
     }
@@ -760,9 +760,8 @@ public:
             return col_to;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
     }
 };
 
@@ -798,9 +797,8 @@ private:
             return col_to;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of first argument of function " + Name::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), Name::name);
     }
 
 public:
@@ -814,8 +812,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isValueRepresentedByNumber())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
@@ -858,8 +856,8 @@ public:
         else if (which.isIPv4())
             return executeType<IPv4>(arguments);
         else
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(), getName());
     }
 };
 
@@ -962,9 +960,8 @@ private:
             }
         }
         else
-            throw Exception("Illegal column " + column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                column->getName(), getName());
     }
 
     template <typename FromType, bool first>
@@ -1004,9 +1001,8 @@ private:
             }
         }
         else
-            throw Exception("Illegal column " + column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                column->getName(), getName());
     }
 
     template <bool first>
@@ -1081,9 +1077,8 @@ private:
             }
         }
         else
-            throw Exception("Illegal column " + column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    column->getName(), getName());
     }
 
     template <bool first>
@@ -1132,9 +1127,8 @@ private:
             executeArray<first>(type, &*full_column, vec_to);
         }
         else
-            throw Exception("Illegal column " + column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    column->getName(), getName());
     }
 
     template <bool first>
@@ -1392,18 +1386,18 @@ public:
     {
         const auto arg_count = arguments.size();
         if (arg_count != 1 && arg_count != 2)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " +
-                toString(arg_count) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
+                "passed {}, should be 1 or 2.", getName(), arg_count);
 
         const auto * first_arg = arguments.front().get();
         if (!WhichDataType(first_arg).isString())
-            throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", first_arg->getName(), getName());
 
         if (arg_count == 2)
         {
             const auto & second_arg = arguments.back();
             if (!isInteger(second_arg))
-                throw Exception{"Illegal type " + second_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", second_arg->getName(), getName());
         }
 
         return std::make_shared<DataTypeUInt64>();
@@ -1421,7 +1415,7 @@ public:
         else if (arg_count == 2)
             return executeTwoArgs(arguments);
         else
-            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
     }
 
 private:
@@ -1451,15 +1445,15 @@ private:
             return col_to;
         }
         else
-            throw Exception{"Illegal column " + arguments[0].column->getName() +
-                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
         if (!isColumnConst(*level_col))
-            throw Exception{"Second argument of function " + getName() + " must be an integral constant", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
 
         const auto level = level_col->get64(0);
 
@@ -1487,8 +1481,8 @@ private:
             return col_to;
         }
         else
-            throw Exception{"Illegal column " + arguments[0].column->getName() +
-                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 

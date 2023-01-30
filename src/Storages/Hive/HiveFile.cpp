@@ -32,7 +32,7 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (const ::arrow::Status & _s = (status); !_s.ok())                   \
-            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
 
@@ -249,9 +249,8 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
     auto stripe_num = raw_reader->getNumberOfStripes();
     auto stripe_stats_num = raw_reader->getNumberOfStripeStatistics();
     if (stripe_num != stripe_stats_num)
-        throw Exception(
-            fmt::format("orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num),
-            ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num);
 
     split_minmax_idxes.resize(stripe_num);
     for (size_t i = 0; i < stripe_num; ++i)
