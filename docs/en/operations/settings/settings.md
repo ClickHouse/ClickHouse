@@ -1644,8 +1644,11 @@ Default value: 0 (disabled)
 
 Keeper request retry will be done after some timeout. The timeout is controlled by settings `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
 The first retry will be done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as following:
-timeout = min(max_timeout, latest_timeout *2).
-So, for example, if `insert_keeper_retry_initial_backoff_ms`=100, `insert_keeper_retry_max_backoff_ms` = 10000 and `insert_keeper_max_retries`=8 then timeouts will be 100, 200, 400, ..., 6400, 10000.
+```
+timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
+```
+
+For example, if `insert_keeper_retry_initial_backoff_ms`=100, `insert_keeper_retry_max_backoff_ms`=10000 and `insert_keeper_max_retries`=8 then timeouts will be `100, 200, 400, ..., 3200, 6400, 10000`.
 
 Apart from fault tolerance, it aims to provide better user experience, - avoid returning a user an error during INSERT execution if keeper is restarted (for example, due to upgrade)
 
@@ -1655,19 +1658,21 @@ Initial timeout(in milliseconds) to retry failed Keeper request during INSERT qu
 
 Possible values:
 
-- 0 or a positive integer
+-   Positive integer.
+-   0 — No timeout
 
-Default value: 100 milliseconds
+Default value: 100
 
 ## insert_keeper_retry_max_backoff_ms {#insert_keeper_retry_max_backoff_ms}
 
-Max timeout(in milliseconds) to retry failed Keeper request during INSERT into Rquery execution
+Maximum timeout(in milliseconds) to retry failed Keeper request during INSERT into Rquery execution
 
 Possible values:
 
-- 0 or a positive integer
+-   Positive integer.
+-   0 — Maximum timeout is not limited
 
-Default value: 0 (disabled)
+Default value: 10000
 
 ## max_network_bytes {#settings-max-network-bytes}
 
