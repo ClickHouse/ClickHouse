@@ -1651,7 +1651,7 @@ timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
 
 For example, if `insert_keeper_retry_initial_backoff_ms=100`, `insert_keeper_retry_max_backoff_ms=10000` and `insert_keeper_max_retries=8` then timeouts will be `100, 200, 400, 800, 1600, 3200, 6400, 10000`.
 
-Apart from fault tolerance, the retries aims to provide better user experience, - they allow to avoid returning a user an error during INSERT execution if Keeper is restarted, for example, due to upgrade.
+Apart from fault tolerance, the retries aim to provide a better user experience - they allow to avoid returning an error during INSERT execution if Keeper is restarted, for example, due to an upgrade.
 
 ## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms}
 
