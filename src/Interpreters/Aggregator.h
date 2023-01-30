@@ -209,10 +209,19 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
     {
-        FieldType casted_key = static_cast<FieldType>(key);
-        const auto * key_holder = reinterpret_cast<const char *>(&casted_key);
+	static_assert(sizeof(FieldType) <= sizeof(Key));
 	auto * column = static_cast<ColumnVectorHelper *>(key_columns[0]);
-        column->insertRawData<sizeof(FieldType)>(key_holder);
+        if constexpr (sizeof(FieldType) < sizeof(Key) && std::endian::native == std::endian::little)
+	{
+	    const auto * key_holder = reinterpret_cast<const char *>(&key);
+	    column->insertRawData<sizeof(FieldType)>(key_holder + (sizeof(Key) - sizeof(FieldType)));
+	}
+	else
+        {  
+	    FieldType casted_key = static_cast<FieldType>(key);
+            const auto * key_holder = reinterpret_cast<const char *>(&casted_key);	    
+	    column->insertRawData<sizeof(FieldType)>(key_holder);
+	}
     }
 };
 
