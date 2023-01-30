@@ -38,7 +38,6 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/RewriteSumIfFunctionVisitor.h>
-#include <Interpreters/RewriteAggregateFunctionWithIfVisitor.h>
 
 namespace DB
 {
@@ -659,12 +658,6 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
-void optimizeAggregateFunctionsWithIf(ASTPtr & query)
-{
-    RewriteAggregateFunctionWithIfVisitor::Data data = {};
-    RewriteAggregateFunctionWithIfVisitor(data).visit(query);
-}
-
 void optimizeMultiIfToIf(ASTPtr & query)
 {
     OptimizeMultiIfToIfVisitor::Data data;
@@ -793,9 +786,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_multiif_to_if)
         optimizeMultiIfToIf(query);
-
-    if (settings.optimize_rewrite_aggregate_function_with_if)
-        optimizeAggregateFunctionsWithIf(query);
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
