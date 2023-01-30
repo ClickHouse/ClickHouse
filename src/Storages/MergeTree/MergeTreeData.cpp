@@ -1856,7 +1856,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
     size_t cleared_count = 0;
 
-    /// Delete temporary directories older than a day.
+    /// Delete temporary directories older than a the specified age.
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())

@@ -326,7 +326,6 @@ The server successfully detected this situation and will download merged part fr
     M(S3ListObjects, "Number of S3 API ListObjects calls.") \
     M(S3HeadObject,  "Number of S3 API HeadObject calls.") \
     M(S3GetObjectAttributes, "Number of S3 API GetObjectAttributes calls.") \
-    M(S3GetObjectMetadata, "Number of S3 API GetObject calls for getting metadata.") \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.") \
     M(S3UploadPart, "Number of S3 API UploadPart calls.") \
@@ -340,7 +339,6 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
     M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.") \
     M(DiskS3GetObjectAttributes, "Number of DiskS3 API GetObjectAttributes calls.") \
-    M(DiskS3GetObjectMetadata, "Number of DiskS3 API GetObject calls for getting metadata.") \
     M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.") \
     M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.") \
     M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.") \
