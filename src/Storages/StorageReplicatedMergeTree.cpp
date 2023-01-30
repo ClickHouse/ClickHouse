@@ -7538,7 +7538,7 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         Poco::Event target_entry_event;
         auto callback = [&target_entry_event, &wait_for_ids, waiting_for_log_entry_id](size_t new_queue_size, const String & removed_log_entry_id)
         {
-            if (removed_log_entry_id.compare(wait_for_ids.at(0)) == 0)
+            if (removed_log_entry_id == wait_for_ids.at(0))
             {
                 wait_for_ids.erase(wait_for_ids.begin());
             }

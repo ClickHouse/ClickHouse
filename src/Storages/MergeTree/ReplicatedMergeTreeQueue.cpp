@@ -2479,6 +2479,10 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
+    /// Notify if queue is empty
+    if (queue.empty())
+        (*it)(0,"");
+
     return SubscriberHandler(it, *this);
 }
 
