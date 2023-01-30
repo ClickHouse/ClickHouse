@@ -102,7 +102,7 @@ public:
     /// If it is a specialized codec for floating-point time series. Applying it to non-floating point data is suspicious.
     virtual bool isFloatingPointTimeSeriesCodec() const { return false; }
 
-    /// If the codec's purpose is to calculate deltas betwen consecutive values.
+    /// If the codec's purpose is to calculate deltas between consecutive values.
     virtual bool isDeltaCompression() const { return false; }
 
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
