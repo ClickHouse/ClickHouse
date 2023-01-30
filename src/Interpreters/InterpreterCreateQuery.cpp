@@ -924,6 +924,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (create.storage && !create.storage->engine)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table: must be either ENGINE = Memory or empty");
         */
+
+        if (!create.cluster.empty())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
+
+        if (create.storage && create.storage->engine && create.storage->engine->name.starts_with("Replicated"))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated table engines");
+
         if (!create.storage)
         {
             auto engine_ast = std::make_shared<ASTFunction>();
