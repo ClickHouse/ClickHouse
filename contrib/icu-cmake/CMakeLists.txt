@@ -1,7 +1,7 @@
 if (OS_LINUX)
     option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
 else ()
-    option(ENABLE_ICU "Enable ICU" 1)
+    option(ENABLE_ICU "Enable ICU" 0)
 endif ()
 
 if (NOT ENABLE_ICU)
