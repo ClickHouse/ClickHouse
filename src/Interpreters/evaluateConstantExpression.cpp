@@ -86,12 +86,14 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     expr_for_constant_folding->execute(block_with_constants);
 
     if (!block_with_constants || block_with_constants.rows() == 0)
-        throw Exception("Logical error: empty block after evaluation of constant expression for IN, VALUES or LIMIT or aggregate function parameter",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Logical error: empty block after evaluation "
+                        "of constant expression for IN, VALUES or LIMIT or aggregate function parameter");
 
     if (!block_with_constants.has(name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Element of set in IN, VALUES or LIMIT or aggregate function parameter is not a constant expression (result column not found): {}", name);
+                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
+                        "is not a constant expression (result column not found): {}", name);
 
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
@@ -99,7 +101,8 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     /// Expressions like rand() or now() are not constant
     if (!isColumnConst(result_column))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Element of set in IN, VALUES or LIMIT or aggregate function parameter is not a constant expression (result column is not const): {}", name);
+                        "Element of set in IN, VALUES or LIMIT or aggregate function parameter "
+                        "is not a constant expression (result column is not const): {}", name);
 
     return std::make_pair(result_column[0], result.type);
 }

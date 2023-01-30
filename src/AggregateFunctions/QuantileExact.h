@@ -38,7 +38,7 @@ struct QuantileExactBase
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
-        throw Exception("Method add with weight is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for QuantileExact");
     }
 
     void merge(const QuantileExactBase & rhs) { array.insert(rhs.array.begin(), rhs.array.end()); }
@@ -133,7 +133,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
         if (!array.empty())
         {
             if (level == 0. || level == 1.)
-                throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
 
             Float64 h = level * (array.size() + 1);
             auto n = static_cast<size_t>(h);
@@ -161,7 +161,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             {
                 auto level = levels[indices[i]];
                 if (level == 0. || level == 1.)
-                    throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
 
                 Float64 h = level * (array.size() + 1);
                 auto n = static_cast<size_t>(h);

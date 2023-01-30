@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 class IOutputFormat;
@@ -155,7 +156,7 @@ public:
         , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
-            throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
+            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Expression can not have wildcards inside bucket name");
 
         const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
 
@@ -170,10 +171,15 @@ public:
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
+        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
 
         outcome_future = listObjectsAsync();
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
+
         recursive = globbed_uri.key == "/**" ? true : false;
         fillInternalBufferAssumeLocked();
     }
@@ -209,7 +215,24 @@ private:
         if (is_finished)
             return {};
 
-        fillInternalBufferAssumeLocked();
+        try
+        {
+            fillInternalBufferAssumeLocked();
+        }
+        catch (...)
+        {
+            /// In case of exception thrown while listing new batch of files
+            /// iterator may be partially initialized and its further using may lead to UB.
+            /// Iterator is used by several processors from several threads and
+            /// it may take some time for threads to stop processors and they
+            /// may still use this iterator after exception is thrown.
+            /// To avoid this UB, reset the buffer and return defaults for further calls.
+            is_finished = true;
+            buffer.clear();
+            buffer_iter = buffer.begin();
+            throw;
+        }
+
         return nextAssumeLocked();
     }
 
@@ -221,9 +244,11 @@ private:
         auto outcome = outcome_future.get();
 
         if (!outcome.IsSuccess())
+        {
             throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
                             quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
                             backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+        }
 
         const auto & result_batch = outcome.GetResult().GetContents();
 
@@ -444,7 +469,7 @@ public:
             /// (which means we eventually need this info anyway, so it should be ok to do it now)
             if (object_infos_)
             {
-                info = S3::getObjectInfo(client_, bucket, key, version_id_, true, false);
+                info = S3::getObjectInfo(client_, bucket, key, version_id_);
                 total_size += info->size;
 
                 String path = fs::path(bucket) / key;
@@ -554,24 +579,13 @@ StorageS3Source::StorageS3Source(
         reader_future = createReaderAsync();
 }
 
-
-void StorageS3Source::onCancel()
-{
-    std::lock_guard lock(reader_mutex);
-    if (reader)
-        reader->cancel();
-}
-
-
 StorageS3Source::ReaderHolder StorageS3Source::createReader()
 {
     auto [current_key, info] = (*file_iterator)();
     if (current_key.empty())
         return {};
 
-    size_t object_size = info
-        ? info->size
-        : S3::getObjectSize(*client, bucket, current_key, version_id, true, false);
+    size_t object_size = info ? info->size : S3::getObjectSize(*client, bucket, current_key, version_id);
 
     int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
     auto read_buf = wrapReadBufferWithCompressionMethod(
@@ -685,8 +699,12 @@ Chunk StorageS3Source::generate()
 {
     while (true)
     {
-        if (!reader || isCancelled())
+        if (isCancelled() || !reader)
+        {
+            if (reader)
+                reader->cancel();
             break;
+        }
 
         Chunk chunk;
         if (reader->pull(chunk))
@@ -718,21 +736,19 @@ Chunk StorageS3Source::generate()
             return chunk;
         }
 
-        {
-            std::lock_guard lock(reader_mutex);
 
-            assert(reader_future.valid());
-            reader = reader_future.get();
+        assert(reader_future.valid());
+        reader = reader_future.get();
 
-            if (!reader)
-                break;
+        if (!reader)
+            break;
 
-            /// Even if task is finished the thread may be not freed in pool.
-            /// So wait until it will be freed before scheduling a new task.
-            create_reader_pool.wait();
-            reader_future = createReaderAsync();
-        }
+        /// Even if task is finished the thread may be not freed in pool.
+        /// So wait until it will be freed before scheduling a new task.
+        create_reader_pool.wait();
+        reader_future = createReaderAsync();
     }
+
     return {};
 }
 
@@ -1123,7 +1139,8 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     else
     {
         if (is_key_with_globs)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
 
         bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
 
@@ -1144,11 +1161,12 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             }
             else
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Object in bucket {} with key {} already exists. If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-                    "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-                    s3_configuration.uri.bucket,
-                    keys.back());
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Object in bucket {} with key {} already exists. "
+                                "If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
+                                "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
+                                s3_configuration.uri.bucket,
+                                keys.back());
         }
 
         return std::make_shared<StorageS3Sink>(
@@ -1168,7 +1186,8 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     updateS3Configuration(local_context, s3_configuration);
 
     if (is_key_with_globs)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "S3 key '{}' contains globs, so the table is in readonly mode", s3_configuration.uri.key);
 
     Aws::S3::Model::Delete delkeys;
 
@@ -1188,7 +1207,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw Exception(std::to_string(static_cast<int>(err.GetErrorType())) + ": " + err.GetMessage(), ErrorCodes::S3_ERROR);
+        throw Exception(ErrorCodes::S3_ERROR, "{}: {}", std::to_string(static_cast<int>(err.GetErrorType())), err.GetMessage());
     }
 }
 
@@ -1278,9 +1297,9 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
 
         if (engine_args.empty() || engine_args.size() > 5)
-            throw Exception(
-                "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage S3 requires 1 to 5 arguments: "
+                            "url, [access_key_id, secret_access_key], name of used format and [compression_method].");
 
         auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers, local_context);
         if (header_it != engine_args.end())
@@ -1368,9 +1387,8 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
             if (first)
                 throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                    "Cannot extract table structure from {} format file, because there are no files with provided path in S3. You must specify "
-                    "table structure manually",
-                    format);
+                    "Cannot extract table structure from {} format file, because there are no files with provided path "
+                    "in S3. You must specify table structure manually", format);
 
             return nullptr;
         }
@@ -1523,7 +1541,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
                 /// Note that in case of exception in getObjectInfo returned info will be empty,
                 /// but schema cache will handle this case and won't return columns from cache
                 /// because we can't say that it's valid without last modification time.
-                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, false, false);
+                info = S3::getObjectInfo(*s3_configuration.client, s3_configuration.uri.bucket, *it, s3_configuration.uri.version_id, {}, /* throw_on_error= */ false);
                 if (object_infos)
                     (*object_infos)[path] = info;
             }

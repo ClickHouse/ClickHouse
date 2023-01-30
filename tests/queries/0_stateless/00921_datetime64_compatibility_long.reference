@@ -28,7 +28,7 @@ SELECT toDayOfMonth(N, \'Asia/Istanbul\')
 "UInt8",16
 "UInt8",16
 ------------------------------------------
-SELECT toDayOfWeek(N, \'Asia/Istanbul\')
+SELECT toDayOfWeek(N, 0, \'Asia/Istanbul\')
 "UInt8",1
 "UInt8",1
 "UInt8",1

@@ -76,33 +76,32 @@ namespace DB
         {
             const auto * sketch_type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
             if (!(sketch_type0 && sketch_type0->getFunctionName() == "uniqTheta"))
-                throw Exception(
-                        "First argument for function " + getName() + " must be a uniqTheta but it has type " + arguments[0]->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "First argument for function {} must be a uniqTheta but it has type {}",
+                                getName(), arguments[0]->getName());
 
             const auto * sketch_type1 = typeid_cast<const DataTypeAggregateFunction *>(arguments[1].get());
             if (!(sketch_type1 && sketch_type1->getFunctionName() == "uniqTheta"))
-                throw Exception(
-                        "Second argument for function " + getName() + " must be a uniqTheta but it has type " + arguments[1]->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Second argument for function {} must be a uniqTheta but it has type {}",
+                                getName(), arguments[1]->getName());
 
             const DataTypes & arg_data_types0 = sketch_type0->getArgumentsDataTypes();
             const DataTypes & arg_data_types1 = sketch_type1->getArgumentsDataTypes();
 
             if (arg_data_types0.size() != arg_data_types1.size())
-                throw Exception(
-                        "The nested type in uniqThetas must be the same length, but one is " + std::to_string(arg_data_types0.size())
-                        + ", and the other is " + std::to_string(arg_data_types1.size()),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The nested type in uniqThetas must be the same length, "
+                                "but one is {}, and the other is {}", arg_data_types0.size(), arg_data_types1.size());
 
             size_t types_size = arg_data_types0.size();
             for (size_t i = 0; i < types_size; ++i)
             {
                 if (!arg_data_types0[i]->equals(*arg_data_types1[i]))
-                    throw Exception(
-                            "The " + std::to_string(i) + "th nested type in uniqThetas must be the same, but one is " + arg_data_types0[i]->getName()
-                            + ", and the other is " + arg_data_types1[i]->getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                    "The {}th nested type in uniqThetas must be the same, "
+                                    "but one is {}, and the other is {}",
+                                    i, arg_data_types0[i]->getName(), arg_data_types1[i]->getName());
             }
 
 

@@ -602,7 +602,7 @@ std::string_view obfuscateWord(std::string_view src, WordMap & obfuscate_map, Wo
 {
     /// Prevent using too many nouns
     if (obfuscate_map.size() * 2 > nouns.size())
-        throw Exception("Too many unique identifiers in queries", ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
+        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS, "Too many unique identifiers in queries");
 
     std::string_view & mapped = obfuscate_map[src];
     if (!mapped.empty())
