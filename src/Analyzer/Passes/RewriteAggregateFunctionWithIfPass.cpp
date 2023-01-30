@@ -100,9 +100,7 @@ private:
             function_node.getAggregateFunction()->getParameters(),
             properties);
 
-        std::cout << "functionname:" << aggregate_function->getName() << std::endl;
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
-        std::cout << "functionnode:" << function_node.dumpTree() << std::endl;
     }
 };
 
