@@ -11,6 +11,7 @@
 #include <Functions/FunctionsConversion.h>
 
 #include <IO/S3Common.h>
+#include <IO/S3/Requests.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -52,9 +53,6 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -364,7 +362,7 @@ private:
     KeysWithInfo buffer;
     KeysWithInfo::iterator buffer_iter;
 
-    Aws::S3::S3Client client;
+    S3::S3Client client;
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;
@@ -376,7 +374,7 @@ private:
     ObjectInfos * object_infos;
     Strings * read_keys;
 
-    Aws::S3::Model::ListObjectsV2Request request;
+    S3::ListObjectsV2Request request;
     S3Settings::RequestSettings request_settings;
 
     ThreadPool list_objects_pool;
@@ -1199,7 +1197,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     }
 
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
-    Aws::S3::Model::DeleteObjectsRequest request;
+    S3::DeleteObjectsRequest request;
     request.SetBucket(s3_configuration.uri.bucket);
     request.SetDelete(delkeys);
 
@@ -1209,6 +1207,9 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
         const auto & err = response.GetError();
         throw Exception(ErrorCodes::S3_ERROR, "{}: {}", std::to_string(static_cast<int>(err.GetErrorType())), err.GetMessage());
     }
+
+    for (const auto & error : response.GetResult().GetErrors())
+        LOG_WARNING(&Poco::Logger::get("StorageS3"), "Failed to delete {}, error: {}", error.GetKey(), error.GetMessage());
 }
 
 

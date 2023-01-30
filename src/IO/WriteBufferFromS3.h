@@ -14,6 +14,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
+#include <IO/S3/Requests.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 

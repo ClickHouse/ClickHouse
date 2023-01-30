@@ -33,7 +33,6 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <memory>
 #include <string>

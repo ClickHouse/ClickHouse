@@ -7,8 +7,8 @@
 #include <IO/ReadBufferFromS3.h>
 
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/HeadObjectRequest.h>
+
+#include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
@@ -280,7 +280,7 @@ SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    Aws::S3::Model::GetObjectRequest req;
+    S3::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
     if (!version_id.empty())

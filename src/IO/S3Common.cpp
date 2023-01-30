@@ -1,4 +1,5 @@
 #include <IO/S3Common.h>
+#include <aws/core/endpoint/EndpointParameter.h>
 
 #include <Common/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -16,7 +17,6 @@
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
 #    include <aws/core/auth/STSCredentialsProvider.h>
-#    include <aws/core/client/DefaultRetryStrategy.h>
 #    include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #    include <aws/core/platform/Environment.h>
 #    include <aws/core/platform/OSVersionInfo.h>
@@ -27,12 +27,11 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/GetObjectAttributesRequest.h>
-#    include <aws/s3/model/GetObjectRequest.h>
-#    include <aws/s3/model/HeadObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/S3Client.h>
+#    include <IO/S3/Requests.h>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
 #    include <boost/algorithm/string/case_conv.hpp>
@@ -705,90 +704,32 @@ public:
     }
 };
 
-/// Extracts the endpoint from a constructed S3 client.
-String getEndpoint(const Aws::S3::S3Client & client)
-{
-    const auto * endpoint_provider = dynamic_cast<const Aws::S3::Endpoint::S3DefaultEpProviderBase *>(const_cast<Aws::S3::S3Client &>(client).accessEndpointProvider().get());
-    if (!endpoint_provider)
-        return {};
-    String endpoint;
-    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
-    return endpoint;
-}
-
 /// Performs a request to get the size and last modification time of an object.
-/// The function performs either HeadObject or GetObjectAttributes request depending on the endpoint.
 std::pair<std::optional<DB::S3::ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
     const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
 {
-    auto endpoint = getEndpoint(client);
-    bool use_get_object_attributes_request = (endpoint.find(".amazonaws.com") != String::npos);
+    ProfileEvents::increment(ProfileEvents::S3HeadObject);
+    if (for_disk_s3)
+        ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
 
-    if (use_get_object_attributes_request)
+    DB::S3::HeadObjectRequest req;
+    req.SetBucket(bucket);
+    req.SetKey(key);
+
+    if (!version_id.empty())
+        req.SetVersionId(version_id);
+
+    auto outcome = client.HeadObject(req);
+    if (outcome.IsSuccess())
     {
-        /// It's better not to use `HeadObject` requests for AWS S3 because they don't work well with the global region.
-        /// Details: `HeadObject` request never returns a response body (even if there is an error) however
-        /// if the request was sent without specifying a region in the endpoint (i.e. for example "https://test.s3.amazonaws.com/mydata.csv"
-        /// instead of "https://test.s3-us-west-2.amazonaws.com/mydata.csv") then that response body is one of the main ways
-        /// to determine the correct region and try to repeat the request again with the correct region.
-        /// For any other request type (`GetObject`, `ListObjects`, etc.) AWS SDK does that because they have response bodies,
-        /// but for `HeadObject` there is no response body so this way doesn't work. That's why we use `GetObjectAttributes` request instead.
-        /// See https://github.com/aws/aws-sdk-cpp/issues/1558 and also the function S3ErrorMarshaller::ExtractRegion() for more information.
-
-        ProfileEvents::increment(ProfileEvents::S3GetObjectAttributes);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectAttributes);
-
-        Aws::S3::Model::GetObjectAttributesRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        req.SetObjectAttributes({Aws::S3::Model::ObjectAttributes::ObjectSize});
-
-        auto outcome = client.GetObjectAttributes(req);
-        if (outcome.IsSuccess())
-        {
-            const auto & result = outcome.GetResult();
-            DB::S3::ObjectInfo object_info;
-            object_info.size = static_cast<size_t>(result.GetObjectSize());
-            object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
-            return {object_info, {}};
-        }
-
-        return {std::nullopt, outcome.GetError()};
+        const auto & result = outcome.GetResult();
+        DB::S3::ObjectInfo object_info;
+        object_info.size = static_cast<size_t>(result.GetContentLength());
+        object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
+        return {object_info, {}};
     }
-    else
-    {
-        /// By default we use `HeadObject` requests.
-        /// We cannot just use `GetObjectAttributes` requests always because some S3 providers (e.g. Minio)
-        /// don't support `GetObjectAttributes` requests.
 
-        ProfileEvents::increment(ProfileEvents::S3HeadObject);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
-
-        Aws::S3::Model::HeadObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        auto outcome = client.HeadObject(req);
-        if (outcome.IsSuccess())
-        {
-            const auto & result = outcome.GetResult();
-            DB::S3::ObjectInfo object_info;
-            object_info.size = static_cast<size_t>(result.GetContentLength());
-            object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
-            return {object_info, {}};
-        }
-
-        return {std::nullopt, outcome.GetError()};
-    }
+    return {std::nullopt, outcome.GetError()};
 }
 
 }
@@ -862,7 +803,8 @@ namespace S3
                 use_environment_credentials,
                 use_insecure_imds_request);
 
-        return std::make_unique<Aws::S3::S3Client>(
+        client_configuration.retryStrategy = std::make_shared<S3Client::RetryStrategy>(1, 1000);
+        return std::make_unique<S3Client>(
             std::move(credentials_provider),
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
@@ -998,7 +940,7 @@ namespace S3
         else if (throw_on_error)
         {
             throw DB::Exception(ErrorCodes::S3_ERROR,
-                "Failed to get object attributes: {}. HTTP response code: {}",
+                "Failed to get object attributes: '{}'. HTTP response code: {}",
                 error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
         }
         return {};
@@ -1038,20 +980,14 @@ namespace S3
         if (for_disk_s3)
             ProfileEvents::increment(ProfileEvents::DiskS3GetObjectMetadata);
 
-        /// We must not use the `HeadObject` request, see the comment about `HeadObjectRequest` in S3Common.h.
-
-        Aws::S3::Model::GetObjectRequest req;
+        HeadObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
-
-        /// Only the first byte will be read.
-        /// We don't need that first byte but the range should be set otherwise the entire object will be read.
-        req.SetRange("bytes=0-0");
 
         if (!version_id.empty())
             req.SetVersionId(version_id);
 
-        auto outcome = client.GetObject(req);
+        auto outcome = client.HeadObject(req);
 
         if (outcome.IsSuccess())
             return outcome.GetResult().GetMetadata();

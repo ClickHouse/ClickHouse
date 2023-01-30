@@ -19,7 +19,6 @@
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
-#include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
 
 #include <filesystem>
