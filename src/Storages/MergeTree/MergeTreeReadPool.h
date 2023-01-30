@@ -13,6 +13,18 @@ namespace DB
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
+
+class IMergeTreeReadPool
+{
+public:
+    virtual MergeTreeReadTaskPtr getTask(size_t thread) = 0;
+    virtual Block getHeader() const = 0;
+    virtual void profileFeedback(ReadBufferFromFileBase::ProfileInfo info) = 0;
+    virtual ~IMergeTreeReadPool() = default;
+};
+
+using IMergeTreeReadPoolPtr = std::shared_ptr<IMergeTreeReadPool>;
+
 /**   Provides read tasks for MergeTreeThreadSelectProcessor`s in fine-grained batches, allowing for more
  *    uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
  *    workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
@@ -20,7 +32,7 @@ using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
  *    it's workload, it either is signaled that no more work is available (`do_not_steal_tasks == false`) or
  *    continues taking small batches from other threads' workloads (`do_not_steal_tasks == true`).
  */
-class MergeTreeReadPool : private boost::noncopyable
+class MergeTreeReadPool final: public IMergeTreeReadPool, private boost::noncopyable
 {
 public:
     /** Pull could dynamically lower (backoff) number of threads, if read operation are too slow.
@@ -82,28 +94,30 @@ public:
         size_t preferred_block_size_bytes_,
         bool do_not_steal_tasks_ = false);
 
-    MergeTreeReadTaskPtr getTask(size_t min_marks_to_read, size_t thread, const Names & ordered_names);
+    ~MergeTreeReadPool() override = default;
+    MergeTreeReadTaskPtr getTask(size_t thread) override;
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
       * This allows to overcome excessive load to disk subsystem, when reads are not from page cache.
       */
-    void profileFeedback(ReadBufferFromFileBase::ProfileInfo info);
+    void profileFeedback(ReadBufferFromFileBase::ProfileInfo info) override;
 
-    Block getHeader() const;
+    Block getHeader() const override;
 
 private:
     std::vector<size_t> fillPerPartInfo(const RangesInDataParts & parts);
 
     void fillPerThreadInfo(
         size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-        const RangesInDataParts & parts, size_t min_marks_for_concurrent_read);
+        const RangesInDataParts & parts);
 
     StorageSnapshotPtr storage_snapshot;
     const Names column_names;
     const Names virtual_column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
+    size_t min_marks_for_concurrent_read{0};
 
     struct PerPartParams
     {

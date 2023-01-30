@@ -1,34 +1,34 @@
-#include <vector>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/ResizeProcessor.h>
-#include <Processors/LimitTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
-#include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/MergeJoinTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
+#include <Common/typeid_cast.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Common/typeid_cast.h>
-#include <Common/CurrentThread.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/ConcatProcessor.h>
-#include <Core/SortDescription.h>
-#include <QueryPipeline/narrowPipe.h>
 #include <Processors/DelayedPortsProcessor.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/ResizeProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ExtremesTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MergeJoinTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
+#include <QueryPipeline/narrowPipe.h>
 
 namespace DB
 {
@@ -618,6 +618,41 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatusPtr elem)
 void QueryPipelineBuilder::setProgressCallback(ProgressCallback callback)
 {
     progress_callback = callback;
+}
+
+void QueryPipelineBuilder::connectDependencies()
+{
+    std::vector<RemoteSource *> input_dependencies;
+    std::vector<ReadFromMergeTreeDependencyTransform *> output_dependencies;
+
+    for (auto & processor : *pipe.getProcessorsPtr())
+    {
+        if (auto * remote_dependency = typeid_cast<RemoteSource *>(processor.get()); remote_dependency)
+            input_dependencies.emplace_back(remote_dependency);
+        if (auto * merge_tree_dependency = typeid_cast<ReadFromMergeTreeDependencyTransform *>(processor.get()); merge_tree_dependency)
+            output_dependencies.emplace_back(merge_tree_dependency);
+    }
+
+    if (input_dependencies.empty() || output_dependencies.empty())
+        return;
+
+    auto input_dependency_iter = input_dependencies.begin();
+    auto output_dependency_iter = output_dependencies.begin();
+    auto scheduler = std::make_shared<ResizeProcessor>(Block{}, input_dependencies.size(), output_dependencies.size());
+
+    for (auto & scheduler_input : scheduler->getInputs())
+    {
+        (*input_dependency_iter)->connectToScheduler(scheduler_input);
+        ++input_dependency_iter;
+    }
+
+    for (auto & scheduler_output : scheduler->getOutputs())
+    {
+        (*output_dependency_iter)->connectToScheduler(scheduler_output);
+        ++output_dependency_iter;
+    }
+
+    pipe.getProcessorsPtr()->emplace_back(std::move(scheduler));
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()

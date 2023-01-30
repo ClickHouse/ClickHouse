@@ -1,4 +1,4 @@
--- Tags: no-tsan
+-- Tags: no-tsan, no-parallel-replicas
 
 DROP TABLE IF EXISTS mixed_granularity_table;
 

@@ -448,6 +448,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    if (joined_tables.tablesCount() > 1 && settings.allow_experimental_parallel_reading_from_replicas)
+    {
+        LOG_WARNING(log, "Joins are not supported with parallel replicas. Query will be executed without using them.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
+    }
+
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
@@ -542,6 +548,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.is_parameterized_view,
             parameter_values,
             parameter_types);
+
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
@@ -1902,22 +1909,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
-void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
-{
-    context->getClientInfo().collaborate_with_initiator = true;
-    context->setMergeTreeReadTaskCallback(std::move(callback));
-}
-
-void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t replica_count)
-{
-    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    context->getClientInfo().count_participating_replicas = replica_count;
-    context->getClientInfo().number_of_current_replica = replica_num;
-    context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
-    context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
-    context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-}
-
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 {
     return row_policy_filter;
@@ -2574,12 +2565,13 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
         && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
+    const bool parallel_replicas_from_merge_tree = storage->isMergeTree() && context->canUseParallelReplicasOnInitiator();
 
     executeMergeAggregatedImpl(
         query_plan,
         overflow_row,
         final,
-        storage && storage->isRemote(),
+        storage && (storage->isRemote() || parallel_replicas_from_merge_tree),
         has_grouping_sets,
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 select '-- check that distinct with and w/o optimization produce the same result';
 
 drop table if exists distinct_in_order sync;

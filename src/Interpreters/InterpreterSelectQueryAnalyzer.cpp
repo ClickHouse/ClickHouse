@@ -140,20 +140,4 @@ void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & el
     elem.query_kind = "Select";
 }
 
-void InterpreterSelectQueryAnalyzer::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
-{
-    context->getClientInfo().collaborate_with_initiator = true;
-    context->setMergeTreeReadTaskCallback(std::move(callback));
-}
-
-void InterpreterSelectQueryAnalyzer::setProperClientInfo(size_t replica_number, size_t count_participating_replicas)
-{
-    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    context->getClientInfo().number_of_current_replica = replica_number;
-    context->getClientInfo().count_participating_replicas = count_participating_replicas;
-    context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
-    context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
-    context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-}
-
 }

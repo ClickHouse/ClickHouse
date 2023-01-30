@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 SELECT * FROM
 (
 	SELECT UserID AS id, 1 AS event

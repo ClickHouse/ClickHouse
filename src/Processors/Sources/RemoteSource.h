@@ -14,7 +14,7 @@ using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
 class RemoteQueryExecutorReadContext;
 
 /// Source from RemoteQueryExecutor. Executes remote query and returns query result chunks.
-class RemoteSource : public ISource
+class RemoteSource final : public ISource
 {
 public:
     /// Flag add_aggregation_info tells if AggregatedChunkInfo should be added to result chunk.
@@ -25,6 +25,8 @@ public:
 
     Status prepare() override;
     String getName() const override { return "Remote"; }
+
+    void connectToScheduler(InputPort & input_port);
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
 
@@ -45,6 +47,8 @@ private:
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeLimitCounterPtr rows_before_limit;
+
+    OutputPort * dependency_port{nullptr};
 
     const bool async_read;
     bool is_async_state = false;
