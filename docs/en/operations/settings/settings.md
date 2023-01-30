@@ -1655,7 +1655,7 @@ Apart from fault tolerance, the retries aim to provide a better user experience 
 
 ## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms}
 
-Initial timeout(in milliseconds) to retry failed Keeper request during INSERT query execution
+Initial timeout(in milliseconds) to retry a failed Keeper request during INSERT query execution
 
 Possible values:
 
