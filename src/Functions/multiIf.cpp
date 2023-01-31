@@ -217,16 +217,6 @@ public:
                 break;
         }
 
-        for (size_t i = 0; i < instructions.size(); ++i)
-        {
-            auto & instruction = instructions[i];
-            auto source = instruction.source;
-            for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
-            {
-                std::cout << "number:" << row_i << ",instruction:" << i << ",field" << toString((*source)[row_i]) << std::endl;
-            }
-        }
-
         /// Special case if first instruction condition is always true and source is constant
         if (instructions.size() == 1 && instructions.front().source_is_constant
             && instructions.front().condition_always_true)
@@ -237,10 +227,45 @@ public:
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
 
-        size_t rows = input_rows_count;
+        bool contains_short = false;
+        // size_t i = 0;
+        for (const auto & instruction : instructions)
+        {
+            if (instruction.condition_is_short || instruction.source_is_short)
+            {
+                contains_short = true;
+            }
+
+            /*
+            Field field;
+            for (size_t row_i = 0; row_i < instruction.source->size(); ++row_i)
+            {
+                instruction.source->get(row_i, field);
+                std::cout << "source" << i << ",row:" << row_i << ",value:" << toString(field) << std::endl;
+            }
+
+            if (instruction.condition_always_true)
+            {
+                std::cout << "cond" << i << " is always true" << std::endl;
+                continue;
+            }
+
+            for (size_t row_i=0; row_i < instruction.condition->size(); ++row_i)
+            {
+                instruction.condition->get(row_i, field);
+                std::cout << "cond" << i << ",row:" << row_i << ",value:" << toString(field) << std::endl;
+            }
+            ++i;
+            */
+        }
+        // std::cout << "contains_short:" << contains_short << std::endl;
+
         const auto & settings = context->getSettingsRef();
         const WhichDataType which(result_type);
         bool execute_multiif_columnar = settings.allow_execute_multiif_columnar && (which.isInt() || which.isUInt() || which.isFloat());
+        // std::cout << "execute_multiif_columnar:" << execute_multiif_columnar << std::endl;
+
+        size_t rows = input_rows_count;
         if (!execute_multiif_columnar)
         {
             MutableColumnPtr res = return_type->createColumn();
@@ -248,12 +273,14 @@ public:
             return std::move(res);
         }
 
-
 #define EXECUTE_INSTRUCTIONS_COLUMNAR(TYPE, INDEX) \
     if (which.is##TYPE()) \
     { \
         MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
-        executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res); \
+        if (!contains_short) \
+            executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res); \
+        else \
+            executeInstructionsColumnarNew<TYPE, INDEX>(instructions, rows, res); \
         return std::move(res); \
     }
 
@@ -347,12 +374,11 @@ private:
                 const auto & cond_data = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData();
                 for (size_t row_i = 0; row_i < rows; ++row_i)
                 {
-                    size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
-
                     /// Equivalent to below code. But it is able to utilize SIMD instructions.
-                    /// if (cond_data[condition_index])
+                    /// if (cond_data[row_i])
                     ///     inserts[row_i] = i;
-                    inserts[row_i] += cond_data[condition_index] * (i - inserts[row_i]);
+
+                    inserts[row_i] += (!!cond_data[row_i]) * (i - inserts[row_i]);
                 }
             }
             else
@@ -364,12 +390,10 @@ private:
 
                 for (size_t row_i = 0; row_i < rows; ++row_i)
                 {
-                    size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
                     /// Equivalent to below code. But it is able to utilize SIMD instructions.
-                    /// if (!condition_null_map[condition_index] && condition_nested.getData()[condition_index])
+                    /// if (!condition_null_map[row_i] && condition_nested_data[row_i])
                     ///     inserts[row_i] = i;
-                    inserts[row_i] += (~condition_null_map[condition_index] & condition_nested_data[condition_index])
-                        * (i - inserts[row_i]);
+                    inserts[row_i] += (~condition_null_map[row_i] & (!!condition_nested_data[row_i])) * (i - inserts[row_i]);
                 }
             }
         }
@@ -381,15 +405,103 @@ private:
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
-
-
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
         for (size_t row_i = 0; row_i < rows; ++row_i)
         {
             auto & instruction = instructions[inserts[row_i]];
             auto ref = instruction.source->getDataAt(row_i);
             res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
-            std::cout << "number:" << row_i << ",instruction:" << inserts[row_i] << std::endl;
+            // std::cout << "row:" << row_i << ",instruction:" << inserts[row_i] << std::endl;
+        }
+    }
+
+    /// We should read source from which instruction on each row?
+    template <typename S>
+    static NO_INLINE void calculateInsertsNew(std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & instruction_indexes, PaddedPODArray<size_t> & source_indexes)
+    {
+        S instruction_size = static_cast<S>(instructions.size());
+        for (S i = 0; i < static_cast<S>(instructions.size()); ++i)
+        {
+            auto & instruction = instructions[i];
+            if (instruction.condition_always_true)
+            {
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    if (instruction_indexes[row_i] != instruction_size)
+                        continue;
+
+                    instruction_indexes[row_i] = i;
+
+                    size_t source_index = instruction.source_is_short ? instruction.source_index++ : row_i;
+                    source_indexes[row_i] = source_index;
+                }
+            }
+            else if (!instruction.condition_is_nullable)
+            {
+                const auto & cond_data = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData();
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    if (instruction_indexes[row_i] != instruction_size)
+                        continue;
+
+                    size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
+                    if (cond_data[condition_index])
+                    {
+                        instruction_indexes[row_i] = i;
+
+                        size_t source_index = instruction.source_is_short ? instruction.source_index++ : row_i;
+                        source_indexes[row_i] = source_index;
+                    }
+                }
+            }
+            else
+            {
+                const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
+                const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                const auto & condition_nested_data = condition_nested.getData();
+                const NullMap & condition_null_map = condition_nullable.getNullMapData();
+
+                for (size_t row_i = 0; row_i < rows; ++row_i)
+                {
+                    if (instruction_indexes[row_i] != instruction_size)
+                        continue;
+
+                    size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : row_i;
+                    if (!condition_null_map[condition_index] && condition_nested_data[condition_index])
+                    {
+                        instruction_indexes[row_i] = i;
+
+                        size_t source_index = instruction.source_is_short ? instruction.source_index++ : row_i;
+                        source_indexes[row_i] = source_index;
+                    }
+                }
+            }
+
+            /*
+            std::cout << "after instruction: " << i << std::endl;
+            for (size_t row_i = 0; row_i < rows; ++row_i)
+            {
+                std::cout << "instruction indexes[" << row_i << "]:" << instruction_indexes[row_i] << std::endl;
+                std::cout << "source indexes[" << row_i << "]:" << source_indexes[row_i] << std::endl;
+            }
+            */
+        }
+    }
+
+    template <typename T, typename S>
+    static NO_INLINE void executeInstructionsColumnarNew(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    {
+        PaddedPODArray<S> instruction_indexes(rows, static_cast<S>(instructions.size()));
+        PaddedPODArray<size_t> source_indexes(rows, rows);
+        calculateInsertsNew(instructions, rows, instruction_indexes, source_indexes);
+
+        PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
+        for (size_t row_i = 0; row_i < rows; ++row_i)
+        {
+            // std::cout << "row:" << row_i << ", instruction:" << instruction_indexes[row_i] << ", source_row:" << source_indexes[row_i] << std::endl;
+            auto & instruction = instructions[instruction_indexes[row_i]];
+            auto ref = instruction.source->getDataAt(source_indexes[row_i]);
+            res_data[row_i] = *reinterpret_cast<const T*>(ref.data);
         }
     }
 
