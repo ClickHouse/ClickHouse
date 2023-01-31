@@ -18,12 +18,18 @@ bool MarkRange::operator<(const MarkRange & rhs) const
     /// We allow only consecutive non-intersecting ranges
     /// Here we check whether a beginning of one range lies inside another range
     /// (ranges are intersect)
-    const bool is_intersection = (begin <= rhs.begin && rhs.begin < end) ||
-        (rhs.begin <= begin && begin < rhs.end);
+    if (this != &rhs)
+    {
+        const bool is_intersection = (begin <= rhs.begin && rhs.begin < end) ||
+            (rhs.begin <= begin && begin < rhs.end);
 
-    if (is_intersection)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Intersecting mark ranges are not allowed, it is a bug! First range ({}, {}), second range ({}, {})", begin, end, rhs.begin, rhs.end);
+        if (is_intersection)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Intersecting mark ranges are not allowed, it is a bug! "
+                "First range ({}, {}), second range ({}, {})",
+                begin, end, rhs.begin, rhs.end);
+    }
 
     return begin < rhs.begin && end <= rhs.begin;
 }
@@ -46,6 +52,17 @@ std::string toString(const MarkRanges & ranges)
         result += "(" + std::to_string(mark_range.begin) + ", " + std::to_string(mark_range.end) + ")";
     }
     return result;
+}
+
+void assertSortedAndNonIntersecting(const MarkRanges & ranges)
+{
+    MarkRanges ranges_copy(ranges.begin(), ranges.end());
+    /// Should also throw an exception if interseting range is found during comparison.
+    std::sort(ranges_copy.begin(), ranges_copy.end());
+    if (ranges_copy != ranges)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Expected sorted and non intersecting ranges. Ranges: {}",
+            toString(ranges));
 }
 
 }

@@ -113,7 +113,7 @@ StorageView::StorageView(
     storage_metadata.setComment(comment);
 
     if (!query.select)
-        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
@@ -138,7 +138,7 @@ void StorageView::read(
     if (query_info.view_query)
     {
         if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
-            throw Exception("Unexpected optimized VIEW query", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected optimized VIEW query");
         current_inner_query = query_info.view_query->clone();
     }
 
@@ -193,12 +193,12 @@ void StorageView::read(
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
     if (!select_query.tables() || select_query.tables()->children.empty())
-        throw Exception("Logical error: no table expression in view select AST", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no table expression in view select AST");
 
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
-        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
 
     return select_element->table_expression->as<ASTTableExpression>();
 }
@@ -229,7 +229,7 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
 
         }
         if (!table_expression->database_and_table_name)
-            throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
     }
 
     DatabaseAndTableWithAlias db_table(table_expression->database_and_table_name);
@@ -292,7 +292,7 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
     ASTTableExpression * table_expression = getFirstTableExpression(select_query);
 
     if (!table_expression->subquery)
-        throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
 
     ASTPtr subquery = table_expression->subquery;
     table_expression->subquery = {};
@@ -309,7 +309,7 @@ void registerStorageView(StorageFactory & factory)
     factory.registerStorage("View", [](const StorageFactory::Arguments & args)
     {
         if (args.query.storage)
-            throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a View");
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });

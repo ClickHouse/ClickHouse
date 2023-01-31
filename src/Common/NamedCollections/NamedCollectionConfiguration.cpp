@@ -52,18 +52,20 @@ template <typename T> T getConfigValueOrDefault(
             return config.getInt64(path);
         else if constexpr (std::is_same_v<T, Float64>)
             return config.getDouble(path);
+        else if constexpr (std::is_same_v<T, bool>)
+            return config.getBool(path);
         else
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Unsupported type in getConfigValueOrDefault(). "
-                "Supported types are String, UInt64, Int64, Float64");
+                "Supported types are String, UInt64, Int64, Float64, bool");
     }
     catch (const Poco::SyntaxException &)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot extract {} from {}",
-            toString(magic_enum::enum_name(Field::TypeToEnum<NearestFieldType<T>>::value)),
+            magic_enum::enum_name(Field::TypeToEnum<NearestFieldType<T>>::value),
             path);
     }
 }
@@ -85,11 +87,13 @@ template<typename T> void setConfigValue(
         config.setInt64(path, value);
     else if constexpr (std::is_same_v<T, Float64>)
         config.setDouble(path, value);
+    else if constexpr (std::is_same_v<T, bool>)
+        config.setBool(path, value);
     else
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Unsupported type in setConfigValue(). "
-            "Supported types are String, UInt64, Int64, Float64");
+            "Supported types are String, UInt64, Int64, Float64, bool");
 }
 
 template <typename T> void copyConfigValue(
@@ -206,6 +210,8 @@ template Int64 getConfigValue<Int64>(const Poco::Util::AbstractConfiguration & c
                                      const std::string & path);
 template Float64 getConfigValue<Float64>(const Poco::Util::AbstractConfiguration & config,
                                          const std::string & path);
+template bool getConfigValue<bool>(const Poco::Util::AbstractConfiguration & config,
+                                   const std::string & path);
 
 template String getConfigValueOrDefault<String>(const Poco::Util::AbstractConfiguration & config,
                                                 const std::string & path, const String * default_value);
@@ -215,6 +221,8 @@ template Int64 getConfigValueOrDefault<Int64>(const Poco::Util::AbstractConfigur
                                               const std::string & path, const Int64 * default_value);
 template Float64 getConfigValueOrDefault<Float64>(const Poco::Util::AbstractConfiguration & config,
                                                   const std::string & path, const Float64 * default_value);
+template bool getConfigValueOrDefault<bool>(const Poco::Util::AbstractConfiguration & config,
+                                            const std::string & path, const bool * default_value);
 
 template void setConfigValue<String>(Poco::Util::AbstractConfiguration & config,
                                      const std::string & path, const String & value, bool update);
@@ -224,6 +232,8 @@ template void setConfigValue<Int64>(Poco::Util::AbstractConfiguration & config,
                                     const std::string & path, const Int64 & value, bool update);
 template void setConfigValue<Float64>(Poco::Util::AbstractConfiguration & config,
                                       const std::string & path, const Float64 & value, bool update);
+template void setConfigValue<bool>(Poco::Util::AbstractConfiguration & config,
+                                   const std::string & path, const bool & value, bool update);
 
 template void copyConfigValue<String>(const Poco::Util::AbstractConfiguration & from_config, const std::string & from_path,
                                       Poco::Util::AbstractConfiguration & to_config, const std::string & to_path);
@@ -233,6 +243,8 @@ template void copyConfigValue<Int64>(const Poco::Util::AbstractConfiguration & f
                                      Poco::Util::AbstractConfiguration & to_config, const std::string & to_path);
 template void copyConfigValue<Float64>(const Poco::Util::AbstractConfiguration & from_config, const std::string & from_path,
                                        Poco::Util::AbstractConfiguration & to_config, const std::string & to_path);
+template void copyConfigValue<bool>(const Poco::Util::AbstractConfiguration & from_config, const std::string & from_path,
+                                    Poco::Util::AbstractConfiguration & to_config, const std::string & to_path);
 }
 
 }
