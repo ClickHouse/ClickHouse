@@ -7,6 +7,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <Common/filesystemHelpers.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -162,7 +163,9 @@ public:
             rotate(record.header.index);
 
         // writing at least 1 log is requirement - we don't want empty log files
-        const bool log_too_big = record.header.index != getStartIndex() && log_file_settings.max_size != 0 &&  initial_file_size + file_buffer->count() > log_file_settings.max_size;
+        // we use count() that can be unreliable for more complex WriteBuffers, so we should be careful if we change the type of it in the future
+        const bool log_too_big = record.header.index != getStartIndex() && log_file_settings.max_size != 0
+            && initial_file_size + file_buffer->count() > log_file_settings.max_size;
 
         if (log_too_big)
         {
@@ -325,25 +328,25 @@ private:
         const auto & file_buffer = getFileBuffer();
 #ifdef OS_LINUX
         {
-            int res = fallocate(file_buffer.getFD(), FALLOC_FL_KEEP_SIZE, 0, log_file_settings.max_size + log_file_settings.overallocate_size);
-            if (res == ENOSPC)
+            int res = 0;
+            do
             {
-                LOG_FATAL(log, "Failed to allocate enough space on disk for logs");
-                return;
-            }
+                res = fallocate(file_buffer.getFD(), FALLOC_FL_KEEP_SIZE, 0, log_file_settings.max_size + log_file_settings.overallocate_size);
+            } while (errno == EINTR);
 
             if (res != 0)
+            {
+                if (errno == ENOSPC)
+                {
+                    LOG_FATAL(log, "Failed to allocate enough space on disk for logs");
+                    return;
+                }
+
                 LOG_WARNING(log, "Could not preallocate space on disk using fallocate. Error: {}, errno: {}", errnoToString(), errno);
+            }
         }
 #endif
-
-        struct stat buf;
-        {
-            [[maybe_unused]] int res = fstat(file_buffer.getFD(), &buf);
-            assert(res == 0);
-        }
-
-        initial_file_size = buf.st_size;
+        initial_file_size = getSizeFromFileDescriptor(file_buffer.getFD());
 
         prealloc_done = true;
     }
@@ -1066,6 +1069,8 @@ bool Changelog::flush()
         return !*failed_ptr;
     }
 
+    // if we are shutting down let's return true to avoid abort inside NuRaft
+    // this can only happen when the config change is appended so no data loss should happen
     return true;
 }
 
