@@ -6,7 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
-#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromFile.h>

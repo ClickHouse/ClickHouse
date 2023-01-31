@@ -646,7 +646,9 @@ simpleJSONHas
 sin
 sinh
 sipHash128
+sipHash128Keyed
 sipHash64
+sipHash64Keyed
 sleep
 sleepEachRow
 snowflakeToDateTime
