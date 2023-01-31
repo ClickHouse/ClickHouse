@@ -163,8 +163,13 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 
 void ThreadStatus::attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope)
 {
-    subthread_profile_events = performance_counters_scope;
     performance_counters_scope->setParent(&performance_counters);
+    current_performance_counters = performance_counters_scope;
+}
+
+void ThreadStatus::detachProfileCountersScope()
+{
+    current_performance_counters = &performance_counters;
 }
 
 void ThreadStatus::initPerformanceCounters()
