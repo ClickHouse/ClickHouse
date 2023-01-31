@@ -81,7 +81,7 @@ public:
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
 
-    /// Adds a callback which is called in destrutor after
+    /// Adds a callback which is called in destructor after
     /// joining of all threads. The order of calling callbacks
     /// is reversed to the order of their addition.
     /// It may be useful for static thread pools to call
