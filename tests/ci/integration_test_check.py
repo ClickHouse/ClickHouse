@@ -153,7 +153,7 @@ if __name__ == "__main__":
 
     args = parse_args()
     check_name = args.check_name
-    validate_bugix_check = args.validate_bugfix
+    validate_bugfix_check = args.validate_bugfix
 
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
@@ -171,13 +171,13 @@ if __name__ == "__main__":
 
     is_flaky_check = "flaky" in check_name
 
-    # For validate_bugix_check we need up to date information about labels, so pr_event_from_api is used
+    # For validate_bugfix_check we need up to date information about labels, so pr_event_from_api is used
     pr_info = PRInfo(
-        need_changed_files=is_flaky_check or validate_bugix_check,
-        pr_event_from_api=validate_bugix_check,
+        need_changed_files=is_flaky_check or validate_bugfix_check,
+        pr_event_from_api=validate_bugfix_check,
     )
 
-    if validate_bugix_check and "pr-bugfix" not in pr_info.labels:
+    if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":
             post_commit_status_to_file(
                 os.path.join(temp_path, "post_commit_status.tsv"),
@@ -209,7 +209,7 @@ if __name__ == "__main__":
     if not os.path.exists(build_path):
         os.makedirs(build_path)
 
-    if validate_bugix_check:
+    if validate_bugfix_check:
         download_last_release(build_path)
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     state, description, test_results, additional_logs = process_results(result_path)
-    state = override_status(state, check_name, invert=validate_bugix_check)
+    state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)

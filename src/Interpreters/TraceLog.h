@@ -27,10 +27,8 @@ struct TraceLogElement
     UInt64 thread_id{};
     String query_id{};
     Array trace{};
-    /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.
+    /// Allocation size in bytes for TraceType::Memory.
     Int64 size{};
-    /// Allocation ptr for TraceType::MemorySample.
-    UInt64 ptr{};
     /// ProfileEvent for TraceType::ProfileEvent.
     ProfileEvents::Event event{ProfileEvents::end()};
     /// Increment of profile event for TraceType::ProfileEvent.
