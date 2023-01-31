@@ -398,7 +398,7 @@ FileSegment::State FileSegment::wait()
         chassert(!getDownloaderUnlocked(lock).empty());
         chassert(!isDownloaderUnlocked(lock));
 
-        cv.wait_for(lock.lock, std::chrono::seconds(60));
+        cv.wait_for(lock, std::chrono::seconds(60));
     }
 
     return download_state;
@@ -498,7 +498,6 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
     LOG_INFO(log, "Settings download as failed: {}", getInfoForLogUnlocked(lock));
 
     setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, lock);
-    resetDownloaderUnlocked(lock);
 
     if (cache_writer)
     {
@@ -542,7 +541,7 @@ void FileSegment::complete()
     return completeUnlocked(*key_transaction, cache_lock);
 }
 
-void FileSegment::completeUnlocked(KeyTransaction & key_transaction, CacheGuard::LockPtr cache_lock)
+void FileSegment::completeUnlocked(KeyTransaction & key_transaction, const CacheGuard::Lock & cache_lock)
 {
     auto segment_lock = segment_guard.lock();
 

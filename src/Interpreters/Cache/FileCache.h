@@ -15,7 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadSettings.h>
-#include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/LockedFileCachePriority.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
@@ -119,7 +119,7 @@ public:
 
     void assertCacheCorrectness();
 
-    CacheGuard::LockPtr createCacheTransaction() { return cache_guard.lock(); }
+    CacheGuard::Lock createCacheTransaction() { return cache_guard.lock(); }
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
@@ -221,12 +221,12 @@ private:
         class LockedQueryContext;
         using LockedQueryContextPtr = std::unique_ptr<LockedQueryContext>;
 
-        LockedQueryContextPtr tryGetQueryContext(CacheGuard::LockPtr lock);
+        LockedQueryContextPtr tryGetQueryContext(const CacheGuard::Lock & lock);
 
         QueryContextPtr getOrSetQueryContext(
-            const std::string & query_id, const ReadSettings & settings, CacheGuard::LockPtr);
+            const std::string & query_id, const ReadSettings & settings, const CacheGuard::Lock &);
 
-        void removeQueryContext(const std::string & query_id, CacheGuard::LockPtr);
+        void removeQueryContext(const std::string & query_id, const CacheGuard::Lock &);
 
     private:
         using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
@@ -252,7 +252,7 @@ private:
         class LockedQueryContext
         {
         public:
-            LockedQueryContext(QueryContextPtr context_, CacheGuard::LockPtr lock_)
+            LockedQueryContext(QueryContextPtr context_, const CacheGuard::Lock & lock_)
                 : context(context_), lock(lock_), priority(lock_, *context->priority) {}
 
             IFileCachePriority & getPriority() { return *context->priority; }
@@ -272,7 +272,7 @@ private:
 
         private:
             QueryContextPtr context;
-            CacheGuard::LockPtr lock;
+            const CacheGuard::Lock & lock;
             LockedCachePriority priority;
         };
     };
@@ -328,14 +328,14 @@ private:
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
         KeyTransaction & key_transaction,
-        CacheGuard::LockPtr * queue_lock);
+        const CacheGuard::Lock *);
 
     bool tryReserveUnlocked(
         const Key & key,
         size_t offset,
         size_t size,
         KeyTransactionPtr key_transaction,
-        CacheGuard::LockPtr);
+        const CacheGuard::Lock &);
 
     bool tryReserveImpl(
         IFileCachePriority & priority_queue,
@@ -344,7 +344,7 @@ private:
         size_t size,
         KeyTransactionPtr key_transaction,
         QueryLimit::LockedQueryContext * query_context,
-        CacheGuard::LockPtr priority_lock);
+        const CacheGuard::Lock &);
 
     struct IterateAndLockResult
     {
@@ -412,11 +412,11 @@ struct KeyTransaction : private boost::noncopyable
 
     KeyTransactionCreatorPtr getCreator() const { return std::make_unique<KeyTransactionCreator>(key, offsets, cleanup_keys_metadata_queue, cache); }
 
-    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, CacheGuard::LockPtr);
+    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
-    void remove(FileSegmentPtr file_segment, CacheGuard::LockPtr);
+    void remove(FileSegmentPtr file_segment, const CacheGuard::Lock &);
 
-    void remove(size_t offset, const FileSegmentGuard::Lock &, CacheGuard::LockPtr);
+    void remove(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
     bool isLastHolder(size_t offset);
 

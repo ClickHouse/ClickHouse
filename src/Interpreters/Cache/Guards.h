@@ -16,18 +16,13 @@ namespace DB
  */
 struct CacheGuard
 {
-    struct Lock
+    struct Lock : public std::unique_lock<std::mutex>
     {
-        explicit Lock(CacheGuard & guard) : lock(guard.mutex) {}
-        std::unique_lock<std::mutex> lock;
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
     };
-    using LockPtr = std::shared_ptr<Lock>;
 
+    Lock lock() { return Lock(mutex); }
     std::mutex mutex;
-
-    LockPtr lock() { return std::make_shared<Lock>(*this); }
-
-    CacheGuard() = default;
 };
 
 /**
@@ -35,18 +30,13 @@ struct CacheGuard
  */
 struct CacheMetadataGuard
 {
-    struct Lock
+    struct Lock : public std::unique_lock<std::mutex>
     {
-        explicit Lock(CacheMetadataGuard & guard) : lock(guard.mutex) {}
-        std::unique_lock<std::mutex> lock;
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
     };
-    using LockPtr = std::shared_ptr<Lock>;
 
+    Lock lock() { return Lock(mutex); }
     std::mutex mutex;
-
-    Lock lock() { return Lock(*this); }
-
-    CacheMetadataGuard() = default;
 };
 
 /**
@@ -55,17 +45,13 @@ struct CacheMetadataGuard
  */
 struct KeyGuard
 {
-    struct Lock
+    struct Lock : public std::unique_lock<std::mutex>
     {
-        explicit Lock(KeyGuard & guard) : lock(guard.mutex) {}
-        std::unique_lock<std::mutex> lock;
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
     };
 
+    Lock lock() { return Lock(mutex); }
     std::mutex mutex;
-
-    Lock lock() { return Lock(*this); }
-
-    KeyGuard() = default;
 };
 using KeyGuardPtr = std::shared_ptr<KeyGuard>;
 
@@ -74,15 +60,13 @@ using KeyGuardPtr = std::shared_ptr<KeyGuard>;
  */
 struct FileSegmentGuard
 {
-    struct Lock
+    struct Lock : public std::unique_lock<std::mutex>
     {
-        explicit Lock(FileSegmentGuard & guard) : lock(guard.mutex) {}
-        std::unique_lock<std::mutex> lock;
+        explicit Lock(std::mutex & mutex_) : std::unique_lock<std::mutex>(mutex_) {}
     };
 
+    Lock lock() { return Lock(mutex); }
     std::mutex mutex;
-
-    Lock lock() { return Lock(*this); }
 };
 
 }
