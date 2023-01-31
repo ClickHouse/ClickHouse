@@ -186,7 +186,7 @@ void Suggest::fillWordsFromBlock(const Block & block)
         return;
 
     if (block.columns() != 1)
-        throw Exception("Wrong number of columns received for query to read words for suggestion", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns received for query to read words for suggestion");
 
     const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
 

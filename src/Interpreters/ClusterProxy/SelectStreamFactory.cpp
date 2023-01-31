@@ -152,10 +152,8 @@ void SelectStreamFactory::createForShard(
                 return;
             }
             else
-                throw Exception(
-                    "Local replica of shard " + toString(shard_info.shard_num)
-                    + " is stale (delay: " + toString(local_delay) + "s.), but no other replica configured",
-                    ErrorCodes::ALL_REPLICAS_ARE_STALE);
+                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
+                    "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
         }
 
         if (!shard_info.hasRemoteConnections())

@@ -12,10 +12,10 @@ Reads from this table are not parallelized.
 **Example**
 
 ```sql
-:) SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers LIMIT 10;
 ```
 
-```text
+```response
 ┌─number─┐
 │      0 │
 │      1 │

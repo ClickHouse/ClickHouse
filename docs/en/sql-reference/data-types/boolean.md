@@ -4,9 +4,9 @@ sidebar_position: 43
 sidebar_label: Boolean
 ---
 
-# Boolean Values bool (boolean)
+# Bool
 
-Type `bool` is stored as UInt8. Possible values `true` (1), `false` (0).
+Type `bool` is internally stored as UInt8. Possible values are `true` (1), `false` (0).
 
 
 ```sql

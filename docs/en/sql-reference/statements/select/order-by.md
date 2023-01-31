@@ -543,3 +543,7 @@ Result:
 │   7 │ original │     7 │
 └─────┴──────────┴───────┘
 ```
+
+## Related content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

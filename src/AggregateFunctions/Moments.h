@@ -134,7 +134,7 @@ public:
             overflow = overflow || common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4));
 
         if (overflow)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
 
     void merge(const VarMomentsDecimal & rhs)
@@ -149,7 +149,7 @@ public:
             overflow = overflow || common::addOverflow(getM(4), rhs.getM(4), getM(4));
 
         if (overflow)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
 
     void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
@@ -163,7 +163,7 @@ public:
         NativeType tmp;
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / m0), scale));
     }
 
@@ -177,7 +177,7 @@ public:
         NativeType tmp;
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / (m0 - 1)), scale));
     }
 
@@ -191,7 +191,7 @@ public:
             common::subOverflow(3 * getM(2), NativeType(tmp / m0), tmp) ||
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(3), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
     }
 
@@ -207,7 +207,7 @@ public:
             common::subOverflow(4 * getM(3), NativeType(tmp / m0), tmp) ||
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(4), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
     }
 

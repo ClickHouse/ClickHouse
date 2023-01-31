@@ -15,7 +15,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -92,6 +92,7 @@ public:
             const std::string & version_id_,
             const std::vector<String> & keys_,
             const String & bucket_,
+            const S3Settings::RequestSettings & request_settings_,
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
@@ -145,8 +146,6 @@ public:
 
     Chunk generate() override;
 
-    void onCancel() override;
-
 private:
     String name;
     String bucket;
@@ -176,6 +175,24 @@ private:
         }
 
         ReaderHolder() = default;
+        ReaderHolder(const ReaderHolder & other) = delete;
+        ReaderHolder & operator=(const ReaderHolder & other) = delete;
+
+        ReaderHolder(ReaderHolder && other) noexcept
+        {
+            *this = std::move(other);
+        }
+
+        ReaderHolder & operator=(ReaderHolder && other) noexcept
+        {
+            /// The order of destruction is important.
+            /// reader uses pipeline, pipeline uses read_buf.
+            reader = std::move(other.reader);
+            pipeline = std::move(other.pipeline);
+            read_buf = std::move(other.read_buf);
+            path = std::move(other.path);
+            return *this;
+        }
 
         explicit operator bool() const { return reader != nullptr; }
         PullingPipelineExecutor * operator->() { return reader.get(); }
@@ -191,8 +208,6 @@ private:
 
     ReaderHolder reader;
 
-    /// onCancel and generate can be called concurrently
-    std::mutex reader_mutex;
     std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
     size_t download_thread_num = 1;

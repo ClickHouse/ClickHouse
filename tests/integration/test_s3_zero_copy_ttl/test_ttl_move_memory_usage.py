@@ -48,7 +48,9 @@ def test_move_and_s3_memory_usage(started_single_node_cluster):
     )
     small_node.query("system flush logs")
     max_usage = small_node.query(
-        "select max(CurrentMetric_MemoryTracking) from system.metric_log"
+        """select max(m.val - am.val * 4096) from 
+        (select toStartOfMinute(event_time) as time, max(CurrentMetric_MemoryTracking) as val from system.metric_log group by time) as m join 
+        (select toStartOfMinute(event_time) as time, min(value) as val from system.asynchronous_metric_log where metric='jemalloc.arenas.all.pdirty' group by time) as am using time"""
     )
     # 3G limit is a big one. However, we can hit it anyway with parallel s3 writes enabled.
     # Also actual value can be bigger because of memory drift.

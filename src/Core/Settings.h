@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/Defines.h>
 #include <IO/ReadSettings.h>
+#include <base/unit.h>
 
 
 namespace Poco::Util
@@ -21,11 +22,6 @@ namespace boost::program_options
 namespace DB
 {
 class IColumn;
-
-static constexpr UInt64 operator""_GiB(unsigned long long value)
-{
-    return value * 1024 * 1024 * 1024;
-}
 
 /** List of settings: type, name, default value, description, flags
   *
@@ -95,6 +91,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, s3_max_get_burst, 0, "Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `s3_max_get_rps`", 0) \
     M(UInt64, s3_max_put_rps, 0, "Limit on S3 PUT request per second rate before throttling. Zero means unlimited.", 0) \
     M(UInt64, s3_max_put_burst, 0, "Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `s3_max_put_rps`", 0) \
+    M(UInt64, s3_list_object_keys_size, 1000, "Maximum number of files that could be returned in batch by ListObject request", 0) \
     M(Bool, s3_truncate_on_insert, false, "Enables or disables truncate before insert in s3 engine tables.", 0) \
     M(Bool, s3_create_new_file_on_insert, false, "Enables or disables creating a new file on each insert in s3 engine tables", 0) \
     M(Bool, s3_check_objects_after_upload, false, "Check each uploaded object to s3 with head request to be sure that upload was successful", 0) \
@@ -182,6 +179,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), "The maximum number of rows per request, to use the cache of uncompressed data. If the request is large, the cache is not used. (For large queries not to flush out the cache.)", 0) \
     M(UInt64, merge_tree_max_bytes_to_use_cache, (192 * 10 * 1024 * 1024), "The maximum number of bytes per request, to use the cache of uncompressed data. If the request is large, the cache is not used. (For large queries not to flush out the cache.)", 0) \
     M(Bool, do_not_merge_across_partitions_select_final, false, "Merge parts only in one partition in select final", 0) \
+    M(Bool, allow_experimental_inverted_index, false, "If it is set to true, allow to use experimental inverted index.", 0) \
     \
     M(UInt64, mysql_max_rows_to_insert, 65536, "The maximum number of rows in MySQL batch insertion of the MySQL storage engine", 0) \
     \
@@ -530,8 +528,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, allow_non_metadata_alters, true, "Allow to execute alters which affects not only tables metadata, but also data on disk", 0) \
     M(Bool, enable_global_with_statement, true, "Propagate WITH statements to UNION queries and all subqueries", 0) \
     M(Bool, aggregate_functions_null_for_empty, false, "Rewrite all aggregate functions in a query, adding -OrNull suffix to them", 0) \
-    M(Bool, optimize_syntax_fuse_functions, false, "Not ready for production, do not use. Allow apply syntax optimisation: fuse aggregate functions", 0) \
-    M(Bool, optimize_fuse_sum_count_avg, false, "Replace calls of functions `sum`, `avg`, `count` with identical arguments into one `sumCount`", 0) \
+    M(Bool, optimize_syntax_fuse_functions, false, "Allow apply fuse aggregating function. Available only with `allow_experimental_analyzer`", 0) \
     M(Bool, flatten_nested, true, "If true, columns of type Nested will be flatten to separate array columns instead of one array of tuples", 0) \
     M(Bool, asterisk_include_materialized_columns, false, "Include MATERIALIZED columns for wildcard query", 0) \
     M(Bool, asterisk_include_alias_columns, false, "Include ALIAS columns for wildcard query", 0) \
@@ -542,6 +539,15 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, insert_null_as_default, true, "Insert DEFAULT values instead of NULL in INSERT SELECT (UNION ALL)", 0) \
     M(Bool, describe_extend_object_types, false, "Deduce concrete type of columns of type Object in DESCRIBE query", 0) \
     M(Bool, describe_include_subcolumns, false, "If true, subcolumns of all table columns will be included into result of DESCRIBE query", 0) \
+    \
+    M(Bool, use_query_result_cache, false, "Enable the query result cache", 0) \
+    M(Bool, enable_writes_to_query_result_cache, true, "Enable storing results of SELECT queries in the query result cache", 0) \
+    M(Bool, enable_reads_from_query_result_cache, true, "Enable reading results of SELECT queries from the query result cache", 0) \
+    M(Bool, query_result_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query result cache", 0) \
+    M(UInt64, query_result_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query result cache", 0) \
+    M(Milliseconds, query_result_cache_min_query_duration, 0, "Minimum time in milliseconds for a query to run for its result to be stored in the query result cache.", 0) \
+    M(Seconds, query_result_cache_ttl, 60, "After this time in seconds entries in the query result cache become stale", 0) \
+    M(Bool, query_result_cache_share_between_users, false, "Allow other users to read entry in the query result cache", 0) \
     \
     M(Bool, optimize_rewrite_sum_if_to_count_if, false, "Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent", 0) \
     M(UInt64, insert_shard_id, 0, "If non zero, when insert into a distributed table, the data will be inserted into the shard `insert_shard_id` synchronously. Possible values range from 1 to `shards_number` of corresponding distributed table", 0) \
@@ -587,6 +593,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, query_plan_optimize_primary_key, true, "Analyze primary key using query plan (instead of AST)", 0) \
     M(Bool, query_plan_read_in_order, true, "Use query plan for read-in-order optimisation", 0) \
     M(Bool, query_plan_aggregation_in_order, true, "Use query plan for aggregation-in-order optimisation", 0) \
+    M(Bool, query_plan_remove_redundant_sorting, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries", 0) \
     M(UInt64, regexp_max_matches_per_row, 1000, "Max matches of any single regexp per row, used to safeguard 'extractAllGroupsHorizontal' against consuming too much memory with greedy RE.", 0) \
     \
     M(UInt64, limit, 0, "Limit on read rows from the most 'end' result for select query, default 0 means no limit length", 0) \
@@ -595,6 +602,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, function_range_max_elements_in_block, 500000000, "Maximum number of values generated by function 'range' per block of data (sum of array sizes for every row in a block, see also 'max_block_size' and 'min_insert_block_size_rows'). It is a safety threshold.", 0) \
     M(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, "Setting for short-circuit function evaluation configuration. Possible values: 'enable' - use short-circuit function evaluation for functions that are suitable for it, 'disable' - disable short-circuit function evaluation, 'force_enable' - use short-circuit function evaluation for all functions.", 0) \
     \
+    M(LocalFSReadMethod, storage_file_read_method, LocalFSReadMethod::mmap, "Method of reading data from storage file, one of: read, pread, mmap.", 0) \
     M(String, local_filesystem_read_method, "pread_threadpool", "Method of reading data from local filesystem, one of: read, pread, mmap, pread_threadpool.", 0) \
     M(String, remote_filesystem_read_method, "threadpool", "Method of reading data from remote filesystem, one of: read, threadpool.", 0) \
     M(Bool, local_filesystem_read_prefetch, false, "Should use prefetching when reading data from local filesystem.", 0) \
@@ -620,7 +628,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, "Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.", 0) \
     M(Bool, enable_filesystem_cache_on_lower_level, true, "If read buffer supports caching inside threadpool, allow it to do it, otherwise cache outside ot threadpool. Do not use this setting, it is needed for testing", 0) \
     M(Bool, skip_download_if_exceeds_query_cache, true, "Skip download from remote filesystem if exceeds query cache size", 0) \
-    M(UInt64, max_query_cache_size, (128UL * 1024 * 1024 * 1024), "Max remote filesystem cache size that can be used by a single query", 0) \
+    M(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), "Max remote filesystem cache size that can be downloaded by a single query", 0) \
     M(Bool, throw_on_error_from_cache_on_write_operations, false, "Ignore error from cache when caching on write operations (INSERT, merges)", 0) \
     \
     M(Bool, load_marks_asynchronously, false, "Load MergeTree marks asynchronously", 0) \
@@ -661,6 +669,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
     M(Bool, allow_experimental_hash_functions, false, "Enable experimental hash functions (hashid, etc)", 0) \
     M(Bool, allow_experimental_object_type, false, "Allow Object and JSON data types", 0) \
+    M(Bool, allow_experimental_query_result_cache, false, "Enable experimental query result cache", 0) \
     M(String, insert_deduplication_token, "", "If not empty, used for duplicate detection instead of data digest", 0) \
     M(String, ann_index_select_query_params, "", "Parameters passed to ANN indexes in SELECT queries, the format is 'param1=x, param2=y, ...'", 0) \
     M(UInt64, max_limit_for_ann_queries, 1000000, "Maximum limit value for using ANN indexes is used to prevent memory overflow in search queries for indexes", 0) \
@@ -720,6 +729,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0)                                                                                 \
     MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
+    MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
+
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
@@ -759,6 +770,9 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, input_format_max_rows_to_read_for_schema_inference, 25000, "The maximum rows of data to read for automatic schema inference", 0) \
     M(Bool, input_format_csv_use_best_effort_in_schema_inference, true, "Use some tweaks and heuristics to infer schema in CSV format", 0) \
     M(Bool, input_format_tsv_use_best_effort_in_schema_inference, true, "Use some tweaks and heuristics to infer schema in TSV format", 0) \
+    M(Bool, input_format_csv_detect_header, true, "Automatically detect header with names and types in CSV format", 0) \
+    M(Bool, input_format_tsv_detect_header, true, "Automatically detect header with names and types in TSV format", 0) \
+    M(Bool, input_format_custom_detect_header, true, "Automatically detect header with names and types in CustomSeparated format", 0) \
     M(Bool, input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference, false, "Skip columns with unsupported types while schema inference for format Parquet", 0) \
     M(Bool, input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference, false, "Skip fields with unsupported types while schema inference for format Protobuf", 0) \
     M(Bool, input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference, false, "Skip columns with unsupported types while schema inference for format CapnProto", 0) \
@@ -772,6 +786,9 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, input_format_json_validate_types_from_metadata, true, "For JSON/JSONCompact/JSONColumnsWithMetadata input formats this controls whether format parser should check if data types from input metadata match data types of the corresponding columns from the table", 0) \
     M(Bool, input_format_json_read_numbers_as_strings, false, "Allow to parse numbers as strings in JSON input formats", 0) \
     M(Bool, input_format_json_read_objects_as_strings, true, "Allow to parse JSON objects as strings in JSON input formats", 0) \
+    M(Bool, input_format_json_named_tuples_as_objects, true, "Deserialize named tuple columns as JSON objects", 0) \
+    M(Bool, input_format_json_ignore_unknown_keys_in_named_tuple, false, "Ignore unknown keys in json object for named tuples", 0) \
+    M(Bool, input_format_json_defaults_for_missing_elements_in_named_tuple, true, "Insert default value in named tuple element if it's missing in json object", 0) \
     M(Bool, input_format_try_infer_integers, true, "Try to infer integers instead of floats while schema inference in text formats", 0) \
     M(Bool, input_format_try_infer_dates, true, "Try to infer dates from string fields while schema inference in text formats", 0) \
     M(Bool, input_format_try_infer_datetimes, true, "Try to infer datetimes from string fields while schema inference in text formats", 0) \
