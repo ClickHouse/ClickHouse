@@ -133,17 +133,13 @@ public:
 
     using PartLogEntries = std::vector<PartLogEntry>;
 
+    static PartLogEntries createPartLogEntries(const MutableDataPartsVector & parts, UInt64 elapsed_ns, ProfileCountersSnapshotPtr profile_counters = {});
+
     /// Add a record about creation of new part.
     static bool addNewPart(ContextPtr context, const PartLogEntry & part,
                            const ExecutionStatus & execution_status = {});
 
     static bool addNewParts(ContextPtr context, const PartLogEntries & parts,
-                            const ExecutionStatus & execution_status = {});
-
-    /// Add a record about creation of new part.
-    static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
-                           const ExecutionStatus & execution_status = {});
-    static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
                             const ExecutionStatus & execution_status = {});
 };
 
