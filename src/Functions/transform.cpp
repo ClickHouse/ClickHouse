@@ -859,7 +859,12 @@ private:
         {
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else
                 dst[i] = dst_default;
         }
@@ -875,7 +880,12 @@ private:
         {
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else if constexpr (is_decimal<U>)
                 dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
@@ -893,7 +903,12 @@ private:
         {
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else
                 dst[i] = src[i];
         }
@@ -964,7 +979,12 @@ private:
             current_src_offset = src_offsets[i];
             const auto * it = table.find(ref);
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else
                 dst[i] = dst_default;
         }
@@ -985,7 +1005,12 @@ private:
             current_src_offset = src_offsets[i];
             const auto * it = table.find(ref);
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+            {
+                if (std::endian::native == std::endian::little)
+                    memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
+                else
+                    memcpy(&dst[i], reinterpret_cast<const char *>(&it->getMapped()) + sizeof(UInt64) - sizeof(dst[i]), sizeof(dst[i]));
+            }
             else if constexpr (is_decimal<U>)
                 dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else

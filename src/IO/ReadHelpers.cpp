@@ -95,14 +95,14 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
-    out << "Cannot parse input: expected " << quote << s;
+    out << quote << s;
 
     if (buf.eof())
         out << " at end of stream.";
     else
         out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw ParsingException(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
 }
 
 
@@ -381,7 +381,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw Exception(message, code);
+            throw Exception::createDeprecated(message, code);
         return ReturnType(false);
     };
 
@@ -491,8 +491,8 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-template <typename Vector>
-void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+template <typename Vector, bool parse_complex_escape_sequence>
+void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -508,9 +508,31 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
             return;
 
         if (*buf.position() == '\\')
-            parseComplexEscapeSequence(s, buf);
+        {
+            if constexpr (parse_complex_escape_sequence)
+            {
+                parseComplexEscapeSequence(s, buf);
+            }
+            else
+            {
+                s.push_back(*buf.position());
+                ++buf.position();
+                if (!buf.eof())
+                {
+                    s.push_back(*buf.position());
+                    ++buf.position();
+                }
+            }
+        }
     }
 }
+
+template <typename Vector>
+void readEscapedStringInto(Vector & s, ReadBuffer & buf)
+{
+    readEscapedStringIntoImpl<Vector, true>(s, buf);
+}
+
 
 void readEscapedString(String & s, ReadBuffer & buf)
 {
@@ -581,8 +603,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     }
 
     if constexpr (throw_exception)
-        throw ParsingException("Cannot parse quoted string: expected closing quote",
-            ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING, "Cannot parse quoted string: expected closing quote");
     else
         return ReturnType(false);
 }
@@ -665,7 +686,7 @@ concept WithResize = requires (T value)
     { value.size() } -> std::integral<>;
 };
 
-template <typename Vector>
+template <typename Vector, bool include_quotes>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     /// Empty string
@@ -682,6 +703,9 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
     if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
     {
+        if constexpr (include_quotes)
+            s.push_back(maybe_quote);
+
         ++buf.position();
 
         /// The quoted case. We are looking for the next quotation mark.
@@ -698,8 +722,12 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (!buf.hasPendingData())
                 continue;
 
+            if constexpr (include_quotes)
+                s.push_back(maybe_quote);
+
             /// Now there is a quotation mark under the cursor. Is there any following?
             ++buf.position();
+
             if (buf.eof())
                 return;
 
@@ -829,20 +857,7 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     s.clear();
-    bool add_quote = false;
-    char quote = '\'';
-
-    if (!buf.eof() && (*buf.position() == '\'' || *buf.position() == '"'))
-    {
-        quote = *buf.position();
-        s.push_back(quote);
-        add_quote = true;
-    }
-
-    readCSVStringInto(s, buf, settings);
-
-    if (add_quote)
-        s.push_back(quote);
+    readCSVStringInto<String, true>(s, buf, settings);
 }
 
 void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
@@ -923,10 +938,10 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
+    auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(message, code);
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -974,10 +989,10 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
+    auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(message, code);
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -1145,7 +1160,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
             else
                 return false;
         }
@@ -1168,7 +1183,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                 s_pos[size] = 0;
 
                 if constexpr (throw_exception)
-                    throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                    throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
                 else
                     return false;
             }
@@ -1195,7 +1210,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         else
         {
             if constexpr (throw_exception)
-                throw ParsingException("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
             else
                 return false;
         }
@@ -1341,7 +1356,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code, remote_exception);
+    return Exception::createDeprecated(out.str(), code, remote_exception);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
@@ -1681,6 +1696,12 @@ void readJSONField(String & s, ReadBuffer & buf)
     s.clear();
     auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueInto(s, buf, parse_func);
+}
+
+void readTSVField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringIntoImpl<String, false>(s, buf);
 }
 
 }

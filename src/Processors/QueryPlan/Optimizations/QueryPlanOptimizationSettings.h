@@ -30,6 +30,9 @@ struct QueryPlanOptimizationSettings
     /// If aggregation-in-order optimisation is enabled
     bool aggregation_in_order = false;
 
+    /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
+    bool remove_redundant_sorting = true;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

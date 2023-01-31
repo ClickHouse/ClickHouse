@@ -36,6 +36,11 @@ public:
     DataTypePtr get(const ASTPtr & ast) const;
     DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
 
+    /// Return nullptr in case of error.
+    DataTypePtr tryGet(const String & full_name) const;
+    DataTypePtr tryGet(const String & family_name, const ASTPtr & parameters) const;
+    DataTypePtr tryGet(const ASTPtr & ast) const;
+
     /// Register a type family by its name.
     void registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
@@ -49,7 +54,14 @@ public:
     void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 private:
-    const Value & findCreatorByName(const String & family_name) const;
+    template <bool nullptr_on_error>
+    DataTypePtr getImpl(const String & full_name) const;
+    template <bool nullptr_on_error>
+    DataTypePtr getImpl(const String & family_name, const ASTPtr & parameters) const;
+    template <bool nullptr_on_error>
+    DataTypePtr getImpl(const ASTPtr & ast) const;
+    template <bool nullptr_on_error>
+    const Value * findCreatorByName(const String & family_name) const;
 
     DataTypesDictionary data_types;
 
