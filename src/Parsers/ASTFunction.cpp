@@ -84,7 +84,7 @@ namespace
                 result.start = index;
                 result.are_named = argument_is_named;
             }
-            chassert(index >= result.start); /// We always check arguments consequently.
+            chassert(index >= result.start); /// We always check arguments consecutively
             result.count = index + 1 - result.start;
             if (!argument_is_named)
                 result.are_named = false;
