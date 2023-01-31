@@ -129,6 +129,8 @@ public:
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
 
+    ~FileSegment() = default;
+
     State state() const;
 
     static String stateToString(FileSegment::State state);
