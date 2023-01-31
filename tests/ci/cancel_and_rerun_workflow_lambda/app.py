@@ -329,7 +329,8 @@ def main(event):
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
         return
-    elif action == "edited":
+
+    if action == "edited":
         print("PR is edited, check if it needs to rerun")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -351,7 +352,8 @@ def main(event):
             exec_workflow_url([most_recent_workflow.rerun_url], token)
             print("Rerun finished, exiting")
             return
-    elif action == "synchronize":
+
+    if action == "synchronize":
         print("PR is synchronized, going to stop old actions")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -370,7 +372,9 @@ def main(event):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
-    elif action == "labeled" and event_data["label"]["name"] == "can be tested":
+        return
+
+    if action == "labeled" and event_data["label"]["name"] == "can be tested":
         print("PR marked with can be tested label, rerun workflow")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
@@ -407,9 +411,9 @@ def main(event):
                 break
             print("Still have strange status")
             time.sleep(3)
+        return
 
-    else:
-        print("Nothing to do")
+    print("Nothing to do")
 
 
 def handler(event, _):
