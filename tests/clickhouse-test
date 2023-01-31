@@ -2444,7 +2444,7 @@ if __name__ == "__main__":
         client_bin = find_binary(args.binary + "-client")
         if client_bin is not None:
             args.client = client_bin
-            print("Using {args.client} as client program")
+            print(f"Using {args.client} as client program")
         elif args.binary:
             args.client = args.binary + " client"
             print(f"Using {args.client} as client program (expecting monolithic build)")
