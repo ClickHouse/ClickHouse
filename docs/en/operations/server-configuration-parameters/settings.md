@@ -1272,7 +1272,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_cache {#server_configuration_parameters_query-cache}
 
-[Query result cache](../query-cache.md) configuration.
+[Query cache](../query-cache.md) configuration.
 
 The following settings are available:
 
