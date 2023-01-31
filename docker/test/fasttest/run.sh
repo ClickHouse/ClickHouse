@@ -138,6 +138,7 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
+            contrib/simdjson
         )
 
         git submodule sync
@@ -158,6 +159,7 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
     )
 
