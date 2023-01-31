@@ -20,12 +20,8 @@
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Poco/URI.h>
-#include <Common/logger_useful.h>
 
 namespace Aws::S3
 {
