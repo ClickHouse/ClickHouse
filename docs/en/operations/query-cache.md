@@ -72,7 +72,7 @@ use_query_cache = true`) but one should keep in mind that all `SELECT` queries i
 may return cached results then.
 
 The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
-`SYSTEM.QUERY_CACHE`. The number of query cache hits and misses are shown as events "QueryCacheHits" and "QueryCacheMisses" in system table
+`system.query_cache`. The number of query cache hits and misses are shown as events "QueryCacheHits" and "QueryCacheMisses" in system table
 `SYSTEM.EVENTS`. Both counters are only updated for `SELECT` queries which run with setting "use_query_cache = true". Other queries do not
 affect the cache miss counter.
 
