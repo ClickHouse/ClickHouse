@@ -130,8 +130,8 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
             field_type = Field::Types::Map;
         }
         else
-            throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected literal type inside Array: {}. It's a bug",
+                            nested_type->getName());
 
         if (is_nullable)
             nested_type = std::make_shared<DataTypeNullable>(nested_type);
@@ -159,9 +159,9 @@ public:
         else if (ast->as<ASTQueryParameter>())
             return;
         else if (ast->as<ASTIdentifier>())
-            throw DB::Exception("Identifier in constant expression", ErrorCodes::SYNTAX_ERROR);
+            throw DB::Exception(ErrorCodes::SYNTAX_ERROR, "Identifier in constant expression");
         else
-            throw DB::Exception("Syntax error in constant expression", ErrorCodes::SYNTAX_ERROR);
+            throw DB::Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error in constant expression");
     }
 
 private:
@@ -315,7 +315,7 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     {
         const LiteralInfo & info = replaced_literals[i];
         if (info.literal->begin.value() < prev_end)
-            throw Exception("Cannot replace literals", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replace literals");
 
         while (prev_end < info.literal->begin.value())
         {
@@ -616,13 +616,12 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
     structure->actions_on_literals->execute(evaluated);
 
     if (!evaluated || evaluated.rows() != rows_count)
-        throw Exception("Number of rows mismatch after evaluation of batch of constant expressions: got " +
-                        std::to_string(evaluated.rows()) + " rows for " + std::to_string(rows_count) + " expressions",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of rows mismatch after evaluation of batch of constant expressions: "
+                        "got {} rows for {} expressions", evaluated.rows(), rows_count);
 
     if (!evaluated.has(structure->result_column_name))
-        throw Exception("Cannot evaluate template " + structure->result_column_name + ", block structure:\n" + evaluated.dumpStructure(),
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot evaluate template {}, block structure:\n{}",
+                        structure->result_column_name, evaluated.dumpStructure());
 
     rows_count = 0;
     auto res = evaluated.getByName(structure->result_column_name);
@@ -633,7 +632,7 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
     /// Extract column with evaluated expression and mask for NULLs
     const auto & tuple = assert_cast<const ColumnTuple &>(*res.column);
     if (tuple.tupleSize() != 2)
-        throw Exception("Invalid tuple size, it'a a bug", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid tuple size, it'a a bug");
     const auto & is_null = assert_cast<const ColumnUInt8 &>(tuple.getColumn(1));
 
     for (size_t i = 0; i < is_null.size(); ++i)

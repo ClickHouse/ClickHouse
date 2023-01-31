@@ -895,13 +895,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
         if constexpr (sharded)
             parallel_loader.emplace(*this);
 
-        std::atomic<size_t> new_size = 0;
-
-        QueryPipeline pipeline;
-        if (configuration.preallocate)
-            pipeline = QueryPipeline(source_ptr->loadAllWithSizeHint(&new_size));
-        else
-            pipeline = QueryPipeline(source_ptr->loadAll());
+        QueryPipeline pipeline = QueryPipeline(source_ptr->loadAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -909,20 +903,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 
         while (executor.pull(block))
         {
-            if (configuration.preallocate && new_size)
-            {
-                size_t current_new_size = new_size.exchange(0);
-                if (current_new_size)
-                {
-                    LOG_TRACE(log, "Preallocated {} elements", current_new_size);
-                    resize(current_new_size);
-                }
-            }
-            else
-            {
-                resize(block.rows());
-            }
-
+            resize(block.rows());
             if (parallel_loader)
                 parallel_loader->addBlock(block);
             else
@@ -1176,6 +1157,8 @@ void registerDictionaryHashed(DictionaryFactory & factory)
 
         const std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
         const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
+        if (preallocate)
+            LOG_WARNING(&Poco::Logger::get("HashedDictionary"), "'prellocate' attribute is obsolete, consider looking at 'shards'");
 
         Int64 shards = config.getInt(config_prefix + dictionary_layout_prefix + ".shards", 1);
         if (shards <= 0 || shards > 128)
@@ -1186,7 +1169,6 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
         HashedDictionaryStorageConfiguration configuration{
-            preallocate,
             static_cast<UInt64>(shards),
             static_cast<UInt64>(shard_load_queue_backlog),
             require_nonempty,

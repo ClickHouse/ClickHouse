@@ -222,7 +222,7 @@ public:
 
     void gather(ColumnGathererStream &) override
     {
-        throw Exception("Cannot gather into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
     }
 
     void getExtremes(Field & min, Field & max) const override
