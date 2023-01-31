@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/Exception.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -22,6 +23,58 @@ namespace S3
 
 namespace Model = Aws::S3::Model;
 
+struct S3ClientCache
+{
+    S3ClientCache() = default;
+
+    S3ClientCache(const S3ClientCache & other)
+        : region_for_bucket_cache(other.region_for_bucket_cache)
+        , uri_for_bucket_cache(other.uri_for_bucket_cache)
+    {}
+
+    S3ClientCache(S3ClientCache && other) = delete;
+
+    S3ClientCache & operator=(const S3ClientCache &) = delete;
+    S3ClientCache & operator=(S3ClientCache &&) = delete;
+
+    void clearCache()
+    {
+        {
+            std::lock_guard lock(region_cache_mutex);
+            region_for_bucket_cache.clear();
+        }
+        {
+            std::lock_guard lock(uri_cache_mutex);
+            uri_for_bucket_cache.clear();
+        }
+    }
+
+    std::mutex region_cache_mutex;
+    std::unordered_map<std::string, std::string> region_for_bucket_cache;
+
+    std::mutex uri_cache_mutex;
+    std::unordered_map<std::string, URI> uri_for_bucket_cache;
+};
+
+class S3ClientCacheRegistry
+{
+public:
+    static S3ClientCacheRegistry & instance()
+    {
+        static S3ClientCacheRegistry registry;
+        return registry;
+    }
+
+    void registerClient(const std::shared_ptr<S3ClientCache> & client_cache);
+    void unregisterClient(S3ClientCache * client);
+    void clearCacheForAll();
+private:
+    S3ClientCacheRegistry() = default;
+
+    std::mutex clients_mutex;
+    std::unordered_map<S3ClientCache *, std::weak_ptr<S3ClientCache>> client_caches;
+};
+
 class S3Client : public Aws::S3::S3Client
 {
 public:
@@ -35,22 +88,38 @@ public:
         std::string endpoint;
         endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
         detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
+
+        cache = std::make_shared<S3ClientCache>();
+        S3ClientCacheRegistry::instance().registerClient(cache);
     }
 
     S3Client(const S3Client & other)
         : Aws::S3::S3Client(other)
         , explicit_region(other.explicit_region)
         , detect_region(other.detect_region)
-        , region_for_bucket_cache(other.region_for_bucket_cache)
-        , uri_for_bucket_cache(other.uri_for_bucket_cache)
         , log(&Poco::Logger::get("S3Client"))
     {
+        cache = std::make_shared<S3ClientCache>(*other.cache);
+        S3ClientCacheRegistry::instance().registerClient(cache);
     }
 
     S3Client & operator=(const S3Client &) = delete;
 
     S3Client(S3Client && other) = delete;
     S3Client & operator= (S3Client &&) = delete;
+
+    ~S3Client() override
+    {
+        try
+        {
+            S3ClientCacheRegistry::instance().unregisterClient(cache.get());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            throw;
+        }
+    }
 
     class RetryStrategy : public Aws::Client::DefaultRetryStrategy
     {
@@ -59,7 +128,6 @@ public:
 
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
     };
-
 
     Model::HeadObjectOutcome HeadObject(const HeadObjectRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(const ListObjectsV2Request & request) const;
@@ -181,11 +249,8 @@ private:
 
     std::string explicit_region;
     mutable bool detect_region = true;
-    mutable std::mutex region_cache_mutex;
-    mutable std::unordered_map<std::string, std::string> region_for_bucket_cache;
 
-    mutable std::mutex uri_cache_mutex;
-    mutable std::unordered_map<std::string, URI> uri_for_bucket_cache;
+    mutable std::shared_ptr<S3ClientCache> cache;
 
     Poco::Logger * log;
 };

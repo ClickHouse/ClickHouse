@@ -57,8 +57,8 @@ bool S3Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::
 
 void S3Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
-    std::lock_guard lock(region_cache_mutex);
-    auto [it, inserted] = region_for_bucket_cache.emplace(bucket, region);
+    std::lock_guard lock(cache->region_cache_mutex);
+    auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -202,8 +202,8 @@ Model::DeleteObjectsOutcome S3Client::DeleteObjects(const DeleteObjectsRequest &
 
 std::string S3Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
-    std::lock_guard lock(region_cache_mutex);
-    if (auto it = region_for_bucket_cache.find(bucket); it != region_for_bucket_cache.end())
+    std::lock_guard lock(cache->region_cache_mutex);
+    if (auto it = cache->region_for_bucket_cache.find(bucket); it != cache->region_for_bucket_cache.end())
         return it->second;
 
     if (!force_detect && !detect_region)
@@ -237,7 +237,7 @@ std::string S3Client::getRegionForBucket(const std::string & bucket, bool force_
 
     LOG_INFO(log, "Found region {} for bucket {}", region, bucket);
 
-    auto [it, _] = region_for_bucket_cache.emplace(bucket, std::move(region));
+    auto [it, _] = cache->region_for_bucket_cache.emplace(bucket, std::move(region));
 
     return it->second;
 }
@@ -273,8 +273,8 @@ bool S3Client::updateURIForBucketForHead(const std::string & bucket) const
 
 std::optional<S3::URI> S3Client::getURIForBucket(const std::string & bucket) const
 {
-    std::lock_guard lock(uri_cache_mutex);
-    if (auto it = uri_for_bucket_cache.find(bucket); it != uri_for_bucket_cache.end())
+    std::lock_guard lock(cache->uri_cache_mutex);
+    if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
         return it->second;
 
     return std::nullopt;
@@ -282,8 +282,8 @@ std::optional<S3::URI> S3Client::getURIForBucket(const std::string & bucket) con
 
 void S3Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const
 {
-    std::lock_guard lock(uri_cache_mutex);
-    if (auto it = uri_for_bucket_cache.find(bucket); it != uri_for_bucket_cache.end())
+    std::lock_guard lock(cache->uri_cache_mutex);
+    if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
     {
         if (it->second.uri == new_uri.uri)
             return;
@@ -295,7 +295,43 @@ void S3Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) c
     }
 
     LOG_INFO(log, "Updating URI for bucket {} to {}", bucket, new_uri.uri.toString());
-    uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
+    cache->uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
+}
+
+void S3ClientCacheRegistry::registerClient(const std::shared_ptr<S3ClientCache> & client_cache)
+{
+    std::lock_guard lock(clients_mutex);
+    auto [it, inserted] = client_caches.emplace(client_cache.get(), client_cache);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Same S3 client registered twice");
+}
+
+void S3ClientCacheRegistry::unregisterClient(S3ClientCache * client)
+{
+    std::lock_guard lock(clients_mutex);
+    auto erased = client_caches.erase(client);
+    if (erased == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't unregister S3 client, either it was already unregistered or not registered at all");
+}
+
+void S3ClientCacheRegistry::clearCacheForAll()
+{
+    std::lock_guard lock(clients_mutex);
+
+    for (auto it = client_caches.begin(); it != client_caches.end();)
+    {
+        if (auto locked_client = it->second.lock(); locked_client)
+        {
+            locked_client->clearCache();
+            ++it;
+        }
+        else
+        {
+            LOG_INFO(&Poco::Logger::get("S3ClientCacheRegistry"), "Deleting leftover S3 client cache");
+            it = client_caches.erase(it);
+        }
+    }
+
 }
 
 }

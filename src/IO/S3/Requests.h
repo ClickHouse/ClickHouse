@@ -29,7 +29,7 @@ namespace Model = Aws::S3::Model;
 class S3Client;
 
 template <typename BaseRequest>
-class RequestWithClient : public BaseRequest
+class ExtendedRequest : public BaseRequest
 {
 public:
     Aws::Endpoint::EndpointParameters GetEndpointContextParams() const override
@@ -68,21 +68,21 @@ protected:
     mutable std::optional<S3::URI> uri_override;
 };
 
-using HeadObjectRequest = RequestWithClient<Model::HeadObjectRequest>;
-using ListObjectsV2Request = RequestWithClient<Model::ListObjectsV2Request>;
-using ListObjectsRequest = RequestWithClient<Model::ListObjectsRequest>;
-using GetObjectRequest = RequestWithClient<Model::GetObjectRequest>;
+using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
+using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
+using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
+using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
 
-using CreateMultipartUploadRequest = RequestWithClient<Model::CreateMultipartUploadRequest>;
-using CompleteMultipartUploadRequest = RequestWithClient<Model::CompleteMultipartUploadRequest>;
-using AbortMultipartUploadRequest = RequestWithClient<Model::AbortMultipartUploadRequest>;
-using UploadPartRequest = RequestWithClient<Model::UploadPartRequest>;
-using UploadPartCopyRequest = RequestWithClient<Model::UploadPartCopyRequest>;
+using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;
+using CompleteMultipartUploadRequest = ExtendedRequest<Model::CompleteMultipartUploadRequest>;
+using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
+using UploadPartRequest = ExtendedRequest<Model::UploadPartRequest>;
+using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 
-using PutObjectRequest = RequestWithClient<Model::PutObjectRequest>;
-using CopyObjectRequest = RequestWithClient<Model::CopyObjectRequest>;
-using DeleteObjectRequest = RequestWithClient<Model::DeleteObjectRequest>;
-using DeleteObjectsRequest = RequestWithClient<Model::DeleteObjectsRequest>;
+using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
+using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
+using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
+using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
 
 }
 

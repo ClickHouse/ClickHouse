@@ -31,6 +31,9 @@ public:
 #endif
         DROP_FILESYSTEM_CACHE,
         DROP_SCHEMA_CACHE,
+#if USE_AWS_S3
+        DROP_S3_CLIENT_CACHE,
+#endif
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
