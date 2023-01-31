@@ -11,6 +11,11 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageS3Settings.h>
 
+#include <Processors/ISource.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Poco/URI.h>
+#include <Common/logger_useful.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
@@ -104,6 +109,7 @@ public:
             const std::string & version_id_,
             const std::vector<String> & keys_,
             const String & bucket_,
+            const S3Settings::RequestSettings & request_settings_,
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
