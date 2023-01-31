@@ -29,10 +29,8 @@ void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & setti
                 first = false;
 
             formatSettingName(change.name, settings.ostr);
-            if (settings.show_secrets)
-                settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
-            else
-                settings.ostr << " = '[HIDDEN]'";
+            settings.ostr << " = ";
+            settings.writeSecret(applyVisitor(FieldVisitorToString(), change.value));
         }
     }
     if (!delete_keys.empty())

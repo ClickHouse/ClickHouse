@@ -30,11 +30,11 @@ void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, F
     if (second_with_brackets)
         settings.writeKeyword("(");
 
-    if (!settings.show_secrets && (first == "password"))
+    if (!settings.shouldShowSecrets() && (first == "password"))
     {
         /// Hide password in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-        settings.ostr << "'[HIDDEN]'";
+        settings.writeSecret();
     }
     else
     {

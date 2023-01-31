@@ -939,7 +939,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 || name == "replaceRegexpAll");
 
         auto secret_arguments = std::make_pair(static_cast<size_t>(-1), static_cast<size_t>(-1));
-        if (!settings.show_secrets)
+        if (!settings.shouldShowSecrets())
             secret_arguments = FunctionSecretArgumentsFinder(*this).getRange();
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
@@ -949,9 +949,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (arguments->children[i]->as<ASTSetQuery>())
                 settings.ostr << "SETTINGS ";
 
-            if (!settings.show_secrets && (secret_arguments.first <= i) && (i < secret_arguments.second))
+            if (!settings.shouldShowSecrets() && (secret_arguments.first <= i) && (i < secret_arguments.second))
             {
-                settings.ostr << "'[HIDDEN]'";
+                settings.writeSecret();
                 if (size - 1 < secret_arguments.second)
                     break; /// All other arguments should also be hidden.
                 continue;

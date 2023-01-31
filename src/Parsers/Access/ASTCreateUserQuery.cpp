@@ -92,7 +92,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
         }
 
-        if (password && !settings.show_secrets)
+        if (password && !settings.shouldShowSecrets())
         {
             prefix = "";
             password.reset();
