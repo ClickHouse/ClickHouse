@@ -81,8 +81,7 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
         case AccessEntityType::MAX:
             break;
     }
-    throw Exception(
-        toString(query.type) + ": type is not supported by DROP query", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
 }
 
 }

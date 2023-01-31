@@ -96,7 +96,8 @@ DistinctSortedTransform::DistinctSortedTransform(
     ColumnNumbers const_column_positions;
     calcColumnPositionsInHeader(header, column_names, column_positions, const_column_positions);
     if (column_positions.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctSortedTransform: all columns can't be const. DistinctTransform should be used instead");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "DistinctSortedTransform: all columns can't be const. DistinctTransform should be used instead");
 
     /// pre-calculate DISTINCT column positions which form sort prefix of sort description
     calcSortPrefixPositionsInHeader(header, sort_description, column_positions, const_column_positions, sort_prefix_positions);

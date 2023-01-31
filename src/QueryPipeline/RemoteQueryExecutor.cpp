@@ -357,7 +357,7 @@ std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs
         else
             return read(*read_context);
     }
-    throw Exception("Found duplicate uuids while processing query", ErrorCodes::DUPLICATED_PART_UUIDS);
+    throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
 }
 
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
@@ -466,7 +466,7 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 void RemoteQueryExecutor::processReadTaskRequest()
 {
     if (!task_iterator)
-        throw Exception("Distributed task iterator is not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
     auto response = (*task_iterator)();
     connections->sendReadTaskResponse(response);
 }
@@ -474,7 +474,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(PartitionReadRequest request)
 {
     if (!parallel_reading_coordinator)
-        throw Exception("Coordinator for parallel reading from replicas is not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     auto response = parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponse(response);

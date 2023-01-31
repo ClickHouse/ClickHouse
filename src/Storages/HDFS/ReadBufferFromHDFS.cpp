@@ -180,10 +180,10 @@ bool ReadBufferFromHDFS::nextImpl()
 off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
 {
     if (whence != SEEK_SET)
-        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
     if (offset_ < 0)
-        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
     if (!working_buffer.empty()
         && size_t(offset_) >= impl->getPosition() - working_buffer.size()
