@@ -275,7 +275,7 @@ class IColumn;
     M(Milliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.", 0) \
     M(Milliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from/to streaming storages.", 0) \
     \
-    M(Bool, force_select_final, false, "Query with the FINAL modifier by default", 0) \
+    M(Bool, final, false, "Query with the FINAL modifier by default", 0) \
     \
     /** Settings for testing hedged requests */ \
     M(Milliseconds, sleep_in_send_tables_status_ms, 0, "Time to sleep in sending tables status response in TCPHandler", 0) \
