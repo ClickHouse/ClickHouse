@@ -294,7 +294,7 @@ private:
     /// Function might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeUnlocked(KeyTransaction & key_transaction, CacheGuard::LockPtr);
+    void completeUnlocked(KeyTransaction & key_transaction, const CacheGuard::Lock &);
 
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;

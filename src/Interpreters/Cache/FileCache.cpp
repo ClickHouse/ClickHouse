@@ -502,7 +502,7 @@ FileCache::KeyMetadata::iterator FileCache::addCell(
     FileSegment::State state,
     const CreateFileSegmentSettings & settings,
     KeyTransaction & key_transaction,
-    CacheGuard::LockPtr * lock)
+    const CacheGuard::Lock * lock)
 {
     /// Create a file segment cell and put it in `files` map by [key][offset].
 
@@ -579,7 +579,7 @@ bool FileCache::tryReserveUnlocked(
     size_t offset,
     size_t size,
     KeyTransactionPtr key_transaction,
-    CacheGuard::LockPtr lock)
+    const CacheGuard::Lock & lock)
 {
     auto query_context = query_limit ? query_limit->tryGetQueryContext(lock) : nullptr;
     bool reserved;
@@ -635,7 +635,7 @@ bool FileCache::tryReserveImpl(
     size_t size,
     KeyTransactionPtr key_transaction,
     QueryLimit::LockedQueryContext * query_context,
-    CacheGuard::LockPtr priority_lock)
+    const CacheGuard::Lock & priority_lock)
 {
     /// Iterate cells in the priority of `priority_queue`.
     /// If some entry is in `priority_queue` it must be guaranteed to have a
@@ -863,7 +863,7 @@ KeyTransaction::~KeyTransaction()
     cleanupKeyDirectory();
 }
 
-void KeyTransaction::remove(FileSegmentPtr file_segment, CacheGuard::LockPtr cache_lock)
+void KeyTransaction::remove(FileSegmentPtr file_segment, const CacheGuard::Lock & cache_lock)
 {
     /// We must hold pointer to file segment while removing it.
     chassert(file_segment->key() == key);
@@ -879,7 +879,7 @@ bool KeyTransaction::isLastHolder(size_t offset)
 void KeyTransaction::remove(
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
-    CacheGuard::LockPtr cache_lock)
+    const CacheGuard::Lock & cache_lock)
 {
     LOG_DEBUG(
         log, "Remove from cache. Key: {}, offset: {}",
@@ -1059,7 +1059,7 @@ void FileCache::loadMetadata()
 void KeyTransaction::reduceSizeToDownloaded(
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
-    CacheGuard::LockPtr cache_lock)
+    const CacheGuard::Lock & cache_lock)
 {
     /**
      * In case file was partially downloaded and it's download cannot be continued
@@ -1323,7 +1323,7 @@ FileCache::QueryContextHolder::~QueryContextHolder()
 }
 
 FileCache::QueryLimit::LockedQueryContextPtr
-FileCache::QueryLimit::tryGetQueryContext(CacheGuard::LockPtr lock)
+FileCache::QueryLimit::tryGetQueryContext(const CacheGuard::Lock & lock)
 {
     if (!isQueryInitialized())
         return nullptr;
@@ -1332,7 +1332,7 @@ FileCache::QueryLimit::tryGetQueryContext(CacheGuard::LockPtr lock)
     return (query_iter == query_map.end()) ? nullptr : std::make_unique<LockedQueryContext>(query_iter->second, lock);
 }
 
-void FileCache::QueryLimit::removeQueryContext(const std::string & query_id, CacheGuard::LockPtr)
+void FileCache::QueryLimit::removeQueryContext(const std::string & query_id, const CacheGuard::Lock &)
 {
     auto query_iter = query_map.find(query_id);
     if (query_iter == query_map.end())
@@ -1348,7 +1348,7 @@ void FileCache::QueryLimit::removeQueryContext(const std::string & query_id, Cac
 FileCache::QueryLimit::QueryContextPtr FileCache::QueryLimit::getOrSetQueryContext(
     const std::string & query_id,
     const ReadSettings & settings,
-    CacheGuard::LockPtr)
+    const CacheGuard::Lock &)
 {
     if (query_id.empty())
         return nullptr;
