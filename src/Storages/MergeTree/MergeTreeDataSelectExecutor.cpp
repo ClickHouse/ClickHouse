@@ -156,7 +156,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     if (!query_info.projection)
     {
-        auto plan = readFromParts(
+        auto step = readFromParts(
             query_info.merge_tree_select_result_ptr ? MergeTreeData::DataPartsVector{} : parts,
             column_names_to_return,
             storage_snapshot,
@@ -168,12 +168,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             query_info.merge_tree_select_result_ptr,
             enable_parallel_reading);
 
-        if (plan->isInitialized() && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
+        if (!step && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
             && !metadata_for_reading->projections.empty())
             throw Exception(
                 "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
                 ErrorCodes::PROJECTION_NOT_USED);
 
+        auto plan = std::make_unique<QueryPlan>();
+        plan->addStep(std::move(step));
         return plan;
     }
 
@@ -197,7 +199,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     else if (query_info.projection->merge_tree_projection_select_result_ptr)
     {
         LOG_DEBUG(log, "projection required columns: {}", fmt::join(query_info.projection->required_columns, ", "));
-        projection_plan = readFromParts(
+        projection_plan->addStep(readFromParts(
             {},
             query_info.projection->required_columns,
             storage_snapshot,
@@ -207,7 +209,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read,
             query_info.projection->merge_tree_projection_select_result_ptr,
-            enable_parallel_reading);
+            enable_parallel_reading));
     }
 
     if (projection_plan->isInitialized())
@@ -1337,7 +1339,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         log);
 }
 
-QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
+QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1353,10 +1355,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     if (merge_tree_select_result_ptr)
     {
         if (merge_tree_select_result_ptr->marks() == 0)
-            return std::make_unique<QueryPlan>();
+            return {};
     }
     else if (parts.empty())
-        return std::make_unique<QueryPlan>();
+        return {};
 
     Names real_column_names;
     Names virt_column_names;
@@ -1366,7 +1368,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
-    auto read_from_merge_tree = std::make_unique<ReadFromMergeTree>(
+    return std::make_unique<ReadFromMergeTree>(
         std::move(parts),
         real_column_names,
         virt_column_names,
@@ -1382,10 +1384,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         merge_tree_select_result_ptr,
         enable_parallel_reading
     );
-
-    QueryPlanPtr plan = std::make_unique<QueryPlan>();
-    plan->addStep(std::move(read_from_merge_tree));
-    return plan;
 }
 
 

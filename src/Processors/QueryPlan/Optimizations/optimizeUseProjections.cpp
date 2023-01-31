@@ -9,6 +9,8 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <stack>
 
 namespace DB::QueryPlanOptimizations
@@ -16,7 +18,7 @@ namespace DB::QueryPlanOptimizations
 
 QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
-    IQueryPlanStep * step = node.step.get();\
+    IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
         /// Already read-in-order, skip.
@@ -150,6 +152,9 @@ struct AggregateProjectionCandidate
     AggregateProjectionInfo info;
     const ProjectionDescription * projection;
     ActionsDAGPtr dag;
+
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
 
 ActionsDAGPtr analyzeAggregateProjection(
@@ -360,7 +365,7 @@ ActionsDAGPtr analyzeAggregateProjection(
     return query_dag.foldActionsByProjection(new_inputs);
 }
 
-void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes &)
+void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
         return;
@@ -431,6 +436,128 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes &)
 
     if (candidates.empty())
         return;
+
+    AggregateProjectionCandidate * best_candidate = nullptr;
+    size_t best_candidate_marks = 0;
+
+    const auto & parts = reading->getParts();
+    const auto & query_info = reading->getQueryInfo();
+
+    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
+
+    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
+    if (context->getSettingsRef().select_sequential_consistency)
+    {
+        if (const StorageReplicatedMergeTree * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&reading->getMergeTreeData()))
+            max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
+    }
+
+    for (auto & candidate : candidates)
+    {
+        MergeTreeData::DataPartsVector projection_parts;
+        MergeTreeData::DataPartsVector normal_parts;
+        for (const auto & part : parts)
+        {
+            const auto & created_projections = part->getProjectionParts();
+            auto it = created_projections.find(candidate.projection->name);
+            if (it != created_projections.end())
+                projection_parts.push_back(it->second);
+            else
+                normal_parts.push_back(part);
+        }
+
+        if (projection_parts.empty())
+            continue;
+
+        ActionDAGNodes added_filter_nodes;
+        if (filter_node)
+            added_filter_nodes.nodes.push_back(candidate.dag->getOutputs().front());
+
+        auto projection_result_ptr = reader.estimateNumMarksToRead(
+            projection_parts,
+            nullptr,
+            candidate.dag->getRequiredColumnsNames(),
+            metadata,
+            candidate.projection->metadata,
+            query_info, /// How it is actually used? I hope that for index we need only added_filter_nodes
+            added_filter_nodes,
+            context,
+            context->getSettingsRef().max_threads,
+            max_added_blocks);
+
+        if (projection_result_ptr->error())
+            continue;
+
+        size_t sum_marks = projection_result_ptr->marks();
+
+        if (!normal_parts.empty())
+        {
+            auto normal_result_ptr = reading->selectRangesToRead(std::move(normal_parts));
+
+            if (normal_result_ptr->error())
+                continue;
+
+            if (normal_result_ptr->marks() != 0)
+            {
+                sum_marks += normal_result_ptr->marks();
+                candidate.merge_tree_normal_select_result_ptr = std::move(normal_result_ptr);
+            }
+        }
+
+        candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
+
+        if (best_candidate == nullptr || best_candidate_marks > sum_marks)
+        {
+            best_candidate = &candidate;
+            best_candidate_marks = sum_marks;
+        }
+    }
+
+    if (!best_candidate)
+        return;
+
+    auto projection_reading = reader.readFromParts(
+        {},
+        best_candidate->dag->getRequiredColumnsNames(),
+        reading->getStorageSnapshot(),
+        query_info,
+        context,
+        reading->getMaxBlockSize(),
+        reading->getNumStreams(),
+        max_added_blocks,
+        best_candidate->merge_tree_projection_select_result_ptr,
+        reading->isParallelReadingEnabled());
+
+    projection_reading->setStepDescription(best_candidate->projection->name);
+
+    if (!best_candidate->merge_tree_normal_select_result_ptr)
+    {
+        /// All parts are taken from projection
+
+        auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
+        auto & expr_or_filter_node = nodes.emplace_back();
+
+        if (filter_node)
+        {
+            expr_or_filter_node.step = std::make_unique<FilterStep>(
+                projection_reading_node.step->getOutputStream(),
+                best_candidate->dag,
+                best_candidate->dag->getOutputs().front()->result_name,
+                true);
+        }
+        else
+            expr_or_filter_node.step = std::make_unique<ExpressionStep>(
+                projection_reading_node.step->getOutputStream(),
+                best_candidate->dag);
+
+        expr_or_filter_node.children.push_back(&projection_reading_node);
+        aggregating->requestOnlyMergeForAggregateProjection(expr_or_filter_node.step->getOutputStream());
+        node.children.front() = &expr_or_filter_node;
+
+        optimizeAggregationInOrder(node, nodes);
+
+        return;
+    }
 
     
 }
