@@ -693,7 +693,7 @@ void LocalServer::processConfig()
         "clickhouse-local supports all features and engines of ClickHouse."
         " You can query data from remote engines and store results locally or other way around."
         " For table engines that actually store data on a disk like Log and MergeTree"
-        " clickhouse-local puts data to temprorary directory that is not reused between runs.\n\n"
+        " clickhouse-local puts data to temporary directory that is not reused between runs.\n\n"
         "clickhouse-local can be used to query data from stopped clickhouse-server installation with --path to"
         " local directory with data.\n";
 }
