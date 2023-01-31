@@ -109,7 +109,7 @@ private:
     template <class T>
     size_t updateFrame(ColumnString::Chars & frame, const T value) const
     {
-        static const String bars[9] = {" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+        static const std::string_view bars[9] = {" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
         const auto & bar = (isNaN(value) || value > 8 || value < 1) ? bars[0] : bars[static_cast<UInt8>(value)];
         frame.insert(bar.begin(), bar.end());
         return bar.size();
