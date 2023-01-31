@@ -302,16 +302,20 @@ def main(event):
     action = event_data["action"]
     print("Got action", event_data["action"])
     pull_request = event_data["pull_request"]
-    labels = {label["name"] for label in pull_request["labels"]}
-    print("PR has labels", labels)
+    label = ""
+    if action == "labeled":
+        label = event_data["label"]["name"]
+        print("Added label:", label)
+
+    print("PR has labels", {label["name"] for label in pull_request["labels"]})
     if action == "opened" or (
         action == "labeled" and pull_request["created_at"] == pull_request["updated_at"]
     ):
         print("Freshly opened PR, nothing to do")
         return
 
-    if action == "closed" or (action == "labeled" and "do not test" in labels):
-        print("PR merged/closed or manually labeled 'do not test' will kill workflows")
+    if action == "closed" or label == "do not test":
+        print("PR merged/closed or manually labeled 'do not test', will kill workflows")
         workflow_descriptions = get_workflows_description_for_pull_request(
             pull_request, token
         )
@@ -328,6 +332,45 @@ def main(event):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
+        return
+
+    if label == "can be tested":
+        print("PR marked with can be tested label, rerun workflow")
+        workflow_descriptions = get_workflows_description_for_pull_request(
+            pull_request, token
+        )
+        workflow_descriptions = (
+            workflow_descriptions
+            or get_workflow_description_fallback(pull_request, token)
+        )
+        if not workflow_descriptions:
+            print("Not found any workflows")
+            return
+
+        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
+        most_recent_workflow = workflow_descriptions[-1]
+        print("Latest workflow", most_recent_workflow)
+        if (
+            most_recent_workflow.status != "completed"
+            and most_recent_workflow.conclusion != "cancelled"
+        ):
+            print("Latest workflow is not completed, cancelling")
+            exec_workflow_url([most_recent_workflow.cancel_url], token)
+            print("Cancelled")
+
+        for _ in range(45):
+            # If the number of retries is changed: tune the lambda limits accordingly
+            latest_workflow_desc = get_workflow_description(
+                most_recent_workflow.url, token
+            )
+            print("Checking latest workflow", latest_workflow_desc)
+            if latest_workflow_desc.status in ("completed", "cancelled"):
+                print("Finally latest workflow done, going to rerun")
+                exec_workflow_url([most_recent_workflow.rerun_url], token)
+                print("Rerun finished, exiting")
+                break
+            print("Still have strange status")
+            time.sleep(3)
         return
 
     if action == "edited":
@@ -372,45 +415,6 @@ def main(event):
                 urls_to_cancel.append(workflow_description.cancel_url)
         print(f"Found {len(urls_to_cancel)} workflows to cancel")
         exec_workflow_url(urls_to_cancel, token)
-        return
-
-    if action == "labeled" and event_data["label"]["name"] == "can be tested":
-        print("PR marked with can be tested label, rerun workflow")
-        workflow_descriptions = get_workflows_description_for_pull_request(
-            pull_request, token
-        )
-        workflow_descriptions = (
-            workflow_descriptions
-            or get_workflow_description_fallback(pull_request, token)
-        )
-        if not workflow_descriptions:
-            print("Not found any workflows")
-            return
-
-        workflow_descriptions.sort(key=lambda x: x.run_id)  # type: ignore
-        most_recent_workflow = workflow_descriptions[-1]
-        print("Latest workflow", most_recent_workflow)
-        if (
-            most_recent_workflow.status != "completed"
-            and most_recent_workflow.conclusion != "cancelled"
-        ):
-            print("Latest workflow is not completed, cancelling")
-            exec_workflow_url([most_recent_workflow.cancel_url], token)
-            print("Cancelled")
-
-        for _ in range(45):
-            # If the number of retries is changed: tune the lambda limits accordingly
-            latest_workflow_desc = get_workflow_description(
-                most_recent_workflow.url, token
-            )
-            print("Checking latest workflow", latest_workflow_desc)
-            if latest_workflow_desc.status in ("completed", "cancelled"):
-                print("Finally latest workflow done, going to rerun")
-                exec_workflow_url([most_recent_workflow.rerun_url], token)
-                print("Rerun finished, exiting")
-                break
-            print("Still have strange status")
-            time.sleep(3)
         return
 
     print("Nothing to do")
