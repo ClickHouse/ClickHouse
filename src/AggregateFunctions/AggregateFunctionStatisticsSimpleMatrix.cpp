@@ -30,7 +30,8 @@ AggregateFunctionPtr createAggregateFunctionStatisticsArbitrary(
 
 }
 
-void registerAggregateFunctionsStatisticsSimpleMatrix(AggregateFunctionFactory & factory) {
+void registerAggregateFunctionsStatisticsSimpleMatrix(AggregateFunctionFactory & factory)
+{
     factory.registerFunction("covarSampMatrix", createAggregateFunctionStatisticsArbitrary<AggregateFunctionCovarSampSimpleMatrix>);
     factory.registerFunction("covarPopMatrix", createAggregateFunctionStatisticsArbitrary<AggregateFunctionCovarPopSimpleMatrix>);
     factory.registerFunction("corrMatrix", createAggregateFunctionStatisticsArbitrary<AggregateFunctionCorrSimpleMatrix>);
