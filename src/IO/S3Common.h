@@ -97,29 +97,6 @@ private:
     std::atomic<bool> s3_requests_logging_enabled;
 };
 
-/// WARNING: Don't use `HeadObjectRequest`! Use the functions below instead.
-/// For explanation see the comment about `HeadObject` request in the function tryGetObjectInfo().
-
-struct ObjectInfo
-{
-    size_t size = 0;
-    time_t last_modification_time = 0;
-};
-
-ObjectInfo getObjectInfo(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
-
-size_t getObjectSize(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
-
-bool objectExists(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
-
-/// Throws an exception if a specified object doesn't exist. `description` is used as a part of the error message.
-void checkObjectExists(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, std::string_view description = {});
-
-bool isNotFoundError(Aws::S3::S3Errors error);
-
-/// Returns the object's metadata.
-std::map<String, String> getObjectMetadata(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
-
 }
 #endif
 

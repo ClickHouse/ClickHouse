@@ -1,5 +1,7 @@
 #include <IO/S3/S3Client.h>
 
+#if USE_AWS_S3
+
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -299,3 +301,5 @@ void S3Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) c
 }
 
 }
+
+#endif

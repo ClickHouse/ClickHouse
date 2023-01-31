@@ -1,6 +1,5 @@
 #pragma once
 
-#include <aws/core/http/HttpResponse.h>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -47,6 +46,11 @@ public:
         , log(&Poco::Logger::get("S3Client"))
     {
     }
+
+    S3Client & operator=(const S3Client &) = delete;
+
+    S3Client(S3Client && other) = delete;
+    S3Client & operator= (S3Client &&) = delete;
 
     class RetryStrategy : public Aws::Client::DefaultRetryStrategy
     {

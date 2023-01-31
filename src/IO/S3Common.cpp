@@ -1,5 +1,4 @@
 #include <IO/S3Common.h>
-#include <aws/core/endpoint/EndpointParameter.h>
 
 #include <Common/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -701,34 +700,6 @@ public:
     }
 };
 
-/// Performs a request to get the size and last modification time of an object.
-std::pair<std::optional<DB::S3::ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
-    const DB::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
-{
-    ProfileEvents::increment(ProfileEvents::S3HeadObject);
-    if (for_disk_s3)
-        ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
-
-    DB::S3::HeadObjectRequest req;
-    req.SetBucket(bucket);
-    req.SetKey(key);
-
-    if (!version_id.empty())
-        req.SetVersionId(version_id);
-
-    auto outcome = client.HeadObject(req);
-    if (outcome.IsSuccess())
-    {
-        const auto & result = outcome.GetResult();
-        DB::S3::ObjectInfo object_info;
-        object_info.size = static_cast<size_t>(result.GetContentLength());
-        object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
-        return {object_info, {}};
-    }
-
-    return {std::nullopt, outcome.GetError()};
-}
-
 }
 
 
@@ -826,82 +797,6 @@ namespace S3
             for_disk_s3,
             get_request_throttler,
             put_request_throttler);
-    }
-
-    bool isNotFoundError(Aws::S3::S3Errors error)
-    {
-        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
-    }
-
-    ObjectInfo getObjectInfo(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
-    {
-        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
-        if (object_info)
-        {
-            return *object_info;
-        }
-        else if (throw_on_error)
-        {
-            throw DB::Exception(ErrorCodes::S3_ERROR,
-                "Failed to get object attributes: '{}'. HTTP response code: {}",
-                error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
-        }
-        return {};
-    }
-
-    size_t getObjectSize(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
-    {
-        return getObjectInfo(client, bucket, key, version_id, for_disk_s3, throw_on_error).size;
-    }
-
-    bool objectExists(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
-    {
-        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
-        if (object_info)
-            return true;
-
-        if (isNotFoundError(error.GetErrorType()))
-            return false;
-
-        throw S3Exception(error.GetErrorType(),
-            "Failed to check existence of key {} in bucket {}: {}",
-            key, bucket, error.GetMessage());
-    }
-
-    void checkObjectExists(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, std::string_view description)
-    {
-        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
-        if (object_info)
-            return;
-        throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
-                          (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
-    }
-
-    std::map<String, String> getObjectMetadata(const S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
-    {
-        ProfileEvents::increment(ProfileEvents::S3GetObjectMetadata);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectMetadata);
-
-        HeadObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        auto outcome = client.HeadObject(req);
-
-        if (outcome.IsSuccess())
-            return outcome.GetResult().GetMetadata();
-
-        if (!throw_on_error)
-            return {};
-
-        const auto & error = outcome.GetError();
-        throw S3Exception(error.GetErrorType(),
-            "Failed to get metadata of key {} in bucket {}: {}",
-            key, bucket, error.GetMessage());
     }
 }
 
