@@ -525,6 +525,24 @@ def test_zip_archive_with_settings():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
+def test_zip_archive_with_bad_compression_method():
+    backup_name = f"Disk('backups', 'archive_with_bad_compression_method.zip')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    expected_error = "Unknown compression method specified for a zip archive"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_compression_method', compression_method='foobar'"
+    )
+    assert (
+        instance.query(
+            "SELECT status FROM system.backups WHERE id='archive_with_bad_compression_method'"
+        )
+        == "BACKUP_FAILED\n"
+    )
+
+
 def test_async():
     create_and_fill_table()
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"

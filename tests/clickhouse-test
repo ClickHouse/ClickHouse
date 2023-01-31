@@ -935,7 +935,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > 60
+            and total_time > 120
             and "long" not in self.tags
         ):
             if debug_log:
