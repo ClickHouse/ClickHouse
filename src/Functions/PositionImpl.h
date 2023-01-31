@@ -214,9 +214,9 @@ struct PositionImpl
             }
 
             ColumnString::Offset prev_offset = 0;
-            auto rows = haystack_offsets.size();
-            const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos);
-            if (start_pos_const)
+            size_t rows = haystack_offsets.size();
+
+            if (const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos))
             {
                 /// When needle is empty and start_pos is constant
                 UInt64 start = std::max(start_pos_const->getUInt(0), UInt64(1));
@@ -231,20 +231,22 @@ struct PositionImpl
                 }
                 return;
             }
-
-            /// When needle is empty and start_pos is not constant
-            for (size_t i = 0; i < rows; ++i)
+            else
             {
-                size_t haystack_size = Impl::countChars(
-                    reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                UInt64 start = start_pos->getUInt(i);
-                start = std::max(UInt64(1), start);
-                res[i] = start <= haystack_size + 1 ? start : 0;
+                /// When needle is empty and start_pos is not constant
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    size_t haystack_size = Impl::countChars(
+                        reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
+                    UInt64 start = start_pos->getUInt(i);
+                    start = std::max(UInt64(1), start);
+                    res[i] = start <= haystack_size + 1 ? start : 0;
 
-                pos = begin + haystack_offsets[i];
-                prev_offset = haystack_offsets[i];
+                    pos = begin + haystack_offsets[i];
+                    prev_offset = haystack_offsets[i];
+                }
+                return;
             }
-            return;
         }
 
         /// Current index in the array of strings.

@@ -95,13 +95,13 @@ Result:
 └───────────────────────────────┘
 ```
 
-Rules when needle is empty, which is also applied for other functions like: positionCaseInsensitive, positionUTF8, positionCaseInsensitiveUTF8
-- When `needle` is empty and `start_pos` doesn't exist, always returns 1;
-- When `needle` is empty and `start_pos` exists:
-    - When `start_pos` >= 1 and `start_pos` <= `char_length(haystack)`, returns `start_pos`;
-    - When `start_pos` = 0, returns 1;
-    - When `start_pos` = `char_length(haystack) + 1`, returns `char_length(haystack)`;
-    - Otherwise returns 0.
+Note: If argument needle is empty the following rules apply:
+- if no start_pos was specified: return 1
+- if start_pos = 0: return 1
+- if start_pos >= 1 and start_pos <= length(haystack) + 1: return start_pos
+- otherwise: return 0
+
+The same rules also apply to functions `positionCaseInsensitive`, `positionUTF8` and `positionCaseInsensitiveUTF8`
 
 ``` sql
 SELECT
