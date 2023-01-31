@@ -194,11 +194,12 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             !cond.identifiers.empty()
             && !cannotBeMoved(node, is_final)
             /// Do not take into consideration the conditions consisting only of the first primary key column
-            && !hasPrimaryKeyAtoms(node)
+            //&& !hasPrimaryKeyAtoms(node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
-            && cond.identifiers.size() < queried_columns.size();
+            //&& cond.identifiers.size() < queried_columns.size()
+            ;
 
         if (cond.viable)
             cond.good = isConditionGood(node);
