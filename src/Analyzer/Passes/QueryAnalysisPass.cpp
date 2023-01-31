@@ -1087,6 +1087,8 @@ private:
 
     static bool isFunctionExpressionNodeType(QueryTreeNodeType node_type);
 
+    static bool isSubqueryNodeType(QueryTreeNodeType node_type);
+
     static bool isTableExpressionNodeType(QueryTreeNodeType node_type);
 
     static DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
@@ -1297,10 +1299,15 @@ bool QueryAnalyzer::isFunctionExpressionNodeType(QueryTreeNodeType node_type)
     return node_type == QueryTreeNodeType::LAMBDA;
 }
 
+bool QueryAnalyzer::isSubqueryNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
 bool QueryAnalyzer::isTableExpressionNodeType(QueryTreeNodeType node_type)
 {
     return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-        node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+        isSubqueryNodeType(node_type);
 }
 
 DataTypePtr QueryAnalyzer::getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
@@ -4923,7 +4930,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
       * alias table because in alias table subquery could be evaluated as scalar.
       */
     bool use_alias_table = true;
-    if (scope.nodes_with_duplicated_aliases.contains(node) || (allow_table_expression && node->getNodeType() == QueryTreeNodeType::QUERY))
+    if (scope.nodes_with_duplicated_aliases.contains(node) || (allow_table_expression && isSubqueryNodeType(node->getNodeType())))
         use_alias_table = false;
 
     if (!node_alias.empty() && use_alias_table)
