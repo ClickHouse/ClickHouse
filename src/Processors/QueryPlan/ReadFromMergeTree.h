@@ -147,12 +147,22 @@ public:
         bool sample_factor_column_queried,
         Poco::Logger * log);
 
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
+
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
+    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
     const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
     void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+
+    const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
+    const MergeTreeData & getMergeTreeData() const { return data; }
+    const Names & getRealColumnNames() const { return real_column_names; }
+    size_t getMaxBlockSize() const { return max_block_size; }
+    size_t getNumStreams() const { return requested_num_streams; }
+    bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
@@ -232,7 +242,6 @@ private:
         const Names & column_names,
         ActionsDAGPtr & out_projection);
 
-    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 

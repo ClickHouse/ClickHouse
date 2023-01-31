@@ -60,6 +60,9 @@ public:
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
 
+    void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
+    void appendAggregateProjection(const DataStream & input_stream);
+
 private:
     void updateOutputStream() override;
 

@@ -322,11 +322,12 @@ public:
         const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
     bool canUseZeroCopyReplication() const;
-private:
-    std::atomic_bool are_restoring_replica {false};
 
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
+
+private:
+    std::atomic_bool are_restoring_replica {false};
 
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();

@@ -406,6 +406,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    if (input_streams.size() > 1)
+    {
+
+    }
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -463,6 +468,24 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
         IQueryPlanStep::describePipeline(aggregating_sorted, settings);
         IQueryPlanStep::describePipeline(aggregating_in_order, settings);
     }
+}
+
+void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & input_stream)
+{
+    auto cur_header = getOutputStream().header;
+    input_streams.front() = input_stream;
+    params.only_merge = true;
+    updateOutputStream();
+    assertBlocksHaveEqualStructure(cur_header, getOutputStream().header, "AggregatingStep");
+}
+
+void AggregatingStep::appendAggregateProjection(const DataStream & input_stream)
+{
+    input_streams.emplace_back(input_stream);
+    params.only_merge = true;
+    auto added_header = appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls);
+    assertBlocksHaveEqualStructure(getOutputStream().header, added_header, "AggregatingStep");
+    params.only_merge = false;
 }
 
 void AggregatingStep::updateOutputStream()
