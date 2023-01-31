@@ -107,12 +107,12 @@ private:
     bool specified_min_max_x;
 
     template <class T>
-    int updateFrame(ColumnString::Chars & frame, const T value) const
+    size_t updateFrame(ColumnString::Chars & frame, const T value) const
     {
         static const String bars[9] = {" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
         const auto & bar = (isNaN(value) || value > 8 || value < 1) ? bars[0] : bars[static_cast<UInt8>(value)];
         frame.insert(bar.begin(), bar.end());
-        return static_cast<int>(bar.size());
+        return bar.size();
     }
 
     /**
