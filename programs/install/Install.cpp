@@ -532,7 +532,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     fs::permissions(data_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("Data path configuration override is saved to file {}.\n", data_file);
                 }
-                else {
+                else
+                {
                     fmt::print("WARNING: Configuration of data paths already exists in {}."
                     " If you want to apply new paths, remove {} and run install again.\n", data_file, data_file);
                 }
@@ -553,7 +554,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     fs::permissions(logger_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("Log path configuration override is saved to file {}.\n", logger_file);
                 }
-                else {
+                else
+                {
                     fmt::print("WARNING: Configuration of logger paths already exists in {}."
                     " If you want to apply new paths, remove {} and run install again.\n", logger_file, logger_file);
                 }
@@ -575,7 +577,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     fs::permissions(user_directories_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("User directory path configuration override is saved to file {}.\n", user_directories_file);
                 }
-                else {
+                else
+                {
                     fmt::print("WARNING: Configuration of user directories paths already exists in {}."
                     " If you want to apply new paths, remove {} and run install again.\n", user_directories_file, user_directories_file);
                 }
@@ -599,7 +602,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     fs::permissions(openssl_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("OpenSSL path configuration override is saved to file {}.\n", openssl_file);
                 }
-                else {
+                else
+                {
                     fmt::print("WARNING: Configuration of OpenSSL paths already exists in {}."
                     " If you want to apply new paths, remove {} and run install again.\n", openssl_file, openssl_file);
                 }
@@ -969,7 +973,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
     return 0;
 }
 
-
 namespace
 {
     int start(const std::string & user, const std::string & group,  const fs::path & binary, const fs::path & executable, const fs::path & config, const fs::path & pid_file, unsigned max_tries, bool no_sudo)
@@ -1012,11 +1015,14 @@ namespace
 
         if (!user.empty())
         {
-            if (no_sudo) {
+            if (no_sudo)
+            {
             /// Sometimes there is no sudo available like in some docker images
             /// We will use clickhouse su instead
             command = fmt::format("{} su {}:{} {}", binary.string(), user, group, command);
-            } else {
+            }
+            else
+            {
             /// sudo respects limits in /etc/security/limits.conf e.g. open files,
             /// that's why we are using it instead of the 'clickhouse su' tool.
             command = fmt::format("sudo -u '{}' {}", user, command);
