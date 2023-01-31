@@ -465,6 +465,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     }
 
     columns_description = ColumnsDescription(columns);
+    columns_description_with_collected_nested = ColumnsDescription(Nested::collect(columns));
 }
 
 NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
