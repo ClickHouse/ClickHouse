@@ -1,6 +1,7 @@
 #include <Planner/PlannerJoinTree.h>
 
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -33,6 +34,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
@@ -194,18 +196,27 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
 
         if (is_single_table_expression)
         {
+            bool is_limit_negative = false;
             size_t limit_length = 0;
             if (main_query_node.hasLimit())
             {
                 /// Constness of limit is validated during query analysis stage
-                limit_length = main_query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+                Field converted_limit = convertFieldToType(main_query_node.getLimit()->as<ConstantNode &>().getValue(), DataTypeInt128());
+                Int128 limit_val = converted_limit.safeGet<Int128>();
+                is_limit_negative = limit_val < 0;
+                limit_val = is_limit_negative ? (0 - limit_val) : limit_val;
+                limit_length = UInt64(limit_val);
             }
 
             size_t limit_offset = 0;
             if (main_query_node.hasOffset())
             {
                 /// Constness of offset is validated during query analysis stage
-                limit_offset = main_query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+                Field converted_offset = convertFieldToType(main_query_node.getOffset()->as<ConstantNode &>().getValue(), DataTypeInt128());
+                Int128 offset_val = converted_offset.safeGet<Int128>();
+                is_limit_negative = offset_val < 0;
+                offset_val = is_limit_negative ? (0 - offset_val) : offset_val;
+                limit_offset = UInt64(offset_val);
             }
 
             /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
@@ -213,7 +224,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
               * then as the block size we will use limit + offset (not to read more from the table than requested),
               * and also set the number of threads to 1.
               */
-            if (main_query_node.hasLimit() &&
+            if (!is_limit_negative &&
+                main_query_node.hasLimit() &&
                 !main_query_node.isDistinct() &&
                 !main_query_node.isLimitWithTies() &&
                 !main_query_node.hasPrewhere() &&

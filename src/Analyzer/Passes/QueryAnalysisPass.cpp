@@ -6126,9 +6126,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto [is_offset_negative, _] = validateLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
             if (is_offset_negative != is_limit_negative)
             {
-                throw Exception(
-                    "The sign of limit and offset must be the same",
-                    ErrorCodes::INVALID_LIMIT_EXPRESSION);
+                throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+                                "The sign of limit and offset must be the same");
             }
         }
     }
