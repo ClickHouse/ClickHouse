@@ -202,14 +202,14 @@ struct PositionImpl
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
-        /// Fastpath when needle is empty
+        /// Fast path when needle is empty
         if (needle.empty())
         {
-            /// When needle is empty and start_pos doesn't exist, always return 1
+            /// Needle is empty and start_pos doesn't exist --> always return 1
             if (start_pos == nullptr)
             {
-                for (auto & x : res)
-                    x = 1;
+                for (auto & r : res)
+                    r = 1;
                 return;
             }
 
@@ -218,13 +218,13 @@ struct PositionImpl
 
             if (const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos))
             {
-                /// When needle is empty and start_pos is constant
-                UInt64 start = std::max(start_pos_const->getUInt(0), UInt64(1));
+                /// Needle is empty and start_pos is constant
+                UInt64 start = std::max(start_pos_const->getUInt(0), static_cast<UInt64>(1));
                 for (size_t i = 0; i < rows; ++i)
                 {
                     size_t haystack_size = Impl::countChars(
                         reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                    res[i] = start <= haystack_size + 1 ? start : 0;
+                    res[i] = (start <= haystack_size + 1) ? start : 0;
 
                     pos = begin + haystack_offsets[i];
                     prev_offset = haystack_offsets[i];
@@ -233,14 +233,14 @@ struct PositionImpl
             }
             else
             {
-                /// When needle is empty and start_pos is not constant
+                /// Needle is empty and start_pos is not constant
                 for (size_t i = 0; i < rows; ++i)
                 {
                     size_t haystack_size = Impl::countChars(
                         reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
                     UInt64 start = start_pos->getUInt(i);
-                    start = std::max(UInt64(1), start);
-                    res[i] = start <= haystack_size + 1 ? start : 0;
+                    start = std::max(static_cast<UInt64>(1), start);
+                    res[i] = (start <= haystack_size + 1) ? start : 0;
 
                     pos = begin + haystack_offsets[i];
                     prev_offset = haystack_offsets[i];
