@@ -761,7 +761,7 @@ public:
     {
         if (std::any_of(needle_, needle_ + needle_size_, isTokenSeparator))
         {
-            throw Exception{"Needle must not contain whitespace or separator characters", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
         }
 
     }

@@ -76,7 +76,9 @@ namespace
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot parse {} for data type {}, Reason is: {}", raw, data_type->getName(), getCurrentExceptionMessage(false));
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                        "Cannot parse {} for data type {}, Reason is: {}",
+                        raw, data_type->getName(), getCurrentExceptionMessage(false));
     }
 }
 
@@ -584,7 +586,7 @@ Columns RegExpTreeDictionary::getColumns(
     /// valid check
     if (key_columns.size() != 1)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", std::to_string(key_columns.size()));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", key_columns.size());
     }
     structure.validateKeyTypes(key_types);
 
@@ -626,7 +628,9 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
 
         if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")
         {
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "dictionary regexp_tree should have one primary key with string value to represent regular expressions");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                            "dictionary regexp_tree should have one primary key with string value "
+                            "to represent regular expressions");
         }
 
         String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
@@ -639,7 +643,9 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         if (!context->getSettings().regexp_dict_allow_other_sources && typeid_cast<YAMLRegExpTreeDictionarySource *>(source_ptr.get()) == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "regexp_tree dictionary doesn't accept sources other than yaml source. To active it, please set regexp_dict_allow_other_sources=true");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                            "regexp_tree dictionary doesn't accept sources other than yaml source. "
+                            "To active it, please set regexp_dict_allow_other_sources=true");
 
         return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };

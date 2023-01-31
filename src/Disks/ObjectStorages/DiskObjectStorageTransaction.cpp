@@ -294,7 +294,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void execute(MetadataTransactionPtr tx) override
     {
-        removeMetadataRecursive(tx, path);
+        /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
+        if (metadata_storage.exists(path))
+            removeMetadataRecursive(tx, path);
     }
 
     void undo() override
@@ -498,7 +500,7 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
         {
             if (metadata_storage.exists(to_path))
-                throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", to_path);
 
             if (!metadata_storage.exists(from_path))
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);

@@ -107,7 +107,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             ErrorCodes::CORRUPTED_DATA,
             "Bad size of marks file '{}': {}, must be: {}",
             std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
-            std::to_string(file_size), std::to_string(expected_uncompressed_size));
+            file_size, expected_uncompressed_size);
 
     auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
     std::unique_ptr<ReadBuffer> reader;

@@ -362,3 +362,15 @@ Allows to drop filesystem cache.
 ```sql
 SYSTEM DROP FILESYSTEM CACHE
 ```
+
+### SYNC FILE CACHE
+
+:::note
+It's too heavy and has potential for misuse.
+:::
+
+Will do sync syscall. 
+
+```sql
+SYSTEM SYNC FILE CACHE
+```
