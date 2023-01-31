@@ -347,7 +347,7 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
         const ContextPtr & context);
 
-    /// Return origial node (input) for alias in output if exists
+    /// Return original node (input) for alias in output if exists
     const Node* getOriginalNodeForOutputAlias(const String & output_name);
 
 private:
