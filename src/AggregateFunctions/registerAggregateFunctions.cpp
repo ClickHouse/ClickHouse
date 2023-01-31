@@ -39,7 +39,7 @@ void registerAggregateFunctionsMax(AggregateFunctionFactory &);
 void registerAggregateFunctionsAny(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
-void registerAggregateFunctionsStatisticsSimpleMatrix(AggregateFunctionFactory &);
+void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory &);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory &);
@@ -125,7 +125,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsAny(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSimple(factory);
-        registerAggregateFunctionsStatisticsSimpleMatrix(factory);
+        registerAggregateFunctionsVarianceMatrix(factory);
         registerAggregateFunctionSum(factory);
         registerAggregateFunctionSumCount(factory);
         registerAggregateFunctionSumMap(factory);

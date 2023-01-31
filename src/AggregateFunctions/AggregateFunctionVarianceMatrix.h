@@ -13,21 +13,21 @@ namespace DB
 {
 struct Settings;
 
-enum class StatisticsFunctionKind
+enum class StatisticsMatrixFunctionKind
 {
     covarPopMatrix,
     covarSampMatrix,
     corrMatrix
 };
 
-template <StatisticsFunctionKind _kind>
-struct StatFuncArbitraryArgData
+template <StatisticsMatrixFunctionKind _kind>
+struct AggregateFunctionVarianceMatrixData
 {
-    using DataType = std::conditional_t<_kind == StatisticsFunctionKind::corrMatrix, CorrMoments<Float64>, CovarMoments<Float64>>;
+    using DataType = std::conditional_t<_kind == StatisticsMatrixFunctionKind::corrMatrix, CorrMoments<Float64>, CovarMoments<Float64>>;
 
-    StatFuncArbitraryArgData() = default;
+    AggregateFunctionVarianceMatrixData() = default;
 
-    explicit StatFuncArbitraryArgData(const size_t _num_args)
+    explicit AggregateFunctionVarianceMatrixData(const size_t _num_args)
         : num_args(_num_args)
     {
         data_matrix.resize_fill(num_args * (num_args + 1) / 2, DataType());
@@ -40,7 +40,7 @@ struct StatFuncArbitraryArgData
                  data_matrix[i * (i + 1) / 2 + j].add(column[i]->getFloat64(row_num), column[j]->getFloat64(row_num));
     }
 
-    void merge(const StatFuncArbitraryArgData & other)
+    void merge(const AggregateFunctionVarianceMatrixData & other)
     {
         for (size_t i = 0; i < num_args; ++i)
             for (size_t j = 0; j <= i; ++j)
@@ -71,11 +71,11 @@ struct StatFuncArbitraryArgData
             for (size_t j = 0; j < num_args; ++j)
             {
                 auto & data = i < j ? data_matrix[j * (j + 1) / 2 + i] : data_matrix[i * (i + 1) / 2 + j];
-                if constexpr (kind == StatisticsFunctionKind::covarPopMatrix)
+                if constexpr (kind == StatisticsMatrixFunctionKind::covarPopMatrix)
                     data_to.push_back(data.getPopulation());
-                if constexpr (kind == StatisticsFunctionKind::covarSampMatrix)
+                if constexpr (kind == StatisticsMatrixFunctionKind::covarSampMatrix)
                     data_to.push_back(data.getSample());
-                if constexpr (kind == StatisticsFunctionKind::corrMatrix)
+                if constexpr (kind == StatisticsMatrixFunctionKind::corrMatrix)
                     data_to.push_back(data.get());
             }
             nested_offsets_to.push_back(nested_offsets_to.back() + num_args);
@@ -83,39 +83,39 @@ struct StatFuncArbitraryArgData
         root_offsets_to.push_back(root_offsets_to.back() + num_args);
     }
 
-    static constexpr StatisticsFunctionKind kind = _kind;
+    static constexpr StatisticsMatrixFunctionKind kind = _kind;
     PaddedPODArray<DataType> data_matrix;
     size_t num_args;
 };
 
-template <typename StatFuncData>
-class AggregateFunctionVarianceSimpleMatrix final
-    : public IAggregateFunctionDataHelper<StatFuncData, AggregateFunctionVarianceSimpleMatrix<StatFuncData>>
+template <typename Data>
+class AggregateFunctionVarianceMatrix final
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionVarianceMatrix<Data>>
 {
 public:
 
-    explicit AggregateFunctionVarianceSimpleMatrix(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<StatFuncData, AggregateFunctionVarianceSimpleMatrix<StatFuncData>>(argument_types_, {}, createResultType())
+    explicit AggregateFunctionVarianceMatrix(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionVarianceMatrix<Data>>(argument_types_, {}, createResultType())
     {}
 
-    AggregateFunctionVarianceSimpleMatrix(const IDataType &, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<StatFuncData, AggregateFunctionVarianceSimpleMatrix<StatFuncData>>(argument_types_, {}, createResultType())
+    AggregateFunctionVarianceMatrix(const IDataType &, const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionVarianceMatrix<Data>>(argument_types_, {}, createResultType())
     {}
 
     String getName() const override
     {
-        if constexpr (StatFuncData::kind == StatisticsFunctionKind::covarPopMatrix)
+        if constexpr (Data::kind == StatisticsMatrixFunctionKind::covarPopMatrix)
             return "covarPopMatrix";
-        if constexpr (StatFuncData::kind == StatisticsFunctionKind::covarSampMatrix)
+        if constexpr (Data::kind == StatisticsMatrixFunctionKind::covarSampMatrix)
             return "covarSampMatrix";
-        if constexpr (StatFuncData::kind == StatisticsFunctionKind::corrMatrix)
+        if constexpr (Data::kind == StatisticsMatrixFunctionKind::corrMatrix)
             return "corrMatrix";
         UNREACHABLE();
     }
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        new (place) StatFuncData(this->argument_types.size());
+        new (place) Data(this->argument_types.size());
     }
 
     static DataTypePtr createResultType()
@@ -151,9 +151,9 @@ public:
     }
 };
 
-using AggregateFunctionCovarPopSimpleMatrix = AggregateFunctionVarianceSimpleMatrix<StatFuncArbitraryArgData<StatisticsFunctionKind::covarPopMatrix>>;
-using AggregateFunctionCovarSampSimpleMatrix = AggregateFunctionVarianceSimpleMatrix<StatFuncArbitraryArgData<StatisticsFunctionKind::covarSampMatrix>>;
-using AggregateFunctionCorrSimpleMatrix = AggregateFunctionVarianceSimpleMatrix<StatFuncArbitraryArgData<StatisticsFunctionKind::corrMatrix>>;
+using AggregateFunctionCovarPopMatrix = AggregateFunctionVarianceMatrix<AggregateFunctionVarianceMatrixData<StatisticsMatrixFunctionKind::covarPopMatrix>>;
+using AggregateFunctionCovarSampMatrix = AggregateFunctionVarianceMatrix<AggregateFunctionVarianceMatrixData<StatisticsMatrixFunctionKind::covarSampMatrix>>;
+using AggregateFunctionCorrMatrix = AggregateFunctionVarianceMatrix<AggregateFunctionVarianceMatrixData<StatisticsMatrixFunctionKind::corrMatrix>>;
 
 }
 
