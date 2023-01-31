@@ -271,6 +271,18 @@ size_t BackupImpl::getNumFiles() const
     return num_files;
 }
 
+size_t BackupImpl::getNumProcessedFiles() const
+{
+    std::lock_guard lock{mutex};
+    return num_processed_files;
+}
+
+UInt64 BackupImpl::getProcessedFilesSize() const
+{
+    std::lock_guard lock{mutex};
+    return processed_files_size;
+}
+
 UInt64 BackupImpl::getUncompressedSize() const
 {
     std::lock_guard lock{mutex};
@@ -355,6 +367,7 @@ void BackupImpl::writeBackupMetadata()
     out->finalize();
 
     increaseUncompressedSize(str.size());
+    increaseProcessedSize(str.size());
 }
 
 
@@ -380,6 +393,7 @@ void BackupImpl::readBackupMetadata()
     String str;
     readStringUntilEOF(str, *in);
     increaseUncompressedSize(str.size());
+    increaseProcessedSize(str.size());
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
     const Poco::XML::Node * config_root = getRootNode(config);
@@ -598,6 +612,8 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
     if (open_mode != OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
 
+    increaseProcessedSize(size_and_checksum.first);
+
     if (!size_and_checksum.first)
     {
         /// Entry's data is empty.
@@ -761,6 +777,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         .base_size = 0,
         .base_checksum = 0,
     };
+
+    {
+        std::lock_guard lock{mutex};
+        increaseProcessedSize(info);
+    }
 
     /// Empty file, nothing to backup
     if (info.size == 0 && deduplicate_files)
@@ -972,6 +993,17 @@ void BackupImpl::increaseUncompressedSize(const FileInfo & info)
         increaseUncompressedSize(info.size - info.base_size);
 }
 
+void BackupImpl::increaseProcessedSize(UInt64 file_size) const
+{
+    processed_files_size += file_size;
+    ++num_processed_files;
+}
+
+void BackupImpl::increaseProcessedSize(const FileInfo & info)
+{
+    increaseProcessedSize(info.size);
+}
+
 void BackupImpl::setCompressedSize()
 {
     if (use_archives)
@@ -1011,7 +1043,7 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
     String archive_name_with_suffix = getArchiveNameWithSuffix(suffix);
     auto new_archive_writer = createArchiveWriter(archive_params.archive_name, writer->writeFile(archive_name_with_suffix));
     new_archive_writer->setPassword(archive_params.password);
-
+    new_archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     size_t pos = suffix.empty() ? 0 : 1;
     archive_writers[pos] = {suffix, new_archive_writer};
 

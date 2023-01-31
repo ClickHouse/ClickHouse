@@ -344,13 +344,13 @@ private:
 
         static size_t mysqlDayOfWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            *dest = '0' + ToDayOfWeekImpl::execute(source, timezone);
+            *dest = '0' + ToDayOfWeekImpl::execute(source, 0, timezone);
             return 1;
         }
 
         static size_t mysqlDayOfWeek0To6(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto day = ToDayOfWeekImpl::execute(source, timezone);
+            auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
             *dest = '0' + (day == 7 ? 0 : day);
             return 1;
         }
@@ -478,7 +478,7 @@ private:
             return res.size();
         }
 
-        static size_t jodaCentryOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        static size_t jodaCenturyOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             year = (year < 0 ? -year : year);
@@ -499,13 +499,13 @@ private:
 
         static size_t jodaDayOfWeek1Based(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
             return writeNumberWithPadding(dest, week_day, min_represent_digits);
         }
 
         static size_t jodaDayOfWeekText(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
             if (week_day == 7)
                 week_day = 0;
 
@@ -1137,7 +1137,7 @@ public:
                         reserve_size += repetitions <= 3 ? 2 : 13;
                         break;
                     case 'C':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCentryOfEra, repetitions));
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCenturyOfEra, repetitions));
                         /// Year range [1900, 2299]
                         reserve_size += std::max(repetitions, 2);
                         break;
