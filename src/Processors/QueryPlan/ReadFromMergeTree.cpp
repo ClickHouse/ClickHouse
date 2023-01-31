@@ -251,7 +251,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         {
             pipes.back().addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
-                return std::make_shared<ReadFromMergeTreeDependencyTransform>(header);
+                return std::make_shared<ReadFromMergeTreeDependencyTransform>(header, context->getParallelReplicasGroupUUID());
             });
         }
     }

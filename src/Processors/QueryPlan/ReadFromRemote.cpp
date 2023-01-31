@@ -281,7 +281,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Scalars scalars_,
     Tables external_tables_,
     Poco::Logger * log_,
-    std::shared_ptr<const StorageLimitsList> storage_limits_)
+    std::shared_ptr<const StorageLimitsList> storage_limits_,
+    UUID uuid_)
     : ISourceStep(DataStream{.header = std::move(header_)})
     , shard_info(shard_info_)
     , query_ast(query_ast_)
@@ -295,6 +296,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , external_tables{external_tables_}
     , storage_limits(std::move(storage_limits_))
     , log(log_)
+    , uuid(uuid_)
 {
     std::vector<String> description;
 
@@ -394,7 +396,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
 
     remote_query_executor->setLogger(log);
 
-    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read));
+    pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, uuid));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 

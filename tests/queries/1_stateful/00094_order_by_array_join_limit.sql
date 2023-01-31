@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 SELECT `ParsedParams.Key2` AS x
 FROM test.hits
 ARRAY JOIN ParsedParams AS PP

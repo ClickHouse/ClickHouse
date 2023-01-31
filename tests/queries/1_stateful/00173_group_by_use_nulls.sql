@@ -1,8 +1,3 @@
--- Tags: no-parallel-replicas
--- It uses remote over a table with parallel replicas
--- And 127.0.0.2 threated as remote address, but RemoteSource for it connects to the scheduler
--- This has to be fixed.
-
 SELECT
     CounterID AS k,
     quantileBFloat16(0.5)(ResolutionWidth)

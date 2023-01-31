@@ -2,6 +2,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
+#include "Core/UUID.h"
 #include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -622,37 +623,63 @@ void QueryPipelineBuilder::setProgressCallback(ProgressCallback callback)
 
 void QueryPipelineBuilder::connectDependencies()
 {
-    std::vector<RemoteSource *> input_dependencies;
-    std::vector<ReadFromMergeTreeDependencyTransform *> output_dependencies;
-
+    /**
+    * This is needed because among all RemoteSources there could be
+    * one or several that don't belong to the parallel replicas reading process.
+    * It could happen for example if we read through distributed table + prefer_localhost_replica=1 + parallel replicas
+    * SELECT * FROM remote('127.0.0.{1,2}', table.merge_tree)
+    * Will generate a local pipeline and a remote source. For local pipeline because of parallel replicas we will create
+    * several processors to read and several remote sources.
+    */
+    std::set<UUID> all_parallel_replicas_groups;
     for (auto & processor : *pipe.getProcessorsPtr())
     {
         if (auto * remote_dependency = typeid_cast<RemoteSource *>(processor.get()); remote_dependency)
-            input_dependencies.emplace_back(remote_dependency);
+            if (auto uuid = remote_dependency->getParallelReplicasGroupUUID(); uuid != UUIDHelpers::Nil)
+                all_parallel_replicas_groups.insert(uuid);
         if (auto * merge_tree_dependency = typeid_cast<ReadFromMergeTreeDependencyTransform *>(processor.get()); merge_tree_dependency)
-            output_dependencies.emplace_back(merge_tree_dependency);
+            if (auto uuid = merge_tree_dependency->getParallelReplicasGroupUUID(); uuid != UUIDHelpers::Nil)
+                all_parallel_replicas_groups.insert(uuid);
     }
 
-    if (input_dependencies.empty() || output_dependencies.empty())
-        return;
-
-    auto input_dependency_iter = input_dependencies.begin();
-    auto output_dependency_iter = output_dependencies.begin();
-    auto scheduler = std::make_shared<ResizeProcessor>(Block{}, input_dependencies.size(), output_dependencies.size());
-
-    for (auto & scheduler_input : scheduler->getInputs())
+    for (const auto & group_id : all_parallel_replicas_groups)
     {
-        (*input_dependency_iter)->connectToScheduler(scheduler_input);
-        ++input_dependency_iter;
-    }
+        std::cout << "UUID " << toString(group_id) << std::endl;
 
-    for (auto & scheduler_output : scheduler->getOutputs())
-    {
-        (*output_dependency_iter)->connectToScheduler(scheduler_output);
-        ++output_dependency_iter;
-    }
+        std::vector<RemoteSource *> input_dependencies;
+        std::vector<ReadFromMergeTreeDependencyTransform *> output_dependencies;
 
-    pipe.getProcessorsPtr()->emplace_back(std::move(scheduler));
+        for (auto & processor : *pipe.getProcessorsPtr())
+        {
+            if (auto * remote_dependency = typeid_cast<RemoteSource *>(processor.get()); remote_dependency)
+                if (auto uuid = remote_dependency->getParallelReplicasGroupUUID(); uuid == group_id)
+                    input_dependencies.emplace_back(remote_dependency);
+            if (auto * merge_tree_dependency = typeid_cast<ReadFromMergeTreeDependencyTransform *>(processor.get()); merge_tree_dependency)
+                if (auto uuid = merge_tree_dependency->getParallelReplicasGroupUUID(); uuid == group_id)
+                    output_dependencies.emplace_back(merge_tree_dependency);
+        }
+
+        if (input_dependencies.empty() || output_dependencies.empty())
+            continue;
+
+        auto input_dependency_iter = input_dependencies.begin();
+        auto output_dependency_iter = output_dependencies.begin();
+        auto scheduler = std::make_shared<ResizeProcessor>(Block{}, input_dependencies.size(), output_dependencies.size());
+
+        for (auto & scheduler_input : scheduler->getInputs())
+        {
+            (*input_dependency_iter)->connectToScheduler(scheduler_input);
+            ++input_dependency_iter;
+        }
+
+        for (auto & scheduler_output : scheduler->getOutputs())
+        {
+            (*output_dependency_iter)->connectToScheduler(scheduler_output);
+            ++output_dependency_iter;
+        }
+
+        pipe.getProcessorsPtr()->emplace_back(std::move(scheduler));
+    }
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()

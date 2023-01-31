@@ -3630,9 +3630,21 @@ MergeTreeAllRangesCallback Context::getMergeTreeAllRangesCallback() const
     return merge_tree_all_ranges_callback.value();
 }
 
+
 void Context::setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback)
 {
     merge_tree_all_ranges_callback = callback;
+}
+
+
+void Context::setParallelReplicasGroupUUID(UUID uuid)
+{
+    parallel_replicas_group_uuid = uuid;
+}
+
+UUID Context::getParallelReplicasGroupUUID() const
+{
+    return parallel_replicas_group_uuid;
 }
 
 PartUUIDsPtr Context::getIgnoredPartUUIDs() const

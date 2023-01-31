@@ -1,5 +1,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Interpreters/Cluster.h>
@@ -269,6 +270,8 @@ void executeQueryWithParallelReplicas(
     /// to then tell it about the reading method we chose.
     query_info.coordinator = coordinator;
 
+    UUID parallel_group_id = UUIDHelpers::generateV4();
+
     plans.emplace_back(createLocalPlan(
         query_ast,
         stream_factory.header,
@@ -278,7 +281,8 @@ void executeQueryWithParallelReplicas(
         /*shard_count*/1,
         0,
         all_replicas_count,
-        coordinator));
+        coordinator,
+        parallel_group_id));
 
     if (!shard_info.hasRemoteConnections())
     {
@@ -305,7 +309,8 @@ void executeQueryWithParallelReplicas(
         std::move(scalars),
         std::move(external_tables),
         &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-        query_info.storage_limits);
+        query_info.storage_limits,
+        parallel_group_id);
 
     remote_plan->addStep(std::move(read_from_remote));
     remote_plan->addInterpreterContext(context);

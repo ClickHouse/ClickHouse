@@ -1,4 +1,4 @@
--- Tags: replica, distributed, no-random-settings, no-parallel-replicas
+-- Tags: replica, distributed, no-random-settings
 
 
 SET max_parallel_replicas = 2;

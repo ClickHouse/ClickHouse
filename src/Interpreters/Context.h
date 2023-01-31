@@ -269,6 +269,7 @@ private:
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
+    UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -1057,6 +1058,9 @@ public:
 
     MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
     void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    UUID getParallelReplicasGroupUUID() const;
+    void setParallelReplicasGroupUUID(UUID uuid);
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();

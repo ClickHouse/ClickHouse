@@ -3,6 +3,7 @@
 #include <Processors/ISource.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
+#include "Core/UUID.h"
 #include <atomic>
 
 namespace DB
@@ -20,7 +21,7 @@ public:
     /// Flag add_aggregation_info tells if AggregatedChunkInfo should be added to result chunk.
     /// AggregatedChunkInfo stores the bucket number used for two-level aggregation.
     /// This flag should be typically enabled for queries with GROUP BY which are executed till WithMergeableState.
-    RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_);
+    RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, UUID uuid = UUIDHelpers::Nil);
     ~RemoteSource() override;
 
     Status prepare() override;
@@ -29,6 +30,8 @@ public:
     void connectToScheduler(InputPort & input_port);
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
+
+    UUID getParallelReplicasGroupUUID();
 
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
@@ -53,6 +56,7 @@ private:
     const bool async_read;
     bool is_async_state = false;
     std::unique_ptr<RemoteQueryExecutorReadContext> read_context;
+    UUID uuid;
     int fd = -1;
 };
 
@@ -91,6 +95,6 @@ private:
 /// Create pipe with remote sources.
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read);
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, UUID uuid = UUIDHelpers::Nil);
 
 }

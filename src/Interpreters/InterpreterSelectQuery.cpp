@@ -448,6 +448,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
+    /// FIXME: Memory bound aggregation may cause another reading algorithm to be used on remote replicas
+    if (settings.allow_experimental_parallel_reading_from_replicas && settings.enable_memory_bound_merging_of_aggregation_results)
+        context->setSetting("enable_memory_bound_merging_of_aggregation_results", false);
+
     if (joined_tables.tablesCount() > 1 && settings.allow_experimental_parallel_reading_from_replicas)
     {
         LOG_WARNING(log, "Joins are not supported with parallel replicas. Query will be executed without using them.");

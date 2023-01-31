@@ -47,7 +47,8 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     size_t shard_count,
     size_t replica_num,
     size_t replica_count,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator)
+    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+    UUID group_uuid)
 {
     checkStackSize();
 
@@ -75,6 +76,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         new_context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
         new_context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
         new_context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+        new_context->setParallelReplicasGroupUUID(group_uuid);
         new_context->setMergeTreeAllRangesCallback([coordinator](InitialAllRangesAnnouncement announcement)
         {
             coordinator->handleInitialAllRangesAnnouncement(announcement);

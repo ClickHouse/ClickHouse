@@ -6,8 +6,9 @@
 namespace DB
 {
 
-ReadFromMergeTreeDependencyTransform::ReadFromMergeTreeDependencyTransform(const Block & header)
+ReadFromMergeTreeDependencyTransform::ReadFromMergeTreeDependencyTransform(const Block & header, UUID uuid_)
     : IProcessor(InputPorts(1, header), OutputPorts(1, header))
+    , uuid(uuid_)
     , data_port(&inputs.front())
 {
 }
@@ -17,6 +18,11 @@ void ReadFromMergeTreeDependencyTransform::connectToScheduler(OutputPort & outpu
     inputs.emplace_back(Block{}, this);
     dependency_port = &inputs.back();
     connect(output_port, *dependency_port);
+}
+
+UUID ReadFromMergeTreeDependencyTransform::getParallelReplicasGroupUUID()
+{
+    return uuid;
 }
 
 IProcessor::Status ReadFromMergeTreeDependencyTransform::prepare()
@@ -82,6 +88,13 @@ IProcessor::Status ReadFromMergeTreeDependencyTransform::prepareGenerate()
         output_port.push(std::move(chunk));
         has_data = false;
         return Status::Ready;
+    }
+
+    if (output_port.isFinished())
+    {
+        data_port->close();
+        dependency_port->close();
+        return Status::Finished;
     }
 
     return Status::PortFull;

@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include "Core/UUID.h"
 
 namespace DB
 {
@@ -45,18 +46,13 @@ public:
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
-
     StorageID main_table;
     ASTPtr table_func_ptr;
-
     ContextMutablePtr context;
-
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;
-
     std::shared_ptr<const StorageLimitsList> storage_limits;
-
     Poco::Logger * log;
 
     UInt32 shard_count;
@@ -81,7 +77,8 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         Poco::Logger * log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_);
+        std::shared_ptr<const StorageLimitsList> storage_limits_,
+        UUID uuid);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -100,15 +97,14 @@ private:
     QueryProcessingStage::Enum stage;
     StorageID main_table;
     ASTPtr table_func_ptr;
-
     ContextMutablePtr context;
-
     ThrottlerPtr throttler;
     Scalars scalars;
     Tables external_tables;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
     Poco::Logger * log;
+    UUID uuid;
 };
 
 }

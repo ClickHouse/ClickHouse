@@ -19,7 +19,7 @@ using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
 class ReadFromMergeTreeDependencyTransform : public IProcessor
 {
 public:
-    explicit ReadFromMergeTreeDependencyTransform(const Block & header);
+    ReadFromMergeTreeDependencyTransform(const Block & header, UUID uuid_);
 
     String getName() const override { return "ReadFromMergeTreeDependency"; }
     Status prepare() override;
@@ -28,10 +28,14 @@ public:
     InputPort & getDependencyPort() { assert(dependency_port); return *dependency_port; }
     OutputPort & getOutputPort() { return outputs.front(); }
 
+    UUID getParallelReplicasGroupUUID();
+
     void connectToScheduler(OutputPort & output_port);
 private:
     bool has_data{false};
     Chunk chunk;
+
+    UUID uuid;
 
     InputPort * data_port{nullptr};
     InputPort * dependency_port{nullptr};
