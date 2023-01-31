@@ -315,13 +315,8 @@ target_compile_definitions(_qpl
         PRIVATE -DQPL_BADARG_CHECK
         PUBLIC -DENABLE_QPL_COMPRESSION)
 
-find_library(LIBACCEL accel-config)
-if(NOT LIBACCEL)
-    message(FATAL_ERROR "Please install QPL dependency library:libaccel-config from https://github.com/intel/idxd-config")
-endif()
-
 target_link_libraries(_qpl
-        PRIVATE ${LIBACCEL}
+        PRIVATE ch_contrib::LIBACCEL
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)
