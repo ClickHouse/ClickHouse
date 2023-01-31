@@ -503,7 +503,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
-    if (forceSelectFinalOnSelectQuery(query))
+    if (autoFinalOnQuery(query))
     {
         query.setFinal();
     }
@@ -3007,14 +3007,14 @@ void InterpreterSelectQuery::ignoreWithTotals()
     getSelectQuery().group_by_with_totals = false;
 }
 
-bool InterpreterSelectQuery::forceSelectFinalOnSelectQuery(ASTSelectQuery & query)
+bool InterpreterSelectQuery::autoFinalOnQuery(ASTSelectQuery & query)
 {
     // query.tables() is required because not all queries have tables in it, it could be a function.
-    bool is_force_select_final_setting_on = context->getSettingsRef().force_select_final;
+    bool is_auto_final_setting_on = context->getSettingsRef().final;
     bool is_final_supported = storage && storage->supportsFinal() && !storage->isRemote() && query.tables();
     bool is_query_already_final = query.final();
 
-    return is_force_select_final_setting_on && !is_query_already_final && is_final_supported;
+    return is_auto_final_setting_on && !is_query_already_final && is_final_supported;
 }
 
 void InterpreterSelectQuery::initSettings()
