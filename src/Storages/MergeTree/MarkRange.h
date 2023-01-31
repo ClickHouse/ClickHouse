@@ -32,8 +32,4 @@ using MarkRanges = std::deque<MarkRange>;
  */
 size_t getLastMark(const MarkRanges & ranges);
 
-std::string toString(const MarkRanges & ranges);
-
-void assertSortedAndNonIntersecting(const MarkRanges & ranges);
-
 }

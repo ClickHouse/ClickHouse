@@ -1,13 +1,13 @@
 #pragma once
 
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_SIMDJSON
 #    include <base/types.h>
 #    include <Common/Exception.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
-#    include "ElementTypes.h"
+
 
 namespace DB
 {
@@ -30,21 +30,6 @@ struct SimdJSONParser
     public:
         ALWAYS_INLINE Element() {} /// NOLINT
         ALWAYS_INLINE Element(const simdjson::dom::element & element_) : element(element_) {} /// NOLINT
-
-        ALWAYS_INLINE ElementType type() const
-        {
-            switch (element.type())
-            {
-                case simdjson::dom::element_type::INT64: return ElementType::INT64;
-                case simdjson::dom::element_type::UINT64: return ElementType::UINT64;
-                case simdjson::dom::element_type::DOUBLE: return ElementType::DOUBLE;
-                case simdjson::dom::element_type::STRING: return ElementType::STRING;
-                case simdjson::dom::element_type::ARRAY: return ElementType::ARRAY;
-                case simdjson::dom::element_type::OBJECT: return ElementType::OBJECT;
-                case simdjson::dom::element_type::BOOL: return ElementType::BOOL;
-                case simdjson::dom::element_type::NULL_VALUE: return ElementType::NULL_VALUE;
-            }
-        }
 
         ALWAYS_INLINE bool isInt64() const { return element.type() == simdjson::dom::element_type::INT64; }
         ALWAYS_INLINE bool isUInt64() const { return element.type() == simdjson::dom::element_type::UINT64; }
@@ -160,7 +145,8 @@ struct SimdJSONParser
     void reserve(size_t max_size)
     {
         if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Couldn't allocate {} bytes when parsing JSON", max_size);
+            throw Exception{"Couldn't allocate " + std::to_string(max_size) + " bytes when parsing JSON",
+                            ErrorCodes::CANNOT_ALLOCATE_MEMORY};
     }
 
 private:

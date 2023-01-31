@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/database-engines/postgresql
 sidebar_position: 35
 sidebar_label: PostgreSQL
 ---
@@ -136,3 +135,5 @@ DESCRIBE TABLE test_database.test_table;
 │ data   │ Nullable(String)  │
 └────────┴───────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.com/docs/ru/database-engines/postgresql/) <!--hide-->

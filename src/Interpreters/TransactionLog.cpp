@@ -116,29 +116,29 @@ String TransactionLog::serializeTID(const TransactionID & tid)
 
 void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_iterator end)
 {
+    std::vector<std::future<Coordination::GetResponse>> futures;
     size_t entries_count = std::distance(beg, end);
     if (!entries_count)
         return;
 
     String last_entry = *std::prev(end);
     LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path_log, *beg, last_entry);
-    std::vector<std::string> entry_paths;
-    entry_paths.reserve(entries_count);
+    futures.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        entry_paths.emplace_back(fs::path(zookeeper_path_log) / *it);
+        futures.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
 
-    auto entries = TSA_READ_ONE_THREAD(zookeeper)->get(entry_paths);
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;
     loaded.reserve(entries_count);
     auto it = beg;
     for (size_t i = 0; i < entries_count; ++i, ++it)
     {
-        auto res = entries[i];
+        auto res = futures[i].get();
         CSN csn = deserializeCSN(*it);
         TransactionID tid = deserializeTID(res.data);
         loaded.emplace_back(tid.getHash(), CSNEntry{csn, tid});
         LOG_TEST(log, "Got entry {} -> {}", tid, csn);
     }
+    futures.clear();
 
     NOEXCEPT_SCOPE_STRICT({
         std::lock_guard lock{mutex};
@@ -405,7 +405,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         String csn_path_created;
         try
         {
-            if (unlikely(fault_probability_before_commit > 0.0))
+            if (unlikely(fault_probability_before_commit))
             {
                 std::bernoulli_distribution fault(fault_probability_before_commit);
                 if (fault(thread_local_rng))
@@ -415,7 +415,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             /// Commit point
             csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
 
-            if (unlikely(fault_probability_after_commit > 0.0))
+            if (unlikely(fault_probability_after_commit))
             {
                 std::bernoulli_distribution fault(fault_probability_after_commit);
                 if (fault(thread_local_rng))

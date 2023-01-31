@@ -35,7 +35,7 @@ void CompressionCodecFactory::validateCodec(
     const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (family_name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec name cannot be empty");
+        throw Exception("Compression codec name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
     if (level)
     {
@@ -81,7 +81,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 codec_arguments = ast_func->arguments;
             }
             else
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+                throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
             /// Default codec replaced with current default codec which may depend on different
             /// settings (and properties of data) in runtime.
@@ -116,8 +116,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         }
                     };
 
-                    auto serialization = column_type->getDefaultSerialization();
-                    serialization->enumerateStreams(callback, column_type);
+                    ISerialization::SubstreamPath path;
+                    column_type->getDefaultSerialization()->enumerateStreams(path, callback, column_type);
 
                     if (!result_codec)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());
@@ -151,37 +151,40 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         if (sanity_check)
         {
             if (codecs_descriptions->children.size() > 1 && has_none)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "It does not make sense to have codec NONE along with other compression codecs: {}. "
-                                "(Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
-                                codec_description);
+                throw Exception(
+                    "It does not make sense to have codec NONE along with other compression codecs: " + codec_description
+                        + ". (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
+                    ErrorCodes::BAD_ARGUMENTS);
 
             /// Allow to explicitly specify single NONE codec if user don't want any compression.
             /// But applying other transformations solely without compression (e.g. Delta) does not make sense.
             /// It's okay to apply encryption codecs solely without anything else.
             if (!is_compression && !has_none && encryption_codecs.size() != codecs_descriptions->children.size())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compression codec {} does not compress anything. "
-                    "You may want to add generic compression algorithm after other transformations, like: {}, LZ4. "
-                    "(Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
-                    codec_description, codec_description);
+                throw Exception(
+                    "Compression codec " + codec_description
+                        + " does not compress anything."
+                          " You may want to add generic compression algorithm after other transformations, like: "
+                        + codec_description
+                        + ", LZ4."
+                          " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
+                    ErrorCodes::BAD_ARGUMENTS);
 
             /// It does not make sense to apply any non-encryption codecs
             /// after encryption one.
             if (!encryption_codecs.empty() &&
                 *encryption_codecs.begin() != codecs_descriptions->children.size() - encryption_codecs.size())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The combination of compression codecs {} is meaningless, "
-                                "because it does not make sense to apply any non-post-processing codecs after "
-                                "post-processing ones. (Note: you can enable setting 'allow_suspicious_codecs' "
-                                "to skip this check).", codec_description);
+                throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
+                                " because it does not make sense to apply any non-post-processing codecs after"
+                                " post-processing ones. (Note: you can enable setting 'allow_suspicious_codecs'"
+                                " to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
             /// It does not make sense to apply any transformations after generic compression algorithm
             /// So, generic compression can be only one and only at the end.
             if (generic_compression_codec_pos &&
                 *generic_compression_codec_pos != codecs_descriptions->children.size() - 1 - encryption_codecs.size())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The combination of compression codecs {} is meaningless, "
-                                "because it does not make sense to apply any transformations after generic "
-                                "compression algorithm. (Note: you can enable setting 'allow_suspicious_codecs' "
-                                "to skip this check).", codec_description);
+                throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
+                    " because it does not make sense to apply any transformations after generic compression algorithm."
+                    " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
         }
 
@@ -205,7 +208,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         }
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", queryToString(ast));
+    throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
 }
 
 

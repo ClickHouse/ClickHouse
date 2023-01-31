@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/mergetree-family/aggregatingmergetree
 sidebar_position: 35
 sidebar_label: AggregatingMergeTree
 ---
@@ -39,10 +38,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
-Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-:::
-
+    :::note "Attention"
+    Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
+    :::
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
@@ -98,3 +96,4 @@ FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
+

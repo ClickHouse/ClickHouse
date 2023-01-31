@@ -242,6 +242,10 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
+    if (CurrentThread::isInitialized())
+    {
+        modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
+    }
 
     {
         std::lock_guard lock(duplicated_part_uuids_mutex);
@@ -357,7 +361,7 @@ std::variant<Block, int> RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs
         else
             return read(*read_context);
     }
-    throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
+    throw Exception("Found duplicate uuids while processing query", ErrorCodes::DUPLICATED_PART_UUIDS);
 }
 
 std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
@@ -375,9 +379,7 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
                 got_duplicated_part_uuids = true;
             break;
         case Protocol::Server::Data:
-            /// Note: `packet.block.rows() > 0` means it's a header block.
-            /// We can actually return it, and the first call to RemoteQueryExecutor::read
-            /// will return earlier. We should consider doing it.
+            /// If the block is not empty and is not a header block
             if (packet.block && (packet.block.rows() > 0))
                 return adaptBlockStructure(packet.block, header);
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
@@ -414,14 +416,10 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
         case Protocol::Server::Totals:
             totals = packet.block;
-            if (totals)
-                totals = adaptBlockStructure(totals, header);
             break;
 
         case Protocol::Server::Extremes:
             extremes = packet.block;
-            if (extremes)
-                extremes = adaptBlockStructure(packet.block, header);
             break;
 
         case Protocol::Server::Log:
@@ -466,7 +464,7 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 void RemoteQueryExecutor::processReadTaskRequest()
 {
     if (!task_iterator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
+        throw Exception("Distributed task iterator is not initialized", ErrorCodes::LOGICAL_ERROR);
     auto response = (*task_iterator)();
     connections->sendReadTaskResponse(response);
 }
@@ -474,7 +472,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(PartitionReadRequest request)
 {
     if (!parallel_reading_coordinator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
+        throw Exception("Coordinator for parallel reading from replicas is not initialized", ErrorCodes::LOGICAL_ERROR);
 
     auto response = parallel_reading_coordinator->handleRequest(std::move(request));
     connections->sendMergeTreeReadTaskResponse(response);

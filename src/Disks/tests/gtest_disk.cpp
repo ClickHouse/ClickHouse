@@ -7,29 +7,65 @@
 namespace fs = std::filesystem;
 
 
-DB::DiskPtr createDisk()
+#if !defined(__clang__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
+
+
+template <typename T>
+DB::DiskPtr createDisk();
+
+template <>
+DB::DiskPtr createDisk<DB::DiskMemory>()
+{
+    return std::make_shared<DB::DiskMemory>("memory_disk");
+}
+
+template <>
+DB::DiskPtr createDisk<DB::DiskLocal>()
 {
     fs::create_directory("tmp/");
     return std::make_shared<DB::DiskLocal>("local_disk", "tmp/", 0);
 }
 
+
+template <typename T>
 void destroyDisk(DB::DiskPtr & disk)
+{
+    disk.reset();
+}
+
+template <>
+void destroyDisk<DB::DiskMemory>(DB::DiskPtr & disk)
+{
+    disk.reset();
+}
+
+template <>
+void destroyDisk<DB::DiskLocal>(DB::DiskPtr & disk)
 {
     disk.reset();
     fs::remove_all("tmp/");
 }
 
+
+template <typename T>
 class DiskTest : public testing::Test
 {
 public:
-    void SetUp() override { disk = createDisk(); }
-    void TearDown() override { destroyDisk(disk); }
+    void SetUp() override { disk = createDisk<T>(); }
+    void TearDown() override { destroyDisk<T>(disk); }
 
     DB::DiskPtr disk;
 };
 
 
-TEST_F(DiskTest, createDirectories)
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
+TYPED_TEST_SUITE(DiskTest, DiskImplementations);
+
+
+TYPED_TEST(DiskTest, createDirectories)
 {
     this->disk->createDirectories("test_dir1/");
     EXPECT_TRUE(this->disk->isDirectory("test_dir1/"));
@@ -39,7 +75,7 @@ TEST_F(DiskTest, createDirectories)
 }
 
 
-TEST_F(DiskTest, writeFile)
+TYPED_TEST(DiskTest, writeFile)
 {
     {
         std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
@@ -57,7 +93,7 @@ TEST_F(DiskTest, writeFile)
 }
 
 
-TEST_F(DiskTest, readFile)
+TYPED_TEST(DiskTest, readFile)
 {
     {
         std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
@@ -92,7 +128,7 @@ TEST_F(DiskTest, readFile)
 }
 
 
-TEST_F(DiskTest, iterateDirectory)
+TYPED_TEST(DiskTest, iterateDirectory)
 {
     this->disk->createDirectories("test_dir/nested_dir/");
 

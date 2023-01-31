@@ -45,7 +45,7 @@ public:
 
     /// Only delete is supported.
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
@@ -68,7 +68,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -77,13 +77,13 @@ public:
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
         Block block = metadata_snapshot->getSampleBlock();
-        convertRightBlock(block);
+        if (use_nulls && isLeftOrFull(kind))
+            for (auto & col : block)
+                JoinCommon::convertColumnToNullable(col);
         return block;
     }
 
     bool useNulls() const { return use_nulls; }
-
-    const Names & getKeyNames() const { return key_names; }
 
 private:
     Block sample_block;
@@ -106,8 +106,6 @@ private:
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
-
-    void convertRightBlock(Block & block) const;
 };
 
 }

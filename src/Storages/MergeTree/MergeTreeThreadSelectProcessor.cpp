@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
+MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     size_t thread_,
     const MergeTreeReadPoolPtr & pool_,
     size_t min_marks_to_read_,
@@ -28,7 +28,7 @@ MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
     const Names & virt_column_names_,
     std::optional<ParallelReadingExtension> extension_)
     :
-    IMergeTreeSelectAlgorithm{
+    MergeTreeBaseSelectProcessor{
         pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
@@ -86,18 +86,18 @@ MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
     }
 
 
-    ordered_names = getHeader().getNames();
+    ordered_names = getPort().getHeader().getNames();
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectAlgorithm::getNewTaskImpl()
+bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
     return static_cast<bool>(task);
 }
 
 
-void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
+void MergeTreeThreadSelectProcessor::finalizeNewTask()
 {
     const std::string part_name = task->data_part->isProjectionPart() ? task->data_part->getParentPart()->name : task->data_part->name;
 
@@ -129,13 +129,13 @@ void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
 }
 
 
-void MergeTreeThreadSelectAlgorithm::finish()
+void MergeTreeThreadSelectProcessor::finish()
 {
     reader.reset();
     pre_reader_for_step.clear();
 }
 
 
-MergeTreeThreadSelectAlgorithm::~MergeTreeThreadSelectAlgorithm() = default;
+MergeTreeThreadSelectProcessor::~MergeTreeThreadSelectProcessor() = default;
 
 }

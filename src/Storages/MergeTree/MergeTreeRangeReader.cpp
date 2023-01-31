@@ -85,7 +85,7 @@ MergeTreeRangeReader::DelayedStream::DelayedStream(
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
         , current_task_last_mark(current_task_last_mark_)
         , merge_tree_reader(merge_tree_reader_)
-        , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
+        , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , continue_reading(false), is_finished(false)
 {
 }
@@ -183,30 +183,30 @@ MergeTreeRangeReader::Stream::Stream(
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader_)
-        , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
+        , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
         , stream(from_mark, current_task_last_mark, merge_tree_reader)
 {
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read from mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+        throw Exception("Trying create stream to read from mark №"+ toString(current_mark) + " but total marks count is "
+            + toString(marks_count), ErrorCodes::LOGICAL_ERROR);
 
     if (last_mark > marks_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read to mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+        throw Exception("Trying create stream to read to mark №"+ toString(current_mark) + " but total marks count is "
+            + toString(marks_count), ErrorCodes::LOGICAL_ERROR);
 }
 
 void MergeTreeRangeReader::Stream::checkNotFinished() const
 {
     if (isFinished())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read out of marks range.");
+        throw Exception("Cannot read out of marks range.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 void MergeTreeRangeReader::Stream::checkEnoughSpaceInCurrentGranule(size_t num_rows) const
 {
     if (num_rows + offset_after_current_mark > current_mark_index_granularity)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read from granule more than index_granularity.");
+        throw Exception("Cannot read from granule more than index_granularity.", ErrorCodes::LOGICAL_ERROR);
 }
 
 size_t MergeTreeRangeReader::Stream::readRows(Columns & columns, size_t num_rows)
@@ -229,8 +229,7 @@ void MergeTreeRangeReader::Stream::toNextMark()
     else if (current_mark == total_marks_count)
         current_mark_index_granularity = 0; /// HACK?
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read from mark {}, but total marks count {}",
-                        toString(current_mark), toString(total_marks_count));
+        throw Exception("Trying to read from mark " + toString(current_mark) + ", but total marks count " + toString(total_marks_count), ErrorCodes::LOGICAL_ERROR);
 
     offset_after_current_mark = 0;
 }
@@ -306,12 +305,12 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (rows_per_granule.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
+        throw Exception("Can't adjust last granule because no granules were added", ErrorCodes::LOGICAL_ERROR);
 
     if (num_rows_to_subtract > rows_per_granule.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't adjust last granule because it has {} rows, but try to subtract {} rows.",
-                        rows_per_granule.back(), num_rows_to_subtract);
+                        toString(rows_per_granule.back()), toString(num_rows_to_subtract));
 
     rows_per_granule.back() -= num_rows_to_subtract;
     total_rows_per_granule -= num_rows_to_subtract;
@@ -805,7 +804,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     bool last_reader_in_chain_,
     const Names & non_const_virtual_column_names_)
     : merge_tree_reader(merge_tree_reader_)
-    , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
+    , index_granularity(&(merge_tree_reader->data_part->index_granularity))
     , prev_reader(prev_reader_)
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
@@ -923,7 +922,7 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
 {
     if (max_rows == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
+        throw Exception("Expected at least 1 row to read, got 0.", ErrorCodes::LOGICAL_ERROR);
 
     ReadResult read_result(log);
 
@@ -1198,8 +1197,8 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
 
     /// added_rows may be zero if all columns were read in prewhere and it's ok.
     if (num_rows && num_rows != result.total_rows_per_granule)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeReader read {} rows, but {} expected.",
-                        num_rows, result.total_rows_per_granule);
+        throw Exception("RangeReader read " + toString(num_rows) + " rows, but "
+                        + toString(result.total_rows_per_granule) + " expected.", ErrorCodes::LOGICAL_ERROR);
 
     return columns;
 }

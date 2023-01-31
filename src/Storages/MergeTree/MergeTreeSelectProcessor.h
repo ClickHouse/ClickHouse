@@ -13,10 +13,10 @@ namespace DB
 /// Used to read data from single part with select query
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeSelectAlgorithm : public IMergeTreeSelectAlgorithm
+class MergeTreeSelectProcessor : public MergeTreeBaseSelectProcessor
 {
 public:
-    MergeTreeSelectAlgorithm(
+    MergeTreeSelectProcessor(
         const MergeTreeData & storage,
         const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeData::DataPartPtr & owned_data_part,
@@ -34,13 +34,13 @@ public:
         bool has_limit_below_one_block_ = false,
         std::optional<ParallelReadingExtension> extension_ = {});
 
-    ~MergeTreeSelectAlgorithm() override;
+    ~MergeTreeSelectProcessor() override;
 
 protected:
     /// Defer initialization from constructor, because it may be heavy
     /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
     void initializeReaders();
-    void finish() final;
+    void finish() override final;
 
     /// Used by Task
     Names required_columns;

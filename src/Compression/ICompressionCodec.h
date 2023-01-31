@@ -11,6 +11,13 @@
 namespace DB
 {
 
+class ICompressionCodec;
+
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+using Codecs = std::vector<CompressionCodecPtr>;
+
+class IDataType;
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 /**
@@ -113,7 +120,7 @@ protected:
     /// Return size of compressed data without header
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
-    /// Actually compress data without header
+    /// Actually compress data, without header
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
 
     /// Actually decompress data without header
@@ -126,8 +133,5 @@ private:
     ASTPtr full_codec_desc;
     CodecMode decompressMode{CodecMode::Synchronous};
 };
-
-using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = std::vector<CompressionCodecPtr>;
 
 }

@@ -13,7 +13,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include "config.h"
+#include <Common/config.h>
 #include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -407,25 +407,27 @@ public:
             return "sumWithOverflow";
         else if constexpr (Type == AggregateFunctionTypeSumKahan)
             return "sumKahan";
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     explicit AggregateFunctionSum(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(0))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
+        , scale(0)
     {}
 
     AggregateFunctionSum(const IDataType & data_type, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(getDecimalScale(data_type)))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {})
+        , scale(getDecimalScale(data_type))
     {}
 
-    static DataTypePtr createResultType(UInt32 scale_)
+    DataTypePtr getReturnType() const override
     {
         if constexpr (!is_decimal<T>)
             return std::make_shared<DataTypeNumber<TResult>>();
         else
         {
             using DataType = DataTypeDecimal<TResult>;
-            return std::make_shared<DataType>(DataType::maxPrecision(), scale_);
+            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
         }
     }
 
@@ -546,7 +548,7 @@ public:
         for (const auto & argument_type : this->argument_types)
             can_be_compiled &= canBeNativeType(*argument_type);
 
-        auto return_type = this->getResultType();
+        auto return_type = getReturnType();
         can_be_compiled &= canBeNativeType(*return_type);
 
         return can_be_compiled;
@@ -556,8 +558,8 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
-        auto * aggregate_sum_ptr = aggregate_data_ptr;
+        auto * return_type = toNativeType(b, getReturnType());
+        auto * aggregate_sum_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
         b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
     }
@@ -566,9 +568,9 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
+        auto * return_type = toNativeType(b, getReturnType());
 
-        auto * sum_value_ptr = aggregate_data_ptr;
+        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
 
         const auto & argument_type = arguments_types[0];
@@ -584,12 +586,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
+        auto * return_type = toNativeType(b, getReturnType());
 
-        auto * sum_value_dst_ptr = aggregate_data_dst_ptr;
+        auto * sum_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
         auto * sum_value_dst = b.CreateLoad(return_type, sum_value_dst_ptr);
 
-        auto * sum_value_src_ptr = aggregate_data_src_ptr;
+        auto * sum_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
         auto * sum_value_src = b.CreateLoad(return_type, sum_value_src_ptr);
 
         auto * sum_return_value = sum_value_dst->getType()->isIntegerTy() ? b.CreateAdd(sum_value_dst, sum_value_src) : b.CreateFAdd(sum_value_dst, sum_value_src);
@@ -600,8 +602,8 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
-        auto * sum_value_ptr = aggregate_data_ptr;
+        auto * return_type = toNativeType(b, getReturnType());
+        auto * sum_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
 
         return b.CreateLoad(return_type, sum_value_ptr);
     }
@@ -609,6 +611,8 @@ public:
 #endif
 
 private:
+    UInt32 scale;
+
     static constexpr auto & castColumnToResult(IColumn & to)
     {
         if constexpr (is_decimal<T>)

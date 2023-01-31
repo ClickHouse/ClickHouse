@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/opentelemetry_span_log
----
 # opentelemetry_span_log
 
 Contains information about [trace spans](https://opentracing.io/docs/overview/spans/) for executed queries.
@@ -52,3 +49,4 @@ attribute.values: []
 **See Also**
 
 -   [OpenTelemetry](../../operations/opentelemetry.md)
+

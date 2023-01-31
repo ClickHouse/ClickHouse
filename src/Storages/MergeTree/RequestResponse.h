@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/// Represents a segment [left; right] of part's block numbers.
+/// Represents a segment [left; right]
 struct PartBlockRange
 {
     Int64 begin;
@@ -35,12 +35,10 @@ struct PartitionReadRequest
     MarkRanges mark_ranges;
 
     void serialize(WriteBuffer & out) const;
+    void describe(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);
 
     UInt64 getConsistentHash(size_t buckets) const;
-
-    /// Describe it for debugging purposes.
-    String toString() const;
 };
 
 struct PartitionReadResponse

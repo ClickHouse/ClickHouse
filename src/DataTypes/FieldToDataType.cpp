@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
@@ -84,18 +83,6 @@ DataTypePtr FieldToDataType<on_error>::operator() (const UUID &) const
 }
 
 template <LeastSupertypeOnError on_error>
-DataTypePtr FieldToDataType<on_error>::operator() (const IPv4 &) const
-{
-    return std::make_shared<DataTypeIPv4>();
-}
-
-template <LeastSupertypeOnError on_error>
-DataTypePtr FieldToDataType<on_error>::operator() (const IPv6 &) const
-{
-    return std::make_shared<DataTypeIPv6>();
-}
-
-template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const String &) const
 {
     return std::make_shared<DataTypeString>();
@@ -145,7 +132,7 @@ template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 {
     if (tuple.empty())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot infer type of an empty tuple");
+        throw Exception("Cannot infer type of an empty tuple", ErrorCodes::EMPTY_DATA_PASSED);
 
     DataTypes element_types;
     element_types.reserve(tuple.size());

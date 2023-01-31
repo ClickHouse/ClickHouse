@@ -53,14 +53,14 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;
-    void resetFormatterImpl() override;
 
     void writeChunkStart() override;
     void writeChunkEnd() override;
 
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
 
-    DataTypes types;
+    Statistics statistics;
+    std::unique_ptr<WriteBuffer> validating_ostr;    /// Validates UTF-8 sequences, replaces bad sequences with replacement character.
     size_t rows;
 };
 

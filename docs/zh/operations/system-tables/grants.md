@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/grants
----
 # system.grants {#system_tables-grants}
 
 授予ClickHouse用户帐户的权限.
@@ -23,3 +20,5 @@ slug: /zh/operations/system-tables/grants
 - `1` — 这一行描述了一个授权.
 
 -    `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 被授予`WITH GRANT OPTION` 权限, 参见 [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).
+
+[原始文章](https://clickhouse.com/docs/en/operations/system-tables/grants) <!--hide-->

@@ -8,8 +8,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;
 0	1
 0	1
 0	2
@@ -31,8 +30,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;
 0	1
 0	2
 0	2
@@ -54,8 +52,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;
 0	0
 0	1
 0	1
@@ -76,8 +73,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, grouping(number, number % 2) = 1
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, grouping(number, number % 2) = 1;
 0
 0
 0
@@ -101,8 +97,7 @@ GROUP BY
         (number, number % 2),
         ()
     )
-ORDER BY (gr, number)
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY (gr, number);
 0	10	0
 0	1	2
 1	1	2
@@ -134,7 +129,7 @@ GROUP BY
     )
 HAVING grouping(number, number % 2) = 2
 ORDER BY number
-SETTINGS enable_optimize_predicate_expression = 0, force_grouping_standard_compatibility=0;
+SETTINGS enable_optimize_predicate_expression = 0;
 0
 1
 2
@@ -155,7 +150,7 @@ GROUP BY
     )
 HAVING grouping(number, number % 2) = 1
 ORDER BY number
-SETTINGS enable_optimize_predicate_expression = 0, force_grouping_standard_compatibility=0;
+SETTINGS enable_optimize_predicate_expression = 0;
 0
 0
 SELECT
@@ -166,8 +161,7 @@ GROUP BY
     GROUPING SETS (
     (number),
     (number % 2))
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;
 0	0
 0	1
 0	1

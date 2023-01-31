@@ -104,16 +104,3 @@ select distinct a, b, x, y from (select a, b, 1 as x, 2 as y from distinct_in_or
 0	3	1	2
 0	4	1	2
 -- check that distinct in order returns the same result as ordinary distinct
--- check that distinct in order WITH order by returns the same result as ordinary distinct
-0
--- check that distinct in order WITHOUT order by returns the same result as ordinary distinct
-0
--- check that distinct in order WITHOUT order by and WITH filter returns the same result as ordinary distinct
-0
--- bug 42185, distinct in order and empty sort description
--- distinct in order, sorting key tuple()
-1
-0
--- distinct in order, sorting key contains function
-2000-01-01 00:00:00
-2000-01-01

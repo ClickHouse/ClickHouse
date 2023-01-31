@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/install
 sidebar_position: 11
 sidebar_label: "Установка"
 ---
@@ -214,7 +213,7 @@ sudo ./clickhouse install
 
 ### Из исходного кода {#from-sources}
 
-Для компиляции ClickHouse вручную, используйте инструкцию для [Linux](../development/build.mdx) или [Mac OS X](../development/build-osx.md).
+Для компиляции ClickHouse вручную, используйте инструкцию для [Linux](../development/build.md) или [Mac OS X](../development/build-osx.md).
 
 Можно скомпилировать пакеты и установить их, либо использовать программы без установки пакетов. Также при ручой сборке можно отключить необходимость поддержки набора инструкций SSE 4.2 или собрать под процессоры архитектуры AArch64.
 

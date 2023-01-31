@@ -119,7 +119,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.quota_key);
         res_columns[i++]->insert(process.client_info.distributed_depth);
 
-        res_columns[i++]->insert(static_cast<double>(process.elapsed_microseconds) / 100000.0);
+        res_columns[i++]->insert(process.elapsed_seconds);
         res_columns[i++]->insert(process.is_cancelled);
         res_columns[i++]->insert(process.is_all_data_sent);
         res_columns[i++]->insert(process.read_rows);

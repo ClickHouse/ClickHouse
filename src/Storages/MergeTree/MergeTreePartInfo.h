@@ -103,9 +103,7 @@ struct MergeTreePartInfo
         return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
     }
 
-    String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;
-    String getPartNameForLogs() const;
-    String getPartNameV1() const;
+    String getPartName() const;
     String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const
     {
@@ -156,8 +154,6 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "deleting",
         "tmp-fetch",
         "covered-by-broken",
-        "merge-not-byte-identical",
-        "mutate-not-byte-identical"
     });
 
     static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
@@ -167,9 +163,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "ignored",
         "broken-on-start",
         "deleting",
-        "clone",
-        "merge-not-byte-identical",
-        "mutate-not-byte-identical"
+        "clone"
     });
 
     /// NOTE: It may parse part info incorrectly.

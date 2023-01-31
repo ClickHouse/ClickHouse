@@ -21,7 +21,7 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(number > 5, _CAST(\'censor.net\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'), _CAST(\'google\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2)\'))
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10
 other

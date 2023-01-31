@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 #include "IO/S3Common.h"
 
 #if USE_AWS_S3
@@ -24,10 +24,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
-    extern const Event S3GetObject;
-    extern const Event DiskS3GetObject;
-    extern const Event RemoteReadThrottlerBytes;
-    extern const Event RemoteReadThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -38,7 +34,6 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
@@ -47,18 +42,18 @@ ReadBufferFromS3::ReadBufferFromS3(
     const String & bucket_,
     const String & key_,
     const String & version_id_,
-    const S3Settings::RequestSettings & request_settings_,
+    UInt64 max_single_read_retries_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t offset_,
     size_t read_until_position_,
     bool restricted_seek_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , version_id(version_id_)
-    , request_settings(request_settings_)
+    , max_single_read_retries(max_single_read_retries_)
     , offset(offset_)
     , read_until_position(read_until_position_)
     , read_settings(settings_)
@@ -107,7 +102,7 @@ bool ReadBufferFromS3::nextImpl()
     }
 
     size_t sleep_time_with_backoff_milliseconds = 100;
-    for (size_t attempt = 0; attempt < request_settings.max_single_read_retries && !next_result; ++attempt)
+    for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
     {
         Stopwatch watch;
         try
@@ -135,28 +130,11 @@ bool ReadBufferFromS3::nextImpl()
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             break;
         }
-        catch (Exception & e)
+        catch (const Exception & e)
         {
             watch.stop();
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Microseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
-
-            if (auto * s3_exception = dynamic_cast<S3Exception *>(&e))
-            {
-                /// It doesn't make sense to retry Access Denied or No Such Key
-                if (!s3_exception->isRetryableError())
-                {
-                    s3_exception->addMessage("while reading key: {}, from bucket: {}", key, bucket);
-                    throw;
-                }
-            }
-
-            /// It doesn't make sense to retry allocator errors
-            if (e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
-            {
-                tryLogCurrentException(log);
-                throw;
-            }
 
             LOG_DEBUG(
                 log,
@@ -168,7 +146,7 @@ bool ReadBufferFromS3::nextImpl()
                 attempt,
                 e.message());
 
-            if (attempt + 1 == request_settings.max_single_read_retries)
+            if (attempt + 1 == max_single_read_retries)
                 throw;
 
             /// Pause before next attempt.
@@ -188,7 +166,7 @@ bool ReadBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
     if (read_settings.remote_throttler)
-        read_settings.remote_throttler->add(working_buffer.size(), ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+        read_settings.remote_throttler->add(working_buffer.size());
 
     return true;
 }
@@ -201,16 +179,15 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 
     if (impl && restricted_seek)
         throw Exception(
-                        ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-                        "Seek is allowed only before first read attempt from the buffer (current offset: "
-                        "{}, new offset: {}, reading until position: {}, available: {})",
-                        offset, offset_, read_until_position, available());
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+            "Seek is allowed only before first read attempt from the buffer (current offset: {}, new offset: {}, reading until position: {}, available: {})",
+            offset, offset_, read_until_position, available());
 
     if (whence != SEEK_SET)
-        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (offset_ < 0)
-        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
+        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
     if (!restricted_seek)
     {
@@ -253,7 +230,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, /* for_disk_s3= */ read_settings.for_object_storage);
+    auto object_size = S3::getObjectSize(client_ptr, bucket, key, version_id);
 
     file_size = object_size;
     return *file_size;
@@ -320,10 +297,6 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             offset);
     }
 
-    ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (read_settings.for_object_storage)
-        ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
-
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
@@ -333,29 +306,27 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
     else
-    {
-        const auto & error = outcome.GetError();
-        throw S3Exception(error.GetMessage(), error.GetErrorType());
-    }
+        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 SeekableReadBufferPtr ReadBufferS3Factory::getReader()
 {
     const auto next_range = range_generator.nextRange();
     if (!next_range)
+    {
         return nullptr;
+    }
 
     auto reader = std::make_shared<ReadBufferFromS3>(
         client_ptr,
         bucket,
         key,
         version_id,
-        request_settings,
-        read_settings.adjustBufferSize(object_size),
+        s3_max_single_read_retries,
+        read_settings,
         false /*use_external_buffer*/,
         next_range->first,
         next_range->second);
-
     return reader;
 }
 
