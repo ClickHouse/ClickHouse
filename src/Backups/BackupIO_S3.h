@@ -27,7 +27,7 @@ public:
 
 private:
     S3::URI s3_uri;
-    std::shared_ptr<Aws::S3::S3Client> client;
+    std::shared_ptr<S3::S3Client> client;
     ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
 };
@@ -73,7 +73,7 @@ private:
     void removeFilesBatch(const Strings & file_names);
 
     S3::URI s3_uri;
-    std::shared_ptr<Aws::S3::S3Client> client;
+    std::shared_ptr<S3::S3Client> client;
     ReadSettings read_settings;
     S3Settings::RequestSettings request_settings;
     Poco::Logger * log;

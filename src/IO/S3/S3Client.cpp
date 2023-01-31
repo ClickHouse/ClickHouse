@@ -18,11 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace S3
 {
 
@@ -34,91 +29,185 @@ bool S3Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Clien
     return Aws::Client::DefaultRetryStrategy::ShouldRetry(error, attemptedRetries);
 }
 
-Model::HeadObjectOutcome S3Client::HeadObject(const Model::HeadObjectRequest & request) const
+
+bool S3Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
-    if (const auto * casted_request = dynamic_cast<const HeadObjectRequest *>(&request); casted_request)
-        casted_request->setClient(this);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type of request, use derived request types and not the types from AWS SDK");
-
-    auto bucket = request.GetBucket();
-
     if (detect_region)
+        return false;
+
+    if (error.GetResponseCode() == Aws::Http::HttpResponseCode::BAD_REQUEST && error.GetExceptionName() == "AuthorizationHeaderMalformed")
     {
-        std::lock_guard lock(region_cache_mutex);
-        if (!getRegionForBucketAssumeLocked(bucket))
-            updateRegionForBucketAssumeLocked(bucket);
+        region = GetErrorMarshaller()->ExtractRegion(error);
+
+        if (region.empty())
+            region = getRegionForBucket(bucket, /*force_detect*/ true);
+
+        assert(!explicit_region.empty());
+        if (region == explicit_region)
+            return false;
+
+        insertRegionOverride(bucket, region);
+        return true;
     }
 
-    auto result = Aws::S3::S3Client::HeadObject(request);
-    if (!result.IsSuccess())
+    return false;
+}
+
+void S3Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
+{
+    std::lock_guard lock(region_cache_mutex);
+    auto [it, inserted] = region_for_bucket_cache.emplace(bucket, region);
+    if (inserted)
+        LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
+}
+
+Model::HeadObjectOutcome S3Client::HeadObject(const HeadObjectRequest & request) const
+{
+    const auto & bucket = request.GetBucket();
+
+    if (auto region = getRegionForBucket(bucket); !region.empty())
     {
-        const auto & error = result.GetError();
-        if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !getURIForBucket(bucket))
+        if (!detect_region)
+            LOG_INFO(log, "Using region override {} for bucket {}", region, bucket);
+        request.overrideRegion(std::move(region));
+    }
+
+    if (auto uri = getURIForBucket(bucket); uri.has_value())
+        request.overrideURI(std::move(*uri));
+
+    auto result = Aws::S3::S3Client::HeadObject(request);
+    if (result.IsSuccess())
+        return result;
+
+    const auto & error = result.GetError();
+
+    std::string new_region;
+    if (checkIfWrongRegionDefined(bucket, error, new_region))
+    {
+        request.overrideRegion(new_region);
+        return HeadObject(request);
+    }
+
+    if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+        return result;
+
+    // maybe we detect a correct region
+    if (!detect_region)
+    {
+        if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
         {
-            std::unique_lock lock(uri_cache_mutex);
-            if (!getURIForBucketAssumeLocked(bucket))
-            {
-                lock.unlock();
-                updateEndpointForBucketForHead(bucket);
-                return Aws::S3::S3Client::HeadObject(request);
-            }
+            request.overrideRegion(region);
+            insertRegionOverride(bucket, region);
         }
     }
 
-    return result;
+    auto bucket_uri = getURIForBucket(bucket);
+    if (!bucket_uri)
+    {
+        if (!updateURIForBucketForHead(bucket))
+            return result;
+
+        if (auto region = getRegionForBucket(bucket); !region.empty())
+        {
+            if (!detect_region)
+                LOG_INFO(log, "Using region override {} for bucket {}", region, bucket);
+            request.overrideRegion(std::move(region));
+        }
+
+        bucket_uri = getURIForBucket(bucket);
+        if (!bucket_uri)
+        {
+            LOG_ERROR(log, "Missing resolved URI for bucket {}, maybe the cache was cleaned", bucket);
+            return result;
+        }
+    }
+
+    const auto & current_uri_override = request.getURIOverride();
+    /// we already tried with this URI
+    if (current_uri_override && current_uri_override->uri == bucket_uri->uri)
+    {
+        LOG_INFO(log, "Getting redirected to the same invalid location {}", bucket_uri->uri.toString());
+        return result;
+    }
+
+    request.overrideURI(std::move(*bucket_uri));
+
+    return Aws::S3::S3Client::HeadObject(request);
 }
 
-Model::ListObjectsV2Outcome S3Client::ListObjectsV2(const Model::ListObjectsV2Request & request) const
+Model::ListObjectsV2Outcome S3Client::ListObjectsV2(const ListObjectsV2Request & request) const
 {
-    return doRequest<ListObjectsV2Request>(
-        request, [this](const Model::ListObjectsV2Request & req) { return Aws::S3::S3Client::ListObjectsV2(req); });
+    return doRequest(request, [this](const Model::ListObjectsV2Request & req) { return Aws::S3::S3Client::ListObjectsV2(req); });
 }
 
-Model::GetObjectOutcome S3Client::GetObject(const Model::GetObjectRequest & request) const
+Model::ListObjectsOutcome S3Client::ListObjects(const ListObjectsRequest & request) const
 {
-    return doRequest<GetObjectRequest>(
-        request, [this](const Model::GetObjectRequest & req) { return Aws::S3::S3Client::GetObject(req); });
+    return doRequest(request, [this](const Model::ListObjectsRequest & req) { return Aws::S3::S3Client::ListObjects(req); });
 }
 
-Model::CreateMultipartUploadOutcome S3Client::CreateMultipartUpload(const Model::CreateMultipartUploadRequest & request) const
+Model::GetObjectOutcome S3Client::GetObject(const GetObjectRequest & request) const
 {
-    return doRequest<CreateMultipartUploadRequest>(
+    return doRequest(request, [this](const Model::GetObjectRequest & req) { return Aws::S3::S3Client::GetObject(req); });
+}
+
+Model::AbortMultipartUploadOutcome S3Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
+{
+    return doRequest(
+        request, [this](const Model::AbortMultipartUploadRequest & req) { return Aws::S3::S3Client::AbortMultipartUpload(req); });
+}
+
+Model::CreateMultipartUploadOutcome S3Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
+{
+    return doRequest(
         request, [this](const Model::CreateMultipartUploadRequest & req) { return Aws::S3::S3Client::CreateMultipartUpload(req); });
 }
 
-Model::CompleteMultipartUploadOutcome S3Client::CompleteMultipartUpload(const Model::CompleteMultipartUploadRequest & request) const
+Model::CompleteMultipartUploadOutcome S3Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
 {
-    return doRequest<CompleteMultipartUploadRequest>(
+    return doRequest(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return Aws::S3::S3Client::CompleteMultipartUpload(req); });
 }
 
-Model::PutObjectOutcome S3Client::PutObject(const Model::PutObjectRequest & request) const
+Model::CopyObjectOutcome S3Client::CopyObject(const CopyObjectRequest & request) const
 {
-    return doRequest<PutObjectRequest>(
-        request, [this](const Model::PutObjectRequest & req) { return Aws::S3::S3Client::PutObject(req); });
+    return doRequest(request, [this](const Model::CopyObjectRequest & req) { return Aws::S3::S3Client::CopyObject(req); });
 }
 
-Model::UploadPartOutcome S3Client::UploadPart(const Model::UploadPartRequest & request) const
+Model::PutObjectOutcome S3Client::PutObject(const PutObjectRequest & request) const
 {
-    return doRequest<UploadPartRequest>(
-        request, [this](const Model::UploadPartRequest & req) { return Aws::S3::S3Client::UploadPart(req); });
+    return doRequest(request, [this](const Model::PutObjectRequest & req) { return Aws::S3::S3Client::PutObject(req); });
 }
 
-Model::DeleteObjectOutcome S3Client::DeleteObject(const Model::DeleteObjectRequest & request) const
+Model::UploadPartOutcome S3Client::UploadPart(const UploadPartRequest & request) const
 {
-    return doRequest<DeleteObjectRequest>(
-        request, [this](const Model::DeleteObjectRequest & req) { return Aws::S3::S3Client::DeleteObject(req); });
+    return doRequest(request, [this](const Model::UploadPartRequest & req) { return Aws::S3::S3Client::UploadPart(req); });
 }
 
-Model::DeleteObjectsOutcome S3Client::DeleteObjects(const Model::DeleteObjectsRequest & request) const
+Model::UploadPartCopyOutcome S3Client::UploadPartCopy(const UploadPartCopyRequest & request) const
 {
-    return doRequest<DeleteObjectsRequest>(
-        request, [this](const Model::DeleteObjectsRequest & req) { return Aws::S3::S3Client::DeleteObjects(req); });
+    return doRequest(request, [this](const Model::UploadPartCopyRequest & req) { return Aws::S3::S3Client::UploadPartCopy(req); });
 }
 
-void S3Client::updateRegionForBucketAssumeLocked(const std::string & bucket) const
+Model::DeleteObjectOutcome S3Client::DeleteObject(const DeleteObjectRequest & request) const
 {
+    return doRequest(request, [this](const Model::DeleteObjectRequest & req) { return Aws::S3::S3Client::DeleteObject(req); });
+}
+
+Model::DeleteObjectsOutcome S3Client::DeleteObjects(const DeleteObjectsRequest & request) const
+{
+    return doRequest(request, [this](const Model::DeleteObjectsRequest & req) { return Aws::S3::S3Client::DeleteObjects(req); });
+}
+
+std::string S3Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
+{
+    std::lock_guard lock(region_cache_mutex);
+    if (auto it = region_for_bucket_cache.find(bucket); it != region_for_bucket_cache.end())
+        return it->second;
+
+    if (!force_detect && !detect_region)
+        return "";
+
+
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
     req.SetBucket(bucket);
@@ -141,116 +230,70 @@ void S3Client::updateRegionForBucketAssumeLocked(const std::string & bucket) con
     if (region.empty())
     {
         LOG_INFO(log, "Failed resolving region for bucket {}", bucket);
-        return;
+        return "";
     }
 
     LOG_INFO(log, "Found region {} for bucket {}", region, bucket);
 
-    region_for_bucket_cache.emplace(bucket, region);
+    auto [it, _] = region_for_bucket_cache.emplace(bucket, std::move(region));
+
+    return it->second;
 }
 
-const std::string * S3Client::getRegionForBucket(const std::string & bucket) const
-{
-    std::lock_guard lock(region_cache_mutex);
-    return getRegionForBucketAssumeLocked(bucket);
-}
-
-const std::string * S3Client::getRegionForBucketAssumeLocked(const std::string & bucket) const
-{
-    if (auto it = region_for_bucket_cache.find(bucket); it != region_for_bucket_cache.end())
-        return &it->second;
-    return nullptr;
-}
-
-bool S3Client::updateEndpointForBucketFromErrorAssumeLocked(const std::string & bucket, const Aws::S3::S3Error & error) const
+std::optional<S3::URI> S3Client::getURIFromError(const Aws::S3::S3Error & error) const
 {
     auto endpoint = GetErrorMarshaller()->ExtractEndpoint(error);
     if (endpoint.empty())
-        return false;
+        return std::nullopt;
 
     auto & s3_client = const_cast<S3Client &>(*this);
     const auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(s3_client.accessEndpointProvider().get());
     auto resolved_endpoint = endpoint_provider->ResolveEndpoint({});
 
     if (!resolved_endpoint.IsSuccess())
-        return false;
+        return std::nullopt;
 
     auto uri = resolved_endpoint.GetResult().GetURI();
     uri.SetAuthority(endpoint);
 
-    S3::URI new_uri(uri.GetURIString());
+    return S3::URI(uri.GetURIString());
+}
 
+// Do a list request because head requests don't have body in response
+bool S3Client::updateURIForBucketForHead(const std::string & bucket) const
+{
+    ListObjectsV2Request req;
+    req.SetBucket(bucket);
+    req.SetMaxKeys(1);
+    auto result = ListObjectsV2(req);
+    return result.IsSuccess();
+}
+
+std::optional<S3::URI> S3Client::getURIForBucket(const std::string & bucket) const
+{
+    std::lock_guard lock(uri_cache_mutex);
+    if (auto it = uri_for_bucket_cache.find(bucket); it != uri_for_bucket_cache.end())
+        return it->second;
+
+    return std::nullopt;
+}
+
+void S3Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const
+{
+    std::lock_guard lock(uri_cache_mutex);
     if (auto it = uri_for_bucket_cache.find(bucket); it != uri_for_bucket_cache.end())
     {
         if (it->second.uri == new_uri.uri)
-        {
-            LOG_INFO(log, "New endpoint found {}", uri.GetURIString());
-            it->second = new_uri;
-        }
-    }
-    else
-    {
-        LOG_INFO(log, "New endpoint found {}", uri.GetURIString());
-        uri_for_bucket_cache.emplace(bucket, S3::URI(uri.GetURIString()));
+            return;
+
+        LOG_INFO(log, "Updating URI for bucket {} to {}", bucket, new_uri.uri.toString());
+        it->second = std::move(new_uri);
+
+        return;
     }
 
-    return true;
-
-}
-
-void S3Client::updateEndpointForBucketForHead(const std::string & bucket) const
-{
-    LOG_INFO(log, "Resolving endpoint for bucket {}", bucket);
-    ListObjectsV2Request req;
-    req.SetMaxKeys(1);
-    req.SetBucket(bucket);
-    std::optional<S3::URI> last_uri;
-    while (true)
-    {
-        auto result = ListObjectsV2(req);
-        if (result.IsSuccess())
-            return;
-
-        if (result.GetError().GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
-            return;
-
-        auto endpoint = GetErrorMarshaller()->ExtractEndpoint(result.GetError());
-        if (endpoint.empty())
-            return;
-
-        std::unique_lock lock(uri_cache_mutex);
-        if (!updateEndpointForBucketFromErrorAssumeLocked(bucket, result.GetError()))
-            return;
-
-        const auto * cached_uri_ptr = getURIForBucketAssumeLocked(bucket);
-
-        if (!cached_uri_ptr)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "URI for bucket {} should be present in cache", bucket);
-
-        auto cached_uri = *cached_uri_ptr;
-
-        lock.unlock();
-
-        // check if we already tried with this URI
-        if (last_uri && last_uri->uri == cached_uri.uri)
-            return;
-
-        last_uri = std::move(cached_uri);
-    }
-}
-
-const URI * S3Client::getURIForBucket(const std::string & bucket) const
-{
-    std::lock_guard lock(uri_cache_mutex);
-    return getURIForBucketAssumeLocked(bucket);
-}
-
-const URI * S3Client::getURIForBucketAssumeLocked(const std::string & bucket) const
-{
-    if (auto it = uri_for_bucket_cache.find(bucket); it != uri_for_bucket_cache.end())
-        return &it->second;
-
-    return nullptr;
+    LOG_INFO(log, "Updating URI for bucket {} to {}", bucket, new_uri.uri.toString());
+    uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
 }
 
 }

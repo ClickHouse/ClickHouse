@@ -48,7 +48,7 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const S3Settings::RequestSettings & request_settings,
@@ -92,7 +92,7 @@ private:
     const S3Settings::RequestSettings::PartUploadSettings settings;
     const bool check_objects_after_upload = false;
     const size_t max_unexpected_write_error_retries = 4;
-    const std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    const std::shared_ptr<const S3::S3Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
     size_t upload_part_size = 0;

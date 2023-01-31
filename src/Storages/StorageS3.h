@@ -66,7 +66,7 @@ public:
     {
     public:
         DisclosedGlobIterator(
-            const Aws::S3::S3Client & client_,
+            const S3::S3Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
             const Block & virtual_header,
@@ -88,7 +88,7 @@ public:
     {
     public:
         explicit KeysIterator(
-            const Aws::S3::S3Client & client_,
+            const S3::S3Client & client_,
             const std::string & version_id_,
             const std::vector<String> & keys_,
             const String & bucket_,
@@ -133,7 +133,7 @@ public:
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
         String compression_hint_,
-        const std::shared_ptr<const Aws::S3::S3Client> & client_,
+        const std::shared_ptr<const S3::S3Client> & client_,
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
@@ -154,7 +154,7 @@ private:
     UInt64 max_block_size;
     S3Settings::RequestSettings request_settings;
     String compression_hint;
-    std::shared_ptr<const Aws::S3::S3Client> client;
+    std::shared_ptr<const S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
@@ -286,7 +286,7 @@ public:
     struct S3Configuration
     {
         const S3::URI uri;
-        std::shared_ptr<const Aws::S3::S3Client> client;
+        std::shared_ptr<const S3::S3Client> client;
 
         S3::AuthSettings auth_settings;
         S3Settings::RequestSettings request_settings;

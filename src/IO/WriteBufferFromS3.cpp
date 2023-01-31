@@ -67,7 +67,7 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::RequestSettings & request_settings,

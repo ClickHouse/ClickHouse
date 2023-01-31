@@ -102,7 +102,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeaders)
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
-    std::shared_ptr<Aws::S3::S3Client> client = DB::S3::ClientFactory::instance().create(
+    std::shared_ptr<S3::S3Client> client = DB::S3::ClientFactory::instance().create(
         client_configuration,
         uri.is_virtual_hosted_style,
         access_key_id,
