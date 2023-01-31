@@ -714,11 +714,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 res = interpreter->execute();
 
-                /// Try to read (SELECT) query result from query result cache (if it is enabled)
+                /// If
+                /// - it is a SELECT query,
+                /// - passive (read) use of the query result cache is enabled, and
+                /// - the query result cache knows the query result
+                /// then replace the pipeline by a new pipeline with a single source that is populated from the query result cache
                 auto query_result_cache = context->getQueryResultCache();
                 bool read_result_from_query_result_cache = false; /// a query must not read from *and* write to the query result cache at the same time
                 if (query_result_cache != nullptr
-                    && (settings.enable_experimental_query_result_cache || settings.enable_experimental_query_result_cache_passive_usage)
+                    && (settings.allow_experimental_query_result_cache && settings.use_query_result_cache && settings.enable_reads_from_query_result_cache)
                     && res.pipeline.pulling())
                 {
                     QueryResultCache::Key key(
@@ -733,10 +737,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                /// Try to write (SELECT) query result into query result cache (if it is enabled)
+                /// If
+                /// - it is a SELECT query, and
+                /// - active (write) use of the query result cache is enabled
+                /// then add a processor on top of the pipeline which stores the result in the query result cache.
                 if (!read_result_from_query_result_cache
                     && query_result_cache != nullptr
-                    && settings.enable_experimental_query_result_cache
+                    && settings.allow_experimental_query_result_cache && settings.use_query_result_cache && settings.enable_writes_to_query_result_cache
                     && res.pipeline.pulling()
                     && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
@@ -901,7 +908,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    enable_experimental_query_result_cache = settings.enable_experimental_query_result_cache,
+                                    allow_experimental_query_result_cache = settings.allow_experimental_query_result_cache,
+                                    use_query_result_cache = settings.use_query_result_cache,
+                                    enable_writes_to_query_result_cache = settings.enable_writes_to_query_result_cache,
                                     query_result_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_result_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
                                     log_queries_min_type = settings.log_queries_min_type,
@@ -912,11 +921,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                /// Write query result into query result cache (if enabled)
+                /// If active (write) use of the query result cache is enabled and the query is eligible for result caching, then store the
+                /// query result buffered in the special-purpose cache processor (added on top of the pipeline) into the cache.
                 auto query_result_cache = context->getQueryResultCache();
                 if (query_result_cache != nullptr
                     && pulling_pipeline
-                    && enable_experimental_query_result_cache
+                    && allow_experimental_query_result_cache && use_query_result_cache && enable_writes_to_query_result_cache
                     && (!astContainsNonDeterministicFunctions(ast, context) || query_result_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     query_pipeline.finalizeWriteInQueryResultCache();
