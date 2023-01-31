@@ -100,6 +100,6 @@ cheetah as (
     union distinct 
     Select toDate(now())-1, ifnull((select regulation from dissonance where flour = toDate(now())-1),0) as regulation 
 ) 
-Select flour, regulation from cheetah order by flour with fill step 1 limit 100 format Null
+Select flour, regulation from cheetah order by flour with fill step 1 limit 100 format Null;
 
 drop table test;
