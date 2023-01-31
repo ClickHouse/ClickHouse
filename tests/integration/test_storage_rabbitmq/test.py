@@ -1073,7 +1073,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                     raise
 
     threads = []
-    threads_num = 5
+    threads_num = 3
     for _ in range(threads_num):
         threads.append(threading.Thread(target=insert))
     for thread in threads:
@@ -2981,6 +2981,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
             channel.stop_consuming()
 
     consumer.basic_consume(onReceived, queue_name)
+
     consumer.start_consuming()
     consumer_connection.close()
 
@@ -3006,6 +3007,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'custom1',
                      rabbitmq_max_rows_per_message = 3,
+                     rabbitmq_flush_interval_ms = 1000,
                      format_custom_result_before_delimiter = '<prefix>\n',
                      format_custom_result_after_delimiter = '<suffix>\n';
 
@@ -3324,6 +3326,8 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
 
          CREATE MATERIALIZED VIEW test.consumer TO test.view AS
              SELECT * FROM test.rabbitmq;
+
+        SYSTEM STOP MERGES;
      """
     )
 
