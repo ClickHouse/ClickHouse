@@ -1,4 +1,4 @@
-#include <base/LineReader.h>
+#include <Client/LineReader.h>
 
 #include <iostream>
 #include <string_view>
@@ -64,6 +64,9 @@ void addNewWords(Words & to, const Words & from, Compare comp)
 }
 
 }
+
+namespace DB
+{
 
 replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length)
 {
@@ -201,4 +204,6 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 
     trim(input);
     return INPUT_LINE;
+}
+
 }

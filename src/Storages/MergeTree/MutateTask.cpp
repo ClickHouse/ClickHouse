@@ -1148,7 +1148,8 @@ private:
 
     void prepare()
     {
-        ctx->new_data_part->getDataPartStorage().createDirectories();
+        if (ctx->new_data_part->isStoredOnDisk())
+            ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())

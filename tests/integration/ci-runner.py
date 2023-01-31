@@ -983,8 +983,21 @@ if __name__ == "__main__":
     runner = ClickhouseIntegrationTestsRunner(result_path, params)
 
     logging.info("Running tests")
+
+    # Avoid overlaps with previous runs
+    logging.info("Clearing dmesg before run")
+    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        "dmesg --clear", shell=True
+    )
+
     state, description, test_results, _ = runner.run_impl(repo_path, build_path)
     logging.info("Tests finished")
+
+    # Dump dmesg (to capture possible OOMs)
+    logging.info("Dumping dmesg")
+    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        "dmesg -T", shell=True
+    )
 
     status = (state, description)
     out_results_file = os.path.join(str(runner.path()), "test_results.tsv")

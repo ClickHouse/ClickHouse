@@ -227,7 +227,6 @@ private:
     size_t rows_consumed = 0;
     std::atomic_bool are_totals_written = false;
 
-    Statistics statistics;
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;

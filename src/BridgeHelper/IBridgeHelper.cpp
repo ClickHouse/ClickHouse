@@ -2,10 +2,9 @@
 
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/URI.h>
 #include <filesystem>
 #include <thread>
+
 
 namespace fs = std::filesystem;
 
@@ -97,9 +96,13 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());
 
+    /// We will terminate it with the KILL signal instead of the TERM signal,
+    /// because it's more reliable for arbitrary third-party ODBC drivers.
+    /// The drivers can spawn threads, install their own signal handlers... we don't care.
+
     ShellCommand::Config command_config(path.string());
     command_config.arguments = cmd_args;
-    command_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true);
+    command_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true, SIGKILL);
 
     return ShellCommand::executeDirect(command_config);
 }
