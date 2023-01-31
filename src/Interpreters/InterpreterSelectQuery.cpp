@@ -2502,24 +2502,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     if (!group_by_info && settings.force_aggregation_in_order)
     {
-        /// Not the most optimal implementation here, but this branch handles very marginal case.
-
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
-
-        auto sorting_step = std::make_unique<SortingStep>(
-            query_plan.getCurrentDataStream(),
-            group_by_sort_description,
-            0 /* LIMIT */,
-            SortingStep::Settings(*context),
-            settings.optimize_sorting_by_input_stream_properties);
-        sorting_step->setStepDescription("Enforced sorting for aggregation in order");
-
-        query_plan.addStep(std::move(sorting_step));
-
-        group_by_info = std::make_shared<InputOrderInfo>(
-            group_by_sort_description, group_by_sort_description.size(), 1 /* direction */, 0 /* limit */);
-
-        sort_description_for_merging = group_by_info->sort_description_for_merging;
+        sort_description_for_merging = group_by_sort_description;
     }
 
     auto merge_threads = max_streams;
@@ -2546,7 +2530,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
-        settings.enable_memory_bound_merging_of_aggregation_results);
+        settings.enable_memory_bound_merging_of_aggregation_results,
+        !group_by_info && settings.force_aggregation_in_order);
     query_plan.addStep(std::move(aggregating_step));
 }
 
