@@ -127,19 +127,51 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 
     assert(checkpoint);
 
-    if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
+    if (recursive_checkpoints_offsets.empty())
     {
-        /// Both checkpoint and position are in the same buffer.
-        pos = *checkpoint;
+        if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
+        {
+            /// Both checkpoint and position are in the same buffer.
+            pos = *checkpoint;
+        }
+        else
+        {
+            /// Checkpoint is in own memory and position is not.
+            assert(checkpointInOwnMemory());
+
+            char * memory_data = getMemoryData();
+            /// Switch to reading from own memory.
+            BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data);
+        }
     }
     else
     {
-        /// Checkpoint is in own memory and position is not.
-        assert(checkpointInOwnMemory());
+        size_t offset_from_checkpoint = recursive_checkpoints_offsets.top();
+        if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
+        {
+            /// Both checkpoint and position are in the same buffer.
+            pos = *checkpoint + offset_from_checkpoint;
+        }
+        else
+        {
+            /// Checkpoint is in own memory and position is not.
+            assert(checkpointInOwnMemory());
 
-        char * memory_data = getMemoryData();
-        /// Switch to reading from own memory.
-        BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data);
+            size_t offset_from_checkpoint_in_own_memory = offsetFromCheckpointInOwnMemory();
+            if (offset_from_checkpoint >= offset_from_checkpoint_in_own_memory)
+            {
+                /// Recursive checkpoint is in sub buffer with current position.
+                /// Just move position to the recursive checkpoint
+                pos = buffer().begin() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
+            }
+            else
+            {
+                /// Recursive checkpoint is in own memory and position is not.
+                /// Switch to reading from own memory.
+                char * memory_data = getMemoryData();
+                BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data + offset_from_checkpoint);
+            }
+        }
     }
 
     if (drop)
@@ -321,6 +353,26 @@ PeekableReadBuffer::~PeekableReadBuffer()
 bool PeekableReadBuffer::hasUnreadData() const
 {
     return peeked_size && pos != getMemoryData() + peeked_size;
+}
+
+size_t PeekableReadBuffer::offsetFromCheckpointInOwnMemory() const
+{
+    return peeked_size - (*checkpoint - getMemoryData());
+}
+
+size_t PeekableReadBuffer::offsetFromCheckpoint() const
+{
+    if (!checkpoint)
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "There is no checkpoint");
+
+    if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
+    {
+        /// Checkpoint and pos are in the same buffer.
+        return pos - *checkpoint;
+    }
+
+    /// Checkpoint is in own memory, position is in sub buffer.
+    return offset() + offsetFromCheckpointInOwnMemory();
 }
 
 }

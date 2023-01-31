@@ -32,7 +32,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast, ContextPtr context)
 
     const auto & args = ast_function->children;
     if (args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, bad_arguments_error_message);
+        throw Exception::createDeprecated(bad_arguments_error_message, ErrorCodes::BAD_ARGUMENTS);
 
     auto & url_function_args = assert_cast<ASTExpressionList *>(args[0].get())->children;
 

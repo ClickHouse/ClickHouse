@@ -7,6 +7,7 @@ import logging
 
 from datetime import datetime
 from os import getenv
+from pprint import pformat
 from typing import Dict, List
 
 from github.PullRequestReview import PullRequestReview
@@ -32,24 +33,20 @@ class Reviews:
         """
         logging.info("Checking the PR for approvals")
         self.pr = pr
-        self.reviews = pr.get_reviews()
-        # the reviews are ordered by time
-        self._review_per_user = {}  # type: Dict[NamedUser, PullRequestReview]
-        self.approved_at = datetime.fromtimestamp(0)
-        for r in self.reviews:
+        reviews = pr.get_reviews()
+        # self.reviews is a dict of latest CHANGES_REQUESTED or APPROVED review
+        # per user
+        # NamedUsed has proper __eq__ and __hash__, so it's safe to use it
+        self.reviews = {}  # type: Dict[NamedUser, PullRequestReview]
+        for r in reviews:
             user = r.user
-            if r.state not in self.STATES:
+
+            if not self.reviews.get(user):
+                self.reviews[user] = r
                 continue
 
-            if r.state == "APPROVED":
-                self.approved_at = max(r.submitted_at, self.approved_at)
-
-            if not self._review_per_user.get(user):
-                self._review_per_user[user] = r
-                continue
-
-            if r.submitted_at < self._review_per_user[user].submitted_at:
-                self._review_per_user[user] = r
+            if r.submitted_at < self.reviews[user].submitted_at:
+                self.reviews[user] = r
 
     def is_approved(self, team: List[NamedUser]) -> bool:
         """Checks if the PR is approved, and no changes made after the last approval"""
@@ -57,34 +54,37 @@ class Reviews:
             logging.info("There aren't reviews for PR #%s", self.pr.number)
             return False
 
-        # We consider reviews only from the given list of users
-        statuses = {
-            r.state
-            for user, r in self._review_per_user.items()
-            if r.state == "CHANGES_REQUESTED"
-            or (r.state == "APPROVED" and user in team)
+        filtered_reviews = {
+            user: review
+            for user, review in self.reviews.items()
+            if review.state in self.STATES and user in team
         }
 
-        if "CHANGES_REQUESTED" in statuses:
+        # We consider reviews only from the given list of users
+        changes_requested = {
+            user: review
+            for user, review in filtered_reviews.items()
+            if review.state == "CHANGES_REQUESTED"
+        }
+
+        if changes_requested:
             logging.info(
                 "The following users requested changes for the PR: %s",
-                ", ".join(
-                    user.login
-                    for user, r in self._review_per_user.items()
-                    if r.state == "CHANGES_REQUESTED"
-                ),
+                ", ".join(user.login for user in changes_requested.keys()),
             )
             return False
 
-        if "APPROVED" in statuses:
+        approved = {
+            user: review
+            for user, review in filtered_reviews.items()
+            if review.state == "APPROVED"
+        }
+
+        if approved:
             logging.info(
                 "The following users from %s team approved the PR: %s",
                 TEAM_NAME,
-                ", ".join(
-                    user.login
-                    for user, r in self._review_per_user.items()
-                    if r.state == "APPROVED" and user in team
-                ),
+                ", ".join(user.login for user in approved.keys()),
             )
             # The only reliable place to get the 100% accurate last_modified
             # info is when the commit was pushed to GitHub. The info is
@@ -101,10 +101,24 @@ class Reviews:
             last_changed = datetime.strptime(
                 commit.stats.last_modified, "%a, %d %b %Y %H:%M:%S GMT"
             )
-            if self.approved_at < last_changed:
+
+            approved_at = max(review.submitted_at for review in approved.values())
+            if approved_at == datetime.fromtimestamp(0):
+                logging.info(
+                    "Unable to get `datetime.fromtimestamp(0)`, "
+                    "here's debug info about reviews: %s",
+                    "\n".join(pformat(review) for review in self.reviews.values()),
+                )
+            else:
+                logging.info(
+                    "The PR is approved at %s",
+                    approved_at.isoformat(),
+                )
+
+            if approved_at < last_changed:
                 logging.info(
                     "There are changes after approve at %s",
-                    self.approved_at.isoformat(),
+                    approved_at.isoformat(),
                 )
                 return False
             return True
