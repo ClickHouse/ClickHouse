@@ -1239,7 +1239,15 @@ void StorageDistributed::drop()
 
     auto disks = data_volume->getDisks();
     for (const auto & disk : disks)
+    {
+        if (!disk->exists(relative_data_path))
+        {
+            LOG_INFO(log, "Path {} is already removed from disk {}", relative_data_path, disk->getName());
+            continue;
+        }
+
         disk->removeRecursive(relative_data_path);
+    }
 
     LOG_DEBUG(log, "Removed");
 }

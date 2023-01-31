@@ -85,7 +85,7 @@ namespace DB
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
-            throw Exception{fmt::format("Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString()), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column \"{}\": {}.", format_name, column_name, status.ToString());
     }
 
     template <typename NumericType, typename ArrowBuilderType>
@@ -589,11 +589,8 @@ namespace DB
     #undef DISPATCH
         else
         {
-            throw Exception
-                {
-                    fmt::format("Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name),
-                    ErrorCodes::UNKNOWN_TYPE
-                };
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                    "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name);
         }
     }
 
