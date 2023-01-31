@@ -1436,7 +1436,7 @@ private:
         Arena * arena) const;
 
     template <bool use_compiled_functions>
-    Block insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & places, OutputBlockColumns && out_cols, Arena * arena) const;
+    Block insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & places, OutputBlockColumns && out_cols, Arena * arena, bool has_null_key_data) const;
 
     template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
     ConvertToBlockRes<return_single_block>
