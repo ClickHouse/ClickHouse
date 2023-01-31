@@ -1326,7 +1326,7 @@ Default value: `1`.
 
 ## enable_writes_to_query_cache {#enable-writes-to-query-cache}
 
-If turned on, results of `SELECT` queries are stored in the [query cache](../query-.md).
+If turned on, results of `SELECT` queries are stored in the [query cache](../query-cache.md).
 
 Possible values:
 
