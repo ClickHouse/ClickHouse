@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 ch_server = cluster.add_instance(
     "clickhouse-server",
     with_coredns=True,
-    main_configs=["configs/config.xml", "configs/listen_host.xml"],
+    main_configs=["configs/listen_host.xml"],
 )
 
 client = cluster.add_instance(
