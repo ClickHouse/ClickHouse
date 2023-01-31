@@ -3,8 +3,6 @@
 namespace DB
 {
 
-extern thread_local constinit ProfileEvents::Counters * subthread_profile_events;
-
 
 ProfileEventsScope::ProfileEventsScope()
     : performance_counters_holder(std::make_unique<ProfileEvents::Counters>())
@@ -26,7 +24,7 @@ std::shared_ptr<ProfileEvents::Counters::Snapshot> ProfileEventsScope::getSnapsh
 
 ProfileEventsScope::~ProfileEventsScope()
 {
-    subthread_profile_events = nullptr;
+    CurrentThread::get().detachProfileCountersScope();
 }
 
 
