@@ -644,8 +644,6 @@ void QueryPipelineBuilder::connectDependencies()
 
     for (const auto & group_id : all_parallel_replicas_groups)
     {
-        std::cout << "UUID " << toString(group_id) << std::endl;
-
         std::vector<RemoteSource *> input_dependencies;
         std::vector<ReadFromMergeTreeDependencyTransform *> output_dependencies;
 
