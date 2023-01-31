@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
+#include <Common/checkStackSize.h>
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
 
@@ -76,8 +77,6 @@ namespace ProfileEvents
     extern const Event ScalarSubqueriesGlobalCacheHit;
     extern const Event ScalarSubqueriesCacheMiss;
 }
-
-#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -407,6 +406,7 @@ struct TableExpressionData
     std::string table_expression_description;
     std::string database_name;
     std::string table_name;
+    NamesAndTypes column_names_and_types;
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
 
@@ -723,6 +723,9 @@ struct IdentifierResolveScope
 
     /// Use identifier lookup to result cache
     bool use_identifier_lookup_to_result_cache = true;
+
+    /// JOINs count
+    size_t joins_count = 0;
 
     /// Subquery depth
     size_t subquery_depth = 0;
@@ -1166,25 +1169,38 @@ private:
 
     static bool tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings = {});
+    QueryTreeNodePtr tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope,
+        IdentifierResolveSettings identifier_resolve_settings);
 
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
     static bool tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, const IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
+        const QueryTreeNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    QueryTreeNodePtr tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
+        const QueryTreeNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    QueryTreeNodePtr tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,
+        const QueryTreeNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
+    QueryTreeNodePtr tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup,
+        const QueryTreeNodePtr & join_tree_node,
+        IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromJoinTree(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
+    QueryTreeNodePtr tryResolveIdentifierFromJoinTree(const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
-    IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings = {});
+    IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope,
+        IdentifierResolveSettings identifier_resolve_settings = {});
 
     /// Resolve query tree nodes functions
 
@@ -2360,7 +2376,9 @@ bool QueryAnalyzer::tryBindIdentifierToAliases(const IdentifierLookup & identifi
   *
   * 5. If identifier is compound and identifier lookup is in expression context, use `tryResolveIdentifierFromCompoundExpression`.
   */
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings)
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveScope & scope,
+    IdentifierResolveSettings identifier_resolve_settings)
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
@@ -2568,7 +2586,9 @@ bool QueryAnalyzer::tryBindIdentifierToTableExpression(const IdentifierLookup & 
     return false;
 }
 
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & table_expression_node,
+    IdentifierResolveScope & scope)
 {
     auto table_expression_node_type = table_expression_node->getNodeType();
 
@@ -2648,7 +2668,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
         if (result_column && !match_full_identifier && compound_identifier)
         {
             size_t identifier_bind_size = identifier_column_qualifier_parts + 1;
-            result_expression = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, identifier_bind_size, result_column, table_expression_source, scope);
+            result_expression = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier,
+                identifier_bind_size,
+                result_column,
+                table_expression_source,
+                scope);
             clone_is_needed = false;
         }
 
@@ -2662,7 +2686,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
 
             auto hints = collectIdentifierTypoHints(identifier, valid_identifiers);
 
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier '{}' cannot be resolved from {}. In scope {}{}",
                 identifier.getFullName(),
                 table_expression_source,
                 scope.scope_node->formatASTForErrorMessage(),
@@ -2744,7 +2768,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
     return {};
 }
 
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & table_expression_node,
+    IdentifierResolveScope & scope)
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
     auto left_resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_join_node.getLeftTableExpression(), scope);
@@ -2803,6 +2829,14 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             result_column.setColumnType(using_column_node.getColumnType());
 
             resolved_identifier = std::move(result_column_node);
+        }
+        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
+        {
+            return left_resolved_identifier;
+        }
+        else if (left_resolved_identifier->isEqual(*right_resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
+        {
+            return left_resolved_identifier;
         }
         else
         {
@@ -2870,12 +2904,14 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     return resolved_identifier;
 }
 
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & table_expression_node,
+    IdentifierResolveScope & scope)
 {
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
     auto resolved_identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpression(), scope);
 
-    if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()))
+    if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolved_identifier;
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
@@ -2924,7 +2960,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromArrayJoin(const Identifi
     return resolved_identifier;
 }
 
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope)
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & join_tree_node,
+    IdentifierResolveScope & scope)
 {
     auto join_tree_node_type = join_tree_node->getNodeType();
 
@@ -2973,7 +3011,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTreeNode(const Ident
   * Start with identifier first part, if it match some column name in table try to get column with full identifier name.
   * TODO: Need to check if it is okay to throw exception if compound identifier first part bind to column but column is not valid.
   */
-QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoinTree(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveScope & scope)
 {
     if (identifier_lookup.isFunctionLookup())
         return {};
@@ -3117,7 +3156,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
   * Example: Try to lookup identifier as expression, if it is not found, lookup as function.
   * Example: Try to lookup identifier as expression, if it is not found, lookup as table.
   */
-IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveSettings identifier_resolve_settings)
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveScope & scope,
+    IdentifierResolveSettings identifier_resolve_settings)
 {
     auto it = scope.identifier_lookup_to_result.find(identifier_lookup);
     if (it != scope.identifier_lookup_to_result.end())
@@ -5508,6 +5549,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 join_tree_node_ptrs_to_process_queue.push_back(&join.getLeftTableExpression());
                 join_tree_node_ptrs_to_process_queue.push_back(&join.getRightTableExpression());
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
+                ++scope.joins_count;
                 break;
             }
             default:
@@ -5572,6 +5614,8 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
             get_column_options.withSubcolumns();
 
         auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
+        table_expression_data.column_names_and_types = NamesAndTypes(column_names_and_types.begin(), column_names_and_types.end());
+
         const auto & columns_description = storage_snapshot->metadata->getColumns();
 
         std::vector<std::pair<std::string, ColumnNodePtr>> alias_columns_to_resolve;
@@ -5585,7 +5629,7 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
           * For each alias column we build identifier resolve scope, initialize it with table column name to node map
           * and resolve alias column.
           */
-        for (const auto & column_name_and_type : column_names_and_types)
+        for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
         {
             const auto & column_default = columns_description.getDefault(column_name_and_type.name);
 
@@ -5632,10 +5676,10 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
     }
     else if (query_node || union_node)
     {
-        auto column_names_and_types = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
-        table_expression_data.column_name_to_column_node.reserve(column_names_and_types.size());
+        table_expression_data.column_names_and_types = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+        table_expression_data.column_name_to_column_node.reserve(table_expression_data.column_names_and_types.size());
 
-        for (const auto & column_name_and_type : column_names_and_types)
+        for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
         {
             auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
             table_expression_data.column_name_to_column_node.emplace(column_name_and_type.name, column_node);

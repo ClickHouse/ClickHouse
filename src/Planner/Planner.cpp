@@ -591,7 +591,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
                 if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
-                    interpolate_expression = &interpolate_actions_dag->addCast(*interpolate_expression, expression_to_interpolate->result_type);
+                {
+                    interpolate_expression = &interpolate_actions_dag->addCast(*interpolate_expression,
+                        expression_to_interpolate->result_type,
+                        interpolate_expression->result_name);
+                }
 
                 const auto * alias_node = &interpolate_actions_dag->addAlias(*interpolate_expression, expression_to_interpolate_name);
                 interpolate_actions_dag->getOutputs().push_back(alias_node);
