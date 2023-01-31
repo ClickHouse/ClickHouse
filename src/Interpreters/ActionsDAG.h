@@ -143,7 +143,7 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;

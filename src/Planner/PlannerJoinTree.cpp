@@ -473,7 +473,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
                 continue;
 
             const auto & cast_type = it->second;
-            output_node = &cast_actions_dag->addCast(*output_node, cast_type);
+            output_node = &cast_actions_dag->addCast(*output_node, cast_type, output_node->result_name);
         }
 
         cast_actions_dag->projectInput();

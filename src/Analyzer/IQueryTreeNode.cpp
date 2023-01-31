@@ -74,7 +74,7 @@ struct NodePairHash
 
 }
 
-bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
+bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
     if (this == &rhs)
         return true;
@@ -105,11 +105,11 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs) const
         }
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
-            lhs_node_to_compare->alias != rhs_node_to_compare->alias ||
             !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
-        {
             return false;
-        }
+
+        if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
+            return false;
 
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;

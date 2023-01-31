@@ -464,10 +464,10 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                 }
 
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &join_expression_actions->addCast(*left_key_node, common_type);
+                    left_key_node = &join_expression_actions->addCast(*left_key_node, common_type, {});
 
                 if (!right_key_node->result_type->equals(*common_type))
-                    right_key_node = &join_expression_actions->addCast(*right_key_node, common_type);
+                    right_key_node = &join_expression_actions->addCast(*right_key_node, common_type, {});
             }
 
             join_expression_actions->addOrReplaceInOutputs(*left_key_node);
