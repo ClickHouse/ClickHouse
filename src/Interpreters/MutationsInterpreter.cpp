@@ -234,7 +234,7 @@ bool isStorageTouchedByMutations(
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (executor.pull(block)) {}
+    while (block.rows() == 0 && executor.pull(block));
 
     if (!block.rows())
         return false;
