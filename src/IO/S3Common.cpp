@@ -707,7 +707,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int S3_ERROR;
 }
 
