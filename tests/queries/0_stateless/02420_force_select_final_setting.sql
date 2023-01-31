@@ -47,23 +47,91 @@ create view nv_regular_mt_table AS SELECT * FROM mv_regular_mt_table;
 set force_select_final=1;
 select count() from nv_regular_mt_table;
 
--- join on mix of tables that support / do not support select final
-create table if not exists left_table (x String) engine=ReplacingMergeTree() ORDER BY x;
-create table if not exists middle_table (x String) engine=MergeTree() ORDER BY x;
-create table if not exists right_table (x String) engine=ReplacingMergeTree() ORDER BY x;
+-- join on mix of tables that support / do not support select final with explain
+create table if not exists left_table (id UInt64, val_left String) engine=ReplacingMergeTree() ORDER BY id;
+create table if not exists middle_table (id UInt64, val_middle String) engine=MergeTree() ORDER BY id;
+create table if not exists right_table (id UInt64, val_right String) engine=ReplacingMergeTree() ORDER BY id;
+insert into left_table values (1,'a');
+insert into left_table values (1,'b');
+insert into left_table values (1,'c');
+insert into middle_table values (1,'a');
+insert into middle_table values (1,'b');
+insert into right_table values (1,'a');
+insert into right_table values (1,'b');
+insert into right_table values (1,'c');
+-- expected output
+-- 1 c a c
+-- 1 c b c
+select left_table.id,val_left, val_middle, val_right from left_table
+                                                              inner join middle_table on left_table.id = middle_table.id
+                                                              inner join right_table on middle_table.id = right_table.id
+ORDER BY left_table.id, val_left, val_middle, val_right;
 
-insert into left_table values ('abc');
-insert into left_table values ('abc');
-insert into left_table values ('abc');
+explain syntax select left_table.id,val_left, val_middle, val_right from left_table
+                                                              inner join middle_table on left_table.id = middle_table.id
+                                                              inner join right_table on middle_table.id = right_table.id
+ORDER BY left_table.id, val_left, val_middle, val_right;
 
-insert into middle_table values ('abc');
-insert into middle_table values ('abc');
+-- extra: same with subquery
+select left_table.id,val_left, val_middle, val_right from left_table
+                                                              inner join middle_table on left_table.id = middle_table.id
+                                                              inner join (SELECT * FROM right_table WHERE id = 1) r on middle_table.id = r.id
+ORDER BY left_table.id, val_left, val_middle, val_right;
 
-insert into right_table values ('abc');
-insert into right_table values ('abc');
-insert into right_table values ('abc');
+-- distributed tables
+drop table if exists left_table;
+drop table if exists middle_table;
+drop table if exists right_table;
+create table if not exists left_table (id UInt64, val_left String) engine=ReplacingMergeTree() ORDER BY id;
+create table if not exists middle_table (id UInt64, val_middle String) engine=MergeTree() ORDER BY id;
+create table if not exists right_table_local (id UInt64, val_right String) engine=ReplacingMergeTree() ORDER BY id;
+create table if not exists right_table engine=Distributed('test_shard_localhost', currentDatabase(), right_table_local) AS right_table_local;
+insert into left_table values (1,'a');
+insert into left_table values (1,'b');
+insert into left_table values (1,'c');
+insert into middle_table values (1,'a');
+insert into middle_table values (1,'b');
+insert into right_table_local values (1,'a');
+insert into right_table_local values (1,'b');
+insert into right_table_local values (1,'c');
+SET prefer_localhost_replica=0;
+-- expected output:
+-- 1 c 1 a 1 c
+-- 1 c 1 b 1 c
+select left_table.*,middle_table.*, right_table.* from left_table
+                                                           inner join middle_table on left_table.id = middle_table.id
+                                                           inner join right_table on middle_table.id = right_table.id
+ORDER BY left_table.id, val_left, val_middle, val_right;
 
--- Expected output is 2 because middle table does not support final
-select count() from left_table
-    inner join middle_table on left_table.x = middle_table.x
-    inner join right_table on middle_table.x = right_table.x;
+SET prefer_localhost_replica=1;
+-- expected output:
+-- 1 c 1 a 1 c
+-- 1 c 1 b 1 c
+select left_table.*,middle_table.*, right_table.* from left_table
+                                                           inner join middle_table on left_table.id = middle_table.id
+                                                           inner join right_table on middle_table.id = right_table.id
+ORDER BY left_table.id, val_left, val_middle, val_right;
+
+-- Quite exotic with Merge engine
+DROP TABLE IF EXISTS table_to_merge_a;
+DROP TABLE IF EXISTS table_to_merge_b;
+DROP TABLE IF EXISTS table_to_merge_c;
+DROP TABLE IF EXISTS merge_table;
+
+create table if not exists table_to_merge_a (id UInt64, val String) engine=ReplacingMergeTree() ORDER BY id;
+create table if not exists table_to_merge_b (id UInt64, val String) engine=MergeTree() ORDER BY id;
+create table if not exists table_to_merge_c (id UInt64, val String) engine=ReplacingMergeTree() ORDER BY id;
+CREATE TABLE merge_table Engine=Merge(currentDatabase(), '^(table_to_merge_[a-z])$') AS table_to_merge_a;
+
+insert into table_to_merge_a values (1,'a');
+insert into table_to_merge_a values (1,'b');
+insert into table_to_merge_a values (1,'c');
+insert into table_to_merge_b values (2,'a');
+insert into table_to_merge_b values (2,'b');
+insert into table_to_merge_c values (3,'a');
+insert into table_to_merge_c values (3,'b');
+insert into table_to_merge_c values (3,'c');
+
+-- expected output:
+-- 1 c, 2 a, 2 b, 3 c
+SELECT * FROM merge_table ORDER BY id, val;
