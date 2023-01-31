@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <string_view>
 #include <DataTypes/DataTypeString.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <base/range.h>
@@ -11,6 +13,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
+
 
 namespace DB
 {
@@ -109,7 +112,7 @@ private:
     template <class T>
     size_t updateFrame(ColumnString::Chars & frame, const T value) const
     {
-        static const std::string_view bars[9] = {" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+        static constexpr std::array<std::string_view, 9> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
         const auto & bar = (isNaN(value) || value > 8 || value < 1) ? bars[0] : bars[static_cast<UInt8>(value)];
         frame.insert(bar.begin(), bar.end());
         return bar.size();
