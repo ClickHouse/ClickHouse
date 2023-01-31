@@ -328,11 +328,11 @@ private:
         const auto & file_buffer = getFileBuffer();
 #ifdef OS_LINUX
         {
-            int res = 0;
+            int res = -1;
             do
             {
                 res = fallocate(file_buffer.getFD(), FALLOC_FL_KEEP_SIZE, 0, log_file_settings.max_size + log_file_settings.overallocate_size);
-            } while (errno == EINTR);
+            } while (res < 0 && errno == EINTR);
 
             if (res != 0)
             {
