@@ -75,6 +75,11 @@ private:
     std::unordered_map<S3ClientCache *, std::weak_ptr<S3ClientCache>> client_caches;
 };
 
+/// S3Client that improves the client from the AWS SDK
+/// - inject region and URI into requests so they are rerouted to the correct destination if needed
+/// - automatically detect endpoint and regions for each bucket and cache them
+///
+/// For this client to work correctly both S3Client::RetryStrategy and Requests defined in <IO/S3/Requests.h> should be used.
 class S3Client : public Aws::S3::S3Client
 {
 public:
@@ -181,14 +186,14 @@ private:
             request.overrideURI(std::move(*uri));
 
         bool found_new_endpoint = false;
+        // if we found correct endpoint after 301 responses, update the cache for future requests
         SCOPE_EXIT({
-            // if we found correct endpoint after 301 responses, update the cache for future requests
-            if (!found_new_endpoint)
-                return;
-
-            auto uri_override = request.getURIOverride();
-            assert(uri_override.has_value());
-            updateURIForBucket(bucket, std::move(*uri_override));
+            if (found_new_endpoint)
+            {
+                auto uri_override = request.getURIOverride();
+                assert(uri_override.has_value());
+                updateURIForBucket(bucket, std::move(*uri_override));
+            }
         });
 
         while (true)
