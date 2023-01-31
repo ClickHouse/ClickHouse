@@ -7490,7 +7490,6 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
         MutableDataPartPtr cloned_part;
         ProfileEventsScope profile_events_scope;
 
-
         auto write_part_log = [&](const ExecutionStatus & execution_status)
         {
             writePartLog(

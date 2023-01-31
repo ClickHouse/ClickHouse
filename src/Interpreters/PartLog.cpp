@@ -258,23 +258,16 @@ bool PartLog::addNewPart(ContextPtr context, const PartLog::PartLogEntry & part,
     return addNewParts(context, {part}, execution_status);
 }
 
-bool PartLog::addNewParts(ContextPtr context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns,
-                 const ExecutionStatus & execution_status)
+
+PartLog::PartLogEntries PartLog::createPartLogEntries(const MutableDataPartsVector & parts, UInt64 elapsed_ns, ProfileCountersSnapshotPtr profile_counters)
 {
-    PartLog::PartLogEntries part_log_entries;
+    PartLogEntries part_log_entries;
     part_log_entries.reserve(parts.size());
 
     for (const auto & part : parts)
-        part_log_entries.emplace_back(part, elapsed_ns);
+        part_log_entries.emplace_back(part, elapsed_ns, profile_counters);
 
-    return addNewParts(context, part_log_entries, execution_status);
-}
-
-bool PartLog::addNewPart(ContextPtr context, const PartLog::MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
-{
-    PartLog::PartLogEntries part_log_entries;
-    part_log_entries.emplace_back(part, elapsed_ns);
-    return addNewParts(context, part_log_entries, execution_status);
+    return part_log_entries;
 }
 
 }

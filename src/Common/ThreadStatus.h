@@ -126,7 +126,7 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
 
     /// Points to performance_counters by default.
-    /// Could be changed to point to another object to caclulate performance counters for some narrow scope.
+    /// Could be changed to point to another object to calculate performance counters for some narrow scope.
     ProfileEvents::Counters * current_performance_counters{&performance_counters};
     MemoryTracker memory_tracker{VariableContext::Thread};
 
