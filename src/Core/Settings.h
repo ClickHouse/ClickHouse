@@ -540,6 +540,15 @@ class IColumn;
     M(Bool, describe_extend_object_types, false, "Deduce concrete type of columns of type Object in DESCRIBE query", 0) \
     M(Bool, describe_include_subcolumns, false, "If true, subcolumns of all table columns will be included into result of DESCRIBE query", 0) \
     \
+    M(Bool, use_query_result_cache, false, "Enable the query result cache", 0) \
+    M(Bool, enable_writes_to_query_result_cache, true, "Enable storing results of SELECT queries in the query result cache", 0) \
+    M(Bool, enable_reads_from_query_result_cache, true, "Enable reading results of SELECT queries from the query result cache", 0) \
+    M(Bool, query_result_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query result cache", 0) \
+    M(UInt64, query_result_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query result cache", 0) \
+    M(Milliseconds, query_result_cache_min_query_duration, 0, "Minimum time in milliseconds for a query to run for its result to be stored in the query result cache.", 0) \
+    M(Seconds, query_result_cache_ttl, 60, "After this time in seconds entries in the query result cache become stale", 0) \
+    M(Bool, query_result_cache_share_between_users, false, "Allow other users to read entry in the query result cache", 0) \
+    \
     M(Bool, optimize_rewrite_sum_if_to_count_if, false, "Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent", 0) \
     M(UInt64, insert_shard_id, 0, "If non zero, when insert into a distributed table, the data will be inserted into the shard `insert_shard_id` synchronously. Possible values range from 1 to `shards_number` of corresponding distributed table", 0) \
     \
@@ -660,6 +669,7 @@ class IColumn;
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
     M(Bool, allow_experimental_hash_functions, false, "Enable experimental hash functions (hashid, etc)", 0) \
     M(Bool, allow_experimental_object_type, false, "Allow Object and JSON data types", 0) \
+    M(Bool, allow_experimental_query_result_cache, false, "Enable experimental query result cache", 0) \
     M(String, insert_deduplication_token, "", "If not empty, used for duplicate detection instead of data digest", 0) \
     M(String, ann_index_select_query_params, "", "Parameters passed to ANN indexes in SELECT queries, the format is 'param1=x, param2=y, ...'", 0) \
     M(UInt64, max_limit_for_ann_queries, 1000000, "Maximum limit value for using ANN indexes is used to prevent memory overflow in search queries for indexes", 0) \
@@ -675,13 +685,6 @@ class IColumn;
     M(UInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
     M(Bool, optimize_distinct_in_order, true, "Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement", 0) \
     M(Bool, optimize_sorting_by_input_stream_properties, true, "Optimize sorting by sorting properties of input stream", 0) \
-    M(Bool, enable_experimental_query_result_cache, false, "Store and retrieve results of SELECT queries in/from the query result cache", 0) \
-    M(Bool, enable_experimental_query_result_cache_passive_usage, false, "Retrieve results of SELECT queries from the query result cache", 0) \
-    M(Bool, query_result_cache_store_results_of_queries_with_nondeterministic_functions, false, "Store results of queries with non-deterministic functions (e.g. rand(), now()) in the query result cache", 0) \
-    M(UInt64, query_result_cache_min_query_runs, 0, "Minimum number a SELECT query must run before its result is stored in the query result cache", 0) \
-    M(Milliseconds, query_result_cache_min_query_duration, 0, "Minimum time in milliseconds for a query to run for its result to be stored in the query result cache.", 0) \
-    M(Seconds, query_result_cache_ttl, 60, "After this time in seconds entries in the query result cache become stale", 0) \
-    M(Bool, query_result_cache_share_between_users, false, "Allow other users to read entry in the query result cache", 0) \
     M(UInt64, insert_keeper_max_retries, 0, "Max retries for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for keeper operations during insert", 0) \
     M(UInt64, insert_keeper_retry_max_backoff_ms, 10000, "Max backoff timeout for keeper operations during insert", 0) \
