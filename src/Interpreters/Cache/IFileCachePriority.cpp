@@ -9,7 +9,7 @@ IFileCachePriority::Entry::Entry(
     const Key & key_,
     size_t offset_,
     size_t size_,
-    KeyTransactionCreatorPtr key_transaction_creator_)
+    LockedKeyCreatorPtr key_transaction_creator_)
     : key(key_)
     , offset(offset_)
     , size(size_)
@@ -17,7 +17,7 @@ IFileCachePriority::Entry::Entry(
 {
 }
 
-KeyTransactionPtr IFileCachePriority::Entry::createKeyTransaction() const
+LockedKeyPtr IFileCachePriority::Entry::createLockedKey() const
 {
     return key_transaction_creator->create();
 }

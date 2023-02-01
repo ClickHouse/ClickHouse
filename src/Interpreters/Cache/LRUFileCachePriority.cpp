@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 IFileCachePriority::Iterator LRUFileCachePriority::add(
-    const Key & key, size_t offset, size_t size, KeyTransactionCreatorPtr key_transaction_creator)
+    const Key & key, size_t offset, size_t size, LockedKeyCreatorPtr key_transaction_creator)
 {
 #ifndef NDEBUG
     for (const auto & entry : queue)

@@ -33,7 +33,7 @@ FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
         const Key & key_,
-        KeyTransactionCreatorPtr key_transaction_creator_,
+        LockedKeyCreatorPtr key_transaction_creator_,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & settings)
@@ -95,6 +95,12 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock &)
 {
     LOG_TEST(log, "Updated state from {} to {}", stateToString(download_state), stateToString(state));
     download_state = state;
+}
+
+size_t FileSegment::getReservedSize() const
+{
+    auto lock = segment_guard.lock();
+    return reserved_size;
 }
 
 size_t FileSegment::getFirstNonDownloadedOffset() const
@@ -261,7 +267,7 @@ FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
 
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 {
-    auto key_transaction = createKeyTransaction(false);
+    auto key_transaction = createLockedKey(false);
     if (!key_transaction)
     {
         assert(isDetached());
@@ -404,7 +410,7 @@ FileSegment::State FileSegment::wait()
     return download_state;
 }
 
-KeyTransactionPtr FileSegment::createKeyTransaction(bool assert_exists) const
+LockedKeyPtr FileSegment::createLockedKey(bool assert_exists) const
 {
     if (!key_transaction_creator)
     {
@@ -537,11 +543,11 @@ void FileSegment::setBroken()
 void FileSegment::complete()
 {
     auto cache_lock = cache->createCacheTransaction();
-    auto key_transaction = createKeyTransaction();
+    auto key_transaction = createLockedKey();
     return completeUnlocked(*key_transaction, cache_lock);
 }
 
-void FileSegment::completeUnlocked(KeyTransaction & key_transaction, const CacheGuard::Lock & cache_lock)
+void FileSegment::completeUnlocked(LockedKey & key_transaction, const CacheGuard::Lock & cache_lock)
 {
     auto segment_lock = segment_guard.lock();
 
@@ -790,7 +796,7 @@ bool FileSegment::isDetached() const
     return is_detached;
 }
 
-void FileSegment::detach(const FileSegmentGuard::Lock & lock, const KeyTransaction &)
+void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 {
     if (is_detached)
         return;
@@ -821,10 +827,10 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 
     /// File segment pointer must be reset right after calling complete() and
     /// under the same mutex, because complete() checks for segment pointers.
-    auto key_transaction = file_segment.createKeyTransaction(/* assert_exists */false);
+    auto key_transaction = file_segment.createLockedKey(/* assert_exists */false);
     if (key_transaction)
     {
-        auto queue_iter = key_transaction->getOffsets().tryGet(file_segment.offset())->queue_iterator;
+        auto queue_iter = key_transaction->getKeyMetadata().tryGetByOffset(file_segment.offset())->queue_iterator;
         if (queue_iter)
             LockedCachePriorityIterator(cache_lock, queue_iter).use();
 

@@ -12,10 +12,10 @@ namespace DB
 
 class IFileCachePriority;
 using FileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
-struct KeyTransaction;
-using KeyTransactionPtr = std::shared_ptr<KeyTransaction>;
-struct KeyTransactionCreator;
-using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
+struct LockedKey;
+using LockedKeyPtr = std::shared_ptr<LockedKey>;
+struct LockedKeyCreator;
+using LockedKeyCreatorPtr = std::unique_ptr<LockedKeyCreator>;
 
 /// IFileCachePriority is used to maintain the priority of cached data.
 class IFileCachePriority
@@ -31,12 +31,12 @@ public:
         size_t offset;
         size_t size;
         size_t hits = 0;
-        mutable KeyTransactionCreatorPtr key_transaction_creator;
+        mutable LockedKeyCreatorPtr key_transaction_creator;
 
-        KeyTransactionPtr createKeyTransaction() const;
+        LockedKeyPtr createLockedKey() const;
 
         Entry(const Key & key_, size_t offset_, size_t size_,
-              KeyTransactionCreatorPtr key_transaction_creator_);
+              LockedKeyCreatorPtr key_transaction_creator_);
     };
 
     /// Provides an iterator to traverse the cache priority. Under normal circumstances,
@@ -88,7 +88,7 @@ protected:
     virtual size_t getElementsCount() const = 0;
 
     virtual Iterator add(
-        const Key & key, size_t offset, size_t size, KeyTransactionCreatorPtr key_transaction_creator) = 0;
+        const Key & key, size_t offset, size_t size, LockedKeyCreatorPtr key_transaction_creator) = 0;
 
     virtual void pop() = 0;
 
