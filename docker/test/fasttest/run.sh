@@ -139,6 +139,7 @@ function clone_submodules
             contrib/morton-nd
             contrib/xxHash
             contrib/simdjson
+            contrib/liburing
         )
 
         git submodule sync
@@ -161,6 +162,7 @@ function run_cmake
         "-DENABLE_NURAFT=1"
         "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
+        "-DENABLE_LIBURING=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
