@@ -14,7 +14,7 @@ namespace DB
 {
 class ASTStorage;
 
-#define LIST_OF_DISTRIBUTED_SETTINGS(M) \
+#define LIST_OF_DISTRIBUTED_SETTINGS(M, ALIAS) \
     M(Bool, fsync_after_insert, false, "Do fsync for every inserted. Will decreases performance of inserts (only for async INSERT, i.e. insert_distributed_sync=false)", 0) \
     M(Bool, fsync_directories, false, "Do fsync for temporary directory (that is used for async INSERT only) after all part operations (writes, renames, etc.).", 0) \
     /** Inserts settings. */ \
@@ -27,7 +27,7 @@ class ASTStorage;
     M(Milliseconds, monitor_sleep_time_ms, 0, "Default - distributed_directory_monitor_sleep_time_ms", 0) \
     M(Milliseconds, monitor_max_sleep_time_ms, 0, "Default - distributed_directory_monitor_max_sleep_time_ms", 0) \
 
-DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, NO_ALIASES)
+DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
 
 
 /** Settings for the Distributed family of engines.

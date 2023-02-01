@@ -792,23 +792,23 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
     return accessor->isObsolete(index);
 }
 
-#define NO_ALIASES(M)
+using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, LIST_OF_ALIASES) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 0, LIST_OF_ALIASES)
+#define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 0)
 
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, LIST_OF_ALIASES) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 1, LIST_OF_ALIASES)
+#define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 1)
 
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, ALLOW_CUSTOM_SETTINGS, LIST_OF_ALIASES) \
+#define DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, ALLOW_CUSTOM_SETTINGS) \
     struct SETTINGS_TRAITS_NAME \
     { \
         struct Data \
         { \
-            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, SKIP_ALIAS) \
         }; \
         \
         class Accessor \
@@ -860,9 +860,9 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
-        static inline const std::unordered_map<std::string_view, std::string_view> settings_aliases { \
-            LIST_OF_ALIASES(CREATE_PAIR) \
-        }; \
+        static inline const AliasMap settings_aliases = \
+            DefineAliases() LIST_OF_SETTINGS_MACRO(ALIAS_TO, ALIAS_FROM); \
+        \
         static std::string_view resolveName(std::string_view name) \
         { \
             if (auto it = settings_aliases.find(name); it != settings_aliases.end()) \
@@ -871,9 +871,34 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
         } \
     };
 
+
 /// NOLINTNEXTLINE
-#define CREATE_PAIR(FIRST, SECOND) \
-    {FIRST, SECOND},
+#define SKIP_ALIAS(ALIAS_NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_TO(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) .setName(#NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_FROM(ALIAS) .addAlias(#ALIAS)
+
+struct DefineAliases
+{
+    std::string_view name;
+    AliasMap map;
+
+    DefineAliases & setName(std::string_view value)
+    {
+        name = value;
+        return *this;
+    }
+
+    DefineAliases & addAlias(std::string_view value)
+    {
+        map.emplace(value, name);
+        return *this;
+    }
+
+    /// NOLINTNEXTLINE(google-explicit-constructor)
+    operator AliasMap() { return std::move(map); }
+};
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
@@ -888,7 +913,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
             Accessor res; \
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
             for (size_t i : collections::range(res.field_infos.size())) \
             { \
                 const auto & info = res.field_infos[i]; \
