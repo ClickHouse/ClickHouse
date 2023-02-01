@@ -1,18 +1,23 @@
 #include <Coordination/KeeperLogStore.h>
 #include <IO/CompressionMethod.h>
+#include <Disks/DiskLocal.h>
 
 namespace DB
 {
 
-KeeperLogStore::KeeperLogStore(
-    const std::string & changelogs_path, LogFileSettings log_file_settings)
+KeeperLogStore::KeeperLogStore(DiskPtr disk_, LogFileSettings log_file_settings)
     : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(changelogs_path, log, log_file_settings)
+    , changelog(disk_, log, log_file_settings)
 {
     if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
     else
         LOG_INFO(log, "force_sync disabled");
+}
+
+KeeperLogStore::KeeperLogStore(const std::string & changelogs_path, LogFileSettings log_file_settings)
+    : KeeperLogStore(std::make_shared<DiskLocal>("Keeper-logs", changelogs_path, 0), log_file_settings)
+{
 }
 
 uint64_t KeeperLogStore::start_index() const

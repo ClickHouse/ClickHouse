@@ -14,6 +14,9 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
+    KeeperLogStore(DiskPtr disk_, LogFileSettings log_file_settings);
+
+    /// For gtest
     KeeperLogStore(const std::string & changelogs_path, LogFileSettings log_file_settings);
 
     /// Read log storage from filesystem starting from last_commited_log_index

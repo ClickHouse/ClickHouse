@@ -9,6 +9,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <Disks/DiskLocal.h>
 
 
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
@@ -51,7 +52,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(storage.getZXID(), 1, std::make_shared<nuraft::cluster_config>());
         DB::KeeperStorageSnapshot snapshot(&storage, snapshot_meta);
 
-        DB::KeeperSnapshotManager manager(options["output-dir"].as<std::string>(), 1, keeper_context);
+        DB::KeeperSnapshotManager manager(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>(), 0), 1, keeper_context);
         auto snp = manager.serializeSnapshotToBuffer(snapshot);
         auto path = manager.serializeSnapshotBufferToDisk(*snp, storage.getZXID());
         std::cout << "Snapshot serialized to path:" << path << std::endl;

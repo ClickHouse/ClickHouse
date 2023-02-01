@@ -16,6 +16,7 @@
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Disks/DiskLocal.h>
 
 
 namespace DB
@@ -507,39 +508,45 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     bool compress_snapshots_zstd_,
     const std::string & superdigest_,
     size_t storage_tick_time_)
-    : snapshots_path(snapshots_path_)
+    : KeeperSnapshotManager(
+        std::make_shared<DiskLocal>("Keeper-snapshots", snapshots_path_, 0),
+        snapshots_to_keep_,
+        keeper_context_,
+        compress_snapshots_zstd_,
+        superdigest_,
+        storage_tick_time_)
+{
+}
+
+KeeperSnapshotManager::KeeperSnapshotManager(
+    DiskPtr disk_,
+    size_t snapshots_to_keep_,
+    const KeeperContextPtr & keeper_context_,
+    bool compress_snapshots_zstd_,
+    const std::string & superdigest_,
+    size_t storage_tick_time_)
+    : disk(disk_)
     , snapshots_to_keep(snapshots_to_keep_)
     , compress_snapshots_zstd(compress_snapshots_zstd_)
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
-    namespace fs = std::filesystem;
-
-    if (!fs::exists(snapshots_path))
-        fs::create_directories(snapshots_path);
-
-    for (const auto & p : fs::directory_iterator(snapshots_path))
+    for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
     {
-        const auto & path = p.path();
-
-        if (!path.has_filename())
+        const auto & name = it->name();
+        if (name.empty())
             continue;
-
-        if (startsWith(path.filename(), "tmp_")) /// Unfinished tmp files
+        if (startsWith(name, "tmp_"))
         {
-            std::filesystem::remove(p);
+            disk->removeFile(it->path());
             continue;
         }
-
         /// Not snapshot file
-        if (!startsWith(path.filename(), "snapshot_"))
-        {
+        if (!startsWith(name, "snapshot_"))
             continue;
-        }
-
-        size_t snapshot_up_to = getSnapshotPathUpToLogIdx(p.path());
-        existing_snapshots[snapshot_up_to] = p.path();
+        size_t snapshot_up_to = getSnapshotPathUpToLogIdx(name);
+        existing_snapshots[snapshot_up_to] = it->path();
     }
 
     removeOutdatedSnapshotsIfNeeded();
@@ -552,19 +559,17 @@ std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer 
 
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
-    std::string tmp_snapshot_path = std::filesystem::path{snapshots_path} / tmp_snapshot_file_name;
-    std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
 
-    WriteBufferFromFile plain_buf(tmp_snapshot_path);
-    copyData(reader, plain_buf);
-    plain_buf.sync();
+    auto plain_buf = disk->writeFile(tmp_snapshot_file_name);
+    copyData(reader, *plain_buf);
+    plain_buf->sync();
 
-    std::filesystem::rename(tmp_snapshot_path, new_snapshot_path);
+    disk->moveFile(tmp_snapshot_file_name, snapshot_file_name);
 
-    existing_snapshots.emplace(up_to_log_idx, new_snapshot_path);
+    existing_snapshots.emplace(up_to_log_idx, snapshot_file_name);
     removeOutdatedSnapshotsIfNeeded();
 
-    return new_snapshot_path;
+    return snapshot_file_name;
 }
 
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
@@ -578,7 +583,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBuff
         }
         catch (const DB::Exception &)
         {
-            std::filesystem::remove(latest_itr->second);
+            disk->removeFile(latest_itr->second);
             existing_snapshots.erase(latest_itr->first);
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
@@ -591,8 +596,8 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFrom
 {
     const std::string & snapshot_path = existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
-    ReadBufferFromFile reader(snapshot_path);
-    copyData(reader, writer);
+    auto reader = disk->readFile(snapshot_path);
+    copyData(*reader, writer);
     return writer.getBuffer();
 }
 
@@ -664,7 +669,7 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    std::filesystem::remove(itr->second);
+    disk->removeFile(itr->second);
     existing_snapshots.erase(itr);
 }
 
@@ -673,10 +678,8 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
     auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
-    std::string tmp_snapshot_path = std::filesystem::path{snapshots_path} / tmp_snapshot_file_name;
-    std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
 
-    auto writer = std::make_unique<WriteBufferFromFile>(tmp_snapshot_path, O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC | O_APPEND);
+    auto writer = disk->writeFile(tmp_snapshot_file_name);
     std::unique_ptr<WriteBuffer> compressed_writer;
     if (compress_snapshots_zstd)
         compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
@@ -688,13 +691,21 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     compressed_writer->sync();
 
     std::error_code ec;
-    std::filesystem::rename(tmp_snapshot_path, new_snapshot_path, ec);
-    if (!ec)
+
+    try
     {
-        existing_snapshots.emplace(up_to_log_idx, new_snapshot_path);
-        removeOutdatedSnapshotsIfNeeded();
+        disk->moveFile(tmp_snapshot_file_name, snapshot_file_name);
     }
-    return {new_snapshot_path, ec};
+    catch (fs::filesystem_error & e)
+    {
+        ec = e.code();
+        return {snapshot_file_name, ec};
+    }
+
+    existing_snapshots.emplace(up_to_log_idx, snapshot_file_name);
+    removeOutdatedSnapshotsIfNeeded();
+
+    return {snapshot_file_name, ec};
 }
 
 }

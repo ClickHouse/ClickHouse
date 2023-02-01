@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperContext.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -98,6 +99,15 @@ class KeeperSnapshotManager
 {
 public:
     KeeperSnapshotManager(
+        DiskPtr disk_,
+        size_t snapshots_to_keep_,
+        const KeeperContextPtr & keeper_context_,
+        bool compress_snapshots_zstd_ = true,
+        const std::string & superdigest_ = "",
+        size_t storage_tick_time_ = 500);
+
+    /// For gtest
+    KeeperSnapshotManager(
         const std::string & snapshots_path_,
         size_t snapshots_to_keep_,
         const KeeperContextPtr & keeper_context_,
@@ -144,9 +154,15 @@ public:
         if (!existing_snapshots.empty())
         {
             const auto & path = existing_snapshots.at(getLatestSnapshotIndex());
-            std::error_code ec;
-            if (std::filesystem::exists(path, ec))
-                return path;
+
+            try
+            {
+                if (disk->exists(path))
+                    return path;
+            }
+            catch (...)
+            {
+            }
         }
         return "";
     }
@@ -158,7 +174,7 @@ private:
     /// ZSTD codec.
     static bool isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer);
 
-    const std::string snapshots_path;
+    DiskPtr disk;
     /// How many snapshots to keep before remove
     const size_t snapshots_to_keep;
     /// All existing snapshots in our path (log_index -> path)

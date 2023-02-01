@@ -41,14 +41,14 @@ namespace
 KeeperStateMachine::KeeperStateMachine(
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
-    const std::string & snapshots_path_,
+    DiskPtr disk_,
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     const std::string & superdigest_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
-          snapshots_path_,
+          disk_,
           coordination_settings->snapshots_to_keep,
           keeper_context_,
           coordination_settings->compress_snapshots_with_zstd_format,
