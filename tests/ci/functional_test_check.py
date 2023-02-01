@@ -384,7 +384,10 @@ def main():
 
     if state != "success":
         # Parallel replicas are always green for now
-        if FORCE_TESTS_LABEL in pr_info.labels or "ParallelReplicas" in check_name:
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
