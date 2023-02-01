@@ -327,9 +327,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->dropMMappedFileCache();
             break;
-        case Type::DROP_QUERY_RESULT_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_RESULT_CACHE);
-            getContext()->dropQueryResultCache();
+        case Type::DROP_QUERY_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
+            getContext()->dropQueryCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -969,7 +969,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_RESULT_CACHE:
+        case Type::DROP_QUERY_CACHE:
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #endif
