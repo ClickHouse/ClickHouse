@@ -10,5 +10,4 @@ EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b) from fuse_tbl;
 SELECT '---------NOT trigger fuse--------';
 SELECT sum(a), avg(b) from fuse_tbl;
 EXPLAIN SYNTAX SELECT sum(a), avg(b) from fuse_tbl;
-
 DROP TABLE fuse_tbl;

@@ -136,8 +136,8 @@ private:
 
         for (size_t i = 0; i <= size; ++i)
         {
-            previous[i] = static_cast<UInt32>(i - 1);
-            next[i] = static_cast<UInt32>(i + 1);
+            previous[i] = i - 1;
+            next[i] = i + 1;
         }
 
         next[size] = 0;
@@ -157,7 +157,7 @@ private:
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
 
         for (size_t i = 0; i + 1 < size; ++i)
-            queue.push({quality(static_cast<UInt32>(i)), i});
+            queue.push({quality(i), i});
 
         while (new_size > max_bins && !queue.empty())
         {
@@ -217,7 +217,7 @@ private:
                 points[left] = points[right];
             }
         }
-        size = static_cast<UInt32>(left + 1);
+        size = left + 1;
     }
 
 public:
@@ -307,7 +307,7 @@ private:
 
 public:
     AggregateFunctionHistogram(UInt32 max_bins_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params, createResultType())
+        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params)
         , max_bins(max_bins_)
     {
     }
@@ -316,7 +316,7 @@ public:
     {
         return Data::structSize(max_bins);
     }
-    static DataTypePtr createResultType()
+    DataTypePtr getReturnType() const override
     {
         DataTypes types;
         auto mean = std::make_shared<DataTypeNumber<Data::Mean>>();

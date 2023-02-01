@@ -107,7 +107,7 @@ private:
 
 public:
     AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
-        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
+        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_)
         , nested_func(nested_), num_arguments(arguments.size())
     {
         nested_size_of_data = nested_func->sizeOfData();
@@ -125,9 +125,9 @@ public:
         return nested_func->getName() + "ForEach";
     }
 
-    static DataTypePtr createResultType(AggregateFunctionPtr nested_)
+    DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(nested_->getResultType());
+        return std::make_shared<DataTypeArray>(nested_func->getReturnType());
     }
 
     bool isVersioned() const override
@@ -174,7 +174,7 @@ public:
 
     bool hasTrivialDestructor() const override
     {
-        return std::is_trivially_destructible_v<AggregateFunctionForEachData> && nested_func->hasTrivialDestructor();
+        return nested_func->hasTrivialDestructor();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -257,8 +257,7 @@ public:
         }
     }
 
-    template <bool merge>
-    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         AggregateFunctionForEachData & state = data(place);
 
@@ -269,24 +268,11 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            if constexpr (merge)
-                nested_func->insertMergeResultInto(nested_state, elems_to, arena);
-            else
-                nested_func->insertResultInto(nested_state, elems_to, arena);
+            nested_func->insertResultInto(nested_state, elems_to, arena);
             nested_state += nested_size_of_data;
         }
 
         offsets_to.push_back(offsets_to.back() + state.dynamic_array_size);
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<false>(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/operators/
 sidebar_position: 38
 sidebar_label: "Операторы"
 ---

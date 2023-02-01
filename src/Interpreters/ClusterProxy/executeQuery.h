@@ -58,13 +58,11 @@ void executeQueryWithParallelReplicas(
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     SelectStreamFactory & stream_factory,
-    const ASTPtr & query_ast,
-    ContextPtr context,
-    const SelectQueryInfo & query_info,
+    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster,
-    QueryProcessingStage::Enum processed_stage);
+    const ClusterPtr & not_optimized_cluster);
+
 }
 
 }

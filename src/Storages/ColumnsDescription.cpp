@@ -491,7 +491,7 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
         case ColumnDefaultKind::Ephemeral:
             return GetColumnsOptions::Ephemeral;
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
@@ -781,7 +781,7 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
                 "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
 
         subcolumns.get<0>().insert(std::move(subcolumn));
-    }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
+    }, {type_in_storage->getDefaultSerialization(), type_in_storage, nullptr, nullptr});
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)

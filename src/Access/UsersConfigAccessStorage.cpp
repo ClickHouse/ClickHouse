@@ -4,7 +4,6 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
-#include <Access/resolveSetting.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
@@ -229,12 +228,6 @@ namespace
             user->access.revokeGrantOption(AccessType::ALL);
         }
 
-        bool show_named_collections = config.getBool(user_config + ".show_named_collections", false);
-        if (!show_named_collections)
-        {
-            user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS);
-        }
-
         String default_database = config.getString(user_config + ".default_database", "");
         user->default_database = default_database;
 
@@ -448,32 +441,17 @@ namespace
             String path_to_name = path_to_constraints + "." + setting_name;
             config.keys(path_to_name, constraint_types);
 
-            size_t writability_count = 0;
             for (const String & constraint_type : constraint_types)
             {
                 if (constraint_type == "min")
-                    profile_element.min_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                    profile_element.min_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
                 else if (constraint_type == "max")
-                    profile_element.max_value = settingStringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
-                else if (constraint_type == "readonly" || constraint_type == "const")
-                {
-                    writability_count++;
-                    profile_element.writability = SettingConstraintWritability::CONST;
-                }
-                else if (constraint_type == "changeable_in_readonly")
-                {
-                    writability_count++;
-                    if (access_control.doesSettingsConstraintsReplacePrevious())
-                        profile_element.writability = SettingConstraintWritability::CHANGEABLE_IN_READONLY;
-                    else
-                        throw Exception("Setting changeable_in_readonly for " + setting_name + " is not allowed unless settings_constraints_replace_previous is enabled", ErrorCodes::NOT_IMPLEMENTED);
-                }
+                    profile_element.max_value = Settings::stringToValueUtil(setting_name, config.getString(path_to_name + "." + constraint_type));
+                else if (constraint_type == "readonly")
+                    profile_element.readonly = true;
                 else
                     throw Exception("Setting " + constraint_type + " value for " + setting_name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
             }
-            if (writability_count > 1)
-                throw Exception("Not more than one constraint writability specifier (const/readonly/changeable_in_readonly) is allowed for " + setting_name, ErrorCodes::NOT_IMPLEMENTED);
-
             profile_elements.push_back(std::move(profile_element));
         }
 
@@ -518,7 +496,7 @@ namespace
 
             SettingsProfileElement profile_element;
             profile_element.setting_name = setting_name;
-            profile_element.value = settingStringToValueUtil(setting_name, config.getString(profile_config + "." + key));
+            profile_element.value = Settings::stringToValueUtil(setting_name, config.getString(profile_config + "." + key));
             profile->elements.emplace_back(std::move(profile_element));
         }
 
@@ -657,6 +635,13 @@ void UsersConfigAccessStorage::load(
         /* already_loaded = */ false);
 }
 
+void UsersConfigAccessStorage::reload()
+{
+    std::lock_guard lock{load_mutex};
+    if (config_reloader)
+        config_reloader->reload();
+}
+
 void UsersConfigAccessStorage::startPeriodicReloading()
 {
     std::lock_guard lock{load_mutex};
@@ -669,13 +654,6 @@ void UsersConfigAccessStorage::stopPeriodicReloading()
     std::lock_guard lock{load_mutex};
     if (config_reloader)
         config_reloader->stop();
-}
-
-void UsersConfigAccessStorage::reload(ReloadMode /* reload_mode */)
-{
-    std::lock_guard lock{load_mutex};
-    if (config_reloader)
-        config_reloader->reload();
 }
 
 std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const

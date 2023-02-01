@@ -74,6 +74,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
+#include <Processors/Transforms/MongoDBSource.h>
 
 
 namespace DB
@@ -117,7 +118,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         Poco::URI poco_uri(uri);
 
         // Parse database from URI. This is required for correctness -- the
-        // cursor is created using database name and collection name, so we have
+        // cursor is created using database name and colleciton name, so we have
         // to specify them properly.
         db = poco_uri.getPath();
         // getPath() may return a leading slash, remove it.
@@ -231,7 +232,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
                 }
                 case AttributeUnderlyingType::String:
                 {
-                    String loaded_str((*key_columns[attribute_index])[row_idx].get<String>());
+                    String loaded_str(get<String>((*key_columns[attribute_index])[row_idx]));
                     /// Convert string to ObjectID
                     if (key_attribute.is_object_id)
                     {
@@ -258,7 +259,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}.{},{}{}:{}", db, collection, (user.empty() ? " " : " " + user + '@'), host, port);
+    return "MongoDB: " + db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + host + ':' + DB::toString(port);
 }
 
 }

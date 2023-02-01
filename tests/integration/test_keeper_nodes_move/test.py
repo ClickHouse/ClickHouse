@@ -11,7 +11,6 @@ import os
 import time
 from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
-import helpers.keeper_utils as keeper_utils
 from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
@@ -42,7 +41,6 @@ def started_cluster():
 
 def start(node):
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
 
 
 def get_fake_zk(node, timeout=30.0):

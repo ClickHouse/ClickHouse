@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/dictionaries/
 sidebar_label: Dictionaries
 sidebar_position: 35
 ---
@@ -12,6 +11,6 @@ ClickHouse supports special functions for working with dictionaries that can be 
 
 ClickHouse supports:
 
--   [Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md#dicts-external-dicts) with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
--   [Embedded dictionaries](../../sql-reference/dictionaries/internal-dicts.md#internal_dicts) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
+-   [Built-in dictionaries](../../sql-reference/dictionaries/internal-dicts.md#internal_dicts) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
+-   [Plug-in (external) dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md#dicts-external-dicts) with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
 

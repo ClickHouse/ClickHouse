@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/replication_queue
----
 # system.replication_queue {#system_tables-replication_queue}
 
 Содержит информацию о задачах из очередей репликации, хранящихся в ZooKeeper, для таблиц семейства `ReplicatedMergeTree`.
@@ -29,7 +26,7 @@ slug: /ru/operations/system-tables/replication_queue
     -   `MUTATE_PART` — применить одну или несколько мутаций к куску.
     -   `ALTER_METADATA` — применить изменения структуры таблицы в результате запросов с выражением `ALTER`.
 
--   `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время отправки задачи на выполнение.
+-   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время отправки задачи на выполнение.
 
 -   `required_quorum` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество реплик, ожидающих завершения задачи, с подтверждением о завершении. Этот столбец актуален только для задачи `GET_PARTS`.
 
@@ -47,13 +44,13 @@ slug: /ru/operations/system-tables/replication_queue
 
 -   `last_exception` ([String](../../sql-reference/data-types/string.md)) — текст сообщения о последней возникшей ошибке, если таковые имеются.
 
--   `last_attempt_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время последней попытки выполнить задачу.
+-   `last_attempt_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время последней попытки выполнить задачу.
 
 -   `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество отложенных задач.
 
 -   `postpone_reason` ([String](../../sql-reference/data-types/string.md)) — причина, по которой была отложена задача.
 
--   `last_postpone_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время, когда была отложена задача в последний раз.
+-   `last_postpone_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — дата и время, когда была отложена задача в последний раз.
 
 -   `merge_type` ([String](../../sql-reference/data-types/string.md)) — тип текущего слияния. Пусто, если это мутация.
 

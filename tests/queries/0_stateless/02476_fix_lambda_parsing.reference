@@ -1,8 +1,0 @@
-SELECT f(x, y -> z)
-SELECT f(x, y -> z)
-SELECT f((x, y) -> z)
-SELECT f((x, y) -> z)
-SELECT f((x, y) -> z)
-SELECT f(x, (x, y) -> z)
-SELECT f(x, (x, y) -> z)
-CREATE FUNCTION func AS x -> plus(x, (x -> ('2' + 2)) -> plus(1), 1)

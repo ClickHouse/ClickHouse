@@ -36,7 +36,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
-#include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -55,7 +54,7 @@
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 using namespace std::literals;
 using namespace DB;
@@ -106,18 +105,6 @@ TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::N
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
-    , server_display_name(std::move(server_display_name_))
-{
-}
-
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_)
-: Poco::Net::TCPServerConnection(socket_)
-    , server(server_)
-    , tcp_server(tcp_server_)
-    , log(&Poco::Logger::get("TCPHandler"))
-    , forwarded_for(stack_data.forwarded_for)
-    , certificate(stack_data.certificate)
-    , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
 {
 }
@@ -232,7 +219,6 @@ void TCPHandler::runImpl()
 
         /// Initialized later.
         std::optional<CurrentThread::QueryScope> query_scope;
-        OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
@@ -257,12 +243,6 @@ void TCPHandler::runImpl()
               */
             if (state.empty() && state.part_uuids_to_ignore && !receivePacket())
                 continue;
-
-            /// Set up tracing context for this query on current thread
-            thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
-                query_context->getClientInfo().client_trace_context,
-                query_context->getSettingsRef(),
-                query_context->getOpenTelemetrySpanLog());
 
             query_scope.emplace(query_context);
 
@@ -378,46 +358,40 @@ void TCPHandler::runImpl()
             after_send_progress.restart();
 
             if (state.io.pipeline.pushing())
+            /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
             {
-                /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
-                state.io.onFinish();
             }
             else if (state.io.pipeline.pulling())
             {
                 processOrdinaryQueryWithProcessors();
-                state.io.onFinish();
             }
             else if (state.io.pipeline.completed())
             {
+                CompletedPipelineExecutor executor(state.io.pipeline);
+                /// Should not check for cancel in case of input.
+                if (!state.need_receive_data_for_input)
                 {
-                    CompletedPipelineExecutor executor(state.io.pipeline);
-
-                    /// Should not check for cancel in case of input.
-                    if (!state.need_receive_data_for_input)
+                    auto callback = [this]()
                     {
-                        auto callback = [this]()
-                        {
-                            std::lock_guard lock(fatal_error_mutex);
+                        std::lock_guard lock(fatal_error_mutex);
 
-                            if (isQueryCancelled())
-                                return true;
+                        if (isQueryCancelled())
+                            return true;
 
-                            sendProgress();
-                            sendSelectProfileEvents();
-                            sendLogs();
+                        sendProgress();
+                        sendSelectProfileEvents();
+                        sendLogs();
 
-                            return false;
-                        };
+                        return false;
+                    };
 
-                        executor.setCancelCallback(callback, interactive_delay / 1000);
-                    }
-                    executor.execute();
+                    executor.setCancelCallback(callback, interactive_delay / 1000);
                 }
+                executor.execute();
 
-                state.io.onFinish();
-                /// Send final progress after calling onFinish(), since it will update the progress.
+                /// Send final progress
                 ///
                 /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
                 /// without breaking protocol compatibility, but it can be done
@@ -425,10 +399,8 @@ void TCPHandler::runImpl()
                 sendProgress();
                 sendSelectProfileEvents();
             }
-            else
-            {
-                state.io.onFinish();
-            }
+
+            state.io.onFinish();
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
@@ -447,7 +419,6 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
-            thread_trace_context.reset();
         }
         catch (const Exception & e)
         {
@@ -456,6 +427,8 @@ void TCPHandler::runImpl()
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
+
+            LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
 
             /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
             /// to break the loop, but do not throw to send the exception to
@@ -466,9 +439,6 @@ void TCPHandler::runImpl()
             /// If a timeout occurred, try to inform client about it and close the session
             if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
                 network_error = true;
-
-            if (network_error)
-                LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
         }
         catch (const Poco::Net::NetException & e)
         {
@@ -513,9 +483,6 @@ void TCPHandler::runImpl()
         {
             if (exception)
             {
-                if (thread_trace_context)
-                    thread_trace_context->root_span.addAttribute(*exception);
-
                 try
                 {
                     /// Try to send logs to client, but it could be risky too
@@ -564,7 +531,6 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
-            thread_trace_context.reset();
         }
         catch (...)
         {
@@ -737,20 +703,14 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     auto & pipeline = state.io.pipeline;
 
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
-    {
-        std::lock_guard lock(task_callback_mutex);
         sendPartUUIDs();
-    }
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         const auto & header = pipeline.getHeader();
 
         if (header)
-        {
-            std::lock_guard lock(task_callback_mutex);
             sendData(header);
-        }
     }
 
     {
@@ -851,7 +811,7 @@ void TCPHandler::processTablesStatusRequest()
         if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
         {
             status.is_replicated = true;
-            status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
+            status.absolute_delay = replicated_table->getAbsoluteDelay();
         }
         else
             status.is_replicated = false; //-V1048
@@ -1082,7 +1042,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
 {
     auto interface = is_interserver_mode ? ClientInfo::Interface::TCP_INTERSERVER : ClientInfo::Interface::TCP;
 
-    auto res = std::make_unique<Session>(server.context(), interface, socket().secure(), certificate);
+    auto res = std::make_unique<Session>(server.context(), interface, socket().secure());
 
     auto & client_info = res->getClientInfo();
     client_info.forwarded_for = forwarded_for;
@@ -1109,7 +1069,6 @@ void TCPHandler::receiveHello()
     UInt64 packet_type = 0;
     String user;
     String password;
-    String default_db;
 
     readVarUInt(packet_type, *in);
     if (packet_type != Protocol::Client::Hello)
@@ -1131,9 +1090,7 @@ void TCPHandler::receiveHello()
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
-    readStringBinary(default_db, *in);
-    if (!default_db.empty())
-        default_database = default_db;
+    readStringBinary(default_database, *in);
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
@@ -1200,17 +1157,6 @@ void TCPHandler::sendHello()
         writeStringBinary(server_display_name, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(DBMS_VERSION_PATCH, *out);
-    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
-    {
-        auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
-
-        writeVarUInt(rules.size(), *out);
-        for (const auto & [original_pattern, exception_message] : rules)
-        {
-            writeStringBinary(original_pattern, *out);
-            writeStringBinary(exception_message, *out);
-        }
-    }
     out->next();
 }
 

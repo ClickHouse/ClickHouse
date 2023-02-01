@@ -12,7 +12,6 @@
 
 #include <fmt/format.h>
 
-
 namespace Poco { class Logger; }
 
 
@@ -27,19 +26,7 @@ public:
     using FramePointers = std::vector<void *>;
 
     Exception() = default;
-
-    // used to remove the sensitive information from exceptions if query_masking_rules is configured
-    struct MessageMasked
-    {
-        std::string msg;
-        MessageMasked(const std::string & msg_);
-    };
-
-    Exception(const MessageMasked & msg_masked, int code, bool remote_);
-
-    // delegating constructor to mask sensitive information from the message
-    Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_)
-    {}
+    Exception(const std::string & msg, int code, bool remote_ = false);
 
     Exception(int code, const std::string & message)
         : Exception(message, code)
@@ -66,17 +53,12 @@ public:
     template <typename... Args>
     void addMessage(fmt::format_string<Args...> format, Args &&... args)
     {
-        addMessage(fmt::format(format, std::forward<Args>(args)...));
+        extendedMessage(fmt::format(format, std::forward<Args>(args)...));
     }
 
     void addMessage(const std::string& message)
     {
-        addMessage(MessageMasked(message));
-    }
-
-    void addMessage(const MessageMasked & msg_masked)
-    {
-        extendedMessage(msg_masked.msg);
+        extendedMessage(message);
     }
 
     /// Used to distinguish local exceptions from the one that was received from remote node.
@@ -139,9 +121,13 @@ public:
     }
 
 
-    std::string displayText() const override;
+    std::string displayText() const
+#if defined(POCO_CLICKHOUSE_PATCH)
+    override
+#endif
+    ;
 
-    ssize_t getLineNumber() const { return line_number; }
+    int getLineNumber() const { return line_number; }
     void setLineNumber(int line_number_) { line_number = line_number_;}
 
     String getFileName() const { return file_name; }

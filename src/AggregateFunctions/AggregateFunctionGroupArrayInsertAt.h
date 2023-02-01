@@ -64,7 +64,7 @@ private:
 
 public:
     AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params, std::make_shared<DataTypeArray>(arguments[0]))
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
         , type(argument_types[0])
         , serialization(type->getDefaultSerialization())
     {
@@ -100,6 +100,11 @@ public:
     }
 
     String getName() const override { return "groupArrayInsertAt"; }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeArray>(type);
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -155,7 +160,7 @@ public:
             else
             {
                 writeBinary(UInt8(0), buf);
-                serialization->serializeBinary(elem, buf, {});
+                serialization->serializeBinary(elem, buf);
             }
         }
     }
@@ -176,7 +181,7 @@ public:
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                serialization->deserializeBinary(arr[i], buf, {});
+                serialization->deserializeBinary(arr[i], buf);
         }
     }
 

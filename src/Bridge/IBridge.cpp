@@ -8,7 +8,7 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
-#include "config.h"
+#include <Common/config.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <IO/ReadHelpers.h>
@@ -179,7 +179,7 @@ void IBridge::initialize(Application & self)
     limit.rlim_max = limit.rlim_cur = gb;
     if (setrlimit(RLIMIT_RSS, &limit))
         LOG_WARNING(log, "Unable to set maximum RSS to 1GB: {} (current rlim_cur={}, rlim_max={})",
-                    errnoToString(), limit.rlim_cur, limit.rlim_max);
+                    errnoToString(errno), limit.rlim_cur, limit.rlim_max);
 
     if (!getrlimit(RLIMIT_RSS, &limit))
         LOG_INFO(log, "RSS limit: cur={}, max={}", limit.rlim_cur, limit.rlim_max);
@@ -236,7 +236,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
 
     auto server = HTTPServer(
-        std::make_shared<HTTPContext>(context),
+        context,
         getHandlerFactoryPtr(context),
         server_pool,
         socket,

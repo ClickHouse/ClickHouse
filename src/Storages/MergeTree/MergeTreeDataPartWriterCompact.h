@@ -1,7 +1,5 @@
 #pragma once
-
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-
 
 namespace DB
 {
@@ -11,7 +9,8 @@ class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 {
 public:
     MergeTreeDataPartWriterCompact(
-        const MergeTreeMutableDataPartPtr & data_part,
+        const MergeTreeData::DataPartPtr & data_part,
+        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -85,16 +84,9 @@ private:
     /// Stream for each column's substreams path (look at addStreams).
     std::unordered_map<String, CompressedStreamPtr> compressed_streams;
 
-    /// If marks are uncompressed, the data is written to 'marks_file_hashing' for hash calculation and then to the 'marks_file'.
+    /// marks -> marks_file
     std::unique_ptr<WriteBufferFromFileBase> marks_file;
-    std::unique_ptr<HashingWriteBuffer> marks_file_hashing;
-
-    /// If marks are compressed, the data is written to 'marks_source_hashing' for hash calculation,
-    /// then to 'marks_compressor' for compression,
-    /// then to 'marks_file_hashing' for calculation of hash of compressed data,
-    /// then finally to 'marks_file'.
-    std::unique_ptr<CompressedWriteBuffer> marks_compressor;
-    std::unique_ptr<HashingWriteBuffer> marks_source_hashing;
+    HashingWriteBuffer marks;
 };
 
 }

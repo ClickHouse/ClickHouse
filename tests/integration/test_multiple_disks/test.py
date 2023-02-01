@@ -1244,16 +1244,10 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
         def alter_drop(num):
             for i in range(num):
                 partition = random.choice([201903, 201904])
-                op = random.choice(["drop", "detach"])
-                try:
-                    node1.query(
-                        "ALTER TABLE {} {} PARTITION {}".format(name, op, partition)
-                    )
-                except QueryRuntimeException as e:
-                    if "Code: 650" in e.stderr:
-                        pass
-                    else:
-                        raise e
+                drach = random.choice(["drop", "detach"])
+                node1.query(
+                    "ALTER TABLE {} {} PARTITION {}".format(name, drach, partition)
+                )
 
         insert(100)
         p = Pool(15)
@@ -1661,7 +1655,7 @@ def test_freeze(start_cluster):
             ) ENGINE = MergeTree
             ORDER BY tuple()
             PARTITION BY toYYYYMM(d)
-            SETTINGS storage_policy='small_jbod_with_external', compress_marks=false, compress_primary_key=false
+            SETTINGS storage_policy='small_jbod_with_external'
         """
         )
 
