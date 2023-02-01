@@ -29,6 +29,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -82,6 +83,7 @@ public:
                 node_name,
                 actions_dag->dumpNames());
 
+        LOG_DEBUG(&Poco::Logger::get("ActionsScopeNode"), "Node: {} {}", it->second->result_name, it->second->result_type->getName());
         return it->second;
     }
 
@@ -122,7 +124,7 @@ public:
     }
 
     template <typename FunctionOrOverloadResolver>
-    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, FunctionOrOverloadResolver function)
+    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, const FunctionOrOverloadResolver & function)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -225,6 +227,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
 {
     auto column_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
+    LOG_DEBUG(&Poco::Logger::get("PlannerActionsVisitorImpl"), "Processing column with name: {}", column_node_name);
     const auto & column_node = node->as<ColumnNode &>();
 
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
@@ -445,7 +448,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node.getFunction());
+        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
     }
 
     size_t actions_stack_size = actions_stack.size();

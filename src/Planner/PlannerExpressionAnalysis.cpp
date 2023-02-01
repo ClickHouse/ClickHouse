@@ -299,6 +299,7 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
 {
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
+    LOG_DEBUG(&Poco::Logger::get("PlannerExpressionAnalysis"), "Projection node: {}", query_node.getProjectionNode()->dumpTree());
     auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), projection_input, planner_context);
 
     auto projection_columns = query_node.getProjectionColumns();
@@ -320,6 +321,7 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
     for (size_t i = 0; i < projection_outputs_size; ++i)
     {
         auto & projection_column = projection_columns[i];
+        LOG_DEBUG(&Poco::Logger::get("PlannerExpressionAnalysis"), "Projection column {}: {} {}", i, projection_column.name, projection_column.type->getName());
         const auto * projection_node = projection_actions_outputs[i];
         const auto & projection_node_name = projection_node->result_name;
 
@@ -436,7 +438,6 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     }
 
     auto window_analysis_result_optional = analyzeWindow(query_tree, join_tree_input_columns, planner_context, actions_chain);
-    auto projection_analysis_result = analyzeProjection(query_node, join_tree_input_columns, planner_context, actions_chain);
 
     std::optional<SortAnalysisResult> sort_analysis_result_optional;
     if (query_node.hasOrderBy())
@@ -446,6 +447,8 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (query_node.hasLimitBy())
         limit_by_analysis_result_optional = analyzeLimitBy(query_node, join_tree_input_columns, planner_context, actions_chain);
+
+    auto projection_analysis_result = analyzeProjection(query_node, join_tree_input_columns, planner_context, actions_chain);
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & project_names_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;

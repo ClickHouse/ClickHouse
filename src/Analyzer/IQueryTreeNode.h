@@ -90,6 +90,11 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
+    virtual void convertToNullable()
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
+    }
+
     /** Is tree equal to other tree with node root.
       *
       * Aliases of query tree nodes are compared during isEqual call.
