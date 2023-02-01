@@ -2735,6 +2735,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         result = instance.query("SELECT * FROM test.view ORDER BY key")
         if rabbitmq_check_result(result):
             break
+        time.sleep(1)
 
     rabbitmq_check_result(result, True)
 
