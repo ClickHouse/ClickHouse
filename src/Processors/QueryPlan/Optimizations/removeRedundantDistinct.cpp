@@ -14,7 +14,6 @@ namespace DB::QueryPlanOptimizations
 {
 
 constexpr bool debug_logging_enabled = true;
-
 void logDebug(const String & prefix, const String & message)
 {
     if constexpr (debug_logging_enabled)
@@ -88,33 +87,37 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
     if (distinct_columns.size() != inner_distinct_columns.size())
         return 0;
 
-    /// build actions DAG to compare DISTINCT columns
     ActionsDAGPtr path_actions;
     if (!dag_stack.empty())
     {
+        /// build actions DAG to find original column names
         path_actions = dag_stack.back();
         dag_stack.pop_back();
+        while (!dag_stack.empty())
+        {
+            ActionsDAGPtr clone = dag_stack.back()->clone();
+            dag_stack.pop_back();
+            path_actions->mergeInplace(std::move(*clone));
+        }
+
+        /// compare columns of two DISTINCTs
+        for (const auto & column : distinct_columns)
+        {
+            const auto * alias_node = path_actions->getOriginalNodeForOutputAlias(String(column));
+            if (!alias_node)
+                return 0;
+
+            auto it = inner_distinct_columns.find(alias_node->result_name);
+            if (it == inner_distinct_columns.end())
+                return 0;
+
+            inner_distinct_columns.erase(it);
+        }
     }
-    while (!dag_stack.empty())
+    else
     {
-        ActionsDAGPtr clone = dag_stack.back()->clone();
-        dag_stack.pop_back();
-        path_actions->mergeInplace(std::move(*clone));
-    }
-
-    logDebug("mergedDAG\n", path_actions->dumpDAG());
-
-    for (const auto & column : distinct_columns)
-    {
-        const auto * alias_node = path_actions->getOriginalNodeForOutputAlias(String(column));
-        if (!alias_node)
+        if (distinct_columns != inner_distinct_columns)
             return 0;
-
-        auto it = inner_distinct_columns.find(alias_node->result_name);
-        if (it == inner_distinct_columns.end())
-            return 0;
-
-        inner_distinct_columns.erase(it);
     }
 
     /// remove current distinct
