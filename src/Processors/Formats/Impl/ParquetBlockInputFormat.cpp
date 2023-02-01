@@ -47,23 +47,27 @@ Chunk ParquetBlockInputFormat::generate()
     if (!file_reader)
     {
         prepareReader();
-        /// It may be necessary to add a parameter
-        file_reader->set_batch_size(8192);
+        file_reader->set_batch_size(format_settings.parquet.max_block_size);
         std::vector<int> row_group_indices;
-        for (int i = 0; i < file_reader->num_row_groups(); ++i)
+        for (int i = 0; i < row_group_total; ++i)
         {
             if (!skip_row_groups.contains(i))
                 row_group_indices.emplace_back(i);
         }
         auto read_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &current_record_batch_reader);
         if (!read_status.ok())
-            throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
+            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
     }
 
     if (is_stopped)
         return {};
 
     auto batch = current_record_batch_reader->Next();
+    if (!batch.ok())
+    {
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}",
+                               batch.status().ToString());
+    }
     if (*batch)
     {
         auto tmp_table = arrow::Table::FromRecordBatches({*batch});
