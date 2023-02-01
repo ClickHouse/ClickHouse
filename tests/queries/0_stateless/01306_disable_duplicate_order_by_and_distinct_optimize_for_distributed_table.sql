@@ -1,7 +1,7 @@
 -- Tags: distributed
 
-set query_plan_remove_redundant_distinct = 0;
-set optimize_duplicate_order_by_and_distinct = 1;
+set query_plan_remove_redundant_distinct = 1;
+set optimize_duplicate_order_by_and_distinct = 0;
 SET distributed_group_by_no_merge = 0;
 
 SELECT DISTINCT number

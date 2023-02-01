@@ -70,3 +70,16 @@ FROM
     )
 )"
 run_query "$query"
+
+echo "-- DISTINCT duplicates with constant columns"
+query="SELECT DISTINCT 2, a, b
+FROM
+(
+    SELECT DISTINCT a, b
+    FROM
+    (
+        SELECT DISTINCT 1, number as a, 2*number as b
+        FROM numbers(3)
+    )
+)"
+run_query "$query"

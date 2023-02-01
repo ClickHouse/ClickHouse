@@ -117,3 +117,25 @@ Expression ((Project names + (Projection + (Change column names to column identi
 0	0
 1	2
 2	4
+-- DISTINCT duplicates with constant columns
+-- query
+SELECT DISTINCT 2, a, b
+FROM
+(
+    SELECT DISTINCT a, b
+    FROM
+    (
+        SELECT DISTINCT 1, number as a, 2*number as b
+        FROM numbers(3)
+    )
+)
+-- explain
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + (Change column names to column identifiers + Project names)))))))
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + Change column names to column identifiers))
+        ReadFromStorage (SystemNumbers)
+-- execute
+2	0	0
+2	1	2
+2	2	4
