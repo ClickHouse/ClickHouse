@@ -9,6 +9,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static CompressionCodecPtr getMarksCompressionCodec(const String & marks_compression_codec)
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    return CompressionCodecFactory::instance().get(ast, nullptr);
+}
+
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeMutableDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
@@ -38,7 +45,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
-            settings_.getMarksCompressionCodec(),
+            getMarksCompressionCodec(settings_.marks_compression_codec),
             settings_.marks_compress_block_size);
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);

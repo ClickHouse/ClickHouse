@@ -252,13 +252,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             {
                 auto print_create_ast = create.clone();
                 print_create_ast->as<ASTCreateQuery>()->attach = false;
-                throw Exception(
-                    fmt::format(
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "The MaterializedMySQL database engine no longer supports Ordinary databases. To re-create the database, delete "
                         "the old one by executing \"rm -rf {}{{,.sql}}\", then re-create the database with the following query: {}",
                         metadata_path,
-                        queryToString(print_create_ast)),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                        queryToString(print_create_ast));
             }
 
             return std::make_shared<DatabaseMaterializedMySQL>(
