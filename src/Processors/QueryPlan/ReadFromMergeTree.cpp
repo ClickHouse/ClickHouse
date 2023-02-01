@@ -49,7 +49,8 @@ template <typename Container, typename Getter>
 size_t countPartitions(const Container & parts, Getter get_partition_id)
 {
     if (parts.empty())
-        return 1;
+        return 0;
+
     String cur_partition_id = get_partition_id(parts[0]);
     size_t unique_partitions = 1;
     for (size_t i = 1; i < parts.size(); ++i)
@@ -1370,7 +1371,7 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(AnalysisResult & result, Actions
     if (parts_with_ranges.empty())
         return {};
 
-    const size_t partitions_cnt = countPartitions(parts_with_ranges);
+    const size_t partitions_cnt = std::max<size_t>(countPartitions(parts_with_ranges), 1);
     const size_t partitions_per_stream = std::max<size_t>(1, partitions_cnt / requested_num_streams);
     const size_t num_streams = std::max<size_t>(1, requested_num_streams / partitions_cnt);
 

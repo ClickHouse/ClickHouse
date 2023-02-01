@@ -191,7 +191,7 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
     const auto * expression_node = node->children.front();
     const auto * expression_step = typeid_cast<const ExpressionStep *>(expression_node->step.get());
-    if (expression_node->children.size() != 1 || !expression_step)
+    if (!expression_step)
         return 0;
 
     auto * maybe_reading_step = expression_node->children.front()->step.get();
