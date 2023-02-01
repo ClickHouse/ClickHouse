@@ -41,7 +41,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     ASTs queries;
     queries.push_back(InterpreterShowCreateAccessEntityQuery::getAttachQuery(entity));
     if ((entity.getType() == AccessEntityType::USER) || (entity.getType() == AccessEntityType::ROLE))
-        boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
+        boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity, false));
 
     /// Serialize the list of ATTACH queries to a string.
     WriteBufferFromOwnString buf;

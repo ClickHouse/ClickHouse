@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/IParserBase.h>
 
 
 namespace DB
 {
 /** Parses a string like this:
-  * {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]
-  * [EXCEPT {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]]
+  * {user_name [AS USER] | role_name [AS ROLE] | user_and_role_name AS BOTH | CURRENT_USER | ALL | NONE} [,...]
+  * [EXCEPT {user_name [AS USER] | role_name [AS ROLE] | user_and_role_name AS BOTH | CURRENT_USER | ALL | NONE} [,...]]
   */
 class ParserRolesOrUsersSet : public IParserBase
 {
@@ -31,8 +32,19 @@ private:
     bool allow_current_user = false;
     bool allow_roles = false;
     bool id_mode = false;
-    bool parseBeforeExcept(IParserBase::Pos & pos, Expected & expected, bool & all, Strings & names, bool & current_user);
-    bool parseExceptAndAfterExcept(IParserBase::Pos & pos, Expected & expected, Strings & except_names, bool & except_current_user);
+    bool parseBeforeExcept(
+        IParserBase::Pos & pos,
+        Expected & expected,
+        bool & all,
+        Strings & names,
+        ASTRolesOrUsersSet::NameFilters & names_filters,
+        bool & current_user) const;
+    bool parseExceptAndAfterExcept(
+        IParserBase::Pos & pos,
+        Expected & expected,
+        Strings & except_names,
+        ASTRolesOrUsersSet::NameFilters & except_names_filters,
+        bool & except_current_user) const;
 };
 
 }

@@ -11,7 +11,7 @@ namespace DB
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...]]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
-  *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+  *     [GRANTEES {user [AS USER] | role [AS ROLE] | user_and_role AS BOTH | ANY | NONE} [,...] [EXCEPT {user [AS USER] | role [AS ROLE] | user_and_role AS BOTH} [,...]]]
   *
   * ALTER USER [IF EXISTS] name
   *     [RENAME TO new_name]
@@ -19,7 +19,7 @@ namespace DB
   *     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
-  *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+  *     [GRANTEES {user [AS USER] | role [AS ROLE] | user_and_role AS BOTH | ANY | NONE} [,...] [EXCEPT {user [AS USER] | role [AS ROLE] | user_and_role AS BOTH} [,...]]]
   */
 class ParserCreateUserQuery : public IParserBase
 {

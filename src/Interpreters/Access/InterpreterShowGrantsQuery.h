@@ -20,8 +20,9 @@ public:
 
     BlockIO execute() override;
 
-    static ASTs getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control);
-    static ASTs getAttachGrantQueries(const IAccessEntity & user_or_role);
+    static ASTs
+    getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control, bool enable_extended_subject_syntax);
+    static ASTs getAttachGrantQueries(const IAccessEntity & user_or_role, const bool enable_extended_subject_syntax);
 
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }

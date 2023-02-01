@@ -15,8 +15,8 @@ class AccessControl;
 
 
 /// Represents a set of users/roles like
-/// {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]
-/// [EXCEPT {user_name | role_name | CURRENT_USER | ALL | NONE} [,...]]
+/// {user_name [AS USER] | role_name [AS ROLE] | user_and_role_name AS BOTH | CURRENT_USER | ALL | NONE} [,...]
+/// [EXCEPT {user_name [AS USER] | role_name [AS ROLE] | user_and_role_name AS BOTH | CURRENT_USER | ALL | NONE} [,...]]
 /// Similar to ASTRolesOrUsersSet, but with IDs instead of names.
 struct RolesOrUsersSet
 {

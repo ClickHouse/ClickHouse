@@ -36,10 +36,17 @@ namespace
     }
 }
 
-bool ParserRolesOrUsersSet::parseBeforeExcept(IParserBase::Pos & pos, Expected & expected, bool & all, Strings & names, bool & current_user)
+bool ParserRolesOrUsersSet::parseBeforeExcept(
+    IParserBase::Pos & pos,
+    Expected & expected,
+    bool & all,
+    Strings & names,
+    ASTRolesOrUsersSet::NameFilters & names_filters,
+    bool & current_user) const
 {
     bool res_all = false;
     Strings res_names;
+    ASTRolesOrUsersSet::NameFilters res_names_filters;
     bool res_current_user = false;
     Strings res_with_roles_names;
 
@@ -69,10 +76,67 @@ bool ParserRolesOrUsersSet::parseBeforeExcept(IParserBase::Pos & pos, Expected &
         String name;
         if (parseNameOrID(pos, expected, id_mode, name))
         {
+            if (ParserKeyword{"AS USER"}.ignore(pos, expected))
+            {
+                if (allow_users)
+                {
+                    auto filter = res_names_filters.find(name);
+                    if (filter == res_names_filters.end())
+                    {
+                        res_names_filters.emplace(name, ASTRolesOrUsersSet::NameFilter::USER);
+                    }
+                    else if (filter->second == ASTRolesOrUsersSet::NameFilter::ROLE)
+                    {
+                        filter->second = ASTRolesOrUsersSet::NameFilter::BOTH;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else if (ParserKeyword{"AS ROLE"}.ignore(pos, expected))
+            {
+                if (allow_roles)
+                {
+                    auto filter = res_names_filters.find(name);
+                    if (filter == res_names_filters.end())
+                    {
+                        res_names_filters.emplace(name, ASTRolesOrUsersSet::NameFilter::ROLE);
+                    }
+                    else if (
+                        filter->second == ASTRolesOrUsersSet::NameFilter::ANY || filter->second == ASTRolesOrUsersSet::NameFilter::USER)
+                    {
+                        filter->second = ASTRolesOrUsersSet::NameFilter::BOTH;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else if (ParserKeyword{"AS BOTH"}.ignore(pos, expected))
+            {
+                if (allow_roles && allow_users)
+                {
+                    auto filter = res_names_filters.find(name);
+                    if (filter == res_names_filters.end())
+                    {
+                        res_names_filters.emplace(name, ASTRolesOrUsersSet::NameFilter::BOTH);
+                    }
+                    else
+                    {
+                        filter->second = ASTRolesOrUsersSet::NameFilter::BOTH;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
             res_names.emplace_back(std::move(name));
             return true;
         }
-
         return false;
     };
 
@@ -80,13 +144,18 @@ bool ParserRolesOrUsersSet::parseBeforeExcept(IParserBase::Pos & pos, Expected &
         return false;
 
     names = std::move(res_names);
+    names_filters = std::move(res_names_filters);
     current_user = res_current_user;
     all = res_all;
     return true;
 }
 
 bool ParserRolesOrUsersSet::parseExceptAndAfterExcept(
-    IParserBase::Pos & pos, Expected & expected, Strings & except_names, bool & except_current_user)
+    IParserBase::Pos & pos,
+    Expected & expected,
+    Strings & except_names,
+    ASTRolesOrUsersSet::NameFilters & except_names_filters,
+    bool & except_current_user) const
 {
     return IParserBase::wrapParseImpl(
         pos,
@@ -96,7 +165,7 @@ bool ParserRolesOrUsersSet::parseExceptAndAfterExcept(
                 return false;
 
             bool unused;
-            return parseBeforeExcept(pos, expected, unused, except_names, except_current_user);
+            return parseBeforeExcept(pos, expected, unused, except_names, except_names_filters, except_current_user);
         });
 }
 
@@ -104,24 +173,29 @@ bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 {
     bool all = false;
     Strings names;
+    ASTRolesOrUsersSet::NameFilters names_filters;
     bool current_user = false;
     Strings except_names;
+    ASTRolesOrUsersSet::NameFilters except_names_filters;
     bool except_current_user = false;
 
-    if (!parseBeforeExcept(pos, expected, all, names, current_user))
+    if (!parseBeforeExcept(pos, expected, all, names, names_filters, current_user))
         return false;
 
-    parseExceptAndAfterExcept(pos, expected, except_names, except_current_user);
+    parseExceptAndAfterExcept(pos, expected, except_names, except_names_filters, except_current_user);
 
     if (all)
         names.clear();
 
     auto result = std::make_shared<ASTRolesOrUsersSet>();
     result->names = std::move(names);
+    result->names_filters = std::move(names_filters);
     result->current_user = current_user;
     result->all = all;
     result->except_names = std::move(except_names);
+    result->except_names_filters = std::move(except_names_filters);
     result->except_current_user = except_current_user;
+    result->enable_extended_subject_syntax = true;
     result->allow_users = allow_users;
     result->allow_roles = allow_roles;
     result->id_mode = id_mode;

@@ -65,13 +65,14 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
 {
     auto entities = getEntities();
     const auto & access_control = getContext()->getAccessControl();
+    const auto ext_syn = getContext()->getSettingsRef().enable_extended_subject_syntax;
 
     ASTs create_queries, grant_queries;
     for (const auto & entity : entities)
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
         if (entity->isTypeOf(AccessEntityType::USER) || entity->isTypeOf(AccessEntityType::ROLE))
-            insertAtEnd(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
+            insertAtEnd(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control, ext_syn));
     }
 
     ASTs result = std::move(create_queries);

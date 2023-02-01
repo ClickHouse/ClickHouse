@@ -31,12 +31,21 @@ namespace
     ASTs getGrantQueriesImpl(
         const T & grantee,
         const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode = false)
+        bool attach_mode = false,
+        bool enable_extended_subject_syntax = false)
     {
         ASTs res;
 
         std::shared_ptr<ASTRolesOrUsersSet> grantees = std::make_shared<ASTRolesOrUsersSet>();
         grantees->names.push_back(grantee.getName());
+        if (enable_extended_subject_syntax)
+        {
+            grantees->enable_extended_subject_syntax = true;
+            if (std::is_same_v<T, User>)
+                grantees->names_filters.emplace(grantee.getName(), ASTRolesOrUsersSet::NameFilter::USER);
+            else
+                grantees->names_filters.emplace(grantee.getName(), ASTRolesOrUsersSet::NameFilter::ROLE);
+        }
 
         std::shared_ptr<ASTGrantQuery> current_query = nullptr;
 
@@ -88,12 +97,13 @@ namespace
     ASTs getGrantQueriesImpl(
         const IAccessEntity & entity,
         const AccessControl * access_control /* not used if attach_mode == true */,
-        bool attach_mode = false)
+        bool attach_mode = false,
+        bool enable_extended_subject_syntax = false)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
-            return getGrantQueriesImpl(*user, access_control, attach_mode);
+            return getGrantQueriesImpl(*user, access_control, attach_mode, enable_extended_subject_syntax);
         if (const Role * role = typeid_cast<const Role *>(&entity))
-            return getGrantQueriesImpl(*role, access_control, attach_mode);
+            return getGrantQueriesImpl(*role, access_control, attach_mode, enable_extended_subject_syntax);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
     }
 
@@ -178,24 +188,26 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries() const
 {
     auto entities = getEntities();
     const auto & access_control = getContext()->getAccessControl();
+    const auto ext_syn = getContext()->getSettingsRef().enable_extended_subject_syntax;
 
     ASTs grant_queries;
     for (const auto & entity : entities)
-        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control));
+        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control, ext_syn));
 
     return grant_queries;
 }
 
 
-ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control)
+ASTs InterpreterShowGrantsQuery::getGrantQueries(
+    const IAccessEntity & user_or_role, const AccessControl & access_control, const bool enable_extended_subject_syntax)
 {
-    return getGrantQueriesImpl(user_or_role, &access_control, false);
+    return getGrantQueriesImpl(user_or_role, &access_control, false, enable_extended_subject_syntax);
 }
 
 
-ASTs InterpreterShowGrantsQuery::getAttachGrantQueries(const IAccessEntity & user_or_role)
+ASTs InterpreterShowGrantsQuery::getAttachGrantQueries(const IAccessEntity & user_or_role, const bool enable_extended_subject_syntax)
 {
-    return getGrantQueriesImpl(user_or_role, nullptr, true);
+    return getGrantQueriesImpl(user_or_role, nullptr, true, enable_extended_subject_syntax);
 }
 
 }
