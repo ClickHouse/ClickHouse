@@ -47,7 +47,8 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
                                                        bool /*force_connected*/)
 {
     if (nested_pools.empty())
-        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
+        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                            "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
 
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
@@ -172,7 +173,8 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         const TryGetEntryFunc & try_get_entry)
 {
     if (nested_pools.empty())
-        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
+        throw DB::Exception(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                            "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
 
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
     size_t max_tries = (settings ?
@@ -189,7 +191,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     else if (pool_mode == PoolMode::GET_MANY)
         max_entries = settings ? size_t(settings->max_parallel_replicas) : 1;
     else
-        throw DB::Exception("Unknown pool allocation mode", DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
 
     GetPriorityFunc get_priority = makeGetPriorityFunc(settings);
 

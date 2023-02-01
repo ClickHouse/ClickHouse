@@ -248,7 +248,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         if (max_streams == 0)
             max_streams = 1;
 
-        /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
+        /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_remote)
             max_streams = static_cast<size_t>(max_streams * settings.max_streams_to_max_threads_ratio);
 
@@ -341,7 +341,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function, query or union. Actual {}", table_expression->formatASTForErrorMessage());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function, query or union. Actual {}",
+                        table_expression->formatASTForErrorMessage());
     }
 
     if (from_stage == QueryProcessingStage::FetchColumns)
@@ -841,7 +842,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     std::vector<ColumnIdentifierSet> table_expressions_outer_scope_columns(table_expressions_stack_size);
     ColumnIdentifierSet current_outer_scope_columns = outer_scope_columns;
 
-    for (Int64 i = table_expressions_stack_size - 1; i >= 0; --i)
+    for (Int64 i = static_cast<Int64>(table_expressions_stack_size) - 1; i >= 0; --i)
     {
         table_expressions_outer_scope_columns[i] = current_outer_scope_columns;
 
@@ -859,7 +860,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         {
             if (query_plans_stack.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least 1 query plan on stack before ARRAY JOIN processing");
+                    "Expected at least 1 query plan on stack before ARRAY JOIN processing. Actual {}",
+                    query_plans_stack.size());
 
             auto query_plan = std::move(query_plans_stack.back());
             query_plans_stack.back() = buildQueryPlanForArrayJoinNode(table_expression,
@@ -868,11 +870,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
         else if (auto * join_node = table_expression->as<JoinNode>())
         {
-            size_t table_expressions_column_nodes_with_names_stack_size = query_plans_stack.size();
-            if (table_expressions_column_nodes_with_names_stack_size < 2)
+            if (query_plans_stack.size() < 2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Expected at least 2 query plans on stack before JOIN processing. Actual {}",
-                    table_expressions_column_nodes_with_names_stack_size);
+                    query_plans_stack.size());
 
             auto right_query_plan = std::move(query_plans_stack.back());
             query_plans_stack.pop_back();
@@ -901,8 +902,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
     }
 
-    if (query_plans_stack.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 query plan for JOIN TREE");
+    if (query_plans_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected 1 query plan for JOIN TREE. Actual {}",
+            query_plans_stack.size());
 
     return std::move(query_plans_stack.back());
 }

@@ -235,8 +235,8 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + String(name),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), String(name));
         return result;
     }
 
@@ -313,7 +313,7 @@ public:
             return false;
         });
         if (!valid)
-            throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}'s argument does not match the expected data type", getName());
 
         return result_column;
     }

@@ -16,6 +16,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
+#include <Core/ProtocolDefines.h>
+#include "config_version.h"
+
 namespace DB
 {
 
@@ -116,6 +119,17 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
+QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
+{
+    planner.buildQueryPlanIfNeeded();
+    auto & query_plan = planner.getQueryPlan();
+
+    QueryPlanOptimizationSettings optimization_settings;
+    BuildQueryPipelineSettings build_pipeline_settings;
+
+    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+}
+
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
 {
     planner.addStorageLimits(storage_limits);
@@ -137,6 +151,9 @@ void InterpreterSelectQueryAnalyzer::setProperClientInfo(size_t replica_number, 
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     context->getClientInfo().number_of_current_replica = replica_number;
     context->getClientInfo().count_participating_replicas = count_participating_replicas;
+    context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
+    context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
+    context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 }
 
 }
