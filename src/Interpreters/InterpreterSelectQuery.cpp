@@ -1137,7 +1137,7 @@ static bool getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, c
 
     Field converted = convertFieldToType(field, DataTypeInt128());
     if (converted.isNull())
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The absolute value {} of {} expression is not representable as UInt64",
                         applyVisitor(FieldVisitorToString(), field), expr);
 
     Int128 val = converted.safeGet<Int128>();
@@ -1146,7 +1146,7 @@ static bool getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, c
 
     if (val > Int128(UINT64_MAX))
     {
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The absolute value {} of {} expression is not representable as UInt64",
                         applyVisitor(FieldVisitorToString(), field), expr);
     }
 
