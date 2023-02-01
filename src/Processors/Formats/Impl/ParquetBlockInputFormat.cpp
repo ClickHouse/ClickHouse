@@ -16,7 +16,7 @@
 #include "ArrowColumnToCHColumn.h"
 #include "ArrowFieldIndexUtil.h"
 #include <DataTypes/NestedUtils.h>
-#include <boost/range/irange.hpp>
+
 
 namespace DB
 {
