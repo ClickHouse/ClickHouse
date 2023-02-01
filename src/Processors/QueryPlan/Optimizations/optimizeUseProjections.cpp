@@ -374,6 +374,9 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (!aggregating)
         return;
 
+    if (!aggregating->canUseProjection())
+        return;
+
     QueryPlan::Node * reading_node = findReadingStep(node);
     if (!reading_node)
         return;
@@ -530,36 +533,39 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
     projection_reading->setStepDescription(best_candidate->projection->name);
 
+    auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
+    auto & expr_or_filter_node = nodes.emplace_back();
+
+    if (filter_node)
+    {
+        expr_or_filter_node.step = std::make_unique<FilterStep>(
+            projection_reading_node.step->getOutputStream(),
+            best_candidate->dag,
+            best_candidate->dag->getOutputs().front()->result_name,
+            true);
+    }
+    else
+        expr_or_filter_node.step = std::make_unique<ExpressionStep>(
+            projection_reading_node.step->getOutputStream(),
+            best_candidate->dag);
+
+    expr_or_filter_node.children.push_back(&projection_reading_node);
+
     if (!best_candidate->merge_tree_normal_select_result_ptr)
     {
         /// All parts are taken from projection
 
-        auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
-        auto & expr_or_filter_node = nodes.emplace_back();
 
-        if (filter_node)
-        {
-            expr_or_filter_node.step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputStream(),
-                best_candidate->dag,
-                best_candidate->dag->getOutputs().front()->result_name,
-                true);
-        }
-        else
-            expr_or_filter_node.step = std::make_unique<ExpressionStep>(
-                projection_reading_node.step->getOutputStream(),
-                best_candidate->dag);
-
-        expr_or_filter_node.children.push_back(&projection_reading_node);
         aggregating->requestOnlyMergeForAggregateProjection(expr_or_filter_node.step->getOutputStream());
         node.children.front() = &expr_or_filter_node;
 
         optimizeAggregationInOrder(node, nodes);
-
-        return;
     }
-
-    
+    else
+    {
+        node.step = aggregating->convertToAggregatingProjection(expr_or_filter_node.step->getOutputStream());
+        node.children.push_back(&expr_or_filter_node);
+    }
 }
 
 }

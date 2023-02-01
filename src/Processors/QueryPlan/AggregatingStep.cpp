@@ -406,11 +406,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    if (input_streams.size() > 1)
-    {
-
-    }
-
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -470,8 +465,16 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
     }
 }
 
+bool AggregatingStep::canUseProjection() const
+{
+    return grouping_sets_params.empty() && sort_description_for_merging.empty() && !memory_bound_merging_of_aggregation_results_enabled;
+}
+
 void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & input_stream)
 {
+    if (!canUseProjection())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
+
     auto cur_header = getOutputStream().header;
     input_streams.front() = input_stream;
     params.only_merge = true;
@@ -479,13 +482,26 @@ void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & 
     assertBlocksHaveEqualStructure(cur_header, getOutputStream().header, "AggregatingStep");
 }
 
-void AggregatingStep::appendAggregateProjection(const DataStream & input_stream)
+std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const DataStream & input_stream) const
 {
-    input_streams.emplace_back(input_stream);
-    params.only_merge = true;
-    auto added_header = appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls);
-    assertBlocksHaveEqualStructure(getOutputStream().header, added_header, "AggregatingStep");
-    params.only_merge = false;
+    if (!canUseProjection())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
+
+    auto aggregating_projection = std::make_unique<AggregatingProjectionStep>(
+        DataStreams{input_streams.front(), input_stream},
+        params,
+        final,
+        //max_block_size,
+        merge_threads,
+        temporary_data_merge_threads
+        //group_by_use_nulls,
+        //group_by_sort_description,
+        //should_produce_results_in_order_of_bucket_number
+        //memory_bound_merging_of_aggregation_results_enabled,
+    );
+
+    assertBlocksHaveEqualStructure(getOutputStream().header, aggregating_projection->getOutputStream().header, "AggregatingStep");
+    return aggregating_projection;
 }
 
 void AggregatingStep::updateOutputStream()
@@ -500,6 +516,101 @@ bool AggregatingStep::memoryBoundMergingWillBeUsed() const
 {
     return DB::memoryBoundMergingWillBeUsed(
         should_produce_results_in_order_of_bucket_number, memory_bound_merging_of_aggregation_results_enabled, sort_description_for_merging);
+}
+
+AggregatingProjectionStep::AggregatingProjectionStep(
+    DataStreams input_streams_,
+    Aggregator::Params params_,
+    bool final_,
+    //size_t max_block_size_,
+    size_t merge_threads_,
+    size_t temporary_data_merge_threads_
+    //bool group_by_use_nulls_,
+    //SortDescription group_by_sort_description_,
+    //bool should_produce_results_in_order_of_bucket_number_
+    //bool memory_bound_merging_of_aggregation_results_enabled_
+    )
+    : params(std::move(params_))
+    , final(final_)
+    //, max_block_size(max_block_size_)
+    , merge_threads(merge_threads_)
+    , temporary_data_merge_threads(temporary_data_merge_threads_)
+    //, group_by_use_nulls(group_by_use_nulls_)
+    //, group_by_sort_description(std::move(group_by_sort_description_))
+    //, should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
+    //, memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
+{
+    input_streams = std::move(input_streams_);
+
+    if (input_streams.size() != 2)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "AggregatingProjectionStep is expected to have two input streams, got {}",
+            input_streams.size());
+
+    auto normal_parts_header = params.getHeader(input_streams.front().header, final);
+    params.only_merge = true;
+    auto projection_parts_header = params.getHeader(input_streams.back().header, final);
+    params.only_merge = false;
+
+    assertBlocksHaveEqualStructure(normal_parts_header, projection_parts_header, "AggregatingProjectionStep");
+    output_stream.emplace();
+    output_stream->header = std::move(normal_parts_header);
+}
+
+QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
+    QueryPipelineBuilders pipelines,
+    const BuildQueryPipelineSettings &)
+{
+    auto & normal_parts_pipeline = pipelines.front();
+    auto & projection_parts_pipeline = pipelines.back();
+
+    /// Here we create shared ManyAggregatedData for both projection and ordinary data.
+    /// For ordinary data, AggregatedData is filled in a usual way.
+    /// For projection data, AggregatedData is filled by merging aggregation states.
+    /// When all AggregatedData is filled, we merge aggregation states together in a usual way.
+    /// Pipeline will look like:
+    /// ReadFromProjection   -> Aggregating (only merge states) ->
+    /// ReadFromProjection   -> Aggregating (only merge states) ->
+    /// ...                                                     -> Resize -> ConvertingAggregatedToChunks
+    /// ReadFromOrdinaryPart -> Aggregating (usual)             ->           (added by last Aggregating)
+    /// ReadFromOrdinaryPart -> Aggregating (usual)             ->
+    /// ...
+    auto many_data = std::make_shared<ManyAggregatedData>(normal_parts_pipeline->getNumStreams() + projection_parts_pipeline->getNumStreams());
+    size_t counter = 0;
+
+    AggregatorListPtr aggregator_list_ptr = std::make_shared<AggregatorList>();
+
+    /// TODO apply optimize_aggregation_in_order here too (like below)
+    auto build_aggregate_pipeline = [&](QueryPipelineBuilder & pipeline, bool projection)
+    {
+        auto params_copy = params;
+        if (projection)
+            params_copy.only_merge = true;
+
+        AggregatingTransformParamsPtr transform_params = std::make_shared<AggregatingTransformParams>(
+            pipeline.getHeader(), std::move(params_copy), aggregator_list_ptr, final);
+
+        pipeline.resize(pipeline.getNumStreams(), true, true);
+
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AggregatingTransform>(
+                header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+        });
+    };
+
+    build_aggregate_pipeline(*normal_parts_pipeline, false);
+    build_aggregate_pipeline(*projection_parts_pipeline, true);
+
+    auto pipeline = std::make_unique<QueryPipelineBuilder>();
+
+    for (auto & cur_pipeline : pipelines)
+        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputStream().header, "AggregatingProjectionStep");
+
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
+    pipeline->resize(1);
+    return pipeline;
 }
 
 }
