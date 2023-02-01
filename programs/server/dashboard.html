@@ -612,6 +612,11 @@ function insertChart(i) {
     query_editor_confirm.value = 'Ok';
     query_editor_confirm.className = 'edit-confirm';
 
+    function getCurrentIndex() {
+        /// Indices may change after deletion of other element, hence captured "i" may become incorrect.
+        return [...charts.querySelectorAll('.chart')].findIndex(child => chart == child);
+    }
+
     function editConfirm() {
         query_editor.style.display = 'none';
         query_error.style.display = 'none';
@@ -620,7 +625,8 @@ function insertChart(i) {
         title_text.data = '';
         findParamsInQuery(q.query, params);
         buildParams();
-        draw(i, chart, getParamsForURL(), q.query);
+        const idx = getCurrentIndex();
+        draw(idx, chart, getParamsForURL(), q.query);
         saveState();
     }
 
@@ -664,8 +670,7 @@ function insertChart(i) {
     let trash_text = document.createTextNode('✕');
     trash.appendChild(trash_text);
     trash.addEventListener('click', e => {
-        /// Indices may change after deletion of other element, hence captured "i" may become incorrect.
-        let idx = [...charts.querySelectorAll('.chart')].findIndex(child => chart == child);
+        const idx = getCurrentIndex();
         if (plots[idx]) {
             plots[idx].destroy();
             plots[idx] = null;
