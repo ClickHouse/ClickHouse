@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
-    std::unique_ptr<WriteBufferFromFile> out_,
+    std::unique_ptr<WriteBufferFromFileBase> out_,
     int compression_level,
     bool append_to_existing_file_,
     size_t buf_size,

@@ -86,7 +86,7 @@ class Changelog
 {
 public:
     Changelog(
-        const std::string & changelogs_dir_,
+        DiskPtr disk_,
         Poco::Logger * log_,
         LogFileSettings log_file_settings);
 
@@ -168,8 +168,8 @@ private:
     /// Clean useless log files in a background thread
     void cleanLogThread();
 
-    const std::filesystem::path changelogs_dir;
-    const std::filesystem::path changelogs_detached_dir;
+    DiskPtr disk;
+    const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     Poco::Logger * log;
 

@@ -25,7 +25,7 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
-        const std::string & snapshots_path_,
+        DiskPtr disk_,
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
