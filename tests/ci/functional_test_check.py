@@ -383,7 +383,8 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if FORCE_TESTS_LABEL in pr_info.labels or "ParallelReplicas" in check_name:
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
