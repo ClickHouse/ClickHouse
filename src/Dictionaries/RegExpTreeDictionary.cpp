@@ -289,7 +289,7 @@ void RegExpTreeDictionary::initTopologyOrder(UInt64 node_idx, std::set<UInt64> &
     visited.insert(node_idx);
     for (UInt64 child_idx : regex_nodes[node_idx]->children)
         if (visited.contains(child_idx))
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree");
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Invalid Regex tree. The input tree is cyclical");
         else
             initTopologyOrder(child_idx, visited, topology_id);
     topology_order[node_idx] = topology_id++;
@@ -360,7 +360,7 @@ std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 &
     String result;
     searcher.Match(haystack, 0, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10);
     /// if the pattern is a single '$1' but fails to match, we would use the default value.
-    if (pieces.size() == 1 && pieces[0].ref_num >= 0 && pieces[0].ref_num < 9 && matches[pieces[0].ref_num].empty())
+    if (pieces.size() == 1 && pieces[0].ref_num >= 0 && pieces[0].ref_num < 10 && matches[pieces[0].ref_num].empty())
         return std::make_pair(result, true);
     for (const auto & item : pieces)
     {
@@ -379,7 +379,9 @@ bool RegExpTreeDictionary::setAttributes(
     std::unordered_map<String, Field> & attributes_to_set,
     const String & data,
     std::unordered_set<UInt64> & visited_nodes,
-    const std::unordered_map<String, const DictionaryAttribute &> & attributes) const
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    const std::unordered_map<String, ColumnPtr> & defaults,
+    size_t key_index) const
 {
 
     if (visited_nodes.contains(id))
@@ -393,7 +395,12 @@ bool RegExpTreeDictionary::setAttributes(
         if (value.containsBackRefs())
         {
             auto [updated_str, use_default] = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
-            if (!use_default)
+            if (use_default)
+            {
+                DefaultValueProvider default_value(attributes.at(name).null_value, defaults.at(name));
+                attributes_to_set[name] = default_value.getDefaultValue(key_index);
+            }
+            else
                 attributes_to_set[name] = parseStringToField(updated_str, attributes.at(name).type);
         }
         else
@@ -402,7 +409,7 @@ bool RegExpTreeDictionary::setAttributes(
 
     auto parent_id = regex_nodes.at(id)->parent_id;
     if (parent_id > 0)
-        setAttributes(parent_id, attributes_to_set, data, visited_nodes, attributes);
+        setAttributes(parent_id, attributes_to_set, data, visited_nodes, attributes, defaults, key_index);
 
     // if all the attributes have set, the walking through can be stopped.
     return attributes_to_set.size() == attributes.size();
@@ -437,6 +444,7 @@ namespace
             matched_idx_sorted_list.push_back(std::make_pair(topological_order, id));
         }
 
+        /// Sort by topological order, which indicates the matching priorities.
         void sort()
         {
             std::sort(matched_idx_sorted_list.begin(), matched_idx_sorted_list.end());
@@ -507,15 +515,12 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
         if (err != HS_SUCCESS)
             throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
 
-        if (!match_result.matched_idx_set.empty())
+        for (const auto & node_ptr : complex_regexp_nodes)
         {
-            for (const auto & node_ptr : complex_regexp_nodes)
+            if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
             {
-                if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
-                {
-                    match_result.insertNodeID(node_ptr->id);
-                    break;
-                }
+                match_result.insertNodeID(node_ptr->id);
+                break;
             }
         }
 
@@ -546,7 +551,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
                 continue;
             if (visited_nodes.contains(id))
                 continue;
-            if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes))
+            if (setAttributes(id, attributes_to_set, str, visited_nodes, attributes, defaults, key_idx))
                 break;
         }
 
