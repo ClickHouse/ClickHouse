@@ -1701,11 +1701,6 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     return required_access;
 }
 
-String InterpreterCreateQuery::getQueryKind() const
-{
-    return "Create";
-}
-
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
 {
     if (!as_table_saved.empty())

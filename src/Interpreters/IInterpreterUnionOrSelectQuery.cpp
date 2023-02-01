@@ -15,11 +15,6 @@
 namespace DB
 {
 
-String IInterpreterUnionOrSelectQuery::getQueryKind() const
-{
-    return "Select";
-}
-
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 {
     QueryPlan query_plan;

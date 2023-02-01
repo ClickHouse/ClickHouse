@@ -191,11 +191,6 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-String InterpreterSelectIntersectExceptQuery::getQueryKind() const
-{
-    return "Select";
-}
-
 void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
     for (const auto & interpreter : nested_interpreters)

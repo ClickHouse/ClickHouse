@@ -48,7 +48,6 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    String getQueryKind() const override;
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:

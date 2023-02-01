@@ -135,11 +135,6 @@ void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & 
     planner.addStorageLimits(storage_limits);
 }
 
-String InterpreterSelectQueryAnalyzer::getQueryKind() const
-{
-    return "Select";
-}
-
 void InterpreterSelectQueryAnalyzer::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
 {
     context->getClientInfo().collaborate_with_initiator = true;

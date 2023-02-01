@@ -1155,9 +1155,4 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
     return required_access;
 }
 
-String InterpreterSystemQuery::getQueryKind() const
-{
-    return "System";
-}
-
 }

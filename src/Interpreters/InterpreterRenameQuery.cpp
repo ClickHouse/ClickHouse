@@ -195,11 +195,6 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
     return required_access;
 }
 
-String InterpreterRenameQuery::getQueryKind() const
-{
-    return "Rename";
-}
-
 void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
     const auto & rename = ast->as<const ASTRenameQuery &>();
