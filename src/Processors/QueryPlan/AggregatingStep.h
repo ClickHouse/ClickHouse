@@ -22,6 +22,8 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
+class AggregatingProjectionStep;
+
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
 {
@@ -60,8 +62,9 @@ public:
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
 
+    bool canUseProjection() const;
     void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
-    void appendAggregateProjection(const DataStream & input_stream);
+    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
 private:
     void updateOutputStream() override;
@@ -91,6 +94,41 @@ private:
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
+
+    Processors aggregating;
+};
+
+class AggregatingProjectionStep : public IQueryPlanStep
+{
+public:
+    AggregatingProjectionStep(
+        DataStreams input_streams_,
+        Aggregator::Params params_,
+        bool final_,
+        //size_t max_block_size_,
+        size_t merge_threads_,
+        size_t temporary_data_merge_threads_
+        //bool group_by_use_nulls_,
+        //SortDescription group_by_sort_description_,
+        //bool should_produce_results_in_order_of_bucket_number_
+        //bool memory_bound_merging_of_aggregation_results_enabled_
+    );
+
+    String getName() const override { return "AggregatingProjection"; }
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+
+private:
+    Aggregator::Params params;
+    bool final;
+    //size_t max_block_size;
+    size_t merge_threads;
+    size_t temporary_data_merge_threads;
+
+    //bool storage_has_evenly_distributed_read;
+    //bool group_by_use_nulls;
+    //SortDescription group_by_sort_description;
+    //bool should_produce_results_in_order_of_bucket_number;
+    //bool memory_bound_merging_of_aggregation_results_enabled;
 
     Processors aggregating;
 };
