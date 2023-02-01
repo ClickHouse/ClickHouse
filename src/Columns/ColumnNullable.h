@@ -181,12 +181,14 @@ public:
 
     /// Return the column that represents the byte map.
     const ColumnPtr & getNullMapColumnPtr() const { return null_map; }
-    ColumnPtr & getNullMapColumnPtr() {
+    ColumnPtr & getNullMapColumnPtr()
+    {
         need_update_has_null = true;
         return null_map;
     }
 
-    ColumnUInt8 & getNullMapColumn() {
+    ColumnUInt8 & getNullMapColumn()
+    {
         need_update_has_null = true;
         return assert_cast<ColumnUInt8 &>(*null_map);
     }
@@ -208,8 +210,10 @@ public:
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
-    bool hasNull() const {
-        if (unlikely(need_update_has_null)) {
+    bool hasNull() const
+    {
+        if (unlikely(need_update_has_null))
+        {
             const_cast<ColumnNullable*>(this)->updateHasNull();
         }
         return has_null;

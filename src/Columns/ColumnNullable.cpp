@@ -28,7 +28,8 @@ namespace ErrorCodes
 }
 
 template <typename T>
-inline bool contain_byte(const T* __restrict data, const size_t length, const signed char byte) {
+inline bool contain_byte(const T* __restrict data, const size_t length, const signed char byte)
+{
     return nullptr != std::memchr(reinterpret_cast<const void*>(data), byte, length);
 }
 
