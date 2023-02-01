@@ -72,8 +72,8 @@ For maximum control, it is generally recommended to provide settings "use_query_
 system tables may return cached results then.
 
 The query result cache can be cleared using statement `SYSTEM DROP QUERY RESULT CACHE`. The content of the query result cache is displayed
-in system table `SYSTEM.QUERY_RESULT_CACHE`. The number of query result cache hits and misses are shown as events "QueryResultCacheHits" and
-"QueryResultCacheMisses" in system table `SYSTEM.EVENTS`. Both counters are only updated for `SELECT` queries which run with setting
+in system table `SYSTEM.QUERY_RESULT_CACHE`. The number of query result cache hits and misses are shown as events "QueryCacheHits" and
+"QueryCacheMisses" in system table `SYSTEM.EVENTS`. Both counters are only updated for `SELECT` queries which run with setting
 "use_query_result_cache = true". Other queries do not affect the cache miss counter.
 
 The query result cache exists once per ClickHouse server process. However, cache results are by default not shared between users. This can
