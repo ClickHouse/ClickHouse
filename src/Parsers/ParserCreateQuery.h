@@ -246,7 +246,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->arguments = std::make_shared<ASTExpressionList>();
             
             WriteBufferFromOwnString buf;
-            FormatSettings settings{buf, true};
+            IAST::FormatSettings settings{buf, true};
             type->as<ASTFunction>()->format(settings);
             
             default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(buf.str()));
