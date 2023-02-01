@@ -3689,6 +3689,30 @@ Default value: `0`.
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
 
+## optimize_using_constraints
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for query optimization. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_append_index
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_substitute_columns
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for column substitution. The default is `false`.
+
+Possible values:
+
+- true, false
+
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
 Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](../../sql-reference/data-types/map.md/#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md/#finding-null) or an [Array](../../sql-reference/data-types/array.md/#array-size) data type.
