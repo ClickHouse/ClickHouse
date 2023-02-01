@@ -6,6 +6,7 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
 #include <IO/S3/Requests.h>
@@ -187,14 +188,14 @@ private:
 
         bool found_new_endpoint = false;
         // if we found correct endpoint after 301 responses, update the cache for future requests
-        SCOPE_EXIT({
+        SCOPE_EXIT(
             if (found_new_endpoint)
             {
                 auto uri_override = request.getURIOverride();
                 assert(uri_override.has_value());
                 updateURIForBucket(bucket, std::move(*uri_override));
             }
-        });
+        );
 
         while (true)
         {
