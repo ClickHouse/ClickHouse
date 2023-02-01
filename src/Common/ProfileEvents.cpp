@@ -53,8 +53,8 @@
     M(TableFunctionExecute, "Number of table function calls.") \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.") \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
-    M(QueryResultCacheHits, "Number of times a query result has been found in the query result cache (and query computation was avoided).") \
-    M(QueryResultCacheMisses, "Number of times a query result has not been found in the query result cache (and required query computation).") \
+    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided).") \
+    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation).") \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
@@ -472,6 +472,10 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
+    M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
+    M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
+    M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
+    M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
 
 namespace ProfileEvents
 {
