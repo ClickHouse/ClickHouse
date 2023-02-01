@@ -163,17 +163,25 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = Path(result_folder) / "test_results.tsv"
+    try:
+        results_path = Path(result_folder) / "test_results.tsv"
 
-    if results_path.exists():
-        logging.info("Found test_results.tsv")
-    else:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
-        return "error", "Not found test_results.tsv", test_results, additional_files
+        if results_path.exists():
+            logging.info("Found test_results.tsv")
+        else:
+            logging.info("Files in result folder %s", os.listdir(result_folder))
+            return "error", "Not found test_results.tsv", test_results, additional_files
 
-    test_results = read_test_results(results_path)
-    if len(test_results) == 0:
-        return "error", "Empty test_results.tsv", test_results, additional_files
+        test_results = read_test_results(results_path)
+        if len(test_results) == 0:
+            return "error", "Empty test_results.tsv", test_results, additional_files
+    except Exception as e:
+        return (
+            "error",
+            f"Cannot parse test_results.tsv ({e})",
+            test_results,
+            additional_files,
+        )
 
     return state, description, test_results, additional_files
 

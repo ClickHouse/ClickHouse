@@ -141,7 +141,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
                                             reinterpret_cast<const uint8_t*>(key.data()), key.size(),
                                             tag_size, nullptr);
     if (!ok_init)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     /// encrypt data using context and given nonce.
     size_t out_len;
@@ -152,7 +152,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
                                             reinterpret_cast<const uint8_t *>(plaintext.data()), plaintext.size(),
                                             nullptr, 0);
     if (!ok_open)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     return out_len;
 }
@@ -171,7 +171,7 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
                                           reinterpret_cast<const uint8_t*>(key.data()), key.size(),
                                           tag_size, nullptr);
     if (!ok_init)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     /// decrypt data using given nonce
     size_t out_len;
@@ -182,7 +182,7 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
                                           reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
                                           nullptr, 0);
     if (!ok_open)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     return out_len;
 }

@@ -89,7 +89,11 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    disk->removeRecursive(path);
+    if (disk->exists(path))
+        disk->removeRecursive(path);
+    else
+        LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
+
     disk->createDirectories(path);
     disk->createDirectories(path + "tmp/");
 

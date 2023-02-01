@@ -5,6 +5,7 @@
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/S3/getObjectInfo.h>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -253,7 +254,7 @@ size_t ReadBufferFromS3::getFileSize()
     if (file_size)
         return *file_size;
 
-    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, /* for_disk_s3= */ read_settings.for_object_storage);
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id, request_settings, /* for_disk_s3= */ read_settings.for_object_storage);
 
     file_size = object_size;
     return *file_size;
