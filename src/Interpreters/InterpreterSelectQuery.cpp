@@ -38,6 +38,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
+#include <Interpreters/AutoFinalOnQueryVisitor.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -503,10 +504,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
-    if (autoFinalOnQuery(query))
-    {
-        query.setFinal();
-    }
+    AutoFinalOnQuery::Data abc{storage, context};
+
+    AutoFinalOnQueryVisitor(abc).visit(query_ptr);
+
+//    if (autoFinalOnQuery(query))
+//    {
+//        query.setFinal();
+//    }
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
