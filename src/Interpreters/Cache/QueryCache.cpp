@@ -253,11 +253,11 @@ void QueryCache::Writer::finalizeWrite()
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Removed {} stale entries", removed_items);
     }
 
-    /// Insert or replace if enough space
     if (!sufficient_space_in_cache())
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (insufficient cache space), query: {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (cache has insufficient space), query: {}", key.queryStringFromAst());
     else
     {
+        //// Insert or replace key
         cache_size_in_bytes += query_result.sizeInBytes();
         if (auto it = cache.find(key); it != cache.end())
             cache_size_in_bytes -= it->second.sizeInBytes(); // key replacement
