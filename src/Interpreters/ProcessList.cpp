@@ -3,17 +3,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Parsers/toOneLineQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 #include <chrono>
 
@@ -291,7 +287,7 @@ ProcessListEntry::~ProcessListEntry()
 
     String user = (*it)->getClientInfo().current_user;
     String query_id = (*it)->getClientInfo().current_query_id;
-    IAST::QueryKind query_kind = (*it)->query_kind;
+    IAST::QueryKind query_kind = (*it)->ast_query_kind;
 
     const QueryStatusPtr process_list_element_ptr = *it;
 
@@ -347,7 +343,7 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     ThreadGroupStatusPtr && thread_group_,
-    IAST::QueryKind query_kind_,
+    IAST::QueryKind ast_query_kind_,
     UInt64 watch_start_nanoseconds)
     : WithContext(context_)
     , query(query_)
@@ -356,7 +352,7 @@ QueryStatus::QueryStatus(
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
     , global_overcommit_tracker(context_->getGlobalOvercommitTracker())
-    , query_kind(query_kind_)
+    , ast_query_kind(ast_query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
 {
     auto settings = getContext()->getSettings();
@@ -526,6 +522,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     QueryStatusInfo res{};
 
     res.query             = query;
+    res.ast_query_kind    = ast_query_kind;
     res.client_info       = client_info;
     res.elapsed_microseconds = watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);

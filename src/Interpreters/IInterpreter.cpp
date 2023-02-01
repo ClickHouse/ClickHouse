@@ -11,6 +11,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
+String IInterpreter::getQueryKind() const
+{
+    return {};
+}
+
 void IInterpreter::extendQueryLogElem(
     QueryLogElement & elem, const ASTPtr & ast, ContextPtr context, const String & query_database, const String & query_table) const
 {
@@ -26,6 +32,7 @@ void IInterpreter::extendQueryLogElem(
         elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(query_table));
     }
 
+    elem.query_kind = getQueryKind();
     extendQueryLogElemImpl(elem, ast, context);
 }
 

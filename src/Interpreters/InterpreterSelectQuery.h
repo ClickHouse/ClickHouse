@@ -136,6 +136,7 @@ public:
 
     RowPolicyFilterPtr getRowPolicyFilter() const;
 
+    String getQueryKind() const override;
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);

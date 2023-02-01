@@ -35,6 +35,7 @@ public:
 
     void ignoreWithTotals() override;
 
+    String getQueryKind() const override;
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:

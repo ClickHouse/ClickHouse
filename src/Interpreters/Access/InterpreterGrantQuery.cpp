@@ -419,13 +419,13 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
 }
 
 
-void InterpreterGrantQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr) const
+String InterpreterGrantQuery::getQueryKind() const
 {
     auto & query = query_ptr->as<ASTGrantQuery &>();
     if (query.is_revoke)
-        elem.query_kind = "Revoke";
+        return "Revoke";
     else
-        elem.query_kind = "Grant";
+        return "Grant";
 }
 
 }

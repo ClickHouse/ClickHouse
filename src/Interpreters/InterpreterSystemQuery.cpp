@@ -1155,9 +1155,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
     return required_access;
 }
 
-void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr) const
+String InterpreterSystemQuery::getQueryKind() const
 {
-    elem.query_kind = "System";
+    return "System";
 }
 
 }

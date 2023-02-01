@@ -46,7 +46,7 @@ public:
 
     bool ignoreQuota() const override { return select_query_options.ignore_quota; }
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
+    String getQueryKind() const override;
 
     /// Set merge tree read task callback in context and set collaborate_with_initiator in client info
     void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);

@@ -9,16 +9,15 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 
 
 namespace DB
 {
 
-void IInterpreterUnionOrSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
+String IInterpreterUnionOrSelectQuery::getQueryKind() const
 {
-    elem.query_kind = "Select";
+    return "Select";
 }
 
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()

@@ -135,9 +135,9 @@ void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & 
     planner.addStorageLimits(storage_limits);
 }
 
-void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
+String InterpreterSelectQueryAnalyzer::getQueryKind() const
 {
-    elem.query_kind = "Select";
+    return "Select";
 }
 
 void InterpreterSelectQueryAnalyzer::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)

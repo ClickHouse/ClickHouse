@@ -260,7 +260,6 @@ public:
         Insert,
         Rename,
         Revoke,
-        SelectIntersectExcept,
         Select,
         System,
     };

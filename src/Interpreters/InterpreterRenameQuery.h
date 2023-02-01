@@ -55,6 +55,8 @@ class InterpreterRenameQuery : public IInterpreter, WithContext
 public:
     InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_);
     BlockIO execute() override;
+
+    String getQueryKind() const override;
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     bool renamedInsteadOfExchange() const { return renamed_instead_of_exchange; }
