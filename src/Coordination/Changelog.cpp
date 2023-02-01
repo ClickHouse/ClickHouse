@@ -157,8 +157,8 @@ public:
         assert(file_buffer && current_file_description);
 
         assert(record.header.index - getStartIndex() <= current_file_description->expectedEntriesCountInLog());
-        if (const bool log_is_complete = record.header.index - getStartIndex() == current_file_description->expectedEntriesCountInLog();
-            log_is_complete)
+        // check if log file reached the limit for amount of records it can contain
+        if (record.header.index - getStartIndex() == current_file_description->expectedEntriesCountInLog())
         {
             rotate(record.header.index);
         }
