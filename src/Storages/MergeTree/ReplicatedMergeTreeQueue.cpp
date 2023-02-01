@@ -104,12 +104,15 @@ bool ReplicatedMergeTreeQueue::isGoingToBeDropped(const MergeTreePartInfo & part
 bool ReplicatedMergeTreeQueue::isGoingToBeDroppedImpl(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const
 {
     String covering_virtual = virtual_parts.getContainingPart(part_info);
-    auto covering_virtual_info = MergeTreePartInfo::fromPartName(covering_virtual, format_version);
-    if (covering_virtual_info.isFakeDropRangePart())
+    if (!covering_virtual.empty())
     {
-        if (out_drop_range_info)
-            *out_drop_range_info = covering_virtual_info;
-        return true;
+        auto covering_virtual_info = MergeTreePartInfo::fromPartName(covering_virtual, format_version);
+        if (covering_virtual_info.isFakeDropRangePart())
+        {
+            if (out_drop_range_info)
+                *out_drop_range_info = covering_virtual_info;
+            return true;
+        }
     }
     return drop_parts.hasDropPart(part_info, out_drop_range_info);
 }
