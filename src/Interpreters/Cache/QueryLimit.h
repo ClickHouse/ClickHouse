@@ -1,6 +1,6 @@
+#pragma once
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/LockedFileCachePriority.h>
-#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 
 namespace DB
