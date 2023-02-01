@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -44,12 +45,10 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
         return 0;
 
     /// check if it is preliminary distinct node
-    QueryPlan::Node * distinct_node = nullptr;
-    DistinctStep * distinct_step = typeid_cast<DistinctStep *>(parent_node->children.front()->step.get());
+    QueryPlan::Node * distinct_node = parent_node->children.front();
+    DistinctStep * distinct_step = typeid_cast<DistinctStep *>(distinct_node->step.get());
     if (!distinct_step)
         return 0;
-
-    distinct_node = parent_node->children.front();
 
     std::vector<ActionsDAGPtr> dag_stack;
     const DistinctStep * inner_distinct_step = nullptr;
@@ -59,7 +58,8 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
         const IQueryPlanStep * current_step = node->step.get();
 
         /// don't try to remove DISTINCT after union or join
-        if (typeid_cast<const UnionStep *>(current_step) || typeid_cast<const JoinStep *>(current_step))
+        if (typeid_cast<const UnionStep *>(current_step) || typeid_cast<const JoinStep *>(current_step)
+            || typeid_cast<const IntersectOrExceptStep *>(current_step))
             break;
 
         if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)
