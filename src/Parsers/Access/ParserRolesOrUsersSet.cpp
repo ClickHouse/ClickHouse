@@ -34,83 +34,71 @@ namespace
             return true;
         });
     }
+}
 
-    bool parseBeforeExcept(
-        IParserBase::Pos & pos,
-        Expected & expected,
-        bool id_mode,
-        bool allow_all,
-        bool allow_any,
-        bool allow_current_user,
-        bool & all,
-        Strings & names,
-        bool & current_user)
+bool ParserRolesOrUsersSet::parseBeforeExcept(IParserBase::Pos & pos, Expected & expected, bool & all, Strings & names, bool & current_user)
+{
+    bool res_all = false;
+    Strings res_names;
+    bool res_current_user = false;
+    Strings res_with_roles_names;
+
+    auto parse_element = [&]
     {
-        bool res_all = false;
-        Strings res_names;
-        bool res_current_user = false;
-        Strings res_with_roles_names;
+        if (ParserKeyword{"NONE"}.ignore(pos, expected))
+            return true;
 
-        auto parse_element = [&]
+        if (allow_all && ParserKeyword{"ALL"}.ignore(pos, expected))
         {
-            if (ParserKeyword{"NONE"}.ignore(pos, expected))
-                return true;
+            res_all = true;
+            return true;
+        }
 
-            if (allow_all && ParserKeyword{"ALL"}.ignore(pos, expected))
-            {
-                res_all = true;
-                return true;
-            }
+        if (allow_any && ParserKeyword{"ANY"}.ignore(pos, expected))
+        {
+            res_all = true;
+            return true;
+        }
 
-            if (allow_any && ParserKeyword{"ANY"}.ignore(pos, expected))
-            {
-                res_all = true;
-                return true;
-            }
+        if (allow_current_user && parseCurrentUserTag(pos, expected))
+        {
+            res_current_user = true;
+            return true;
+        }
 
-            if (allow_current_user && parseCurrentUserTag(pos, expected))
-            {
-                res_current_user = true;
-                return true;
-            }
+        String name;
+        if (parseNameOrID(pos, expected, id_mode, name))
+        {
+            res_names.emplace_back(std::move(name));
+            return true;
+        }
 
-            String name;
-            if (parseNameOrID(pos, expected, id_mode, name))
-            {
-                res_names.emplace_back(std::move(name));
-                return true;
-            }
+        return false;
+    };
 
-            return false;
-        };
+    if (!ParserList::parseUtil(pos, expected, parse_element, false))
+        return false;
 
-        if (!ParserList::parseUtil(pos, expected, parse_element, false))
-            return false;
+    names = std::move(res_names);
+    current_user = res_current_user;
+    all = res_all;
+    return true;
+}
 
-        names = std::move(res_names);
-        current_user = res_current_user;
-        all = res_all;
-        return true;
-    }
-
-    bool parseExceptAndAfterExcept(
-        IParserBase::Pos & pos,
-        Expected & expected,
-        bool id_mode,
-        bool allow_current_user,
-        Strings & except_names,
-        bool & except_current_user)
-    {
-        return IParserBase::wrapParseImpl(pos, [&] {
+bool ParserRolesOrUsersSet::parseExceptAndAfterExcept(
+    IParserBase::Pos & pos, Expected & expected, Strings & except_names, bool & except_current_user)
+{
+    return IParserBase::wrapParseImpl(
+        pos,
+        [&]
+        {
             if (!ParserKeyword{"EXCEPT"}.ignore(pos, expected))
                 return false;
 
             bool unused;
-            return parseBeforeExcept(pos, expected, id_mode, false, false, allow_current_user, unused, except_names, except_current_user);
+            return parseBeforeExcept(pos, expected, unused, except_names, except_current_user);
         });
-    }
 }
-
 
 bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -120,10 +108,10 @@ bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     Strings except_names;
     bool except_current_user = false;
 
-    if (!parseBeforeExcept(pos, expected, id_mode, allow_all, allow_any, allow_current_user, all, names, current_user))
+    if (!parseBeforeExcept(pos, expected, all, names, current_user))
         return false;
 
-    parseExceptAndAfterExcept(pos, expected, id_mode, allow_current_user, except_names, except_current_user);
+    parseExceptAndAfterExcept(pos, expected, except_names, except_current_user);
 
     if (all)
         names.clear();

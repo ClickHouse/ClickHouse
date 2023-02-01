@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Parsers/IParserBase.h>
 
 
@@ -30,6 +31,8 @@ private:
     bool allow_current_user = false;
     bool allow_roles = false;
     bool id_mode = false;
+    bool parseBeforeExcept(IParserBase::Pos & pos, Expected & expected, bool & all, Strings & names, bool & current_user);
+    bool parseExceptAndAfterExcept(IParserBase::Pos & pos, Expected & expected, Strings & except_names, bool & except_current_user);
 };
 
 }
