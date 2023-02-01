@@ -2360,7 +2360,7 @@ if __name__ == "__main__":
     if args.tmp is None:
         args.tmp = args.queries
 
-    if (args.client):
+    if args.client:
         print(
             "WARNING: --client option is deprecated and will be removed the the future, use --binary instead",
             file=sys.stderr,
@@ -2368,7 +2368,7 @@ if __name__ == "__main__":
 
     args.client = find_clickhouse_command(args.binary, "client")
 
-    if (args.extract_from_config):
+    if args.extract_from_config:
         print(
             "WARNING: --extract_from_config option is deprecated and will be removed the the future",
             file=sys.stderr,
