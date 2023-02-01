@@ -20,7 +20,7 @@ from clickhouse_helper import (
 )
 from commit_status_helper import post_commit_status, update_mergeable_check
 from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import TEMP_PATH as TEMP, REPORTS_PATH
+from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -202,14 +202,16 @@ def main():
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    if CI:
+        gh = Github(get_best_robot_token(), per_page=100)
+        atexit.register(update_mergeable_check, gh, pr_info, args.check_name)
 
-    atexit.register(update_mergeable_check, gh, pr_info, args.check_name)
-
-    rerun_helper = RerunHelper(gh, pr_info, args.check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+        rerun_helper = RerunHelper(gh, pr_info, args.check_name)
+        if rerun_helper.is_already_finished_by_status():
+            logging.info(
+                "Check is already finished according to github status, exiting"
+            )
+            sys.exit(0)
 
     docker_images = {
         name: get_image_with_version(REPORTS_PATH, name)
@@ -250,9 +252,6 @@ def main():
 
     s3_helper = S3Helper()
 
-    ch_helper = ClickHouseHelper()
-    mark_flaky_tests(ch_helper, args.check_name, test_results)
-
     report_url = upload_results(
         s3_helper,
         pr_info.number,
@@ -262,6 +261,12 @@ def main():
         args.check_name,
     )
     print(f"::notice ::Report url: {report_url}")
+    if not CI:
+        return
+
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, args.check_name, test_results)
+
     if len(description) >= 140:
         description = description[:136] + "..."
 
