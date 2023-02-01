@@ -371,25 +371,36 @@ KeyTransactionPtr FileCache::createKeyTransaction(const Key & key, KeyNotFoundPo
 {
     auto lock = metadata_guard.lock();
 
-    cleanup_keys_metadata_queue->clear([this](const Key & cleanup_key)
-    {
-        [[maybe_unused]] const bool erased = metadata.erase(cleanup_key);
-        chassert(erased);
+    // cleanup_keys_metadata_queue->clear([this](const Key & cleanup_key)
+    // {
+    //     auto it = metadata.find(cleanup_key);
+    //     if (it == metadata.end())
+    //         throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in metadata", cleanup_key);
 
-        try
-        {
-            const fs::path prefix_path = fs::path(getPathInLocalCache(cleanup_key)).parent_path();
-            if (fs::exists(prefix_path) && fs::is_empty(prefix_path))
-                fs::remove_all(prefix_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    });
+    //     auto guard = it->second->guard;
+    //     auto key_lock = guard->lock();
+
+    //     [[maybe_unused]] const bool erased = metadata.erase(it);
+    //     chassert(erased);
+
+    //     try
+    //     {
+    //         const fs::path prefix_path = fs::path(getPathInLocalCache(cleanup_key)).parent_path();
+    //         if (fs::exists(prefix_path) && fs::is_empty(prefix_path))
+    //             fs::remove_all(prefix_path);
+    //     }
+    //     catch (...)
+    //     {
+    //         tryLogCurrentException(__PRETTY_FUNCTION__);
+    //     }
+    // });
 
     auto it = metadata.find(key);
-    if (it == metadata.end())
+    bool erased = false;
+    if (it != metadata.end() && it->second->removed)
+        erased = metadata.erase(it);
+
+    if (erased || it == metadata.end())
     {
         switch (key_not_found_policy)
         {
@@ -918,8 +929,10 @@ void KeyTransaction::cleanupKeyDirectory() const
         return;
 
     /// Someone might still need this directory.
-    if (!offsets.empty())
+    if (!key_metadata.empty())
         return;
+
+    key_metadata.removed = true;
 
     /// Now `offsets` empty and the key lock is still locked.
     /// So it is guaranteed that no one will add something.

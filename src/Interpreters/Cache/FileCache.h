@@ -167,6 +167,8 @@ public:
 
         KeyGuardPtr guard = std::make_shared<KeyGuard>();
         bool created_base_directory = false;
+
+        bool removed = false;
     };
     using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
@@ -384,15 +386,18 @@ struct KeyTransactionCreator
 {
     KeyTransactionCreator(
         const FileCacheKey & key_,
-        FileCache::KeyMetadata & offsets_,
+        FileCache::KeyMetadata & key_metadata_,
         KeysQueuePtr cleanup_keys_metadata_queue_,
         const FileCache * cache_)
-        : key(key_), offsets(offsets_), cleanup_keys_metadata_queue(cleanup_keys_metadata_queue_), cache(cache_) {}
+        : key(key_)
+        , key_metadata(key_metadata_)
+        , cleanup_keys_metadata_queue(cleanup_keys_metadata_queue_)
+        , cache(cache_) {}
 
     KeyTransactionPtr create();
 
     FileCacheKey key;
-    FileCache::KeyMetadata & offsets;
+    FileCache::KeyMetadata & key_metadata;
     KeysQueuePtr cleanup_keys_metadata_queue;
     const FileCache * cache;
 };
@@ -420,8 +425,8 @@ struct KeyTransaction : private boost::noncopyable
 
     bool isLastHolder(size_t offset);
 
-    FileCache::KeyMetadata & getOffsets() { return offsets; }
-    const FileCache::KeyMetadata & getOffsets() const { return offsets; }
+    FileCache::KeyMetadata & getKeyMetadata() { return key_metadata; }
+    const FileCache::KeyMetadata & getKeyMetadata() const { return key_metadata; }
 
     std::vector<size_t> delete_offsets;
 
@@ -433,7 +438,7 @@ private:
     const FileCache * cache;
 
     KeyGuard::Lock lock;
-    FileCache::KeyMetadata & offsets;
+    FileCache::KeyMetadata & key_metadata;
     KeysQueuePtr cleanup_keys_metadata_queue;
 
     Poco::Logger * log;

@@ -469,7 +469,7 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
 bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 {
     auto * current_file_segment = &file_segments->front();
-    const auto & completed_range = current_file_segment->range();
+    auto completed_range = current_file_segment->range();
 
     if (enable_logging)
         appendFilesystemCacheLog(completed_range, read_type);
