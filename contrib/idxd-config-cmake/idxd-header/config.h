@@ -8,7 +8,7 @@
 /* #undef ENABLE_DEBUG */
 
 /* Documentation / man pages. */
-#define ENABLE_DOCS 1
+/* #define ENABLE_DOCS */
 
 /* System logging. */
 #define ENABLE_LOGGING 1

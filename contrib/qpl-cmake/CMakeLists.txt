@@ -316,7 +316,7 @@ target_compile_definitions(_qpl
         PUBLIC -DENABLE_QPL_COMPRESSION)
 
 target_link_libraries(_qpl
-        PRIVATE ch_contrib::LIBACCEL
+        PRIVATE ch_contrib::libaccel
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)
