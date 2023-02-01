@@ -7541,7 +7541,19 @@ MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
     if (!write_ahead_log)
     {
         auto reservation = reserveSpace(getSettings()->write_ahead_log_max_bytes);
-        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
+        for (auto disk: reservation->getDisks())
+        {
+            if (!disk->isRemote())
+            {
+                write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
+                break;
+            }
+        }
+
+        if (!write_ahead_log)
+            throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Can't store write ahead log in remote disk. It makes no sense.");
     }
 
     return write_ahead_log;
