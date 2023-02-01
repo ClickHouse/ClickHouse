@@ -10,7 +10,6 @@
         key_string Nullable(String),
         key_string_two_level Nullable(String),
         key_fixed_string Nullable(FixedString(3)),
-        key_fixed_string_two_level Nullable(FixedString(10)),
         key_int64 Nullable(Int64),
         key_int64_two_level Nullable(Int64),
         key_int32 Nullable(Int32),
@@ -23,15 +22,14 @@
         ENGINE = MergeTree
         ORDER BY tuple()
     </create_query>
-    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(5000000)</fill_query>
-    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(5000000)</fill_query>
-    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(5000000)</fill_query>
-    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(5000000)</fill_query>
+    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
+    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
+    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
+    <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_nullable FINAL</fill_query>
     <query>select min(i1), min(i2) from t_nullable group by key_string format Null</query>
     <query>select min(i1), min(i2) from t_nullable group by key_string_two_level format Null</query>
     <query>select min(i1), min(i2) from t_nullable group by key_fixed_string format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_fixed_string_two_level format Null</query>
     <query>select min(i1), min(i2) from t_nullable group by key_int64 format Null</query>
     <query>select min(i1), min(i2) from t_nullable group by key_int64_two_level format Null</query>
     <query>select min(i1), min(i2) from t_nullable group by key_int32 format Null</query>
