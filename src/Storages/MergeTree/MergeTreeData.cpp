@@ -2613,6 +2613,14 @@ void MergeTreeData::dropAllData()
         if (disk->isBroken())
             continue;
 
+        /// It can naturally happen if we cannot drop table from the first time
+        /// i.e. get exceptions after remove recursive
+        if (!disk->exists(relative_data_path))
+        {
+            LOG_INFO(log, "dropAllData: path {} is already removed from disk {}", relative_data_path, disk->getName());
+            continue;
+        }
+
         LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
 

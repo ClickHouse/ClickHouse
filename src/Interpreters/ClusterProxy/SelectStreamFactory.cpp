@@ -7,7 +7,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <DataTypes/ObjectUtils.h>
 
