@@ -447,9 +447,6 @@ public:
             alias_name_to_expressions[node_alias].push_back(node);
         }
 
-        if (const auto * function = node->as<FunctionNode>())
-            LOG_DEBUG(&Poco::Logger::get("ExpressionsStack"), "Pushed function {} on stack", function->getFunctionName());
-
         expressions.emplace_back(node);
     }
 
@@ -467,9 +464,6 @@ public:
             if (alias_expressions.empty())
                 alias_name_to_expressions.erase(it);
         }
-
-        if (const auto * function = top_expression->as<FunctionNode>())
-            LOG_DEBUG(&Poco::Logger::get("ExpressionsStack"), "Poped function {} on stack", function->getFunctionName());
 
         expressions.pop_back();
     }
@@ -500,7 +494,6 @@ public:
 
             if (factory.isAggregateFunctionName(function->getFunctionName()))
                 return true;
-            LOG_DEBUG(&Poco::Logger::get("ExpressionsStack"), "Function {} is being resolved, but is not aggregate", function->getFunctionName());
         }
         return false;
     }
@@ -6071,11 +6064,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
                     scope.nullable_group_by_keys.insert(group_by_elem->clone());
             }
-            // for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
-            // {
-            //     for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
-            //         group_by_elem->convertToNullable();
-            // }
         }
         else
         {
@@ -6088,8 +6076,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             {
                 for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
                     scope.nullable_group_by_keys.insert(group_by_elem->clone());
-                // for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-                //     group_by_elem->convertToNullable();
             }
         }
     }

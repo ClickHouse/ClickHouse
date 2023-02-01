@@ -29,7 +29,6 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -83,7 +82,6 @@ public:
                 node_name,
                 actions_dag->dumpNames());
 
-        LOG_DEBUG(&Poco::Logger::get("ActionsScopeNode"), "Node: {} {}", it->second->result_name, it->second->result_type->getName());
         return it->second;
     }
 
@@ -227,7 +225,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
 {
     auto column_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
-    LOG_DEBUG(&Poco::Logger::get("PlannerActionsVisitorImpl"), "Processing column with name: {}", column_node_name);
     const auto & column_node = node->as<ColumnNode &>();
 
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
