@@ -43,7 +43,7 @@ public:
         const std::string & reason,
         const std::string & body
     )
-        : Exception(makeExceptionMessage(uri, http_status_, reason, body), code)
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
         , http_status(http_status_)
     {}
 
@@ -55,7 +55,8 @@ public:
 private:
     Poco::Net::HTTPResponse::HTTPStatus http_status{};
 
-    static std::string makeExceptionMessage(
+    static Exception makeExceptionMessage(
+        int code,
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,

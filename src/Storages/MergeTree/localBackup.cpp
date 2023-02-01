@@ -25,7 +25,7 @@ void localBackupImpl(
         return;
 
     if (level >= 1000)
-        throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
+        throw DB::Exception(DB::ErrorCodes::TOO_DEEP_RECURSION, "Too deep recursion");
 
     disk->createDirectories(destination_path);
 
@@ -93,7 +93,8 @@ void localBackup(
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
-        throw DB::Exception("Directory " + fullPath(disk, destination_path) + " already exists and is not empty.", DB::ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+        throw DB::Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists and is not empty.",
+                            DB::fullPath(disk, destination_path));
     }
 
     size_t try_no = 0;

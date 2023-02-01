@@ -72,7 +72,7 @@ For more convenient (automatic) cache management, see disable_internal_dns_cache
 
 ## DROP MARK CACHE
 
-Resets the mark cache. Used in development of ClickHouse and performance tests.
+Resets the mark cache.
 
 ## DROP REPLICA
 
@@ -94,13 +94,18 @@ The fourth one is useful to remove metadata of dead replica when all other repli
 
 ## DROP UNCOMPRESSED CACHE
 
-Reset the uncompressed data cache. Used in development of ClickHouse and performance tests.
-For manage uncompressed data cache parameters use following server level settings [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
+Reset the uncompressed data cache.
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
+Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
-Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
-Compiled expression cache used when query/user/profile enable option [compile-expressions](../../operations/settings/settings.md#compile-expressions)
+Reset the compiled expression cache.
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
+
+## DROP QUERY CACHE
+
+Resets the [query cache](../../operations/query-cache.md).
 
 ## FLUSH LOGS
 
@@ -356,4 +361,16 @@ Allows to drop filesystem cache.
 
 ```sql
 SYSTEM DROP FILESYSTEM CACHE
+```
+
+### SYNC FILE CACHE
+
+:::note
+It's too heavy and has potential for misuse.
+:::
+
+Will do sync syscall. 
+
+```sql
+SYSTEM SYNC FILE CACHE
 ```

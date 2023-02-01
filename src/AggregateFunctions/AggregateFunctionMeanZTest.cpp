@@ -46,10 +46,10 @@ AggregateFunctionPtr createAggregateFunctionMeanZTest(
     assertBinary(name, argument_types);
 
     if (parameters.size() != 3)
-        throw Exception("Aggregate function " + name + " requires three parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires three parameter.", name);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
 
     return std::make_shared<AggregateFunctionMeanZTest<MeanZTestData>>(argument_types, parameters);
 }

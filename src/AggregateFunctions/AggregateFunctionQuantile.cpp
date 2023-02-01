@@ -50,8 +50,8 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
     if (which.idx == TypeIndex::Int256) return std::make_shared<Function<Int256, true>>(argument_types, params);
     if (which.idx == TypeIndex::UInt256) return std::make_shared<Function<UInt256, true>>(argument_types, params);
 
-    throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                    argument_type->getName(), name);
 }
 
 }
