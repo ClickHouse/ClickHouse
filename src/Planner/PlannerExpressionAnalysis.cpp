@@ -1,6 +1,7 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -16,8 +17,6 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
-#include "Common/tests/gtest_global_context.h"
-#include "DataTypes/DataTypeNullable.h"
 
 namespace DB
 {
@@ -303,7 +302,6 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
     ActionsChain & actions_chain)
 {
     const auto & projection_input = current_output_columns;
-    LOG_DEBUG(&Poco::Logger::get("PlannerExpressionAnalysis"), "Projection node: {}", query_node.getProjectionNode()->dumpTree());
     auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), projection_input, planner_context);
 
     auto projection_columns = query_node.getProjectionColumns();
@@ -325,7 +323,6 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
     for (size_t i = 0; i < projection_outputs_size; ++i)
     {
         auto & projection_column = projection_columns[i];
-        LOG_DEBUG(&Poco::Logger::get("PlannerExpressionAnalysis"), "Projection column {}: {} {}", i, projection_column.name, projection_column.type->getName());
         const auto * projection_node = projection_actions_outputs[i];
         const auto & projection_node_name = projection_node->result_name;
 
