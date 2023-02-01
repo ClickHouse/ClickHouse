@@ -146,7 +146,9 @@ private:
         std::unordered_map<String, Field> & attributes_to_set,
         const String & data,
         std::unordered_set<UInt64> & visited_nodes,
-        const std::unordered_map<String, const DictionaryAttribute &> & attributes) const;
+        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+        const std::unordered_map<String, ColumnPtr> & defaults,
+        size_t key_index) const;
 
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
