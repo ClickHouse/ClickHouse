@@ -32,6 +32,13 @@ enum class LocalFSReadMethod
     mmap,
 
     /**
+     * Use the io_uring Linux subsystem for asynchronous reads.
+     * Can use direct IO after specified size.
+     * Can do prefetch with double buffering.
+     */
+    io_uring,
+
+    /**
      * Checks if data is in page cache with 'preadv2' on modern Linux kernels.
      * If data is in page cache, read from the same thread.
      * If not, offload IO to separate threadpool.
