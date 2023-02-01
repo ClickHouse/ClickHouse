@@ -32,6 +32,9 @@ public:
         const String & query_database,
         const String & query_table) const;
 
+    /// Get a string identifying the type of query (e.g. "Select").
+    virtual String getQueryKind() const;
+
     virtual void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, ContextPtr) const {}
 
     /// Returns true if transactions maybe supported for this type of query.

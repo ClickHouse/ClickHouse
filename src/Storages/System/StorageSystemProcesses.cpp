@@ -61,6 +61,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"memory_usage", std::make_shared<DataTypeInt64>()},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"query", std::make_shared<DataTypeString>()},
+        {"query_kind", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
@@ -130,6 +131,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.memory_usage);
         res_columns[i++]->insert(process.peak_memory_usage);
         res_columns[i++]->insert(process.query);
+        res_columns[i++]->insert(magic_enum::enum_name(process.ast_query_kind));
 
         {
             Array threads_array;
