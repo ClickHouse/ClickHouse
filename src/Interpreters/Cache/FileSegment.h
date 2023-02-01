@@ -30,10 +30,10 @@ class ReadBufferFromFileBase;
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
-struct KeyTransaction;
-using KeyTransactionPtr = std::shared_ptr<KeyTransaction>;
-struct KeyTransactionCreator;
-using KeyTransactionCreatorPtr = std::unique_ptr<KeyTransactionCreator>;
+struct LockedKey;
+using LockedKeyPtr = std::shared_ptr<LockedKey>;
+struct LockedKeyCreator;
+using LockedKeyCreatorPtr = std::unique_ptr<LockedKeyCreator>;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -77,7 +77,7 @@ friend class FileCache;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 friend class StorageSystemFilesystemCache;
-friend struct KeyTransaction;
+friend struct LockedKey;
 
 public:
     using Key = FileCacheKey;
@@ -124,7 +124,7 @@ public:
         size_t offset_,
         size_t size_,
         const Key & key_,
-        KeyTransactionCreatorPtr key_transaction_creator,
+        LockedKeyCreatorPtr key_transaction_creator,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -213,7 +213,7 @@ public:
     /// 2. Detached file segment can still be hold by some cache users, but it's state became
     /// immutable at the point it was detached, any non-const / stateful method will throw an
     /// exception.
-    void detach(const FileSegmentGuard::Lock &, const KeyTransaction &);
+    void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
 
@@ -260,6 +260,8 @@ public:
 
     void setDownloadedSize(size_t delta);
 
+    size_t getReservedSize() const;
+
 private:
     size_t getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock &) const;
     size_t getCurrentWriteOffsetUnlocked(const FileSegmentGuard::Lock &) const;
@@ -290,13 +292,13 @@ private:
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
     void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
-    KeyTransactionPtr createKeyTransaction(bool assert_exists = true) const;
+    LockedKeyPtr createLockedKey(bool assert_exists = true) const;
 
     /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
     /// Function might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeUnlocked(KeyTransaction & key_transaction, const CacheGuard::Lock &);
+    void completeUnlocked(LockedKey & key_transaction, const CacheGuard::Lock &);
 
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -323,7 +325,7 @@ private:
     /// 2. segment lock
 
     mutable FileSegmentGuard segment_guard;
-    KeyTransactionCreatorPtr key_transaction_creator;
+    LockedKeyCreatorPtr key_transaction_creator;
     std::condition_variable cv;
 
     /// Protects downloaded_size access with actual write into fs.

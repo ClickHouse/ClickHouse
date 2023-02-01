@@ -24,7 +24,7 @@ public:
 
     size_t getElementsCount() const override { return queue.size(); }
 
-    Iterator add(const Key & key, size_t offset, size_t size, KeyTransactionCreatorPtr key_transaction_creator) override;
+    Iterator add(const Key & key, size_t offset, size_t size, LockedKeyCreatorPtr key_transaction_creator) override;
 
     void pop() override;
 

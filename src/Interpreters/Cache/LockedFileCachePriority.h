@@ -19,7 +19,9 @@ public:
 
     size_t getElementsCount() const { return queue.getElementsCount(); }
 
-    IFileCachePriority::Iterator add(const FileCacheKey & key, size_t offset, size_t size, KeyTransactionCreatorPtr key_transaction_creator) { return queue.add(key, offset, size, std::move(key_transaction_creator)); }
+    IFileCachePriority::Iterator add(
+        const FileCacheKey & key, size_t offset, size_t size, LockedKeyCreatorPtr key_transaction_creator)
+        { return queue.add(key, offset, size, std::move(key_transaction_creator)); }
 
     void pop() { queue.pop(); }
 
