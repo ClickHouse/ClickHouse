@@ -14,11 +14,14 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.distinct_in_order = from.optimize_distinct_in_order;
     settings.read_in_order = from.optimize_read_in_order && from.query_plan_read_in_order;
     settings.aggregation_in_order = from.optimize_aggregation_in_order && from.query_plan_aggregation_in_order;
+    settings.join_in_order = from.optimize_join_in_order;
     settings.remove_redundant_sorting = from.query_plan_remove_redundant_sorting;
     settings.aggregate_partitions_independently = from.allow_aggregate_partitions_independently;
     settings.remove_redundant_distinct = from.query_plan_remove_redundant_distinct;
     settings.optimize_projection = from.optimize_use_projections && from.query_plan_optimize_projection;
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
+    settings.max_rows_in_set_to_optimize_join = from.max_rows_in_set_to_optimize_join;
+
     return settings;
 }
 

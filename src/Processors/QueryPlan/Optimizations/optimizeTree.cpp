@@ -118,9 +118,15 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             /// NOTE: frame cannot be safely used after stack was modified.
             auto & frame = stack.back();
 
+            /// insert sorting for join if needed before optimizeReadInOrder to optimize them
+            applyOrderForJoin(*frame.node, nodes, optimization_settings);
+
             if (frame.next_child == 0)
             {
                 has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+
+                if (optimization_settings.read_in_order)
+                    optimizeReadInOrder(*frame.node, nodes);
 
                 if (optimization_settings.read_in_order)
                     optimizeReadInOrder(*frame.node, nodes);

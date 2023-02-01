@@ -1,7 +1,11 @@
 #include <Processors/QueryPlan/JoinStep.h>
+
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -26,6 +30,22 @@ JoinStep::JoinStep(
     {
         .header = JoiningTransform::transformHeader(left_stream_.header, join),
     };
+}
+
+static SortDescription getSortDescription(const Names & key_names)
+{
+    SortDescription sort_description;
+    sort_description.reserve(key_names.size());
+    NameSet used_keys;
+    for (const auto & key_name : key_names)
+    {
+        if (!used_keys.insert(key_name).second)
+            /// Skip duplicate keys
+            continue;
+
+        sort_description.emplace_back(key_name);
+    }
+    return sort_description;
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -76,6 +96,49 @@ void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t id
     {
         input_streams = {input_streams.at(0), new_input_stream_};
     }
+}
+
+FullSortingMergeJoin * JoinStep::getSortingJoin()
+{
+    return dynamic_cast<FullSortingMergeJoin *>(join.get());
+}
+
+std::unique_ptr<SortingStep> JoinStep::createSorting(JoinTableSide join_side)
+{
+    const auto * sorting_join = getSortingJoin();
+    if (!sorting_join)
+        return nullptr;
+
+    SortDescription sort_description = getSortDescription(sorting_join->getKeyNames(join_side));
+
+    const auto & input_stream = input_streams[join_side == JoinTableSide::Left ? 0 : 1];
+    auto sorting_step = std::make_unique<SortingStep>(
+        input_stream,
+        sort_description,
+        /* limit */ 0,
+        /* settings */ sorting_join->getSortSettings(),
+        /* optimize_sorting_by_input_stream_properties */ false);
+
+    const SortDescription & prefix_sort_description = sorting_join->getPrefixSortDesctiption(join_side);
+    if (!prefix_sort_description.empty())
+    {
+        LOG_DEBUG(&Poco::Logger::get("JoinStep"), "Finish sort {} side of JOIN by [{}] with prefix [{}]",
+            join_side, dumpSortDescription(sort_description), dumpSortDescription(prefix_sort_description));
+
+        sorting_step->convertToFinishSorting(prefix_sort_description);
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("JoinStep"), "Sort {} side of JOIN by [{}]",
+            join_side, dumpSortDescription(sort_description));
+    }
+
+    sorting_step->setStepDescription(fmt::format(
+        "Sorting{} for {} side of JOIN",
+        prefix_sort_description.empty() ? "" : " (optimized to use sorted prefix) ",
+        join_side));
+
+    return sorting_step;
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()

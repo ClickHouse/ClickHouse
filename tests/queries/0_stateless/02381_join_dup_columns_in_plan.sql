@@ -8,6 +8,8 @@ USING (key);
 
 SET join_algorithm = 'full_sorting_merge';
 
+SET optimize_read_in_order = 0, query_plan_read_in_order = 0;
+
 SET max_rows_in_set_to_optimize_join = 0;
 
 EXPLAIN actions=0, description=0, header=1
