@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
 
 

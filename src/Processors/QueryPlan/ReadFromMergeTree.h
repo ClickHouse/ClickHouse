@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 
 namespace DB
 {

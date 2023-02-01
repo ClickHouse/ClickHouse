@@ -31,7 +31,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
@@ -219,8 +218,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         virt_column_names,
         min_marks_for_concurrent_read
     );
-
-    pool->initialize();
 
     Pipes pipes;
     const auto & settings = context->getSettingsRef();
@@ -638,8 +635,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             extension,
             read_type == ReadFromMergeTree::ReadType::InOrder ? CoordinationMode::WithOrder : CoordinationMode::ReverseOrder,
             min_marks_for_concurrent_read);
-
-        pool->initialize();
     }
 
 
