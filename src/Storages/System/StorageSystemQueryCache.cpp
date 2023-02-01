@@ -1,15 +1,15 @@
-#include "StorageSystemQueryResultCache.h"
+#include "StorageSystemQueryCache.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
-NamesAndTypesList StorageSystemQueryResultCache::getNamesAndTypes()
+NamesAndTypesList StorageSystemQueryCache::getNamesAndTypes()
 {
     return {
         {"query", std::make_shared<DataTypeString>()},
@@ -21,23 +21,23 @@ NamesAndTypesList StorageSystemQueryResultCache::getNamesAndTypes()
     };
 }
 
-StorageSystemQueryResultCache::StorageSystemQueryResultCache(const StorageID & table_id_)
+StorageSystemQueryCache::StorageSystemQueryCache(const StorageID & table_id_)
     : IStorageSystemOneBlock(table_id_)
 {
 }
 
-void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    auto query_result_cache = context->getQueryResultCache();
+    auto query_cache = context->getQueryCache();
 
-    if (!query_result_cache)
+    if (!query_cache)
         return;
 
     const String & username = context->getUserName();
 
-    std::lock_guard lock(query_result_cache->mutex);
+    std::lock_guard lock(query_cache->mutex);
 
-    for (const auto & [key, result] : query_result_cache->cache)
+    for (const auto & [key, result] : query_cache->cache)
     {
         /// Showing other user's queries is considered a security risk
         if (key.username.has_value() && key.username != username)
