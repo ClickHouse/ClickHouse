@@ -418,14 +418,4 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     updateFromQuery(role, query);
 }
 
-
-String InterpreterGrantQuery::getQueryKind() const
-{
-    auto & query = query_ptr->as<ASTGrantQuery &>();
-    if (query.is_revoke)
-        return "Revoke";
-    else
-        return "Grant";
-}
-
 }

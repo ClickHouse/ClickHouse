@@ -24,8 +24,6 @@ public:
     /// Drop table or database.
     BlockIO execute() override;
 
-    String getQueryKind() const override;
-
     static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync);
 
     bool supportsTransactions() const override;

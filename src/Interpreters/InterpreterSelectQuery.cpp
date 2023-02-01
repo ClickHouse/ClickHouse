@@ -1923,11 +1923,6 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
     return row_policy_filter;
 }
 
-String InterpreterSelectQuery::getQueryKind() const
-{
-    return "Select";
-}
-
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
     for (const auto & row_policy : row_policy_filter->policies)

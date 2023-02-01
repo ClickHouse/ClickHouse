@@ -396,11 +396,6 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-String InterpreterSelectWithUnionQuery::getQueryKind() const
-{
-    return "Select";
-}
-
 void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
     for (const auto & interpreter : nested_interpreters)

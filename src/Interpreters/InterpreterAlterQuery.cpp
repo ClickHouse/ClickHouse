@@ -442,11 +442,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
     return required_access;
 }
 
-String InterpreterAlterQuery::getQueryKind() const
-{
-    return "Alter";
-}
-
 void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
     const auto & alter = ast->as<const ASTAlterQuery &>();
