@@ -11,7 +11,7 @@ namespace DB
     class ASTStorage;
 
 
-#define LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(M) \
+#define LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(M, ALIAS) \
     M(UInt64, materialized_postgresql_max_block_size, 65536, "Number of row collected before flushing data into table.", 0) \
     M(String, materialized_postgresql_tables_list, "", "List of tables for MaterializedPostgreSQL database engine", 0) \
     M(String, materialized_postgresql_schema_list, "", "List of schemas for MaterializedPostgreSQL database engine", 0) \
@@ -23,7 +23,7 @@ namespace DB
         "Consider by default that if there is a dot in tables list 'name.name', " \
         "then the first name is postgres schema and second is postgres table. This setting is needed to allow table names with dots", 0) \
 
-DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, NO_ALIASES)
+DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS)
 
 struct MaterializedPostgreSQLSettings : public BaseSettings<MaterializedPostgreSQLSettingsTraits>
 {
