@@ -36,7 +36,6 @@ namespace DB
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
-static const auto BACKOFF_TRESHOLD = 32000;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
@@ -90,7 +89,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-        , milliseconds_to_wait(RESCHEDULE_MS)
+        , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
         , is_attach(is_attach_)
 {
     const auto & config = getContext()->getConfigRef();
@@ -1021,14 +1020,14 @@ void StorageRabbitMQ::streamingToViewsFunc()
                     if (streamToViews())
                     {
                         /// Reschedule with backoff.
-                        if (milliseconds_to_wait < BACKOFF_TRESHOLD)
-                            milliseconds_to_wait *= 2;
+                        if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
+                            milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
                         stopLoopIfNoReaders();
                         break;
                     }
                     else
                     {
-                        milliseconds_to_wait = RESCHEDULE_MS;
+                        milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
                     }
 
                     auto end_time = std::chrono::steady_clock::now();
