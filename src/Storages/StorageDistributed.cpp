@@ -717,26 +717,6 @@ void StorageDistributed::read(
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
-
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
-    {
-        Planner planner(query_info.query_tree,
-            SelectQueryOptions(processed_stage),
-            query_info.planner_context,
-            PlannerConfiguration{.only_analyze = true});
-        planner.buildQueryPlanIfNeeded();
-
-        auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
-
-        auto rename_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-            expected_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            true /*ignore_constant_values*/);
-        auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
-        rename_step->setStepDescription("Change remote column names to local column names");
-        query_plan.addStep(std::move(rename_step));
-    }
 }
 
 
