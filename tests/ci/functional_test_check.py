@@ -358,7 +358,12 @@ def main():
     if args.post_commit_status == "commit_status":
         if "parallelreplicas" in check_name.lower():
             post_commit_status(
-                gh, pr_info.sha, check_name_with_group, description, "success", report_url
+                gh,
+                pr_info.sha,
+                check_name_with_group,
+                description,
+                "success",
+                report_url,
             )
         else:
             post_commit_status(
