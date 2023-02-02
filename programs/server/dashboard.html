@@ -327,8 +327,7 @@ let password = '';
 
 /// If it is hosted on server, assume that it is the address of ClickHouse.
 if (location.protocol != 'file:') {
-    // host = location.origin;
-    host = 'https://pig7cys591.us-west-2.aws.clickhouse-dev.com';
+    host = location.origin;
     user = 'default';
 }
 
