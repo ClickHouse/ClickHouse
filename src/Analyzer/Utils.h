@@ -19,6 +19,9 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 /// Extract table, table function, query, union from join tree
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
 
+/// Extract left table expression from join tree
+QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
+
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
   *
   * Example: SELECT * FROM t1 INNER JOIN t2 INNER JOIN t3.

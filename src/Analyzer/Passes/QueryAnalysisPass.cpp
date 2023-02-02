@@ -406,6 +406,7 @@ struct TableExpressionData
     std::string table_expression_description;
     std::string database_name;
     std::string table_name;
+    bool should_qualify_columns = true;
     NamesAndTypes column_names_and_types;
     ColumnNameToColumnNodeMap column_name_to_column_node;
     std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
@@ -433,6 +434,7 @@ struct TableExpressionData
         if (!table_name.empty())
             buffer << " table name " << table_name;
 
+        buffer << " should qualify columns " << should_qualify_columns;
         buffer << " columns size " << column_name_to_column_node.size() << '\n';
 
         for (const auto & [column_name, column_node] : column_name_to_column_node)
@@ -1060,7 +1062,7 @@ public:
 
                 scope.expression_join_tree_node = table_expression;
                 validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
-                initializeTableExpressionColumns(scope.expression_join_tree_node, scope);
+                initializeTableExpressionData(scope.expression_join_tree_node, scope);
 
                 if (node_type == QueryTreeNodeType::LIST)
                     resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -1248,7 +1250,7 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
-    void initializeTableExpressionColumns(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
@@ -2704,6 +2706,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
             result_expression = result_expression->clone();
 
         auto qualified_identifier = identifier;
+
         for (size_t i = 0; i < identifier_column_qualifier_parts; ++i)
         {
             auto qualified_identifier_with_removed_part = qualified_identifier;
@@ -2718,19 +2721,22 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
 
             bool can_remove_qualificator = true;
 
-            for (auto & table_expression_to_check_data : scope.table_expression_node_to_data)
+            if (table_expression_data.should_qualify_columns)
             {
-                const auto & table_expression_to_check = table_expression_to_check_data.first;
-                if (table_expression_to_check.get() == table_expression_node.get())
-                    continue;
-
-                IdentifierLookup column_identifier_lookup{qualified_identifier_with_removed_part, IdentifierLookupContext::EXPRESSION};
-                bool can_bind_identifier_to_table_expression = tryBindIdentifierToTableExpression(column_identifier_lookup, table_expression_to_check, scope);
-
-                if (can_bind_identifier_to_table_expression)
+                for (auto & table_expression_to_check_data : scope.table_expression_node_to_data)
                 {
-                    can_remove_qualificator = false;
-                    break;
+                    const auto & table_expression_to_check = table_expression_to_check_data.first;
+                    if (table_expression_to_check.get() == table_expression_node.get())
+                        continue;
+
+                    IdentifierLookup column_identifier_lookup{qualified_identifier_with_removed_part, IdentifierLookupContext::EXPRESSION};
+                    bool can_bind_identifier_to_table_expression = tryBindIdentifierToTableExpression(column_identifier_lookup, table_expression_to_check, scope);
+
+                    if (can_bind_identifier_to_table_expression)
+                    {
+                        can_remove_qualificator = false;
+                        break;
+                    }
                 }
             }
 
@@ -3292,6 +3298,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
 
     size_t additional_column_qualification_parts_size = additional_column_qualification_parts.size();
+    const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
     /** For each matched column node iterate over additional column qualifications and apply them if column needs to be qualified.
       * To check if column needs to be qualified we check if column name can bind to any other table expression in scope or to scope aliases.
@@ -3310,15 +3317,18 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             auto identifier_to_check = Identifier(column_qualified_identifier_parts);
             IdentifierLookup lookup{identifier_to_check, IdentifierLookupContext::EXPRESSION};
 
-            for (const auto & table_expression_data : scope.table_expression_node_to_data)
+            if (table_expression_data.should_qualify_columns)
             {
-                if (table_expression_data.first.get() == table_expression_node.get())
-                    continue;
-
-                if (tryBindIdentifierToTableExpression(lookup, table_expression_data.first, scope))
+                for (const auto & scope_table_expression_data : scope.table_expression_node_to_data)
                 {
-                    need_to_qualify = true;
-                    break;
+                    if (scope_table_expression_data.first.get() == table_expression_node.get())
+                        continue;
+
+                    if (tryBindIdentifierToTableExpression(lookup, scope_table_expression_data.first, scope))
+                    {
+                        need_to_qualify = true;
+                        break;
+                    }
                 }
             }
 
@@ -3405,7 +3415,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         matched_column_nodes.emplace_back(std::make_shared<ColumnNode>(column, table_expression_node));
     }
 
-    qualifyColumnNodesWithProjectionNames(matched_column_nodes, table_expression_node, scope);
+    const auto & qualify_matched_column_nodes_scope = nearest_query_scope ? *nearest_query_scope : scope;
+    qualifyColumnNodesWithProjectionNames(matched_column_nodes, table_expression_node, qualify_matched_column_nodes_scope);
 
     QueryAnalyzer::QueryTreeNodesWithNames matched_column_nodes_with_names;
     matched_column_nodes_with_names.reserve(matched_column_nodes.size());
@@ -5571,8 +5582,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
     }
 }
 
-/// Initialize table expression columns for table expression node
-void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+/// Initialize table expression data for table expression node
+void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     auto * table_node = table_expression_node->as<TableNode>();
     auto * query_node = table_expression_node->as<QueryNode>();
@@ -5699,6 +5710,15 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
     {
         Identifier column_name_identifier(column_name);
         table_expression_data.column_identifier_first_parts.insert(column_name_identifier.at(0));
+    }
+
+    if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
+    {
+        auto left_table_expression = extractLeftTableExpression(scope_query_node->getJoinTree());
+        if (table_expression_node.get() == left_table_expression.get() &&
+            scope.joins_count == 1 &&
+            scope.context->getSettingsRef().single_join_prefer_left_table)
+            table_expression_data.should_qualify_columns = false;
     }
 
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
@@ -6048,7 +6068,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     if (isTableExpressionNodeType(join_tree_node_type))
     {
         validateTableExpressionModifiers(join_tree_node, scope);
-        initializeTableExpressionColumns(join_tree_node, scope);
+        initializeTableExpressionData(join_tree_node, scope);
     }
 
     auto add_table_expression_alias_into_scope = [&](const QueryTreeNodePtr & table_expression_node)
