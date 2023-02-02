@@ -1813,7 +1813,30 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     MutationCommands commands;
     for (auto it = begin; it != end; ++it)
-        commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
+    {
+        bool rename_command = false;
+        if (it->second->entry->isAlterMutation())
+        {
+            const auto & single_mutation_commands = it->second->entry->commands;
+            for (const auto & command : single_mutation_commands)
+            {
+                if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    rename_command = true;
+                    break;
+                }
+            }
+        }
+
+        if (rename_command)
+        {
+            if (commands.empty())
+                commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
+            break;
+        }
+        else
+            commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
+    }
 
     return commands;
 }
