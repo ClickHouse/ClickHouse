@@ -17,6 +17,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowEngineQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -73,6 +74,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
+#include <Interpreters/InterpreterShowEngineQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -166,6 +168,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTShowTablesQuery>())
     {
         return std::make_unique<InterpreterShowTablesQuery>(query, context);
+    }
+    else if (query->as<ASTShowEnginesQuery>())
+    {
+        return std::make_unique<InterpreterShowEnginesQuery>(query, context);
     }
     else if (query->as<ASTUseQuery>())
     {

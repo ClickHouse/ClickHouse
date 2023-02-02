@@ -487,7 +487,7 @@ public:
     }
 
     /// Mutate the table contents
-    virtual void mutate(const MutationCommands &, ContextPtr, bool /*force_wait*/)
+    virtual void mutate(const MutationCommands &, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
     }

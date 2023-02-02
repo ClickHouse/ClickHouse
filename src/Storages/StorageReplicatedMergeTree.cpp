@@ -1880,8 +1880,11 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry, /* fetch_entry_znode= */ {});
-    part_check_thread.cancelRemovedPartsCheck(drop_range_info);
+    {
+        auto pause_checking_parts = part_check_thread.pausePartsCheck();
+        queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry, /* fetch_entry_znode= */ {});
+        part_check_thread.cancelRemovedPartsCheck(drop_range_info);
+    }
 
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
@@ -1957,6 +1960,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     if (replace)
     {
         getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
+        auto pause_checking_parts = part_check_thread.pausePartsCheck();
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry, /* fetch_entry_znode= */ {});
         part_check_thread.cancelRemovedPartsCheck(drop_range);
     }
@@ -6272,7 +6276,7 @@ void StorageReplicatedMergeTree::fetchPartition(
 }
 
 
-void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, bool force_wait)
+void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     /// Overview of the mutation algorithm.
     ///
@@ -6386,8 +6390,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
             throw Coordination::Exception("Unable to create a mutation znode", rc);
     }
 
-    const size_t mutations_sync = force_wait ? 2 : query_context->getSettingsRef().mutations_sync;
-    waitMutation(mutation_entry.znode_name, mutations_sync);
+    waitMutation(mutation_entry.znode_name, query_context->getSettingsRef().mutations_sync);
 }
 
 void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t mutations_sync) const
@@ -7781,6 +7784,9 @@ StorageReplicatedMergeTree::LogEntryPtr StorageReplicatedMergeTree::dropAllParts
 void StorageReplicatedMergeTree::enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds)
 {
     MergeTreePartInfo covering_drop_range;
+    /// NOTE This check is just an optimization, it's not reliable for two reasons:
+    /// (1) drop entry could be removed concurrently and (2) it does not take REPLACE_RANGE into account.
+    /// See also ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck
     if (queue.hasDropRange(MergeTreePartInfo::fromPartName(part_name, format_version), &covering_drop_range))
     {
         LOG_WARNING(log, "Do not enqueue part {} for check because it's covered by DROP_RANGE {} and going to be removed",
