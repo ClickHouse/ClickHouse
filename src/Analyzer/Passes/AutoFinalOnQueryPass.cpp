@@ -8,7 +8,6 @@
 namespace DB
 {
 
-
 namespace
 {
     class AutoFinalOnQueryPassVisitor : public InDepthQueryTreeVisitorWithContext<AutoFinalOnQueryPassVisitor>
@@ -30,7 +29,7 @@ namespace
         }
 
     private:
-        bool autoFinalOnQuery(TableNode & table_node, StoragePtr storage, ContextPtr context)
+        static bool autoFinalOnQuery(TableNode & table_node, StoragePtr storage, ContextPtr context)
         {
             // query.tables() is required because not all queries have tables in it, it could be a function.
             bool is_auto_final_setting_on = context->getSettingsRef().final;
