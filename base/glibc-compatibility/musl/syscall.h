@@ -14,6 +14,9 @@ long __syscall(syscall_arg_t, ...);
 __attribute__((visibility("hidden")))
 void *__vdsosym(const char *, const char *);
 
+__attribute__((visibility("hidden")))
+long __syscall_cp(syscall_arg_t, syscall_arg_t, syscall_arg_t, syscall_arg_t, syscall_arg_t, syscall_arg_t, syscall_arg_t);
+
 #define syscall(...) __syscall_ret(__syscall(__VA_ARGS__))
 
 #define socketcall(...) __syscall_ret(__socketcall(__VA_ARGS__))
@@ -26,11 +29,6 @@ void *__vdsosym(const char *, const char *);
 #define __scc(X) ((long) (X))
 typedef long syscall_arg_t;
 #endif
-
-__attribute__((visibility("hidden")))
-long __syscall_ret(unsigned long),
-	__syscall_cp(syscall_arg_t, syscall_arg_t, syscall_arg_t, syscall_arg_t,
-	             syscall_arg_t, syscall_arg_t, syscall_arg_t);
 
 #define __syscall1(n,a) __syscall1(n,__scc(a))
 #define __syscall2(n,a,b) __syscall2(n,__scc(a),__scc(b))
