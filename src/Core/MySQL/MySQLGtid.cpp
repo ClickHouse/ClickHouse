@@ -60,7 +60,7 @@ void GTIDSets::parse(String gtid_format)
                     break;
                 }
                 default:
-                    throw Exception("GTIDParse: Invalid GTID interval: " + server_ids[k], ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GTIDParse: Invalid GTID interval: {}", server_ids[k]);
             }
             set.intervals.emplace_back(val);
         }
@@ -81,9 +81,8 @@ void GTIDSets::update(const GTID & other)
                 /// Already Contained.
                 if (other.seq_no >= current.start && other.seq_no < current.end)
                 {
-                    throw Exception(
-                        "GTIDSets updates other: " + std::to_string(other.seq_no) + " invalid successor to " + std::to_string(current.end),
-                        ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "GTIDSets updates other: {} invalid successor to {}",
+                        std::to_string(other.seq_no), std::to_string(current.end));
                 }
 
                 /// Try to shrink Sequence interval.

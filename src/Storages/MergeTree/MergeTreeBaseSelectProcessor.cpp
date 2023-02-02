@@ -406,9 +406,9 @@ IMergeTreeSelectAlgorithm::BlockAndProgress IMergeTreeSelectAlgorithm::readFromP
 
     const auto & sample_block = task->range_reader.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
-        throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
-                        "Have " + toString(sample_block.columns()) + " in sample block "
-                        "and " + toString(read_result.columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns got from MergeTreeRangeReader. "
+                        "Have {} in sample block and {} columns in list",
+                        toString(sample_block.columns()), toString(read_result.columns.size()));
 
     /// TODO: check columns have the same types as in header.
 
@@ -545,8 +545,7 @@ static void injectPartConstVirtualColumns(
     if (!virtual_columns.empty())
     {
         if (unlikely(rows && !task))
-            throw Exception("Cannot insert virtual columns to non-empty chunk without specified task.",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert virtual columns to non-empty chunk without specified task.");
 
         const IMergeTreeDataPart * part = nullptr;
         if (rows)
@@ -627,8 +626,8 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
             auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
-                throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                    row_level_column.type->getName());
             }
 
             block.erase(prewhere_info->row_level_column_name);
@@ -640,8 +639,8 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
         {
-            throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
+                prewhere_column.type->getName());
         }
 
         if (prewhere_info->remove_prewhere_column)
@@ -655,7 +654,8 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
                 prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
             else
                 throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter", prewhere_column.type->getName());
+                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                                "Illegal type {} of column for filter", prewhere_column.type->getName());
         }
     }
 

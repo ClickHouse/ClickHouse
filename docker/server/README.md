@@ -58,7 +58,7 @@ echo 'SELECT version()' | curl 'http://localhost:18123/' --data-binary @-
 22.6.3.35
 ```
 
-or by allowing the container to use [host ports directly](https://docs.docker.com/network/host/) using `--network=host` (also allows archiving better network performance):
+or by allowing the container to use [host ports directly](https://docs.docker.com/network/host/) using `--network=host` (also allows achieving better network performance):
 
 ```bash
 docker run -d --network=host --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
