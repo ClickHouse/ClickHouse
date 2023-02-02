@@ -964,20 +964,50 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
     if (replicate_offsets.empty())
         return cloneEmpty();
 
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))    return replicateNumber<UInt8>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))   return replicateNumber<UInt16>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))   return replicateNumber<UInt32>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))   return replicateNumber<UInt64>(replicate_offsets);
-    if (typeid_cast<const ColumnInt8 *>(data.get()))     return replicateNumber<Int8>(replicate_offsets);
-    if (typeid_cast<const ColumnInt16 *>(data.get()))    return replicateNumber<Int16>(replicate_offsets);
-    if (typeid_cast<const ColumnInt32 *>(data.get()))    return replicateNumber<Int32>(replicate_offsets);
-    if (typeid_cast<const ColumnInt64 *>(data.get()))    return replicateNumber<Int64>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))  return replicateNumber<Float32>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))  return replicateNumber<Float64>(replicate_offsets);
-    if (typeid_cast<const ColumnString *>(data.get()))   return replicateString(replicate_offsets);
-    if (typeid_cast<const ColumnConst *>(data.get()))    return replicateConst(replicate_offsets);
-    if (typeid_cast<const ColumnNullable *>(data.get())) return replicateNullable(replicate_offsets);
-    if (typeid_cast<const ColumnTuple *>(data.get()))    return replicateTuple(replicate_offsets);
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))
+        return replicateNumber<UInt8>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))
+        return replicateNumber<UInt16>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))
+        return replicateNumber<UInt32>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))
+        return replicateNumber<UInt64>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt128 *>(data.get()))
+        return replicateNumber<UInt128>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt256 *>(data.get()))
+        return replicateNumber<UInt256>(replicate_offsets);
+    if (typeid_cast<const ColumnInt8 *>(data.get()))
+        return replicateNumber<Int8>(replicate_offsets);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))
+        return replicateNumber<Int16>(replicate_offsets);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))
+        return replicateNumber<Int32>(replicate_offsets);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))
+        return replicateNumber<Int64>(replicate_offsets);
+    if (typeid_cast<const ColumnInt128 *>(data.get()))
+        return replicateNumber<Int128>(replicate_offsets);
+    if (typeid_cast<const ColumnInt256 *>(data.get()))
+        return replicateNumber<Int256>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))
+        return replicateNumber<Float32>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))
+        return replicateNumber<Float64>(replicate_offsets);
+    if (typeid_cast<const ColumnDecimal<Decimal32> *>(data.get()))
+        return replicateNumber<Decimal32>(replicate_offsets);
+    if (typeid_cast<const ColumnDecimal<Decimal64> *>(data.get()))
+        return replicateNumber<Decimal64>(replicate_offsets);
+    if (typeid_cast<const ColumnDecimal<Decimal128> *>(data.get()))
+        return replicateNumber<Decimal128>(replicate_offsets);
+    if (typeid_cast<const ColumnDecimal<Decimal256> *>(data.get()))
+        return replicateNumber<Decimal256>(replicate_offsets);
+    if (typeid_cast<const ColumnString *>(data.get()))
+        return replicateString(replicate_offsets);
+    if (typeid_cast<const ColumnConst *>(data.get()))
+        return replicateConst(replicate_offsets);
+    if (typeid_cast<const ColumnNullable *>(data.get()))
+        return replicateNullable(replicate_offsets);
+    if (typeid_cast<const ColumnTuple *>(data.get()))
+        return replicateTuple(replicate_offsets);
     return replicateGeneric(replicate_offsets);
 }
 
@@ -985,6 +1015,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 template <typename T>
 ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
 {
+    using ColVecType = ColumnVectorOrDecimal<T>;
+
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
@@ -996,10 +1028,10 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
 
     ColumnArray & res_arr = typeid_cast<ColumnArray &>(*res);
 
-    const typename ColumnVector<T>::Container & src_data = typeid_cast<const ColumnVector<T> &>(*data).getData();
+    const typename ColVecType::Container & src_data = typeid_cast<const ColVecType &>(*data).getData();
     const Offsets & src_offsets = getOffsets();
 
-    typename ColumnVector<T>::Container & res_data = typeid_cast<ColumnVector<T> &>(res_arr.getData()).getData();
+    typename ColVecType::Container & res_data = typeid_cast<ColVecType &>(res_arr.getData()).getData();
     Offsets & res_offsets = res_arr.getOffsets();
 
     res_data.reserve(data->size() / col_size * replicate_offsets.back());
