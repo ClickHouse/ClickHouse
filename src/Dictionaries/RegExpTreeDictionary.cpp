@@ -126,7 +126,7 @@ std::vector<StringPiece> createStringPieces(const String & value, int num_captur
                 }
                 int ref_num = value[i+1]-'0';
                 if (ref_num >= num_captures)
-                    LOG_DEBUG(logger,
+                    LOG_TRACE(logger,
                         "Reference Id {} in set string is invalid, the regexp {} only has {} capturing groups",
                         ref_num, regex, num_captures-1);
                 result.push_back(StringPiece(ref_num));
@@ -420,7 +420,7 @@ namespace
 {
     struct MatchContext
     {
-        std::unordered_set<UInt64> matched_idx_set;
+        std::set<UInt64> matched_idx_set;
         std::vector<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
 
         const std::vector<UInt64> & regexp_ids ;
@@ -520,9 +520,10 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
             if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
             {
                 match_result.insertNodeID(node_ptr->id);
-                break;
             }
         }
+
+        LOG_TRACE(logger, "match string is {}, first matched id is {}, match number is {}", std::string(reinterpret_cast<const char *>(keys_data.data()) + offset, length), match_result.matched_idx_set.empty() ? -1 : *match_result.matched_idx_set.begin(), match_result.matched_idx_set.size());
 
         match_result.sort();
 
