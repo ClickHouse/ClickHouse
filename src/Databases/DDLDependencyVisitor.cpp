@@ -360,7 +360,7 @@ namespace
                 return {};
 
             auto table = tryGetStringFromArgument(function, table_arg_idx);
-            if (!table)
+            if (!table || table->empty())
                 return {};
 
             QualifiedTableName qualified_name;
