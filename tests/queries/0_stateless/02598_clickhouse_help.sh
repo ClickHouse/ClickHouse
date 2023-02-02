@@ -7,9 +7,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 # We have to use fixed terminal width. It may break other tests results formatting.
+# In CI there is no tty and we just ignore failed stty calls.
+# Set 80 to have same as default size as in notty.
+backup_stty_size=$(stty size | awk '{print $2}' ||:) 2>/dev/null
+stty columns 80 2>/dev/null ||:
 
-backup_stty_size=$(stty size | awk '{print $2}')
-stty columns 120
 echo "================BINARY=========================="
 
 echo -e "\nclickhouse --help\n"
@@ -93,4 +95,4 @@ ${CLICKHOUSE_BINARY}-su --help
 echo -e "\nclickhouse-disks\n"
 ${CLICKHOUSE_BINARY}-disks --help | perl -0777 -pe 's/Main options:.*\n\n//igs'
 
-stty columns $backup_stty_size
+stty columns $backup_stty_size 2>/dev/null ||:
