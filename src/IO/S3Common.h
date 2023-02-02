@@ -14,13 +14,13 @@
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 
-#include <IO/S3/S3Client.h>
+#include <IO/S3/Client.h>
 #include <IO/S3/URI.h>
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
 
-namespace Aws::S3 { class S3Client; }
+namespace Aws::S3 { class Client; }
 
 namespace DB
 {
@@ -71,7 +71,7 @@ public:
 
     static ClientFactory & instance();
 
-    std::unique_ptr<S3::S3Client> create(
+    std::unique_ptr<S3::Client> create(
         const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,

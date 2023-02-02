@@ -12,7 +12,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
 
 #include <QueryPipeline/Pipe.h>
 

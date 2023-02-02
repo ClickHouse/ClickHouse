@@ -1,4 +1,4 @@
-#include <IO/S3/S3Client.h>
+#include <IO/S3/Client.h>
 
 #if USE_AWS_S3
 
@@ -28,14 +28,14 @@ namespace ErrorCodes
 namespace S3
 {
 
-S3Client::RetryStrategy::RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_)
+Client::RetryStrategy::RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_)
     : wrapped_strategy(std::move(wrapped_strategy_))
 {
     if (!wrapped_strategy)
         wrapped_strategy = Aws::Client::InitRetryStrategy();
 }
 
-bool S3Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
+bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
@@ -43,37 +43,37 @@ bool S3Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Clien
     return wrapped_strategy->ShouldRetry(error, attemptedRetries);
 }
 
-long S3Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
+long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
     return wrapped_strategy->CalculateDelayBeforeNextRetry(error, attemptedRetries);
 }
 
-long S3Client::RetryStrategy::GetMaxAttempts() const
+long Client::RetryStrategy::GetMaxAttempts() const
 {
     return wrapped_strategy->GetMaxAttempts();
 }
 
-void S3Client::RetryStrategy::GetSendToken()
+void Client::RetryStrategy::GetSendToken()
 {
     return wrapped_strategy->GetSendToken();
 }
 
-bool S3Client::RetryStrategy::HasSendToken()
+bool Client::RetryStrategy::HasSendToken()
 {
     return wrapped_strategy->HasSendToken();
 }
 
-void S3Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome)
+void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome)
 {
     return wrapped_strategy->RequestBookkeeping(httpResponseOutcome);
 }
 
-void S3Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError)
+void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError)
 {
     return wrapped_strategy->RequestBookkeeping(httpResponseOutcome, lastError);
 }
 
-bool S3Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
+bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
     if (detect_region)
         return false;
@@ -96,7 +96,7 @@ bool S3Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::
     return false;
 }
 
-void S3Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
+void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
     auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
@@ -104,7 +104,7 @@ void S3Client::insertRegionOverride(const std::string & bucket, const std::strin
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
 
-Model::HeadObjectOutcome S3Client::HeadObject(const HeadObjectRequest & request) const
+Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
 
@@ -178,70 +178,70 @@ Model::HeadObjectOutcome S3Client::HeadObject(const HeadObjectRequest & request)
     return Aws::S3::S3Client::HeadObject(request);
 }
 
-Model::ListObjectsV2Outcome S3Client::ListObjectsV2(const ListObjectsV2Request & request) const
+Model::ListObjectsV2Outcome Client::ListObjectsV2(const ListObjectsV2Request & request) const
 {
     return doRequest(request, [this](const Model::ListObjectsV2Request & req) { return Aws::S3::S3Client::ListObjectsV2(req); });
 }
 
-Model::ListObjectsOutcome S3Client::ListObjects(const ListObjectsRequest & request) const
+Model::ListObjectsOutcome Client::ListObjects(const ListObjectsRequest & request) const
 {
     return doRequest(request, [this](const Model::ListObjectsRequest & req) { return Aws::S3::S3Client::ListObjects(req); });
 }
 
-Model::GetObjectOutcome S3Client::GetObject(const GetObjectRequest & request) const
+Model::GetObjectOutcome Client::GetObject(const GetObjectRequest & request) const
 {
     return doRequest(request, [this](const Model::GetObjectRequest & req) { return Aws::S3::S3Client::GetObject(req); });
 }
 
-Model::AbortMultipartUploadOutcome S3Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
+Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
 {
     return doRequest(
         request, [this](const Model::AbortMultipartUploadRequest & req) { return Aws::S3::S3Client::AbortMultipartUpload(req); });
 }
 
-Model::CreateMultipartUploadOutcome S3Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
+Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
 {
     return doRequest(
         request, [this](const Model::CreateMultipartUploadRequest & req) { return Aws::S3::S3Client::CreateMultipartUpload(req); });
 }
 
-Model::CompleteMultipartUploadOutcome S3Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
+Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
 {
     return doRequest(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return Aws::S3::S3Client::CompleteMultipartUpload(req); });
 }
 
-Model::CopyObjectOutcome S3Client::CopyObject(const CopyObjectRequest & request) const
+Model::CopyObjectOutcome Client::CopyObject(const CopyObjectRequest & request) const
 {
     return doRequest(request, [this](const Model::CopyObjectRequest & req) { return Aws::S3::S3Client::CopyObject(req); });
 }
 
-Model::PutObjectOutcome S3Client::PutObject(const PutObjectRequest & request) const
+Model::PutObjectOutcome Client::PutObject(const PutObjectRequest & request) const
 {
     return doRequest(request, [this](const Model::PutObjectRequest & req) { return Aws::S3::S3Client::PutObject(req); });
 }
 
-Model::UploadPartOutcome S3Client::UploadPart(const UploadPartRequest & request) const
+Model::UploadPartOutcome Client::UploadPart(const UploadPartRequest & request) const
 {
     return doRequest(request, [this](const Model::UploadPartRequest & req) { return Aws::S3::S3Client::UploadPart(req); });
 }
 
-Model::UploadPartCopyOutcome S3Client::UploadPartCopy(const UploadPartCopyRequest & request) const
+Model::UploadPartCopyOutcome Client::UploadPartCopy(const UploadPartCopyRequest & request) const
 {
     return doRequest(request, [this](const Model::UploadPartCopyRequest & req) { return Aws::S3::S3Client::UploadPartCopy(req); });
 }
 
-Model::DeleteObjectOutcome S3Client::DeleteObject(const DeleteObjectRequest & request) const
+Model::DeleteObjectOutcome Client::DeleteObject(const DeleteObjectRequest & request) const
 {
     return doRequest(request, [this](const Model::DeleteObjectRequest & req) { return Aws::S3::S3Client::DeleteObject(req); });
 }
 
-Model::DeleteObjectsOutcome S3Client::DeleteObjects(const DeleteObjectsRequest & request) const
+Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
 {
     return doRequest(request, [this](const Model::DeleteObjectsRequest & req) { return Aws::S3::S3Client::DeleteObjects(req); });
 }
 
-std::string S3Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
+std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
     if (auto it = cache->region_for_bucket_cache.find(bucket); it != cache->region_for_bucket_cache.end())
@@ -283,13 +283,13 @@ std::string S3Client::getRegionForBucket(const std::string & bucket, bool force_
     return it->second;
 }
 
-std::optional<S3::URI> S3Client::getURIFromError(const Aws::S3::S3Error & error) const
+std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) const
 {
     auto endpoint = GetErrorMarshaller()->ExtractEndpoint(error);
     if (endpoint.empty())
         return std::nullopt;
 
-    auto & s3_client = const_cast<S3Client &>(*this);
+    auto & s3_client = const_cast<Client &>(*this);
     const auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(s3_client.accessEndpointProvider().get());
     auto resolved_endpoint = endpoint_provider->ResolveEndpoint({});
 
@@ -303,7 +303,7 @@ std::optional<S3::URI> S3Client::getURIFromError(const Aws::S3::S3Error & error)
 }
 
 // Do a list request because head requests don't have body in response
-std::optional<Aws::S3::S3Error> S3Client::updateURIForBucketForHead(const std::string & bucket) const
+std::optional<Aws::S3::S3Error> Client::updateURIForBucketForHead(const std::string & bucket) const
 {
     ListObjectsV2Request req;
     req.SetBucket(bucket);
@@ -314,7 +314,7 @@ std::optional<Aws::S3::S3Error> S3Client::updateURIForBucketForHead(const std::s
     return result.GetError();
 }
 
-std::optional<S3::URI> S3Client::getURIForBucket(const std::string & bucket) const
+std::optional<S3::URI> Client::getURIForBucket(const std::string & bucket) const
 {
     std::lock_guard lock(cache->uri_cache_mutex);
     if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
@@ -323,7 +323,7 @@ std::optional<S3::URI> S3Client::getURIForBucket(const std::string & bucket) con
     return std::nullopt;
 }
 
-void S3Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const
+void Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) const
 {
     std::lock_guard lock(cache->uri_cache_mutex);
     if (auto it = cache->uri_for_bucket_cache.find(bucket); it != cache->uri_for_bucket_cache.end())
@@ -341,7 +341,20 @@ void S3Client::updateURIForBucket(const std::string & bucket, S3::URI new_uri) c
     cache->uri_for_bucket_cache.emplace(bucket, std::move(new_uri));
 }
 
-void S3ClientCacheRegistry::registerClient(const std::shared_ptr<S3ClientCache> & client_cache)
+
+void ClientCache::clearCache()
+{
+    {
+        std::lock_guard lock(region_cache_mutex);
+        region_for_bucket_cache.clear();
+    }
+    {
+        std::lock_guard lock(uri_cache_mutex);
+        uri_for_bucket_cache.clear();
+    }
+}
+
+void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);
     auto [it, inserted] = client_caches.emplace(client_cache.get(), client_cache);
@@ -349,7 +362,7 @@ void S3ClientCacheRegistry::registerClient(const std::shared_ptr<S3ClientCache> 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Same S3 client registered twice");
 }
 
-void S3ClientCacheRegistry::unregisterClient(S3ClientCache * client)
+void ClientCacheRegistry::unregisterClient(ClientCache * client)
 {
     std::lock_guard lock(clients_mutex);
     auto erased = client_caches.erase(client);
@@ -357,7 +370,7 @@ void S3ClientCacheRegistry::unregisterClient(S3ClientCache * client)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't unregister S3 client, either it was already unregistered or not registered at all");
 }
 
-void S3ClientCacheRegistry::clearCacheForAll()
+void ClientCacheRegistry::clearCacheForAll()
 {
     std::lock_guard lock(clients_mutex);
 
@@ -370,7 +383,7 @@ void S3ClientCacheRegistry::clearCacheForAll()
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("S3ClientCacheRegistry"), "Deleting leftover S3 client cache");
+            LOG_INFO(&Poco::Logger::get("ClientCacheRegistry"), "Deleting leftover S3 client cache");
             it = client_caches.erase(it);
         }
     }

@@ -52,7 +52,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -134,7 +133,7 @@ class StorageS3Source::DisclosedGlobIterator::Impl : WithContext
 {
 public:
     Impl(
-        const S3::S3Client & client_,
+        const S3::Client & client_,
         const S3::URI & globbed_uri_,
         ASTPtr & query_,
         const Block & virtual_header_,
@@ -143,7 +142,7 @@ public:
         Strings * read_keys_,
         const S3Settings::RequestSettings & request_settings_)
         : WithContext(context_)
-        , client(S3::S3Client::createClient(client_))
+        , client(S3::Client::create(client_))
         , globbed_uri(globbed_uri_)
         , query(query_)
         , virtual_header(virtual_header_)
@@ -362,7 +361,7 @@ private:
     KeysWithInfo buffer;
     KeysWithInfo::iterator buffer_iter;
 
-    std::unique_ptr<S3::S3Client> client;
+    std::unique_ptr<S3::Client> client;
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;
@@ -384,7 +383,7 @@ private:
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
-    const S3::S3Client & client_,
+    const S3::Client & client_,
     const S3::URI & globbed_uri_,
     ASTPtr query,
     const Block & virtual_header,
@@ -410,7 +409,7 @@ class StorageS3Source::KeysIterator::Impl : WithContext
 {
 public:
     explicit Impl(
-        const S3::S3Client & client_,
+        const S3::Client & client_,
         const std::string & version_id_,
         const std::vector<String> & keys_,
         const String & bucket_,
@@ -505,7 +504,7 @@ private:
 };
 
 StorageS3Source::KeysIterator::KeysIterator(
-    const S3::S3Client & client_,
+    const S3::Client & client_,
     const std::string & version_id_,
     const std::vector<String> & keys_,
     const String & bucket_,
@@ -550,7 +549,7 @@ StorageS3Source::StorageS3Source(
     UInt64 max_block_size_,
     const S3Settings::RequestSettings & request_settings_,
     String compression_hint_,
-    const std::shared_ptr<const S3::S3Client> & client_,
+    const std::shared_ptr<const S3::Client> & client_,
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,

@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_REDIRECTS;
 }
 
 namespace S3
@@ -30,31 +31,21 @@ namespace S3
 
 namespace Model = Aws::S3::Model;
 
-struct S3ClientCache
+struct ClientCache
 {
-    S3ClientCache() = default;
+    ClientCache() = default;
 
-    S3ClientCache(const S3ClientCache & other)
+    ClientCache(const ClientCache & other)
         : region_for_bucket_cache(other.region_for_bucket_cache)
         , uri_for_bucket_cache(other.uri_for_bucket_cache)
     {}
 
-    S3ClientCache(S3ClientCache && other) = delete;
+    ClientCache(ClientCache && other) = delete;
 
-    S3ClientCache & operator=(const S3ClientCache &) = delete;
-    S3ClientCache & operator=(S3ClientCache &&) = delete;
+    ClientCache & operator=(const ClientCache &) = delete;
+    ClientCache & operator=(ClientCache &&) = delete;
 
-    void clearCache()
-    {
-        {
-            std::lock_guard lock(region_cache_mutex);
-            region_for_bucket_cache.clear();
-        }
-        {
-            std::lock_guard lock(uri_cache_mutex);
-            uri_for_bucket_cache.clear();
-        }
-    }
+    void clearCache();
 
     std::mutex region_cache_mutex;
     std::unordered_map<std::string, std::string> region_for_bucket_cache;
@@ -63,50 +54,50 @@ struct S3ClientCache
     std::unordered_map<std::string, URI> uri_for_bucket_cache;
 };
 
-class S3ClientCacheRegistry
+class ClientCacheRegistry
 {
 public:
-    static S3ClientCacheRegistry & instance()
+    static ClientCacheRegistry & instance()
     {
-        static S3ClientCacheRegistry registry;
+        static ClientCacheRegistry registry;
         return registry;
     }
 
-    void registerClient(const std::shared_ptr<S3ClientCache> & client_cache);
-    void unregisterClient(S3ClientCache * client);
+    void registerClient(const std::shared_ptr<ClientCache> & client_cache);
+    void unregisterClient(ClientCache * client);
     void clearCacheForAll();
 private:
-    S3ClientCacheRegistry() = default;
+    ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<S3ClientCache *, std::weak_ptr<S3ClientCache>> client_caches;
+    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
 };
 
-/// S3Client that improves the client from the AWS SDK
+/// Client that improves the client from the AWS SDK
 /// - inject region and URI into requests so they are rerouted to the correct destination if needed
 /// - automatically detect endpoint and regions for each bucket and cache them
 ///
-/// For this client to work correctly both S3Client::RetryStrategy and Requests defined in <IO/S3/Requests.h> should be used.
-class S3Client : public Aws::S3::S3Client
+/// For this client to work correctly both Client::RetryStrategy and Requests defined in <IO/S3/Requests.h> should be used.
+class Client : public Aws::S3::S3Client
 {
 public:
     template <typename... Args>
-    static std::unique_ptr<S3Client> createClient(Args &&... args)
+    static std::unique_ptr<Client> create(Args &&... args)
     {
         (verifyArgument(args), ...);
-        return std::unique_ptr<S3Client>(new S3Client(std::forward<Args>(args)...));
+        return std::unique_ptr<Client>(new Client(std::forward<Args>(args)...));
     }
 
-    S3Client & operator=(const S3Client &) = delete;
+    Client & operator=(const Client &) = delete;
 
-    S3Client(S3Client && other) = delete;
-    S3Client & operator= (S3Client &&) = delete;
+    Client(Client && other) = delete;
+    Client & operator=(Client &&) = delete;
 
-    ~S3Client() override
+    ~Client() override
     {
         try
         {
-            S3ClientCacheRegistry::instance().unregisterClient(cache.get());
+            ClientCacheRegistry::instance().unregisterClient(cache.get());
         }
         catch (...)
         {
@@ -155,8 +146,9 @@ public:
 
 private:
     template <typename... Args>
-    explicit S3Client(Args &&... args)
+    explicit Client(size_t max_redirects_, Args &&... args)
         : Aws::S3::S3Client(std::forward<Args>(args)...)
+        , max_redirects(max_redirects_)
         , log(&Poco::Logger::get("S3Client"))
     {
         auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
@@ -165,18 +157,19 @@ private:
         endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
         detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
 
-        cache = std::make_shared<S3ClientCache>();
-        S3ClientCacheRegistry::instance().registerClient(cache);
+        cache = std::make_shared<ClientCache>();
+        ClientCacheRegistry::instance().registerClient(cache);
     }
 
-    S3Client(const S3Client & other)
+    Client(const Client & other)
         : Aws::S3::S3Client(other)
         , explicit_region(other.explicit_region)
         , detect_region(other.detect_region)
+        , max_redirects(other.max_redirects)
         , log(&Poco::Logger::get("S3Client"))
     {
-        cache = std::make_shared<S3ClientCache>(*other.cache);
-        S3ClientCacheRegistry::instance().registerClient(cache);
+        cache = std::make_shared<ClientCache>(*other.cache);
+        ClientCacheRegistry::instance().registerClient(cache);
     }
 
     /// Make regular functions private
@@ -225,7 +218,7 @@ private:
             }
         );
 
-        while (true)
+        for (size_t attempt = 0; attempt < max_redirects; ++attempt)
         {
             auto result = request_fn(request);
             if (result.IsSuccess())
@@ -269,6 +262,8 @@ private:
             found_new_endpoint = true;
             request.overrideURI(*new_uri);
         }
+
+        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
     }
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
@@ -297,7 +292,9 @@ private:
     std::string explicit_region;
     mutable bool detect_region = true;
 
-    mutable std::shared_ptr<S3ClientCache> cache;
+    mutable std::shared_ptr<ClientCache> cache;
+
+    const size_t max_redirects;
 
     Poco::Logger * log;
 };

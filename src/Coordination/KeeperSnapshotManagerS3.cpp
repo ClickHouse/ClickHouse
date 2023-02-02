@@ -17,7 +17,6 @@
 #include <Common/Macros.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
 
 #include <filesystem>
@@ -29,7 +28,7 @@ namespace DB
 
 struct KeeperSnapshotManagerS3::S3Configuration
 {
-    S3Configuration(S3::URI uri_, S3::AuthSettings auth_settings_, std::shared_ptr<const S3::S3Client> client_)
+    S3Configuration(S3::URI uri_, S3::AuthSettings auth_settings_, std::shared_ptr<const S3::Client> client_)
         : uri(std::move(uri_))
         , auth_settings(std::move(auth_settings_))
         , client(std::move(client_))
@@ -37,7 +36,7 @@ struct KeeperSnapshotManagerS3::S3Configuration
 
     S3::URI uri;
     S3::AuthSettings auth_settings;
-    std::shared_ptr<const S3::S3Client> client;
+    std::shared_ptr<const S3::Client> client;
 };
 
 KeeperSnapshotManagerS3::KeeperSnapshotManagerS3()

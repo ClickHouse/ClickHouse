@@ -14,7 +14,6 @@
 #include <IO/S3/getObjectInfo.h>
 #include <Interpreters/Context.h>
 
-#include <aws/s3/S3Client.h>
 #include <aws/s3/model/StorageClass.h>
 
 #include <utility>
@@ -68,7 +67,7 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<const S3::S3Client> client_ptr_,
+    std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::RequestSettings & request_settings_,

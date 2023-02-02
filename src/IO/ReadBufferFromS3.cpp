@@ -7,8 +7,6 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
 
-#include <aws/s3/S3Client.h>
-
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
@@ -44,7 +42,7 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<const S3::S3Client> client_ptr_,
+    std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const String & version_id_,

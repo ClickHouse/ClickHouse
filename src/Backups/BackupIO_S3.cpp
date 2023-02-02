@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/copyS3File.h>
-#include <IO/S3/S3Client.h>
+#include <IO/S3/Client.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 namespace
 {
-    std::shared_ptr<S3::S3Client>
+    std::shared_ptr<S3::Client>
     makeS3Client(const S3::URI & s3_uri, const String & access_key_id, const String & secret_access_key, const ContextPtr & context)
     {
         auto settings = context->getStorageS3Settings().getSettings(s3_uri.uri.toString());
@@ -70,7 +70,7 @@ namespace
                 context->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
     }
 
-    Aws::Vector<Aws::S3::Model::Object> listObjects(S3::S3Client & client, const S3::URI & s3_uri, const String & file_name)
+    Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
     {
         S3::ListObjectsRequest request;
         request.SetBucket(s3_uri.bucket);

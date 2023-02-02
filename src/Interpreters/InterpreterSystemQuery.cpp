@@ -59,7 +59,7 @@
 #include <unistd.h>
 
 #if USE_AWS_S3
-#include <IO/S3/S3Client.h>
+#include <IO/S3/Client.h>
 #endif
 
 #include "config.h"
@@ -345,7 +345,7 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_AWS_S3
         case Type::DROP_S3_CLIENT_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
-            S3::S3ClientCacheRegistry::instance().clearCacheForAll();
+            S3::ClientCacheRegistry::instance().clearCacheForAll();
             break;
 #endif
 

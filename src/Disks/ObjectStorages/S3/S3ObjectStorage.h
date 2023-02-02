@@ -45,7 +45,7 @@ private:
 
     S3ObjectStorage(
         const char * logger_name,
-        std::unique_ptr<S3::S3Client> && client_,
+        std::unique_ptr<S3::Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         String version_id_,
         const S3Capabilities & s3_capabilities_,
@@ -67,7 +67,7 @@ private:
 
 public:
     template <class ...Args>
-    explicit S3ObjectStorage(std::unique_ptr<S3::S3Client> && client_, Args && ...args)
+    explicit S3ObjectStorage(std::unique_ptr<S3::Client> && client_, Args && ...args)
         : S3ObjectStorage("S3ObjectStorage", std::move(client_), std::forward<Args>(args)...)
     {
     }
@@ -162,14 +162,14 @@ public:
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
-    void setNewClient(std::unique_ptr<S3::S3Client> && client_);
+    void setNewClient(std::unique_ptr<S3::Client> && client_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
     std::string bucket;
 
-    MultiVersion<S3::S3Client> client;
+    MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 

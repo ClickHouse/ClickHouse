@@ -23,7 +23,7 @@
 
 namespace Aws::S3
 {
-class S3Client;
+class Client;
 }
 
 namespace DB
@@ -42,7 +42,7 @@ class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     WriteBufferFromS3(
-        std::shared_ptr<const S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const S3Settings::RequestSettings & request_settings_,
@@ -85,7 +85,7 @@ private:
     const String key;
     const S3Settings::RequestSettings request_settings;
     const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
-    const std::shared_ptr<const S3::S3Client> client_ptr;
+    const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
 
     size_t upload_part_size = 0;

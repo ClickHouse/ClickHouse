@@ -26,8 +26,6 @@ namespace DB::S3
 
 namespace Model = Aws::S3::Model;
 
-class S3Client;
-
 template <typename BaseRequest>
 class ExtendedRequest : public BaseRequest
 {

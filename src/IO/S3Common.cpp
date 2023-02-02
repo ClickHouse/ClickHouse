@@ -28,7 +28,7 @@
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <IO/S3/S3Client.h>
+#    include <IO/S3/Client.h>
 #    include <IO/S3/URI.h>
 #    include <IO/S3/Requests.h>
 #    include <Common/logger_useful.h>
@@ -732,7 +732,7 @@ namespace S3
         return ret;
     }
 
-    std::unique_ptr<S3::S3Client> ClientFactory::create( // NOLINT
+    std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         const PocoHTTPClientConfiguration & cfg_,
         bool is_virtual_hosted_style,
         const String & access_key_id,
@@ -747,7 +747,7 @@ namespace S3
 
         if (!server_side_encryption_customer_key_base64.empty())
         {
-            /// See S3Client::GeneratePresignedUrlWithSSEC().
+            /// See Client::GeneratePresignedUrlWithSSEC().
 
             headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
                 Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
@@ -770,8 +770,9 @@ namespace S3
                 use_environment_credentials,
                 use_insecure_imds_request);
 
-        client_configuration.retryStrategy = std::make_shared<S3Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
-        return S3Client::createClient(
+        client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
+        return Client::create(
+            client_configuration.s3_max_redirects,
             std::move(credentials_provider),
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,

@@ -32,7 +32,6 @@
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
 
 #include <memory>
 #include <string>

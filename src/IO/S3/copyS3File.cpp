@@ -46,7 +46,7 @@ namespace
     {
     public:
         UploadHelper(
-            const std::shared_ptr<const S3::S3Client> & client_ptr_,
+            const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
@@ -69,7 +69,7 @@ namespace
         virtual ~UploadHelper() = default;
 
     protected:
-        std::shared_ptr<const S3::S3Client> client_ptr;
+        std::shared_ptr<const S3::Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
         const S3Settings::RequestSettings & request_settings;
@@ -396,7 +396,7 @@ namespace
             const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer_,
             size_t offset_,
             size_t size_,
-            const std::shared_ptr<const S3::S3Client> & client_ptr_,
+            const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3Settings::RequestSettings & request_settings_,
@@ -556,7 +556,7 @@ namespace
     {
     public:
         CopyFileHelper(
-            const std::shared_ptr<const S3::S3Client> & client_ptr_,
+            const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & src_bucket_,
             const String & src_key_,
             size_t src_offset_,
@@ -719,7 +719,7 @@ void copyDataToS3File(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    const std::shared_ptr<const S3::S3Client> & dest_s3_client,
+    const std::shared_ptr<const S3::Client> & dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
@@ -733,7 +733,7 @@ void copyDataToS3File(
 
 
 void copyS3File(
-    const std::shared_ptr<const S3::S3Client> & s3_client,
+    const std::shared_ptr<const S3::Client> & s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,

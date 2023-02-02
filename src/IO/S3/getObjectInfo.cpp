@@ -1,11 +1,6 @@
 #include <IO/S3/getObjectInfo.h>
 
 #if USE_AWS_S3
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/GetObjectAttributesRequest.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/HeadObjectRequest.h>
-
 
 namespace ErrorCodes
 {
@@ -30,7 +25,7 @@ namespace DB::S3
 namespace
 {
     Aws::S3::Model::HeadObjectOutcome headObject(
-        const S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
+        const S3::Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (for_disk_s3)
@@ -49,7 +44,7 @@ namespace
     /// Performs a request to get the size and last modification time of an object.
     /// The function performs either HeadObject or GetObjectAttributes request depending on the endpoint.
     std::pair<std::optional<ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
-        const S3::S3Client & client, const String & bucket, const String & key, const String & version_id,
+        const S3::Client & client, const String & bucket, const String & key, const String & version_id,
         const S3Settings::RequestSettings & /*request_settings*/, bool with_metadata, bool for_disk_s3)
     {
         auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
@@ -75,7 +70,7 @@ bool isNotFoundError(Aws::S3::S3Errors error)
 }
 
 ObjectInfo getObjectInfo(
-    const S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id,
@@ -99,7 +94,7 @@ ObjectInfo getObjectInfo(
 }
 
 size_t getObjectSize(
-    const S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id,
@@ -111,7 +106,7 @@ size_t getObjectSize(
 }
 
 bool objectExists(
-    const S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id,
@@ -131,7 +126,7 @@ bool objectExists(
 }
 
 void checkObjectExists(
-    const S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id,
