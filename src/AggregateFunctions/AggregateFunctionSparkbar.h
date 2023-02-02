@@ -18,8 +18,6 @@
 namespace DB
 {
 
-constexpr size_t NUM_BAR_LEVELS = 8;
-
 template<typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
@@ -121,8 +119,7 @@ private:
     const X begin_x = std::numeric_limits<X>::min();
     const X end_x = std::numeric_limits<X>::max();
 
-    template <class T>
-    size_t updateFrame(ColumnString::Chars & frame, const T value) const
+    size_t updateFrame(ColumnString::Chars & frame, Y value) const
     {
         static constexpr std::array<std::string_view, 9> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
         const auto & bar = (isNaN(value) || value < 1 || 8 < value) ? bars[0] : bars[static_cast<UInt8>(value)];
@@ -137,72 +134,78 @@ private:
      */
     void render(ColumnString & to_column, const AggregateFunctionSparkbarData<X, Y> & data) const
     {
-        size_t sz = 0;
         auto & values = to_column.getChars();
         auto & offsets = to_column.getOffsets();
 
         if (data.points.empty())
         {
             values.push_back('\0');
-            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            return;
         }
 
-        X from_x;
-        X to_x;
-
-        if (is_specified_range_x)
-        {
-            from_x = begin_x;
-            to_x = end_x;
-        }
-        else
-        {
-            from_x = data.min_x;
-            to_x = data.max_x;
-        }
+        auto from_x = is_specified_range_x ? begin_x : data.min_x;
+        auto to_x = is_specified_range_x ? end_x : data.max_x;
 
         if (from_x >= to_x)
         {
-            sz += updateFrame(values, 1);
+            size_t sz = updateFrame(values, 1);
             values.push_back('\0');
             offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
             return;
         }
 
         PaddedPODArray<Y> histogram(width, 0);
-
-        if (data.points.size() < width)
-            histogram.resize(data.points.size());
+        PaddedPODArray<UInt64> fhistogram(width, 0);
 
         for (const auto & point : data.points)
         {
             if (point.getKey() < from_x || to_x < point.getKey())
                 continue;
 
-            size_t index = (point.getKey() - from_x) * (histogram.size() - 1) / (to_x - from_x);
+            size_t index = (point.getKey() - from_x) * histogram.size() / (to_x - from_x + 1);
 
             /// In case of overflow, just saturate
             if (std::numeric_limits<Y>::max() - histogram[index] < point.getMapped())
                 histogram[index] = std::numeric_limits<Y>::max();
             else
                 histogram[index] += point.getMapped();
+
+            fhistogram[index] += 1;
+        }
+
+        for (size_t i = 0; i < histogram.size(); ++i)
+        {
+            if (fhistogram[i] > 0)
+                histogram[i] /= fhistogram[i];
         }
 
         Y y_min = std::numeric_limits<Y>::max();
         Y y_max = std::numeric_limits<Y>::min();
+        bool has_valid_y = false;
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
                 continue;
+            has_valid_y = true;
             y_min = std::min(y_min, y);
             y_max = std::max(y_max, y);
         }
 
-        if (y_min >= y_max)
-            y_min = 0;
+        if (!has_valid_y)
+        {
+            values.push_back('\0');
+            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            return;
+        }
 
-        if (y_min == y_max)
-            y_max = y_min + 1;
+        if (y_min >= y_max)
+        {
+            size_t sz = updateFrame(values, 1);
+            values.push_back('\0');
+            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+            return;
+        }
 
         for (auto & y : histogram)
         {
@@ -212,6 +215,7 @@ private:
                 y = (y - y_min) * 7 / (y_max - y_min) + 1;
         }
 
+        size_t sz = 0;
         for (const auto & y : histogram)
             sz += updateFrame(values, y);
 
