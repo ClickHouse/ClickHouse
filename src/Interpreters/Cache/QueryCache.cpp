@@ -1,4 +1,4 @@
-#include "Interpreters/Cache/QueryResultCache.h"
+#include "Interpreters/Cache/QueryCache.h"
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -16,8 +16,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event QueryResultCacheHits;
-    extern const Event QueryResultCacheMisses;
+    extern const Event QueryCacheHits;
+    extern const Event QueryCacheMisses;
 };
 
 namespace DB
@@ -64,7 +64,7 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 namespace
 {
 
-class RemoveQueryResultCacheSettingsMatcher
+class RemoveQueryCacheSettingsMatcher
 {
 public:
     struct Data {};
@@ -77,65 +77,65 @@ public:
         {
             chassert(!set_clause->is_standalone);
 
-            auto is_query_result_cache_related_setting = [](const auto & change)
+            auto is_query_cache_related_setting = [](const auto & change)
             {
-                return change.name == "allow_experimental_query_result_cache"
-                    || change.name.starts_with("query_result_cache")
-                    || change.name.ends_with("query_result_cache");
+                return change.name == "allow_experimental_query_cache"
+                    || change.name.starts_with("query_cache")
+                    || change.name.ends_with("query_cache");
             };
 
-            std::erase_if(set_clause->changes, is_query_result_cache_related_setting);
+            std::erase_if(set_clause->changes, is_query_cache_related_setting);
         }
     }
 
     /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
-    /// E.g. SELECT 1 SETTINGS use_query_result_cache = true
+    /// E.g. SELECT 1 SETTINGS use_query_cache = true
     /// and  SELECT 1;
     /// currently don't match.
 };
 
-using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResultCacheSettingsMatcher, true>;
+using RemoveQueryCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryCacheSettingsMatcher, true>;
 
 /// Consider
-///   (1) SET use_query_result_cache = true;
-///       SELECT expensiveComputation(...) SETTINGS max_threads = 64, query_result_cache_ttl = 300;
-///       SET use_query_result_cache = false;
+///   (1) SET use_query_cache = true;
+///       SELECT expensiveComputation(...) SETTINGS max_threads = 64, query_cache_ttl = 300;
+///       SET use_query_cache = false;
 /// and
-///   (2) SELECT expensiveComputation(...) SETTINGS max_threads = 64, use_query_result_cache = true;
+///   (2) SELECT expensiveComputation(...) SETTINGS max_threads = 64, use_query_cache = true;
 ///
-/// The SELECT queries in (1) and (2) are basically the same and the user expects that the second invocation is served from the query result
+/// The SELECT queries in (1) and (2) are basically the same and the user expects that the second invocation is served from the query
 /// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
-/// more natural if settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves
+/// more natural if settings related to the query cache are erased from the AST key. Note that at this point the settings themselves
 /// have been parsed already, they are not lost or discarded.
-ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
+ASTPtr removeQueryCacheSettings(ASTPtr ast)
 {
     ASTPtr transformed_ast = ast->clone();
 
-    RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
+    RemoveQueryCacheSettingsMatcher::Data visitor_data;
+    RemoveQueryCacheSettingsVisitor(visitor_data).visit(transformed_ast);
 
     return transformed_ast;
 }
 
 }
 
-QueryResultCache::Key::Key(
+QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_, const std::optional<String> & username_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_)
-    : ast(removeQueryResultCacheSettings(ast_))
+    : ast(removeQueryCacheSettings(ast_))
     , header(header_)
     , username(username_)
     , expires_at(expires_at_)
 {
 }
 
-bool QueryResultCache::Key::operator==(const Key & other) const
+bool QueryCache::Key::operator==(const Key & other) const
 {
     return ast->getTreeHash() == other.ast->getTreeHash();
 }
 
-String QueryResultCache::Key::queryStringFromAst() const
+String QueryCache::Key::queryStringFromAst() const
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings format_settings(buf, /*one_line*/ true);
@@ -144,7 +144,7 @@ String QueryResultCache::Key::queryStringFromAst() const
     return buf.str();
 }
 
-size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
+size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
     SipHash hash;
     hash.update(key.ast->getTreeHash());
@@ -152,7 +152,7 @@ size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
-size_t QueryResultCache::QueryResult::sizeInBytes() const
+size_t QueryCache::QueryResult::sizeInBytes() const
 {
     size_t res = 0;
     for (const auto & chunk : *chunks)
@@ -163,14 +163,14 @@ size_t QueryResultCache::QueryResult::sizeInBytes() const
 namespace
 {
 
-auto is_stale = [](const QueryResultCache::Key & key)
+auto is_stale = [](const QueryCache::Key & key)
 {
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
 }
 
-QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
+QueryCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
     size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
     size_t max_cache_entries_,
     size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
@@ -189,7 +189,7 @@ QueryResultCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key 
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
 }
 
-void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
+void QueryCache::Writer::buffer(Chunk && partial_query_result)
 {
     if (skip_insert)
         return;
@@ -208,7 +208,7 @@ void QueryResultCache::Writer::buffer(Chunk && partial_query_result)
     }
 }
 
-void QueryResultCache::Writer::finalizeWrite()
+void QueryCache::Writer::finalizeWrite()
 {
     if (skip_insert)
         return;
@@ -239,7 +239,7 @@ void QueryResultCache::Writer::finalizeWrite()
             }
             else
                 ++it;
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Removed {} stale entries", removed_items);
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Removed {} stale entries", removed_items);
     }
 
     /// Insert or replace if enough space
@@ -250,23 +250,23 @@ void QueryResultCache::Writer::finalizeWrite()
             cache_size_in_bytes -= it->second.sizeInBytes(); // key replacement
 
         cache[key] = std::move(query_result);
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stored result of query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stored result of query {}", key.queryStringFromAst());
     }
 }
 
-QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_, const std::lock_guard<std::mutex> &)
+QueryCache::Reader::Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_, const std::lock_guard<std::mutex> &)
 {
     auto it = cache_.find(key);
 
     if (it == cache_.end())
     {
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "No entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "No entry found for query {}", key.queryStringFromAst());
         return;
     }
 
     if (it->first.username.has_value() && it->first.username != key.username)
     {
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
         return;
     }
 
@@ -274,33 +274,33 @@ QueryResultCache::Reader::Reader(const Cache & cache_, const Key & key, size_t &
     {
         cache_size_in_bytes_ -= it->second.sizeInBytes();
         const_cast<Cache &>(cache_).erase(it);
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
         return;
     }
 
     pipe = Pipe(std::make_shared<SourceFromChunks>(it->first.header, it->second.chunks));
-    LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Entry found for query {}", key.queryStringFromAst());
+    LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
 }
 
-bool QueryResultCache::Reader::hasCacheEntryForKey() const
+bool QueryCache::Reader::hasCacheEntryForKey() const
 {
     bool res = !pipe.empty();
 
     if (res)
-        ProfileEvents::increment(ProfileEvents::QueryResultCacheHits);
+        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
     else
-        ProfileEvents::increment(ProfileEvents::QueryResultCacheMisses);
+        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
 
     return res;
 }
 
-Pipe && QueryResultCache::Reader::getPipe()
+Pipe && QueryCache::Reader::getPipe()
 {
     chassert(!pipe.empty()); // cf. hasCacheEntryForKey()
     return std::move(pipe);
 }
 
-QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_)
+QueryCache::QueryCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_)
     : max_cache_size_in_bytes(max_cache_size_in_bytes_)
     , max_cache_entries(max_cache_entries_)
     , max_cache_entry_size_in_bytes(max_cache_entry_size_in_bytes_)
@@ -308,19 +308,19 @@ QueryResultCache::QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_c
 {
 }
 
-QueryResultCache::Reader QueryResultCache::createReader(const Key & key)
+QueryCache::Reader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
     return Reader(cache, key, cache_size_in_bytes, lock);
 }
 
-QueryResultCache::Writer QueryResultCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime)
+QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime)
 {
     std::lock_guard lock(mutex);
     return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_cache_entries, max_cache_entry_size_in_bytes, max_cache_entry_size_in_rows, min_query_runtime);
 }
 
-void QueryResultCache::reset()
+void QueryCache::reset()
 {
     std::lock_guard lock(mutex);
     cache.clear();
@@ -328,7 +328,7 @@ void QueryResultCache::reset()
     cache_size_in_bytes = 0;
 }
 
-size_t QueryResultCache::recordQueryRun(const Key & key)
+size_t QueryCache::recordQueryRun(const Key & key)
 {
     static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
 
