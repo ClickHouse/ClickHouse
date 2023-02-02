@@ -377,10 +377,11 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
+    instance.wait_for_log_line("Started streaming to 2 attached views")
+
     messages = []
     for i in range(50):
-        messages.append(json.dumps({"key": i, "value": i}))
-    for message in messages:
+        message = json.dumps({"key": i, "value": i})
         channel.basic_publish(exchange="mv", routing_key="", body=message)
 
     time_limit_sec = 60
@@ -397,8 +398,10 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
 
     while time.monotonic() < deadline:
         result = instance.query("SELECT * FROM test.view2 ORDER BY key")
+        print(f"Result: {result}")
         if rabbitmq_check_result(result):
             break
+        time.sleep(1)
 
     rabbitmq_check_result(result, True)
     connection.close()
@@ -479,6 +482,8 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     )
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
+
+    instance.wait_for_log_line("Started streaming to 2 attached views")
 
     messages = []
     for i in range(50):
