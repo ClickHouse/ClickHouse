@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace

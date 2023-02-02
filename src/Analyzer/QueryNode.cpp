@@ -23,6 +23,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
     : IQueryTreeNode(children_size)
     , context(std::move(context_))
