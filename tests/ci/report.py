@@ -211,7 +211,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
             name = line[0]
             status = line[1]
             time = None
-            if len(line) >= 3 and line[2]:
+            if len(line) >= 3 and line[2] and line[2] != "\\N":
                 # The value can be emtpy, but when it's not,
                 # it's the time spent on the test
                 try:

@@ -40,7 +40,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -236,7 +236,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
-    mutable QueryResultCachePtr query_result_cache;         /// Cache of query results.
+    mutable QueryCachePtr query_cache;         /// Cache of query results.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -2041,27 +2041,27 @@ void Context::dropIndexMarkCache() const
         shared->index_mark_cache->reset();
 }
 
-void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records)
+void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records)
 {
     auto lock = getLock();
 
-    if (shared->query_result_cache)
-        throw Exception("Query result cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+    if (shared->query_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
-    shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_records);
+    shared->query_cache = std::make_shared<QueryCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_records);
 }
 
-QueryResultCachePtr Context::getQueryResultCache() const
+QueryCachePtr Context::getQueryCache() const
 {
     auto lock = getLock();
-    return shared->query_result_cache;
+    return shared->query_cache;
 }
 
-void Context::dropQueryResultCache() const
+void Context::dropQueryCache() const
 {
     auto lock = getLock();
-    if (shared->query_result_cache)
-        shared->query_result_cache->reset();
+    if (shared->query_cache)
+        shared->query_cache->reset();
 }
 
 void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
@@ -2104,8 +2104,8 @@ void Context::dropCaches() const
     if (shared->index_mark_cache)
         shared->index_mark_cache->reset();
 
-    if (shared->query_result_cache)
-        shared->query_result_cache->reset();
+    if (shared->query_cache)
+        shared->query_cache->reset();
 
     if (shared->mmap_cache)
         shared->mmap_cache->reset();
@@ -3437,7 +3437,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id)
     {
         if (exception)
-            exception->emplace("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
         return storage_id;
     }
 
@@ -3454,8 +3454,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (in_specified_database)
             return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
         if (exception)
-            exception->emplace("External and temporary tables have no database, but " +
-                        storage_id.database_name + " is specified", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "External and temporary tables have no database, but {} is specified",
+                               storage_id.database_name));
         return StorageID::createEmpty();
     }
 
@@ -3498,7 +3498,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (current_database.empty())
         {
             if (exception)
-                exception->emplace("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
@@ -3507,7 +3507,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     }
 
     if (exception)
-        exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
+        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot resolve database name for table {}", storage_id.getNameForLogs()));
     return StorageID::createEmpty();
 }
 
