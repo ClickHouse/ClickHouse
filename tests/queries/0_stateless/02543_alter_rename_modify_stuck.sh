@@ -32,7 +32,7 @@ while [[ $counter -lt $retries ]]; do
 done
 
 
-$CLICKHOUSE_CLIENT --query="ALTER TABLE table_to_rename UPDATE v2 = 77 WHERE 1 = 1" &
+$CLICKHOUSE_CLIENT --query="ALTER TABLE table_to_rename UPDATE v2 = 77 WHERE 1 = 1 SETTINGS mutations_sync = 2" &
 
 counter=0 retries=60
 
