@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
@@ -549,19 +550,48 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 
 ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))      return filterNumber<UInt8>(filt, result_size_hint);
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))     return filterNumber<UInt16>(filt, result_size_hint);
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))     return filterNumber<UInt32>(filt, result_size_hint);
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))     return filterNumber<UInt64>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt8 *>(data.get()))       return filterNumber<Int8>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt16 *>(data.get()))      return filterNumber<Int16>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt32 *>(data.get()))      return filterNumber<Int32>(filt, result_size_hint);
-    if (typeid_cast<const ColumnInt64 *>(data.get()))      return filterNumber<Int64>(filt, result_size_hint);
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))    return filterNumber<Float32>(filt, result_size_hint);
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))    return filterNumber<Float64>(filt, result_size_hint);
-    if (typeid_cast<const ColumnString *>(data.get()))     return filterString(filt, result_size_hint);
-    if (typeid_cast<const ColumnTuple *>(data.get()))      return filterTuple(filt, result_size_hint);
-    if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))
+        return filterNumber<UInt8>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))
+        return filterNumber<UInt16>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))
+        return filterNumber<UInt32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))
+        return filterNumber<UInt64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt128 *>(data.get()))
+        return filterNumber<UInt128>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt256 *>(data.get()))
+        return filterNumber<UInt256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt8 *>(data.get()))
+        return filterNumber<Int8>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))
+        return filterNumber<Int16>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))
+        return filterNumber<Int32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))
+        return filterNumber<Int64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt128 *>(data.get()))
+        return filterNumber<Int128>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt256 *>(data.get()))
+        return filterNumber<Int256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))
+        return filterNumber<Float32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))
+        return filterNumber<Float64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnDecimal<Decimal32> *>(data.get()))
+        return filterNumber<Decimal32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnDecimal<Decimal64> *>(data.get()))
+        return filterNumber<Decimal64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnDecimal<Decimal128> *>(data.get()))
+        return filterNumber<Decimal128>(filt, result_size_hint);
+    if (typeid_cast<const ColumnDecimal<Decimal256> *>(data.get()))
+        return filterNumber<Decimal256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnString *>(data.get()))
+        return filterString(filt, result_size_hint);
+    if (typeid_cast<const ColumnTuple *>(data.get()))
+        return filterTuple(filt, result_size_hint);
+    if (typeid_cast<const ColumnNullable *>(data.get()))
+        return filterNullable(filt, result_size_hint);
     return filterGeneric(filt, result_size_hint);
 }
 
@@ -597,15 +627,17 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
+    using ColVecType = ColumnVectorOrDecimal<T>;
+
     if (getOffsets().empty())
         return ColumnArray::create(data);
 
     auto res = ColumnArray::create(data->cloneEmpty());
 
-    auto & res_elems = assert_cast<ColumnVector<T> &>(res->getData()).getData();
+    auto & res_elems = assert_cast<ColVecType &>(res->getData()).getData();
     Offsets & res_offsets = res->getOffsets();
 
-    filterArraysImpl<T>(assert_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
+    filterArraysImpl<T>(assert_cast<const ColVecType &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
     return res;
 }
 
