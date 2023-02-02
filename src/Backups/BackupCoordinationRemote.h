@@ -5,6 +5,8 @@
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
 
+/// We try to store data to zookeeper several times due to possible version conflicts.
+constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
 
 namespace DB
 {

@@ -8,6 +8,10 @@ namespace DB
 
 namespace BackupCoordinationStage
 {
+    /// This stage is set after concurrency check so ensure we dont start other backup/restores
+    /// when concurrent backup/restores are not allowed
+    constexpr const char * SCHEDULED_TO_START = "scheduled to start";
+
     /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
     constexpr const char * GATHERING_METADATA = "gathering metadata";
 
