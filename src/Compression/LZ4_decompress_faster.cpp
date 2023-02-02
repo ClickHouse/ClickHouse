@@ -272,7 +272,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__) || defined (__riscv) || defined(__s390x__)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__s390x__) || defined (__riscv)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
