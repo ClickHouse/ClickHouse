@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 -- Test 00576_nested_and_prewhere, but with in-memory parts.
 DROP TABLE IF EXISTS nested;
 
