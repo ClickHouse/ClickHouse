@@ -35,3 +35,10 @@ SELECT sparkbar(5,toDate('2020-01-01'),toDate('2020-01-10'))(event_date,cnt) FRO
 DROP TABLE IF EXISTS spark_bar_test;
 
 WITH number DIV 50 AS k, number % 50 AS value SELECT k, sparkbar(50, 0, 99)(number, value) FROM numbers(100) GROUP BY k ORDER BY k;
+
+-- OOM guard
+DROP TABLE IF EXISTS spark_bar_oom;
+CREATE TABLE spark_bar_oom (x UInt64, y UInt8) Engine=MergeTree ORDER BY tuple();
+INSERT INTO spark_bar_oom VALUES (18446744073709551615,255),(0,0),(0,0),(4036797895307271799,163);
+SELECT sparkbar(9)(x,y) FROM spark_bar_oom SETTINGS max_memory_usage = 100000000; -- { serverError 241 }
+DROP TABLE IF EXISTS spark_bar_oom;

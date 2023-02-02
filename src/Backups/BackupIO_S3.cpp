@@ -8,7 +8,7 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <IO/S3/copyDataToS3.h>
+#include <IO/S3/copyS3File.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -79,7 +79,7 @@ namespace
         request.SetMaxKeys(1);
         auto outcome = client.ListObjects(request);
         if (!outcome.IsSuccess())
-            throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
         return outcome.GetResult().GetContents();
     }
 
@@ -167,16 +167,16 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
         auto object_storage = src_disk->getObjectStorage();
         std::string src_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / dest_file_name;
-        copyFileS3ToS3(client, src_bucket, objects[0].absolute_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
-                       threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+        copyS3File(client, src_bucket, objects[0].absolute_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
+                   threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
     }
 }
 
 void BackupWriterS3::copyDataToFile(
     const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name)
 {
-    copyDataToS3(create_read_buffer, offset, size, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, request_settings, {},
-                 threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+    copyDataToS3File(create_read_buffer, offset, size, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, request_settings, {},
+                     threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
 }
 
 BackupWriterS3::~BackupWriterS3() = default;
@@ -233,7 +233,7 @@ void BackupWriterS3::removeFile(const String & file_name)
     request.SetKey(fs::path(s3_uri.key) / file_name);
     auto outcome = client->DeleteObject(request);
     if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
-        throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
 
 void BackupWriterS3::removeFiles(const Strings & file_names)
@@ -291,7 +291,7 @@ void BackupWriterS3::removeFilesBatch(const Strings & file_names)
 
         auto outcome = client->DeleteObjects(request);
         if (!outcome.IsSuccess() && !isNotFoundError(outcome.GetError().GetErrorType()))
-            throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+            throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
     }
 }
 

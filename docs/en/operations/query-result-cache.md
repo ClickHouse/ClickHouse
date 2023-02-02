@@ -6,14 +6,14 @@ sidebar_label: Query Result Cache [experimental]
 
 # Query Result Cache [experimental]
 
-The query result cache allows to compute SELECT queries just once and to serve further executions of the same query directly from the cache.
-Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
+The query result cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the
+cache. Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
 
 ## Background, Design and Limitations
 
 Query result caches can generally be viewed as transactionally consistent or inconsistent.
 
-- In transactionally consistent caches, the database invalidates (discards) cached query results if the result of the SELECT query changes
+- In transactionally consistent caches, the database invalidates (discards) cached query results if the result of the `SELECT` query changes
   or potentially changes. In ClickHouse, operations which change the data include inserts/updates/deletes in/of/from tables or collapsing
   merges. Transactionally consistent caching is especially suitable for OLTP databases, for example
   [MySQL](https://dev.mysql.com/doc/refman/5.6/en/query-cache.html) (which removed query result cache after v8.0) and
@@ -22,7 +22,7 @@ Query result caches can generally be viewed as transactionally consistent or inc
   assigned a validity period after which they expire (e.g. 1 minute) and that the underlying data changes only little during this period.
   This approach is overall more suitable for OLAP databases. As an example where transactionally inconsistent caching is sufficient,
   consider an hourly sales report in a reporting tool which is simultaneously accessed by multiple users. Sales data changes typically
-  slowly enough that the database only needs to compute the report once (represented by the first SELECT query). Further queries can be
+  slowly enough that the database only needs to compute the report once (represented by the first `SELECT` query). Further queries can be
   served directly from the query result cache. In this example, a reasonable validity period could be 30 min.
 
 Transactionally inconsistent caching is traditionally provided by client tools or proxy packages interacting with the database. As a result,
@@ -36,32 +36,45 @@ processing) where wrong results are returned.
 
 ## Configuration Settings and Usage
 
-Parameter [enable_experimental_query_result_cache](settings/settings.md#enable-experimental-query-result-cache) controls whether query
-results are inserted into / retrieved from the cache for the current query or session. For example, the first execution of query
+As long as the result cache is experimental it must be activated using the following configuration setting:
 
-``` sql
-SELECT some_expensive_calculation(column_1, column_2)
-FROM table
-SETTINGS enable_experimental_query_result_cache = true;
+```sql
+SET allow_experimental_query_result_cache = true;
 ```
 
-stores the query result into the query result cache. Subsequent executions of the same query (also with parameter
-`enable_experimental_query_result_cache = true`) will read the computed result directly from the cache.
+Afterwards, setting [use_query_result_cache](settings/settings.md#use-query-result-cache) can be used to control whether a specific query or
+all queries of the current session should utilize the query result cache. For example, the first execution of query
 
-Sometimes, it is desirable to use the query result cache only passively, i.e. to allow reading from it but not writing into it (if the cache
-result is not stored yet). Parameter [enable_experimental_query_result_cache_passive_usage](settings/settings.md#enable-experimental-query-result-cache-passive-usage)
-instead of 'enable_experimental_query_result_cache' can be used for that.
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_result_cache = true;
+```
 
-For maximum control, it is generally recommended to provide settings "enable_experimental_query_result_cache" or
-"enable_experimental_query_result_cache_passive_usage" only with specific queries. It is also possible to enable caching at user or profile
-level but one should keep in mind that all SELECT queries may return a cached results, including monitoring or debugging queries to system
-tables.
+will store the query result in the query result cache. Subsequent executions of the same query (also with parameter `use_query_result_cache
+= true`) will read the computed result from the cache and return it immediately.
+
+The way the cache is utilized can be configured in more detail using settings [enable_writes_to_query_result_cache](settings/settings.md#enable-writes-to-query-result-cache)
+and [enable_reads_from_query_result_cache](settings/settings.md#enable-reads-from-query-result-cache) (both `true` by default). The first
+settings controls whether query results are stored in the cache, whereas the second parameter determines if the database should try to
+retrieve query results from the cache. For example, the following query will use the cache only passively, i.e. attempt to read from it but
+not store its result in it:
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_result_cache = true, enable_writes_to_query_result_cache = false;
+```
+
+For maximum control, it is generally recommended to provide settings "use_query_result_cache", "enable_writes_to_query_result_cache" and
+"enable_reads_from_query_result_cache" only with specific queries. It is also possible to enable caching at user or profile level (e.g. via
+`SET use_query_result_cache = true`) but one should keep in mind that all `SELECT` queries including monitoring or debugging queries to
+system tables may return cached results then.
 
 The query result cache can be cleared using statement `SYSTEM DROP QUERY RESULT CACHE`. The content of the query result cache is displayed
-in system table `SYSTEM.QUERY_RESULT_CACHE`. The number of query result cache hits and misses are shown as events "QueryResultCacheHits" and
-"QueryResultCacheMisses" in system table `SYSTEM.EVENTS`. Both counters are only updated for SELECT queries which run with settings
-"enable_experimental_query_result_cache = true" or "enable_experimental_query_result_cache_passive_usage = true". Other queries do not
-affect the cache miss counter.
+in system table `SYSTEM.QUERY_RESULT_CACHE`. The number of query result cache hits and misses are shown as events "QueryCacheHits" and
+"QueryCacheMisses" in system table `SYSTEM.EVENTS`. Both counters are only updated for `SELECT` queries which run with setting
+"use_query_result_cache = true". Other queries do not affect the cache miss counter.
 
 The query result cache exists once per ClickHouse server process. However, cache results are by default not shared between users. This can
 be changed (see below) but doing so is not recommended for security reasons.
@@ -81,7 +94,7 @@ To define how long a query must run at least such that its result can be cached,
 ``` sql
 SELECT some_expensive_calculation(column_1, column_2)
 FROM table
-SETTINGS enable_experimental_query_result_cache = true, query_result_cache_min_query_duration = 5000;
+SETTINGS use_query_result_cache = true, query_result_cache_min_query_duration = 5000;
 ```
 
 is only cached if the query runs longer than 5 seconds. It is also possible to specify how often a query needs to run until its result is
@@ -96,4 +109,4 @@ setting [query_result_cache_store_results_of_queries_with_nondeterministic_funct
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting
-[query_result_cache_share_between_users]{settings/settings.md#query-result-cache-share-between-users}.
+[query_result_cache_share_between_users](settings/settings.md#query-result-cache-share-between-users).

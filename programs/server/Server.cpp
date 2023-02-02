@@ -416,7 +416,7 @@ void Server::createServer(
         }
         else
         {
-            throw Exception{message, ErrorCodes::NETWORK_ERROR};
+            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
         }
     }
 }
@@ -946,7 +946,7 @@ try
         if (effective_user_id == 0)
         {
             message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
         }
         else
         {
@@ -1517,13 +1517,13 @@ try
         global_context->setMMappedFileCache(mmap_cache_size);
 
     /// A cache for query results.
-    size_t query_result_cache_size = config().getUInt64("query_result_cache.size", 1_GiB);
-    if (query_result_cache_size)
-        global_context->setQueryResultCache(
-            query_result_cache_size,
-            config().getUInt64("query_result_cache.max_entries", 1024),
-            config().getUInt64("query_result_cache.max_entry_size", 1_MiB),
-            config().getUInt64("query_result_cache.max_entry_records", 30'000'000));
+    size_t query_cache_size = config().getUInt64("query_cache.size", 1_GiB);
+    if (query_cache_size)
+        global_context->setQueryCache(
+            query_cache_size,
+            config().getUInt64("query_cache.max_entries", 1024),
+            config().getUInt64("query_cache.max_entry_size", 1_MiB),
+            config().getUInt64("query_cache.max_entry_records", 30'000'000));
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB

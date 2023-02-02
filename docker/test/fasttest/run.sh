@@ -138,6 +138,8 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
+            contrib/simdjson
+            contrib/liburing
         )
 
         git submodule sync
@@ -158,7 +160,9 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
+        "-DENABLE_LIBURING=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
@@ -234,6 +238,7 @@ function run_tests
         --check-zookeeper-session
         --order random
         --print-time
+        --report-logs-stats
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
