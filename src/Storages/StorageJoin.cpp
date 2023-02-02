@@ -108,7 +108,7 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine Join supports only DELETE mutations");
 }
 
-void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context, bool /*force_wait*/)
+void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 {
     /// Firstly acquire lock for mutation, that locks changes of data.
     /// We cannot acquire rwlock here, because read lock is needed
