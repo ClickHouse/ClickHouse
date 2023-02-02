@@ -487,3 +487,13 @@ inline String directoryPath(const String & path)
 }
 
 }
+
+template <>
+struct fmt::formatter<fs::path> : fmt::formatter<std::string>
+{
+    template <typename FormatCtx>
+    auto format(const fs::path & path, FormatCtx & ctx) const
+    {
+        return fmt::formatter<std::string>::format(path.string(), ctx);
+    }
+};

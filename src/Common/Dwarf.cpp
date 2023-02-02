@@ -252,7 +252,7 @@ uint64_t readOffset(std::string_view & sp, bool is64_bit)
 // Read "len" bytes
 std::string_view readBytes(std::string_view & sp, uint64_t len)
 {
-    SAFE_CHECK(len <= sp.size(), "invalid string length: " + std::to_string(len) + " vs. " + std::to_string(sp.size()));
+    SAFE_CHECK(len <= sp.size(), "invalid string length: {} vs. {}", len, sp.size());
     std::string_view ret(sp.data(), len);
     sp.remove_prefix(len);
     return ret;
@@ -953,7 +953,7 @@ bool Dwarf::findDebugInfoOffset(uintptr_t address, std::string_view aranges, uin
 
 Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const
 {
-    SAFE_CHECK(offset < info_.size(), fmt::format("unexpected offset {}, info size {}", offset, info_.size()));
+    SAFE_CHECK(offset < info_.size(), "unexpected offset {}, info size {}", offset, info_.size());
     Die die;
     std::string_view sp{info_.data() + offset, cu.offset + cu.size - offset};
     die.offset = offset;

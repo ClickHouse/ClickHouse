@@ -61,6 +61,18 @@ struct EmptyImpl
         for (size_t i = 0; i < n; ++i)
             res[i] = negative ^ (container[i].toUnderType() == 0);
     }
+
+    static void ipv6(const ColumnIPv6::Container & container, size_t n, PaddedPODArray<UInt8> & res)
+    {
+        for (size_t i = 0; i < n; ++i)
+            res[i] = negative ^ (container[i].toUnderType() == 0);
+    }
+
+    static void ipv4(const ColumnIPv4::Container & container, size_t n, PaddedPODArray<UInt8> & res)
+    {
+        for (size_t i = 0; i < n; ++i)
+            res[i] = negative ^ (container[i].toUnderType() == 0);
+    }
 };
 
 }
