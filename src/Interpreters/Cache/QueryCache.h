@@ -18,7 +18,7 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 /// returned. In order to still obtain sufficiently up-to-date query results, a expiry time (TTL) must be specified for each cache entry
 /// after which it becomes stale and is ignored. Stale entries are removed opportunistically from the cache, they are only evicted when a
 /// new entry is inserted and the cache has insufficient capacity.
-class QueryResultCache
+class QueryCache
 {
 public:
     /// Represents a query result in the cache.
@@ -82,9 +82,9 @@ public:
     /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
     ///
     /// Implementation note: Queries may throw exceptions during runtime, e.g. out-of-memory errors. In this case, no query result must be
-    /// written into the query result cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline
-    /// which holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise,
-    /// we could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
+    /// written into the query cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline which
+    /// holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise, we
+    /// could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
     /// finalizeWrite() as opposed to the Writer destructor. This function is then called only for successful queries in finish_callback()
     /// which runs before the transform and the Writer are destroyed, whereas for unsuccessful queries we do nothing (the Writer is
     /// destroyed w/o inserting anything).
@@ -117,7 +117,7 @@ public:
             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
             std::chrono::milliseconds min_query_runtime_);
 
-        friend class QueryResultCache; /// for createWriter()
+        friend class QueryCache; /// for createWriter()
     };
 
     /// Looks up a query result for a key in the cache and (if found) constructs a pipe with the query result chunks as source.
@@ -129,10 +129,10 @@ public:
     private:
         Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_, const std::lock_guard<std::mutex> &);
         Pipe pipe;
-        friend class QueryResultCache; /// for createReader()
+        friend class QueryCache; /// for createReader()
     };
 
-    QueryResultCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_);
+    QueryCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_);
 
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime);
@@ -160,9 +160,9 @@ private:
     const size_t max_cache_entry_size_in_bytes;
     const size_t max_cache_entry_size_in_rows;
 
-    friend class StorageSystemQueryResultCache;
+    friend class StorageSystemQueryCache;
 };
 
-using QueryResultCachePtr = std::shared_ptr<QueryResultCache>;
+using QueryCachePtr = std::shared_ptr<QueryCache>;
 
 }
