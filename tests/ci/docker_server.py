@@ -340,7 +340,6 @@ def main():
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
     print(f"::notice ::Report url: {url}")
-    print(f'::set-output name=url_output::"{url}"')
 
     if not args.reports:
         return

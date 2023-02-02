@@ -358,10 +358,15 @@ class ClickhouseIntegrationTestsRunner:
         subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             "sync", shell=True
         )
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             "tar czf {} -C {} {}".format(result_path, dir, " ".join(relpaths)),
             shell=True,
         )
+        # tar return 1 when the files are changed on compressing, we ignore it
+        if retcode in (0, 1):
+            return
+        # but even on the fatal errors it's better to retry
+        logging.error("Fatal error on compressing %s: %s", result_path, retcode)
 
     def _get_runner_opts(self):
         result = []

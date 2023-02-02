@@ -73,6 +73,8 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
                 header_without_virtual_columns.erase(*it);
         }
     }
+
+    LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
 
 
