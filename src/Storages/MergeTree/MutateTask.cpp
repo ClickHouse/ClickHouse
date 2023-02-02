@@ -2,7 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
-#include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
@@ -60,7 +60,7 @@ static void splitMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
 
-    if (!isWidePart(part))
+    if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         for (const auto & command : commands)
@@ -217,7 +217,7 @@ getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a
     /// single file
-    if (!isWidePart(source_part))
+    if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
     const auto & source_columns = source_part->getColumns();
@@ -697,7 +697,13 @@ void finalizeMutatedPart(
     new_data_part->index = source_part->index;
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
+
+    /// This line should not be here because at that moment
+    /// of executing of mutation all projections should be loaded.
+    /// But unfortunately without it some tests fail.
+    /// TODO: fix.
     new_data_part->loadProjections(false, false);
+
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
@@ -1263,7 +1269,6 @@ public:
             case State::NEED_PREPARE:
             {
                 prepare();
-
                 state = State::NEED_EXECUTE;
                 return true;
             }
@@ -1492,7 +1497,6 @@ MutateTask::MutateTask(
 
 bool MutateTask::execute()
 {
-
     switch (state)
     {
         case State::NEED_PREPARE:
@@ -1582,7 +1586,6 @@ bool MutateTask::prepare()
             prefix = "tmp_clone_";
 
         auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
-
         part->getDataPartStorage().beginTransaction();
 
         ctx->temporary_directory_lock = std::move(lock);
@@ -1623,15 +1626,12 @@ bool MutateTask::prepare()
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
 
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
-        single_disk_volume,
-        ctx->data->getRelativeDataPath(),
-        tmp_part_dir_name);
+    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name);
+    builder.withPartFormat(ctx->future_part->part_format);
+    builder.withPartInfo(ctx->future_part->part_info);
 
-    data_part_storage->beginTransaction();
-
-    ctx->new_data_part = ctx->data->createPart(
-        ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, data_part_storage);
+    ctx->new_data_part = std::move(builder).build();
+    ctx->new_data_part->getDataPartStorage().beginTransaction();
 
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
@@ -1659,7 +1659,7 @@ bool MutateTask::prepare()
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    if (!isWidePart(ctx->source_part)
+    if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
@@ -1715,8 +1715,8 @@ bool MutateTask::prepare()
                 files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
             auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false, files_to_copy_instead_of_hardlinks);
-
             part->getDataPartStorage().beginTransaction();
+
             ctx->temporary_directory_lock = std::move(lock);
             promise.set_value(std::move(part));
             return false;
