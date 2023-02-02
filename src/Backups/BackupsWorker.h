@@ -56,6 +56,14 @@ public:
         /// Number of files in the backup (including backup's metadata; only unique files are counted).
         size_t num_files = 0;
 
+        /// Number of processed files during backup or restore process
+        /// For restore it includes files from base backups
+        size_t num_processed_files = 0;
+
+        /// Size of processed files during backup or restore
+        /// For restore in includes sizes from base backups
+        UInt64 processed_files_size = 0;
+
         /// Size of all files in the backup (including backup's metadata; only unique files are counted).
         UInt64 uncompressed_size = 0;
 
@@ -102,9 +110,11 @@ private:
     void addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
-    void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size);
+    void setNumFilesAndSize(const OperationID & id, size_t num_files, size_t num_processed_files, UInt64 processed_files_size, UInt64 uncompressed_size, UInt64 compressed_size);
     std::vector<Info> getAllActiveBackupInfos() const;
     std::vector<Info> getAllActiveRestoreInfos() const;
+    bool hasConcurrentBackups(const BackupSettings & backup_settings) const;
+    bool hasConcurrentRestores(const RestoreSettings & restore_settings) const;
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;

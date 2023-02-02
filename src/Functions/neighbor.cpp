@@ -63,7 +63,7 @@ public:
         if (number_of_arguments < 2 || number_of_arguments > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be from 2 to 3",
-                getName(), toString(number_of_arguments));
+                getName(), number_of_arguments);
 
         // second argument must be an integer
         if (!isInteger(arguments[1]))

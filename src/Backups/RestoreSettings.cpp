@@ -164,7 +164,7 @@ namespace
     M(Bool, internal) \
     M(String, host_id) \
     M(String, coordination_zk_path) \
-    M(OptionalUUID, backup_uuid)
+    M(OptionalUUID, restore_uuid)
 
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)

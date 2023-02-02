@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+-- Tag: no-fasttest due to only SIMD JSON is available in fasttest
 
 SELECT '--allow_simdjson=1--';
 SET allow_simdjson=1;

@@ -341,7 +341,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function, query or union. Actual {}", table_expression->formatASTForErrorMessage());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function, query or union. Actual {}",
+                        table_expression->formatASTForErrorMessage());
     }
 
     if (from_stage == QueryProcessingStage::FetchColumns)

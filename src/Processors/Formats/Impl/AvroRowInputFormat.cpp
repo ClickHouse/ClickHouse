@@ -146,7 +146,7 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         default:
-            throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type is not compatible with Avro");
     }
 }
 
@@ -193,7 +193,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw ParsingException(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
                     UUID uuid;
                     parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
@@ -468,10 +468,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         };
     }
 
-    throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n"
-        + nodeToJson(root_node),
-        ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+        "Type {} is not compatible with Avro {}:\n{}",
+        target_type->getName(), avro::toString(root_node->type()), nodeToJson(root_node));
 }
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
@@ -519,7 +518,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
                 auto index = decoder.decodeUnionIndex();
                 if (index >= union_skip_fns.size())
                 {
-                    throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
                 }
                 union_skip_fns[index](decoder);
             };
@@ -575,7 +574,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             };
         }
         default:
-            throw Exception("Unsupported Avro type " + root_node->name().fullname() + " (" + toString(int(root_node->type())) + ")", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported Avro type {} ({})", root_node->name().fullname(), int(root_node->type()));
     }
 }
 
@@ -719,7 +718,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
     {
-        throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
     }
 
     column_found.resize(header.columns());
@@ -731,7 +730,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
         {
             if (!column_found[i])
             {
-                throw Exception("Field " + header.getByPosition(i).name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Field {} not found in Avro schema", header.getByPosition(i).name);
             }
         }
     }
@@ -782,7 +781,7 @@ public:
         : base_url(base_url_), schema_cache(schema_cache_max_size)
     {
         if (base_url.empty())
-            throw Exception("Empty Schema Registry URL", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Schema Registry URL");
     }
 
     avro::ValidSchema getSchema(uint32_t id)
@@ -842,7 +841,7 @@ private:
             }
             catch (const avro::Exception & e)
             {
-                throw Exception(e.what(), ErrorCodes::INCORRECT_DATA);
+                throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
             }
         }
         catch (Exception & e)
@@ -889,7 +888,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
         if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
         {
             /* empty or incomplete message without Avro Confluent magic number or schema id */
-            throw Exception("Missing AvroConfluent magic byte or schema identifier.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Missing AvroConfluent magic byte or schema identifier.");
         }
         else
             throw;
@@ -897,8 +896,8 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 
     if (magic != 0x00)
     {
-        throw Exception("Invalid magic byte before AvroConfluent schema identifier."
-            " Must be zero byte, found " + std::to_string(int(magic)) + " instead", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid magic byte before AvroConfluent schema identifier. "
+            "Must be zero byte, found {} instead", int(magic));
     }
 
     return schema_id;
@@ -977,7 +976,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     }
 
     if (root_node->type() != avro::Type::AVRO_RECORD)
-        throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
 
     NamesAndTypesList names_and_types;
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)

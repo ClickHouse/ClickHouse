@@ -106,14 +106,20 @@ Possible values:
 Default value: 1.
 
 The delay (in milliseconds) for `INSERT` is calculated by the formula:
-
 ```code
 max_k = parts_to_throw_insert - parts_to_delay_insert
 k = 1 + parts_count_in_partition - parts_to_delay_insert
 delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
 ```
+For example, if a partition has 299 active parts and parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` is delayed for `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000` milliseconds.
 
-For example if a partition has 299 active parts and parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` is delayed for `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000` milliseconds.
+Starting from version 23.1 formula has been changed to:
+```code
+allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert
+parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
+delay_milliseconds = max(min_delay_to_insert_ms, (max_delay_to_insert * 1000) * parts_over_threshold / allowed_parts_over_threshold)
+```
+For example, if a partition has 224 active parts and parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, min_delay_to_insert_ms = 10, `INSERT` is delayed for `max( 10, 1 * 1000 * (224 - 150 + 1) / (300 - 150) ) = 500` milliseconds.
 
 ## max_parts_in_total {#max-parts-in-total}
 
@@ -227,7 +233,7 @@ Possible values:
 
 Default value: 100.
 
-Normally, the `use_async_block_ids_cache` updates as soon as there are updates in the watching keeper path. However, the cache updates might be too frequent and become a heavy burden. This minimum interval prevents the cache from updating too fast. Note that if we set this value too long, the block with duplicated inserts will have a longer retry time. 
+Normally, the `use_async_block_ids_cache` updates as soon as there are updates in the watching keeper path. However, the cache updates might be too frequent and become a heavy burden. This minimum interval prevents the cache from updating too fast. Note that if we set this value too long, the block with duplicated inserts will have a longer retry time.
 
 ## max_replicated_logs_to_keep
 

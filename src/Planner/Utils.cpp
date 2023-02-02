@@ -236,8 +236,9 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
-                    join_tree_node_to_process->getNodeTypeName());
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                join_tree_node_to_process->getNodeTypeName());
             }
         }
     }
@@ -301,8 +302,9 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
-                    join_tree_node_to_process->getNodeTypeName());
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                join_tree_node_to_process->getNodeTypeName());
             }
         }
     }

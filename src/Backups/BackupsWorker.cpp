@@ -93,7 +93,7 @@ namespace
         catch (...)
         {
             if (coordination)
-                coordination->setError(current_host, Exception{getCurrentExceptionCode(), getCurrentExceptionMessage(true, true)});
+                coordination->setError(current_host, Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
         }
     }
 
@@ -160,16 +160,6 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     else
         backup_id = toString(*backup_settings.backup_uuid);
 
-    /// Check if there are no concurrent backups
-    if (num_active_backups && !allow_concurrent_backups)
-    {
-        /// If its an internal backup and we currently have 1 active backup, it could be the original query, validate using backup_uuid
-        if (!(num_active_backups == 1 && backup_settings.internal && getAllActiveBackupInfos().at(0).id == toString(*backup_settings.backup_uuid)))
-        {
-            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
-        }
-    }
-
     std::shared_ptr<IBackupCoordination> backup_coordination;
     if (backup_settings.internal)
     {
@@ -183,6 +173,13 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     String backup_name_for_logging = backup_info.toStringForLogging();
     try
     {
+        if (!allow_concurrent_backups && hasConcurrentBackups(backup_settings))
+        {
+            /// addInfo is called here to record the failed backup details
+            addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::BACKUP_FAILED);
+            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
+        }
+
         addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::CREATING_BACKUP);
 
         /// Prepare context to use.
@@ -341,16 +338,20 @@ void BackupsWorker::doBackup(
         }
 
         size_t num_files = 0;
+        size_t num_processed_files = 0;
         UInt64 uncompressed_size = 0;
         UInt64 compressed_size = 0;
+        UInt64 processed_files_size = 0;
 
         /// Finalize backup (write its metadata).
         if (!backup_settings.internal)
         {
             backup->finalizeWriting();
             num_files = backup->getNumFiles();
+            num_processed_files = backup->getNumProcessedFiles();
             uncompressed_size = backup->getUncompressedSize();
             compressed_size = backup->getCompressedSize();
+            processed_files_size = backup->getProcessedFilesSize();
         }
 
         /// Close the backup.
@@ -358,7 +359,7 @@ void BackupsWorker::doBackup(
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
         setStatus(backup_id, BackupStatus::BACKUP_CREATED);
-        setNumFilesAndSize(backup_id, num_files, uncompressed_size, compressed_size);
+        setNumFilesAndSize(backup_id, num_files, num_processed_files, processed_files_size, uncompressed_size, compressed_size);
     }
     catch (...)
     {
@@ -383,8 +384,8 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     auto restore_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
 
-    if (!restore_settings.backup_uuid)
-        restore_settings.backup_uuid = UUIDHelpers::generateV4();
+    if (!restore_settings.restore_uuid)
+        restore_settings.restore_uuid = UUIDHelpers::generateV4();
 
     /// `restore_id` will be used as a key to the `infos` map, so it should be unique.
     OperationID restore_id;
@@ -393,17 +394,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     else if (!restore_settings.id.empty())
         restore_id = restore_settings.id;
     else
-        restore_id = toString(*restore_settings.backup_uuid);
-
-    /// Check if there are no concurrent restores
-    if (num_active_restores && !allow_concurrent_restores)
-    {
-        /// If its an internal restore and we currently have 1 active restore, it could be the original query, validate using iz
-        if (!(num_active_restores == 1 && restore_settings.internal && getAllActiveRestoreInfos().at(0).id == toString(*restore_settings.backup_uuid)))
-        {
-            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
-        }
-    }
+        restore_id = toString(*restore_settings.restore_uuid);
 
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     if (restore_settings.internal)
@@ -418,6 +409,14 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     {
         auto backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         String backup_name_for_logging = backup_info.toStringForLogging();
+
+        if (!allow_concurrent_restores && hasConcurrentRestores(restore_settings))
+        {
+            /// addInfo is called here to record the failed restore details
+            addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
+            throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
+        }
+
         addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
 
         /// Prepare context to use.
@@ -497,11 +496,9 @@ void BackupsWorker::doRestore(
         backup_open_params.context = context;
         backup_open_params.backup_info = backup_info;
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
-        backup_open_params.backup_uuid = restore_settings.backup_uuid;
+        backup_open_params.backup_uuid = restore_settings.restore_uuid;
         backup_open_params.password = restore_settings.password;
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
-
-        setNumFilesAndSize(restore_id, backup->getNumFiles(), backup->getUncompressedSize(), backup->getCompressedSize());
 
         String current_database = context->getCurrentDatabase();
 
@@ -583,6 +580,13 @@ void BackupsWorker::doRestore(
 
         LOG_INFO(log, "Restored from {} {} successfully", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging);
         setStatus(restore_id, BackupStatus::RESTORED);
+        setNumFilesAndSize(
+            restore_id,
+            backup->getNumFiles(),
+            backup->getNumProcessedFiles(),
+            backup->getProcessedFilesSize(),
+            backup->getUncompressedSize(),
+            backup->getCompressedSize());
     }
     catch (...)
     {
@@ -663,7 +667,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
 }
 
 
-void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size)
+void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, size_t num_processed_files, UInt64 processed_files_size, UInt64 uncompressed_size, UInt64 compressed_size)
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -672,6 +676,8 @@ void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, UInt
 
     auto & info = it->second;
     info.num_files = num_files;
+    info.num_processed_files = num_processed_files;
+    info.processed_files_size = processed_files_size;
     info.uncompressed_size = uncompressed_size;
     info.compressed_size = compressed_size;
 }
@@ -736,6 +742,34 @@ std::vector<BackupsWorker::Info> BackupsWorker::getAllActiveRestoreInfos() const
             res_infos.push_back(info);
     }
     return res_infos;
+}
+
+bool BackupsWorker::hasConcurrentBackups(const BackupSettings & backup_settings) const
+{
+    /// Check if there are no concurrent backups
+    if (num_active_backups)
+    {
+        /// If its an internal backup and we currently have 1 active backup, it could be the original query, validate using backup_uuid
+        if (!(num_active_backups == 1 && backup_settings.internal && getAllActiveBackupInfos().at(0).id == toString(*backup_settings.backup_uuid)))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool BackupsWorker::hasConcurrentRestores(const RestoreSettings & restore_settings) const
+{
+    /// Check if there are no concurrent restores
+    if (num_active_restores)
+    {
+        /// If its an internal restore and we currently have 1 active restore, it could be the original query, validate using iz
+        if (!(num_active_restores == 1 && restore_settings.internal && getAllActiveRestoreInfos().at(0).id == toString(*restore_settings.restore_uuid)))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void BackupsWorker::shutdown()

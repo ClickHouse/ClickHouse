@@ -44,8 +44,7 @@ void IBridgeHelper::startBridgeSync()
         }
 
         if (!started)
-            throw Exception("BridgeHelper: " + serviceAlias() + " is not responding",
-                ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
+            throw Exception(ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING, "BridgeHelper: {} is not responding", serviceAlias());
     }
 }
 
@@ -53,7 +52,7 @@ void IBridgeHelper::startBridgeSync()
 std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
 {
     if (startBridgeManually())
-        throw Exception(serviceAlias() + " is not running. Please, start it manually", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
+        throw Exception(ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING, "{} is not running. Please, start it manually", serviceAlias());
 
     const auto & config = getConfig();
     /// Path to executable folder

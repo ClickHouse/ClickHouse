@@ -167,6 +167,20 @@ std::vector<String> getPathsList(const String & uri, ContextPtr context)
     return urls_to_check;
 }
 
+static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
+{
+    const auto & user_info = request_uri.getUserInfo();
+    if (!user_info.empty())
+    {
+        std::size_t n = user_info.find(':');
+        if (n != std::string::npos)
+        {
+            credentials.setUsername(user_info.substr(0, n));
+            credentials.setPassword(user_info.substr(n + 1));
+        }
+    }
+}
+
 void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
 {
     const auto & user_info = request_uri.getUserInfo();
@@ -202,11 +216,29 @@ StorageURLSource::StorageURLSource(
 {
     auto headers = getHeaders(headers_);
 
+
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this](const URIInfo::FailoverOptions & uri_options)
     {
         if (uri_options.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
+
+        Chunk generate() override
+        {
+            while (true)
+            {
+                if (isCancelled())
+                {
+                    if (reader)
+                        reader->cancel();
+                    break;
+                }
+
+                if (!reader)
+                {
+                    auto current_uri_pos = uri_info->next_uri_to_read.fetch_add(1);
+                    if (current_uri_pos >= uri_info->uri_list_to_read.size())
+                        return {};
 
         auto first_option = uri_options.begin();
         read_buf = getFirstAvailableURLReadBuffer(
@@ -224,6 +256,7 @@ StorageURLSource::StorageURLSource(
             uri_options.size() == 1,
             download_threads);
 
+
         auto input_format
             = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
         QueryPipelineBuilder builder;
@@ -237,6 +270,20 @@ StorageURLSource::StorageURLSource(
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
     };
 }
+
+                    initialize(current_uri);
+                }
+
+                Chunk chunk;
+                if (reader->pull(chunk))
+                    return chunk;
+
+                pipeline->reset();
+                reader.reset();
+            }
+            return {};
+        }
+
 
 std::unique_ptr<ReadBuffer> StorageURLSource::getFirstAvailableURLReadBuffer(
     std::vector<String>::const_iterator & option,
@@ -434,8 +481,13 @@ private:
     Strings::iterator uris_iter;
 };
 
+
 StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(ContextPtr context_, const String & uri)
     : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(context_, uri)) {}
+
+        std::unique_ptr<ReadBuffer> read_buf;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> reader;
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {

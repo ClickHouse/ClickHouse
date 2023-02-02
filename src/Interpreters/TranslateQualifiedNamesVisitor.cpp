@@ -125,8 +125,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             if (data.unknownColumn(table_pos, identifier))
             {
                 String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);
-                throw Exception("There's no column '" + identifier.name() + "' in table '" + table_name + "'",
-                                ErrorCodes::UNKNOWN_IDENTIFIER);
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "There's no column '{}' in table '{}'", identifier.name(), table_name);
             }
 
             IdentifierSemantic::setMembership(identifier, table_pos);
@@ -159,7 +158,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
 void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
 {
     if (!node.qualifier)
-        throw Exception("Logical error: qualified asterisk must have a qualifier", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must have a qualifier");
 
     /// @note it could contain table alias as table name.
     DatabaseAndTableWithAlias db_and_table(node.qualifier);
@@ -168,7 +167,7 @@ void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & node, co
         if (db_and_table.satisfies(known_table.table, true))
             return;
 
-    throw Exception("Unknown qualified identifier: " + node.qualifier->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
+    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown qualified identifier: {}", node.qualifier->getAliasOrColumnName());
 }
 
 void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data & data)
@@ -218,7 +217,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             if (child->as<ASTAsterisk>() || child->as<ASTColumnsListMatcher>() || child->as<ASTColumnsRegexpMatcher>())
             {
                 if (tables_with_columns.empty())
-                    throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "An asterisk cannot be replaced with empty columns.");
                 has_asterisk = true;
             }
             else if (const auto * qa = child->as<ASTQualifiedAsterisk>())
@@ -349,8 +348,8 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(ASTPtr ast, Data & 
             {
                 String alias = key->tryGetAlias();
                 if (alias.empty())
-                    throw Exception("Wrong key in USING. Expected identifier or alias, got: " + key->getID(),
-                                    ErrorCodes::UNSUPPORTED_JOIN_KEYS);
+                    throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Wrong key in USING. Expected identifier or alias, got: {}",
+                                    key->getID());
                 data.join_using_columns.insert(alias);
             }
     }
