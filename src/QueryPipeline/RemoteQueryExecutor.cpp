@@ -1,4 +1,3 @@
-#include <variant>
 #include <Common/ConcurrentBoundedQueue.h>
 
 #include <QueryPipeline/ConnectionCollector.h>
