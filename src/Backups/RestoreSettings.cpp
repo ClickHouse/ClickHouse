@@ -163,8 +163,7 @@ namespace
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path) \
-    M(OptionalUUID, restore_uuid)
+    M(String, coordination_zk_path)
 
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)

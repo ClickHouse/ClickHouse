@@ -160,9 +160,6 @@ namespace
     {
         return fmt::format("{:03}", counter); /// Outputs 001, 002, 003, ...
     }
-
-    /// We try to store data to zookeeper several times due to possible version conflicts.
-    constexpr size_t NUM_ATTEMPTS = 10;
 }
 
 BackupCoordinationRemote::BackupCoordinationRemote(
@@ -468,7 +465,7 @@ void BackupCoordinationRemote::updateFileInfo(const FileInfo & file_info)
     auto zk = getZooKeeper();
     String size_and_checksum = serializeSizeAndChecksum(std::pair{file_info.size, file_info.checksum});
     String full_path = zookeeper_path + "/file_infos/" + size_and_checksum;
-    for (size_t attempt = 0; attempt < NUM_ATTEMPTS; ++attempt)
+    for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
     {
         Coordination::Stat stat;
         auto new_info = deserializeFileInfo(zk->get(full_path, &stat));
@@ -476,7 +473,7 @@ void BackupCoordinationRemote::updateFileInfo(const FileInfo & file_info)
         auto code = zk->trySet(full_path, serializeFileInfo(new_info), stat.version);
         if (code == Coordination::Error::ZOK)
             return;
-        bool is_last_attempt = (attempt == NUM_ATTEMPTS - 1);
+        bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
         if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
             throw zkutil::KeeperException(code, full_path);
     }

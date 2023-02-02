@@ -113,8 +113,8 @@ private:
     void setNumFilesAndSize(const OperationID & id, size_t num_files, size_t num_processed_files, UInt64 processed_files_size, UInt64 uncompressed_size, UInt64 compressed_size);
     std::vector<Info> getAllActiveBackupInfos() const;
     std::vector<Info> getAllActiveRestoreInfos() const;
-    bool hasConcurrentBackups(const BackupSettings & backup_settings) const;
-    bool hasConcurrentRestores(const RestoreSettings & restore_settings) const;
+    bool hasConcurrentBackups(const OperationID & backup_id, const ContextPtr & context, bool on_cluster) const;
+    bool hasConcurrentRestores(const OperationID & restore_id, const ContextPtr & context, bool on_cluster) const;
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
