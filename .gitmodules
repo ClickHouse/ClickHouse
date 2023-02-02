@@ -330,3 +330,6 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/liburing"]
+	path = contrib/liburing
+	url = https://github.com/axboe/liburing
