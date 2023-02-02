@@ -41,6 +41,8 @@ void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
     settings.ostr << backQuoteIfNeed(getTable());
 
+    formatOnCluster(settings);
+
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
     predicate->formatImpl(settings, state, frame);
 }

@@ -313,7 +313,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_by_limit)
         current_query_tree->getLimitByLimit() = buildExpression(select_limit_by_limit, current_context);
 
-    auto select_limit_by_offset = select_query_typed.limitOffset();
+    auto select_limit_by_offset = select_query_typed.limitByOffset();
     if (select_limit_by_offset)
         current_query_tree->getLimitByOffset() = buildExpression(select_limit_by_offset, current_context);
 

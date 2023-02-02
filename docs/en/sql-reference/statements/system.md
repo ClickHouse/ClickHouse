@@ -103,9 +103,9 @@ Its size can be configured using the server-level setting [uncompressed_cache_si
 Reset the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
 
-## DROP QUERY RESULT CACHE
+## DROP QUERY CACHE
 
-Resets the [query result cache](../../operations/query-result-cache.md).
+Resets the [query cache](../../operations/query-cache.md).
 
 ## FLUSH LOGS
 
@@ -361,4 +361,16 @@ Allows to drop filesystem cache.
 
 ```sql
 SYSTEM DROP FILESYSTEM CACHE
+```
+
+### SYNC FILE CACHE
+
+:::note
+It's too heavy and has potential for misuse.
+:::
+
+Will do sync syscall. 
+
+```sql
+SYSTEM SYNC FILE CACHE
 ```
