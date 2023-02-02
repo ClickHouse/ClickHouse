@@ -2041,7 +2041,7 @@ void Context::dropIndexMarkCache() const
         shared->index_mark_cache->reset();
 }
 
-void Context::setQueryCache()
+void Context::setQueryCache(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
 
@@ -2049,6 +2049,14 @@ void Context::setQueryCache()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
     shared->query_cache = std::make_shared<QueryCache>();
+    shared->query_cache->updateConfiguration(config);
+}
+
+void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+    if (shared->query_cache)
+        shared->query_cache->updateConfiguration(config);
 }
 
 QueryCachePtr Context::getQueryCache() const
@@ -2062,13 +2070,6 @@ void Context::dropQueryCache() const
     auto lock = getLock();
     if (shared->query_cache)
         shared->query_cache->reset();
-}
-
-void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    auto lock = getLock();
-    if (shared->query_cache)
-        shared->query_cache->updateConfiguration(config);
 }
 
 void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
