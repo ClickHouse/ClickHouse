@@ -26,7 +26,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     FileSegmentMetadata(
         FileSegmentPtr file_segment_,
-        LockedKey & key_transaction,
+        LockedKey & locked_key,
         LockedCachePriority * locked_queue);
 
     FileSegmentMetadata(FileSegmentMetadata && other) noexcept

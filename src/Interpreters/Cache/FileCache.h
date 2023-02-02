@@ -157,7 +157,7 @@ private:
 
     LockedKeyPtr createLockedKey(const Key & key, KeyNotFoundPolicy key_not_found_policy);
 
-    LockedKeyCreatorPtr getLockedKeyCreator(const Key & key, LockedKey & key_transaction);
+    LockedKeyCreatorPtr getLockedKeyCreator(const Key & key, LockedKey & locked_key);
 
     KeysQueuePtr cleanup_keys_metadata_queue;
 
@@ -190,7 +190,7 @@ private:
     FileSegments getImpl(
         const Key & key,
         const FileSegment::Range & range,
-        const LockedKey & key_transaction);
+        const LockedKey & locked_key);
 
     FileSegments splitRangeIntoCells(
         const Key & key,
@@ -198,7 +198,7 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        LockedKey & key_transaction);
+        LockedKey & locked_key);
 
     void fillHolesWithEmptyFileSegments(
         FileSegments & file_segments,
@@ -206,7 +206,7 @@ private:
         const FileSegment::Range & range,
         bool fill_with_detached_file_segments,
         const CreateFileSegmentSettings & settings,
-        LockedKey & key_transaction);
+        LockedKey & locked_key);
 
     KeyMetadata::iterator addCell(
         const Key & key,
@@ -214,14 +214,14 @@ private:
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        LockedKey & key_transaction,
+        LockedKey & locked_key,
         const CacheGuard::Lock *);
 
     bool tryReserveUnlocked(
         const Key & key,
         size_t offset,
         size_t size,
-        LockedKeyPtr key_transaction,
+        LockedKeyPtr locked_key,
         const CacheGuard::Lock &);
 
     bool tryReserveImpl(
@@ -229,7 +229,7 @@ private:
         const Key & key,
         size_t offset,
         size_t size,
-        LockedKeyPtr key_transaction,
+        LockedKeyPtr locked_key,
         QueryLimit::LockedQueryContext * query_context,
         const CacheGuard::Lock &);
 

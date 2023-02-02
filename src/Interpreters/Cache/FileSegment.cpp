@@ -33,13 +33,13 @@ FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
         const Key & key_,
-        LockedKeyCreatorPtr key_transaction_creator_,
+        LockedKeyCreatorPtr locked_key_creator_,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & settings)
     : segment_range(offset_, offset_ + size_ - 1)
     , download_state(download_state_)
-    , key_transaction_creator(std::move(key_transaction_creator_))
+    , locked_key_creator(std::move(locked_key_creator_))
     , file_key(key_)
     , file_path(cache_->getPathInLocalCache(key(), offset(), settings.kind))
     , cache(cache_)
@@ -267,8 +267,8 @@ FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
 
 FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 {
-    auto key_transaction = createLockedKey(false);
-    if (!key_transaction)
+    auto locked_key = createLockedKey(false);
+    if (!locked_key)
     {
         assert(isDetached());
         return std::move(remote_file_reader);
@@ -278,7 +278,7 @@ FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 
     assert(!is_detached);
 
-    bool is_last_holder = key_transaction->isLastHolder(offset());
+    bool is_last_holder = locked_key->isLastHolder(offset());
     if (!downloader_id.empty() || !is_last_holder)
         return nullptr;
 
@@ -412,14 +412,14 @@ FileSegment::State FileSegment::wait()
 
 LockedKeyPtr FileSegment::createLockedKey(bool assert_exists) const
 {
-    if (!key_transaction_creator)
+    if (!locked_key_creator)
     {
         if (assert_exists)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key transaction: creator does not exist");
         else
             return nullptr;
     }
-    return key_transaction_creator->create();
+    return locked_key_creator->create();
 }
 
 bool FileSegment::reserve(size_t size_to_reserve)
@@ -543,11 +543,11 @@ void FileSegment::setBroken()
 void FileSegment::complete()
 {
     auto cache_lock = cache->createCacheTransaction();
-    auto key_transaction = createLockedKey();
-    return completeUnlocked(*key_transaction, cache_lock);
+    auto locked_key = createLockedKey();
+    return completeUnlocked(*locked_key, cache_lock);
 }
 
-void FileSegment::completeUnlocked(LockedKey & key_transaction, const CacheGuard::Lock & cache_lock)
+void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Lock & cache_lock)
 {
     auto segment_lock = segment_guard.lock();
 
@@ -561,7 +561,7 @@ void FileSegment::completeUnlocked(LockedKey & key_transaction, const CacheGuard
         return;
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
-    const bool is_last_holder = key_transaction.isLastHolder(offset());
+    const bool is_last_holder = locked_key.isLastHolder(offset());
     const size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
 
     SCOPE_EXIT({
@@ -592,9 +592,9 @@ void FileSegment::completeUnlocked(LockedKey & key_transaction, const CacheGuard
     if (segment_kind == FileSegmentKind::Temporary && is_last_holder)
     {
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
-        detach(segment_lock, key_transaction);
+        detach(segment_lock, locked_key);
         setDownloadState(State::SKIP_CACHE, segment_lock);
-        key_transaction.remove(offset(), segment_lock, cache_lock);
+        locked_key.remove(offset(), segment_lock, cache_lock);
         return;
     }
 
@@ -626,7 +626,7 @@ void FileSegment::completeUnlocked(LockedKey & key_transaction, const CacheGuard
                     LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
 
                     setDownloadState(State::SKIP_CACHE, segment_lock);
-                    key_transaction.remove(offset(), segment_lock, cache_lock);
+                    locked_key.remove(offset(), segment_lock, cache_lock);
                 }
                 else
                 {
@@ -644,7 +644,7 @@ void FileSegment::completeUnlocked(LockedKey & key_transaction, const CacheGuard
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
-                    key_transaction.reduceSizeToDownloaded(offset(), segment_lock, cache_lock);
+                    locked_key.reduceSizeToDownloaded(offset(), segment_lock, cache_lock);
                 }
 
                 detachAssumeStateFinalized(segment_lock);
@@ -810,7 +810,7 @@ void FileSegment::detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock
 {
     is_detached = true;
     is_completed = true;
-    key_transaction_creator = nullptr;
+    locked_key_creator = nullptr;
     //CurrentMetrics::add(CurrentMetrics::CacheDetachedFileSegments);
     LOG_TEST(log, "Detached file segment: {}", getInfoForLogUnlocked(lock));
 }
@@ -827,16 +827,16 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
 
     /// File segment pointer must be reset right after calling complete() and
     /// under the same mutex, because complete() checks for segment pointers.
-    auto key_transaction = file_segment.createLockedKey(/* assert_exists */false);
-    if (key_transaction)
+    auto locked_key = file_segment.createLockedKey(/* assert_exists */false);
+    if (locked_key)
     {
-        auto queue_iter = key_transaction->getKeyMetadata().tryGetByOffset(file_segment.offset())->queue_iterator;
+        auto queue_iter = locked_key->getKeyMetadata().tryGetByOffset(file_segment.offset())->queue_iterator;
         if (queue_iter)
             LockedCachePriorityIterator(cache_lock, queue_iter).use();
 
         if (!file_segment.isCompleted())
         {
-            file_segment.completeUnlocked(*key_transaction, cache_lock);
+            file_segment.completeUnlocked(*locked_key, cache_lock);
         }
     }
 

@@ -124,7 +124,7 @@ public:
         size_t offset_,
         size_t size_,
         const Key & key_,
-        LockedKeyCreatorPtr key_transaction_creator,
+        LockedKeyCreatorPtr locked_key_creator,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -298,7 +298,7 @@ private:
     /// Function might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeUnlocked(LockedKey & key_transaction, const CacheGuard::Lock &);
+    void completeUnlocked(LockedKey & locked_key, const CacheGuard::Lock &);
 
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -325,7 +325,7 @@ private:
     /// 2. segment lock
 
     mutable FileSegmentGuard segment_guard;
-    LockedKeyCreatorPtr key_transaction_creator;
+    LockedKeyCreatorPtr locked_key_creator;
     std::condition_variable cv;
 
     /// Protects downloaded_size access with actual write into fs.
