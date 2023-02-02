@@ -215,10 +215,10 @@ The two-argument form of `toDayOfWeek()` enables you to specify whether the week
 
 | Mode | First day of week | Range                                          |
 |------|-------------------|------------------------------------------------|
-| 0    | Monday            | 1-7, Monday = 1, Tuesday = 2, ..., Sunday = 7  |
-| 1    | Monday            | 0-6, Monday = 0, Tuesday = 1, ..., Sunday = 6  |
-| 2    | Sunday            | 0-6, Sunday = 0, Monday = 1, ..., Saturday = 6 |
-| 3    | Sunday            | 1-7, Sunday = 1, Monday = 2, ..., Saturday = 7 |
+| 0    | Monday            | 1-7: Monday = 1, Tuesday = 2, ..., Sunday = 7  |
+| 1    | Monday            | 0-6: Monday = 0, Tuesday = 1, ..., Sunday = 6  |
+| 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
+| 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
 
 Alias: `DAYOFWEEK`.
 
@@ -1293,31 +1293,31 @@ Similar to formatDateTime, except that it formats datetime in Joda style instead
 Using replacement fields, you can define a pattern for the resulting string. 
 
 
-| Placeholder | Description | Presentation  | Examples |
-| ----------- | ----------- | ------------- | -------- |
-| G       | era                          | text          | AD | 
-| C       | century of era (>=0)         | number        | 20 | 
-| Y       | year of era (>=0)            | year          | 1996 | 
-| x       | weekyear(not supported yet)  | year          | 1996 | 
-| w       | week of weekyear(not supported yet) | number        | 27 | 
-| e       | day of week                  | number        | 2 | 
-| E       | day of week                  | text          | Tuesday; Tue | 
-| y       | year                         | year          | 1996 | 
-| D       | day of year                  | number        | 189 | 
-| M       | month of year                | month         | July; Jul; 07 | 
-| d       | day of month                 | number        | 10 | 
-| a       | halfday of day               | text          | PM | 
-| K       | hour of halfday (0~11)       | number        | 0 | 
-| h       | clockhour of halfday (1~12)  | number        | 12 | 
-| H       | hour of day (0~23)           | number        | 0 | 
-| k       | clockhour of day (1~24)      | number        | 24 | 
-| m       | minute of hour               | number        | 30 | 
-| s       | second of minute             | number        | 55 | 
-| S       | fraction of second(not supported yet) | number        | 978 | 
-| z       | time zone(short name not supported yet) | text          | Pacific Standard Time; PST | 
-| Z       | time zone offset/id(not supported yet) | zone          | -0800; -08:00; America/Los_Angeles | 
-| '       | escape for text              | delimiter|  | 
-| ''      | single quote                 | literal       | ' | 
+| Placeholder | Description                              | Presentation  | Examples                           |
+| ----------- | ---------------------------------------- | ------------- | ---------------------------------- |
+| G           | era                                      | text          | AD                                 |
+| C           | century of era (>=0)                     | number        | 20                                 |
+| Y           | year of era (>=0)                        | year          | 1996                               |
+| x           | weekyear (not supported yet)             | year          | 1996                               |
+| w           | week of weekyear (not supported yet)     | number        | 27                                 |
+| e           | day of week                              | number        | 2                                  |
+| E           | day of week                              | text          | Tuesday; Tue                       |
+| y           | year                                     | year          | 1996                               |
+| D           | day of year                              | number        | 189                                |
+| M           | month of year                            | month         | July; Jul; 07                      |
+| d           | day of month                             | number        | 10                                 |
+| a           | halfday of day                           | text          | PM                                 |
+| K           | hour of halfday (0~11)                   | number        | 0                                  |
+| h           | clockhour of halfday (1~12)              | number        | 12                                 |
+| H           | hour of day (0~23)                       | number        | 0                                  |
+| k           | clockhour of day (1~24)                  | number        | 24                                 |
+| m           | minute of hour                           | number        | 30                                 |
+| s           | second of minute                         | number        | 55                                 |
+| S           | fraction of second (not supported yet)   | number        | 978                                |
+| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
+| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
+| '           | escape for text                          | delimiter     |                                    |
+| ''          | single quote                             | literal       | '                                  |
 
 **Example**
 

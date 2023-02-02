@@ -12,7 +12,9 @@ namespace DB
 REGISTER_FUNCTION(Hashing)
 {
     factory.registerFunction<FunctionSipHash64>();
+    factory.registerFunction<FunctionSipHash64Keyed>();
     factory.registerFunction<FunctionSipHash128>();
+    factory.registerFunction<FunctionSipHash128Keyed>();
     factory.registerFunction<FunctionCityHash64>();
     factory.registerFunction<FunctionFarmFingerprint64>();
     factory.registerFunction<FunctionFarmHash64>();
