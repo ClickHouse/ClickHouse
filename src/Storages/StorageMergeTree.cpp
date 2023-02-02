@@ -2060,10 +2060,15 @@ MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const Da
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-    if (it == current_mutations_by_version.end())
-        return {};
-    return it->second.commands;
+    Int64 part_mutation_version = part->info.getMutationVersion();
+
+    MutationCommands result;
+    for (const auto & current_mutation_by_version : current_mutations_by_version)
+    {
+        if (static_cast<int64_t>(current_mutation_by_version.first) > part_mutation_version)
+            result.insert(result.end(), current_mutation_by_version.second.commands.begin(), current_mutation_by_version.second.commands.end());
+    }
+    return result;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
