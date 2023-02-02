@@ -35,6 +35,7 @@ Client::RetryStrategy::RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy>
         wrapped_strategy = Aws::Client::InitRetryStrategy();
 }
 
+/// NOLINTNEXTLINE(google-runtime-int)
 bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
@@ -43,11 +44,13 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     return wrapped_strategy->ShouldRetry(error, attemptedRetries);
 }
 
+/// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
     return wrapped_strategy->CalculateDelayBeforeNextRetry(error, attemptedRetries);
 }
 
+/// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::GetMaxAttempts() const
 {
     return wrapped_strategy->GetMaxAttempts();

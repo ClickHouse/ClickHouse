@@ -112,10 +112,13 @@ public:
     public:
         explicit RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_);
 
+        /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
 
+        /// NOLINTNEXTLINE(google-runtime-int)
         long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
 
+        /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
 
         void GetSendToken() override;
