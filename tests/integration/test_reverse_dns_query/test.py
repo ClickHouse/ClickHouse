@@ -14,7 +14,7 @@ ch_server = cluster.add_instance(
     main_configs=[
         "configs/config.xml",
         "configs/reverse_dns_function.xml",
-        "configs/listen_host.xml"
+        "configs/listen_host.xml",
     ],
 )
 
