@@ -185,7 +185,7 @@ def prepare_tests_results_for_clickhouse(
         current_row["test_status"] = test_status
         if test_result.raw_logs:
             # Protect from too big blobs that contain garbage
-            current_row["test_context_raw"] = test_result.raw_logs[:32 * 1024]
+            current_row["test_context_raw"] = test_result.raw_logs[: 32 * 1024]
         else:
             current_row["test_context_raw"] = ""
         result.append(current_row)
