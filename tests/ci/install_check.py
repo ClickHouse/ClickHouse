@@ -39,11 +39,31 @@ FAILURE = "failure"
 
 
 def prepare_test_scripts():
-    server_test = """#!/bin/bash
+    server_test = r"""#!/bin/bash
 systemctl start clickhouse-server
 clickhouse-client -q 'SELECT version()'"""
-    keeper_test = """#!/bin/bash
+    keeper_test = r"""#!/bin/bash
 systemctl start clickhouse-keeper
+for i in {1..20}; do
+    echo wait for clickhouse-keeper to being up
+    > /dev/tcp/127.0.0.1/9181 2>/dev/null && break || sleep 1
+done
+for i in {1..5}; do
+    echo wait for clickhouse-keeper to answer on mntr request
+    exec 13<>/dev/tcp/127.0.0.1/9181
+    echo mntr >&13
+    cat <&13 | grep zk_version && break || sleep 1
+    exec 13>&-
+done
+exec 13>&-"""
+    binary_test = r"""#!/bin/bash
+chmod +x /packages/clickhouse
+/packages/clickhouse install
+clickhouse-server start --daemon
+for i in {1..5}; do
+    clickhouse-client -q 'SELECT version()' && break || sleep 1
+done
+clickhouse-keeper start --daemon
 for i in {1..20}; do
     echo wait for clickhouse-keeper to being up
     > /dev/tcp/127.0.0.1/9181 2>/dev/null && break || sleep 1
@@ -58,6 +78,7 @@ done
 exec 13>&-"""
     (TEMP_PATH / "server_test.sh").write_text(server_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
+    (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
 
 
 def test_install_deb(image: DockerImage) -> TestResults:
@@ -68,6 +89,7 @@ bash -ex /packages/server_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-keeper*deb
 bash -ex /packages/keeper_test.sh""",
+        "Install clickhouse binary in deb": r"bash -ex /packages/binary_test.sh",
     }
     return test_install(image, tests)
 
@@ -83,6 +105,7 @@ bash -ex /packages/server_test.sh""",
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* -y /packages/clickhouse-keeper*rpm
 bash -ex /packages/keeper_test.sh""",
+        "Install clickhouse binary in rpm": r"bash -ex /packages/binary_test.sh",
     }
     return test_install(image, tests)
 
