@@ -943,7 +943,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
 }
 
-void ExpressionActionsChain::finalize()
+void ExpressionActionsChain::finalize(const NameSet & removed_externally)
 {
     /// Finalize all steps. Right to left to define unnecessary input columns.
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
@@ -1006,9 +1006,12 @@ void ExpressionActionsChain::finalize()
         {
             if (typeid_cast<ExpressionActionsStep *>(steps[i].get()))
             {
-//                std::cerr << "removed: " << column.first << "\n";
-                /// Add the column to input and don't add it to the output.
-                steps[i]->actions()->addInput(column.first, column.second);
+                if (!removed_externally.contains(column.first))
+                {
+//                    std::cerr << "removed: " << column.first << "\n";
+                    /// Add the column to input and don't add it to the output.
+                    steps[i]->actions()->addInput(column.first, column.second);
+                }
             }
         }
     }

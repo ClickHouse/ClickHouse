@@ -248,7 +248,7 @@ struct ExpressionActionsChain : WithContext
 
     void addStep(NameSet non_constant_inputs = {});
 
-    void finalize();
+    void finalize(const NameSet & removed_externally = {});
 
     void clear()
     {

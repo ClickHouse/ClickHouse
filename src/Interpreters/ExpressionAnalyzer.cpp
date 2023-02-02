@@ -1890,6 +1890,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     Names additional_required_columns_after_prewhere;
     ssize_t prewhere_step_num = -1;
+    Strings prewhere_column_names;
     ssize_t where_step_num = -1;
     ssize_t having_step_num = -1;
 
@@ -1910,7 +1911,40 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             }
         }
 
-        chain.finalize();
+//////////////
+        NameSet removed_externally(prewhere_column_names.begin(), prewhere_column_names.end());
+
+        {
+            if (prewhere_step_num >= 0)
+            {
+                const ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
+
+                NameSet columns_to_remove;
+                for (const auto & [name, can_remove] : step.required_output)
+                {
+                    if (name == prewhere_info->prewhere_steps[prewhere_step_num].column_name && can_remove)
+                        removed_externally.insert(name);
+                }
+            }
+
+            if (where_step_num >= 0)
+            {
+                String where_column_name = query.where()->getColumnName();
+                bool remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
+                if (remove_where_filter)
+                    removed_externally.insert(where_column_name);
+            }
+
+            if (having_step_num >= 0)
+            {
+                String having_column_name = query.having()->getColumnName();
+                bool remove_having_filter = chain.steps.at(having_step_num)->required_output.find(having_column_name)->second;
+                if (remove_having_filter)
+                    removed_externally.insert(having_column_name);
+            }
+        }
+///////////////
+        chain.finalize(removed_externally);
 
         finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
 
@@ -1962,7 +1996,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             filter_info->do_remove_column = true;
         }
 
-        Strings prewhere_column_names = query_analyzer.appendPrewhere(chain, !first_stage);
+        prewhere_column_names = query_analyzer.appendPrewhere(chain, !first_stage);
         if (!prewhere_column_names.empty())
         {
             /// Prewhere is always the first one.
