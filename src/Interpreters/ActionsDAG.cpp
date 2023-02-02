@@ -2262,6 +2262,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
 
 const ActionsDAG::Node * ActionsDAG::getOriginalNodeForOutputAlias(const String & output_name)
 {
+    /// find alias in output
     const Node * output_alias = nullptr;
     for (const auto * node : outputs)
     {
@@ -2274,6 +2275,7 @@ const ActionsDAG::Node * ActionsDAG::getOriginalNodeForOutputAlias(const String 
     if (!output_alias)
         return nullptr;
 
+    /// find original(non alias) node it refers to
     const Node * node = output_alias;
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
     {
