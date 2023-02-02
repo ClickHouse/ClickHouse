@@ -223,7 +223,7 @@ private:
     WrappedPtr nested_column;
     WrappedPtr null_map;
     bool need_update_has_null = true;
-    bool has_null;
+    bool has_null = false;
 
     void updateHasNull();
 
