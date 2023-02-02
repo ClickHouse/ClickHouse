@@ -560,9 +560,11 @@ static void injectPartConstVirtualColumns(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, part->name)->convertToFullColumnIfConst();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                 .createColumnConst(rows, part->name)
+                                 ->convertToFullColumnIfConst();
                 else
-                    column = DataTypeString().createColumn();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
 
                 inserter.insertStringColumn(column, virtual_column_name);
             }
@@ -590,9 +592,11 @@ static void injectPartConstVirtualColumns(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeString().createColumnConst(rows, part->info.partition_id)->convertToFullColumnIfConst();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}
+                                 .createColumnConst(rows, part->info.partition_id)
+                                 ->convertToFullColumnIfConst();
                 else
-                    column = DataTypeString().createColumn();
+                    column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
 
                 inserter.insertStringColumn(column, virtual_column_name);
             }
