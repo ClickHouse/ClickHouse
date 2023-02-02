@@ -1057,6 +1057,8 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     """
     )
 
+    instance.wait_for_log_line("Started streaming to 1 attached views")
+
     messages_num = 100000
 
     def insert():
@@ -2982,7 +2984,9 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        insert_messages.append(body.decode())
+        message = body.decode()
+        insert_messages.append(message)
+        print(f"Received {len(insert_messages)} message: {message}")
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
