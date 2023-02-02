@@ -4,6 +4,7 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_mock_servers
 from helpers.utility import generate_values, replace_config, SafeThread
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
@@ -79,46 +80,15 @@ def create_table(node, table_name, **additional_settings):
 
 
 def run_s3_mocks(cluster):
-    logging.info("Starting s3 mocks")
-    mocks = (
-        ("unstable_proxy.py", "resolver", "8081"),
-        ("no_delete_objects.py", "resolver", "8082"),
+    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+    start_mock_servers(
+        cluster,
+        script_dir,
+        [
+            ("unstable_proxy.py", "resolver", "8081"),
+            ("no_delete_objects.py", "resolver", "8082"),
+        ],
     )
-    for mock_filename, container, port in mocks:
-        container_id = cluster.get_container_id(container)
-        current_dir = os.path.dirname(__file__)
-        cluster.copy_file_to_container(
-            container_id,
-            os.path.join(current_dir, "s3_mocks", mock_filename),
-            mock_filename,
-        )
-        cluster.exec_in_container(
-            container_id, ["python", mock_filename, port], detach=True
-        )
-
-    # Wait for S3 mocks to start
-    for mock_filename, container, port in mocks:
-        num_attempts = 100
-        for attempt in range(num_attempts):
-            ping_response = cluster.exec_in_container(
-                cluster.get_container_id(container),
-                ["curl", "-s", f"http://localhost:{port}/"],
-                nothrow=True,
-            )
-            if ping_response != "OK":
-                if attempt == num_attempts - 1:
-                    assert (
-                        ping_response == "OK"
-                    ), f'Expected "OK", but got "{ping_response}"'
-                else:
-                    time.sleep(1)
-            else:
-                logging.debug(
-                    f"mock {mock_filename} ({port}) answered {ping_response} on attempt {attempt}"
-                )
-                break
-
-    logging.info("S3 mocks started")
 
 
 def wait_for_delete_s3_objects(cluster, expected, timeout=30):

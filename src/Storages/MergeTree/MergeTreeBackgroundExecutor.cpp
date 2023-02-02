@@ -140,7 +140,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
             if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-                LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
+                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
             else
                 tryLogCurrentException(__PRETTY_FUNCTION__);
         });
@@ -200,7 +200,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             NOEXCEPT_SCOPE({
                 ALLOW_ALLOCATIONS_IN_SCOPE;
                 if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-                    LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
+                    LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
                 else
                     tryLogCurrentException(__PRETTY_FUNCTION__);
             });

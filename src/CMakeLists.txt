@@ -364,6 +364,10 @@ if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32_s390x)
 endif()
 
+if (TARGET ch_contrib::crc32-vpmsum)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
+ endif()
+
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
 
@@ -509,6 +513,11 @@ if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
 
+if (TARGET ch_contrib::liburing)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::liburing)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LIBURING_COMPAT_INCLUDE_DIR} ${LIBURING_INCLUDE_DIR})
+endif()
+
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
 if (USE_ORC)
@@ -605,6 +614,11 @@ if (ENABLE_TESTS)
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
+
+    if (TARGET ch_contrib::azure_sdk)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
 
     add_check(unit_tests_dbms)
 endif ()

@@ -5,9 +5,6 @@
 namespace DB
 {
 
-class IColumn;
-
-
 struct SettingValue
 {
     virtual ~SettingValue() = default;

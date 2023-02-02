@@ -11,15 +11,15 @@
 #if USE_AWS_S3
 
 #include <base/types.h>
-#include <aws/core/Aws.h>
-#include <aws/core/client/ClientConfiguration.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/S3Errors.h>
-#include <Poco/URI.h>
-
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 
+#include <Poco/URI.h>
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Errors.h>
+
+
+namespace Aws::S3 { class S3Client; }
 
 namespace DB
 {
@@ -120,22 +120,6 @@ struct URI
 
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
-
-struct ObjectInfo
-{
-    size_t size = 0;
-    time_t last_modification_time = 0;
-};
-
-bool isNotFoundError(Aws::S3::S3Errors error);
-
-Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
-
-S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
-
-size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3);
-
-bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
 
 }
 #endif

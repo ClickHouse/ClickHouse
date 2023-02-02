@@ -96,7 +96,7 @@ git push
     - `clickhouse`: Main built binary.
     - `clickhouse-odbc-bridge`
     - `unit_tests_dbms`: 带有 ClickHouse 单元测试的 GoogleTest 二进制文件.
-    - `performance.tgz`: 用于性能测试的特殊包.
+    - `performance.tar.zst`: 用于性能测试的特殊包.
 
 ## 特殊构建检查 {#special-buildcheck}
 使用clang-tidy执行静态分析和代码样式检查. 该报告类似于构建检查. 修复在构建日志中发现的错误.
@@ -109,9 +109,6 @@ git push
 
 ## 集成测试 {#integration-tests}
 运行[集成测试](./tests.md#integration-tests).
-
-## Testflows 检查{#testflows-check}
-使用Testflows测试系统去运行一些测试, 在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally)查看如何在本地运行它们.
 
 ## 压力测试 {#stress-test}
 从多个客户端并发运行无状态功能测试, 用以检测与并发相关的错误.如果失败:

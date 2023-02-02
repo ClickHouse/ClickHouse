@@ -106,11 +106,13 @@ void MaterializedPostgreSQLConsumer::assertCorrectInsertion(StorageData::Buffer 
         || column_idx >= buffer.description.types.size()
         || column_idx >= buffer.columns.size())
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Attempt to insert into buffer at position: {}, but block columns size is {}, types size: {}, columns size: {}, buffer structure: {}",
-            column_idx,
-            buffer.description.sample_block.columns(), buffer.description.types.size(), buffer.columns.size(),
-            buffer.description.sample_block.dumpStructure());
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Attempt to insert into buffer at position: "
+                        "{}, but block columns size is {}, types size: {}, columns size: {}, buffer structure: {}",
+                        column_idx,
+                        buffer.description.sample_block.columns(),
+                        buffer.description.types.size(), buffer.columns.size(),
+                        buffer.description.sample_block.dumpStructure());
 }
 
 

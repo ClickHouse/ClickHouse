@@ -20,15 +20,17 @@ namespace DB
 namespace
 {
 
-class SumIfToCountIfVisitor : public InDepthQueryTreeVisitor<SumIfToCountIfVisitor>
+class SumIfToCountIfVisitor : public InDepthQueryTreeVisitorWithContext<SumIfToCountIfVisitor>
 {
 public:
-    explicit SumIfToCountIfVisitor(ContextPtr & context_)
-        : context(context_)
-    {}
+    using Base = InDepthQueryTreeVisitorWithContext<SumIfToCountIfVisitor>;
+    using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_rewrite_sum_if_to_count_if)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction())
             return;
@@ -56,7 +58,7 @@ public:
             if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
                 return;
 
-            if (constant_value_literal.get<UInt64>() != 1 || context->getSettingsRef().aggregate_functions_null_for_empty)
+            if (constant_value_literal.get<UInt64>() != 1 || getSettings().aggregate_functions_null_for_empty)
                 return;
 
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
@@ -77,11 +79,11 @@ public:
         if (!nested_function || nested_function->getFunctionName() != "if")
             return;
 
-        auto & nested_if_function_arguments_nodes = nested_function->getArguments().getNodes();
+        const auto & nested_if_function_arguments_nodes = nested_function->getArguments().getNodes();
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
-        auto & cond_argument = nested_if_function_arguments_nodes[0];
+        const auto & cond_argument = nested_if_function_arguments_nodes[0];
         const auto * if_true_condition_constant_node = nested_if_function_arguments_nodes[1]->as<ConstantNode>();
         const auto * if_false_condition_constant_node = nested_if_function_arguments_nodes[2]->as<ConstantNode>();
 
@@ -101,7 +103,7 @@ public:
         /// Rewrite `sum(if(cond, 1, 0))` into `countIf(cond)`.
         if (if_true_condition_value == 1 && if_false_condition_value == 0)
         {
-            function_node_arguments_nodes[0] = std::move(nested_if_function_arguments_nodes[0]);
+            function_node_arguments_nodes[0] = nested_if_function_arguments_nodes[0];
             function_node_arguments_nodes.resize(1);
 
             resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
@@ -120,9 +122,9 @@ public:
             auto not_function = std::make_shared<FunctionNode>("not");
 
             auto & not_function_arguments = not_function->getArguments().getNodes();
-            not_function_arguments.push_back(std::move(nested_if_function_arguments_nodes[0]));
+            not_function_arguments.push_back(nested_if_function_arguments_nodes[0]);
 
-            not_function->resolveAsFunction(FunctionFactory::instance().get("not", context)->build(not_function->getArgumentTypes()));
+            not_function->resolveAsFunction(FunctionFactory::instance().get("not", getContext())->build(not_function->getArgumentColumns()));
 
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
@@ -143,8 +145,6 @@ private:
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
-
-    ContextPtr & context;
 };
 
 }
