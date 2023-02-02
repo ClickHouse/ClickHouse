@@ -49,7 +49,7 @@ namespace
         {
             const IQueryPlanStep * current_step = node->step.get();
 
-            /// don't try to remove DISTINCT after union or join
+            /// don't try to remove DISTINCT after union/join/intersect/except
             if (typeid_cast<const UnionStep *>(current_step) || typeid_cast<const JoinStep *>(current_step)
                 || typeid_cast<const IntersectOrExceptStep *>(current_step))
                 break;
@@ -129,8 +129,7 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
     for (const auto * node : parent_node->children)
     {
         /// check if it is distinct node
-        const DistinctStep * distinct_step = typeid_cast<DistinctStep *>(node->step.get());
-        if (!distinct_step)
+        if (typeid_cast<const DistinctStep *>(node->step.get()))
             continue;
 
         if (canRemoveDistinct(node))
