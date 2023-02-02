@@ -7522,7 +7522,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getFirstAlterMutationCommandsForPart(part);
+    MutationCommands commands = getAlterMutationCommandsForPart(part);
 
     AlterConversions result{};
     for (const auto & command : commands)

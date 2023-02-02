@@ -170,11 +170,7 @@ static void splitMutationCommands(
             if (alter_conversions.columnHasNewName(part_column.name))
             {
                 auto new_column_name = alter_conversions.getColumnNewName(part_column.name);
-                for_file_renames.push_back({
-                    .type = MutationCommand::Type::RENAME_COLUMN,
-                    .column_name = part_column.name,
-                    .rename_to = new_column_name,
-                });
+                for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = part_column.name, .rename_to = new_column_name});
 
                 part_columns.rename(part_column.name, new_column_name);
             }

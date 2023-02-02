@@ -265,7 +265,7 @@ private:
 
 protected:
 
-    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    MutationCommands getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }

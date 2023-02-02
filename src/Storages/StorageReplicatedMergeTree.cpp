@@ -7892,9 +7892,9 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
 }
 
 
-MutationCommands StorageReplicatedMergeTree::getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const
+MutationCommands StorageReplicatedMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
-    return queue.getFirstAlterMutationCommandsForPart(part);
+    return queue.getAlterMutationCommandsForPart(part);
 }
 
 
