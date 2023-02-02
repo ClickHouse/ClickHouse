@@ -218,7 +218,7 @@ private:
             }
         );
 
-        for (size_t attempt = 0; attempt < max_redirects; ++attempt)
+        for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
         {
             auto result = request_fn(request);
             if (result.IsSuccess())
