@@ -163,8 +163,13 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 
 void ThreadStatus::attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope)
 {
+    if (current_performance_counters == performance_counters_scope)
+        /// Allow to attach the same scope multiple times
+        return;
+
     if (current_performance_counters != &performance_counters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't attach performance counters scope to the thread, it is already attached to another scope");
+
     performance_counters_scope->setParent(current_performance_counters);
     current_performance_counters = performance_counters_scope;
 }

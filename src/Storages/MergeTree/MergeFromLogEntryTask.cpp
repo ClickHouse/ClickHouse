@@ -268,7 +268,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
-    ProfileEventsScope profile_events_scope(&profile_counters);
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
@@ -301,8 +300,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
-    ProfileEventsScope profile_events_scope(&profile_counters);
-
     part = merge_task->getFuture().get();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);

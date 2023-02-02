@@ -815,9 +815,6 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the local profile_counters.
-        ProfileEventsScope profile_events_scope(&profile_counters);
-
         auto & current_level_parts = level_parts[current_level];
         auto & next_level_parts = level_parts[next_level];
 
@@ -918,8 +915,6 @@ private:
 
     /// TODO(nikitamikhaylov): make this constant a setting
     static constexpr size_t max_parts_to_merge_in_one_level = 10;
-
-    ProfileEvents::Counters profile_counters;
 };
 
 
@@ -1143,9 +1138,6 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the local profile_counters.
-        ProfileEventsScope profile_events_scope(&profile_counters);
-
         switch (state)
         {
             case State::NEED_PREPARE:
@@ -1261,8 +1253,6 @@ private:
     MutationContextPtr ctx;
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
-
-    ProfileEvents::Counters profile_counters;
 };
 
 
@@ -1277,9 +1267,6 @@ public:
 
     bool executeStep() override
     {
-        /// Metrics will be saved in the local profile_counters.
-        ProfileEventsScope profile_events_scope(&profile_counters);
-
         switch (state)
         {
             case State::NEED_PREPARE:
@@ -1471,7 +1458,6 @@ private:
     MergedColumnOnlyOutputStreamPtr out;
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
-    ProfileEvents::Counters profile_counters;
 };
 
 
