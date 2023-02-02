@@ -532,14 +532,14 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     it->second.writeCSN(csn);
 }
 
-void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, bool force_wait)
+void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
     Int64 version = startMutation(commands, query_context);
 
-    if (force_wait || query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
+    if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
 }
 
@@ -1128,7 +1128,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
             future_part->name = part->getNewName(new_part_info);
-            future_part->type = part->getType();
+            future_part->part_format = part->getFormat();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
@@ -1988,8 +1988,8 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
             }
             catch (const Exception & ex)
             {
-                results.emplace_back(part->name, false,
-                    "Check of part finished with error: '" + ex.message() + "'");
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
             }
         }
         else
