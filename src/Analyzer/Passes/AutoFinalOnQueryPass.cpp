@@ -31,7 +31,6 @@ namespace
     private:
         static bool autoFinalOnQuery(TableNode & table_node, StoragePtr storage, ContextPtr context)
         {
-            // query.tables() is required because not all queries have tables in it, it could be a function.
             bool is_auto_final_setting_on = context->getSettingsRef().final;
             bool is_final_supported = storage && storage->supportsFinal() && !storage->isRemote();
             bool is_query_already_final = table_node.hasTableExpressionModifiers() ? table_node.getTableExpressionModifiers().has_value() : false;
