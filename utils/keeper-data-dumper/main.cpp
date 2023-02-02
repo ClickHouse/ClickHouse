@@ -69,7 +69,12 @@ int main(int argc, char *argv[])
 
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
-    DB::KeeperLogStore changelog(argv[2], 10000000, true, settings->compress_logs);
+    DB::LogFileSettings log_file_settings;
+    log_file_settings.force_sync = true;
+    log_file_settings.compress_logs = settings->compress_logs;
+    log_file_settings.rotate_interval = 10000000;
+
+    DB::KeeperLogStore changelog(argv[2], log_file_settings);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
     if (changelog.size() == 0)
         LOG_INFO(logger, "Changelog empty");
