@@ -64,6 +64,7 @@ set allow_experimental_parallel_reading_from_replicas = 1;
 set max_parallel_replicas = 3;
 set use_hedged_requests = 0;
 set cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+set distributed_aggregation_memory_efficient=1;
 
 select count() from pr_t;
 
