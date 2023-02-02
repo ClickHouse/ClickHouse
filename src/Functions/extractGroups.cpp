@@ -61,18 +61,18 @@ public:
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
         if (needle.empty())
-            throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} length of 'needle' argument must be greater than 0.", getName());
 
         const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(needle);
         const auto & re2 = regexp.getRE2();
 
         if (!re2)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         const size_t groups_count = re2->NumberOfCapturingGroups();
 
         if (!groups_count)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
 
         // Including 0-group, which is the whole regexp.
         PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);

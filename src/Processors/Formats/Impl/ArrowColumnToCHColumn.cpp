@@ -44,6 +44,7 @@
         M(arrow::Type::INT32, DB::Int32) \
         M(arrow::Type::UINT64, DB::UInt64) \
         M(arrow::Type::INT64, DB::Int64) \
+        M(arrow::Type::DURATION, DB::Int64) \
         M(arrow::Type::HALF_FLOAT, DB::Float32) \
         M(arrow::Type::FLOAT, DB::Float32) \
         M(arrow::Type::DOUBLE, DB::Float64)
@@ -386,7 +387,9 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         for (int64_t i = 0; i != chunk->length(); ++i)
         {
             if (data[i] < 0 || data[i] >= dict_size)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Index {} in Dictionary column is out of bounds, dictionary size is {}", Int64(data[i]), UInt64(dict_size));
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                                "Index {} in Dictionary column is out of bounds, dictionary size is {}",
+                                Int64(data[i]), UInt64(dict_size));
         }
 
         /// If dictionary type is not nullable and arrow dictionary contains default type
@@ -734,13 +737,15 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             }
 
             throw Exception(
-                ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported {} type '{}' of an input column '{}'. If it happens during schema inference and you want to skip columns with "
-                "unsupported types, you can enable setting input_format_{}_skip_columns_with_unsupported_types_in_schema_inference",
-                format_name,
-                arrow_column->type()->name(),
-                column_name,
-                boost::algorithm::to_lower_copy(format_name));
+                            ErrorCodes::UNKNOWN_TYPE,
+                            "Unsupported {} type '{}' of an input column '{}'. "
+                            "If it happens during schema inference and you want to skip columns with "
+                            "unsupported types, you can enable setting input_format_{}"
+                            "_skip_columns_with_unsupported_types_in_schema_inference",
+                            format_name,
+                            arrow_column->type()->name(),
+                            column_name,
+                            boost::algorithm::to_lower_copy(format_name));
         }
     }
 }

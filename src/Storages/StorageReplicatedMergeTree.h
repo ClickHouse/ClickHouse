@@ -4,6 +4,7 @@
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
@@ -152,7 +153,7 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
@@ -335,6 +336,7 @@ private:
     friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
+    friend class AsyncBlockIDsCache;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreeAttachThread;
@@ -443,6 +445,8 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
+    AsyncBlockIDsCache async_block_ids_cache;
+
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
@@ -524,7 +528,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -625,7 +629,7 @@ private:
         const DataPartsVector & parts,
         const String & merged_name,
         const UUID & merged_part_uuid,
-        const MergeTreeDataPartType & merged_part_type,
+        const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
         ReplicatedMergeTreeLogEntryData * out_log_entry,

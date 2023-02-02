@@ -18,6 +18,7 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/StreamInQueryCacheTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
@@ -514,7 +515,6 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
     processors->emplace_back(std::move(transform));
 }
 
-
 bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
 {
     if (!output_format)
@@ -523,6 +523,27 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
+}
+
+void QueryPipeline::streamIntoQueryCache(std::shared_ptr<StreamInQueryCacheTransform> transform)
+{
+    assert(pulling());
+
+    connect(*output, transform->getInputPort());
+    output = &transform->getOutputPort();
+    processors->emplace_back(transform);
+}
+
+void QueryPipeline::finalizeWriteInQueryCache()
+{
+    auto it = std::find_if(
+        processors->begin(), processors->end(),
+        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryCacheTransform *>(&*processor); });
+
+    /// the pipeline should theoretically contain just one StreamInQueryCacheTransform
+
+    if (it != processors->end())
+        dynamic_cast<StreamInQueryCacheTransform &>(**it).finalizeWriteInQueryCache();
 }
 
 void QueryPipeline::addStorageHolder(StoragePtr storage)

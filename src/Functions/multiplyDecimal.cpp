@@ -48,7 +48,7 @@ struct MultiplyDecimalsImpl
             return Decimal256(0);
 
         if (multiplied.size() > DecimalUtils::max_precision<Decimal256>)
-            throw DB::Exception("Numeric overflow: result bigger that Decimal256", ErrorCodes::DECIMAL_OVERFLOW);
+            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
 
         return Decimal256(sign_a * sign_b * DecimalOpHelpers::fromDigits(multiplied));
     }
