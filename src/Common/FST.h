@@ -19,18 +19,18 @@ namespace DB
 /// [Direct Construction of Minimal Acyclic Subsequential Transduers] by Stoyan Mihov and Denis Maurel, University of Tours, France
 namespace FST
 {
+
 using Output = UInt64;
 
 class State;
 using StatePtr = std::shared_ptr<State>;
 
-/// Arc represents a transition from one state to another
+/// Arc represents a transition from one state to another.
 /// It includes the target state to which the arc points and the arc's output.
 struct Arc
 {
     Arc() = default;
-
-    explicit Arc(Output output_, const StatePtr & target_) : output{output_}, target{target_} { }
+    Arc(Output output_, const StatePtr & target_);
 
     /// 0 means the arc has no output
     Output output = 0;
@@ -53,13 +53,15 @@ public:
     /// computes the rank
     UInt64 getIndex(char label) const;
 
-    UInt64 serialize(WriteBuffer& write_buffer);
+    UInt64 serialize(WriteBuffer & write_buffer);
+
 private:
-    friend class State;
-    friend class FiniteStateTransducer;
     /// data holds a 256-bit bitmap for all labels of a state. Its 256 bits correspond to 256
     /// possible label values.
-    UInt256 data{ 0 };
+    UInt256 data = 0;
+
+    friend class State;
+    friend class FiniteStateTransducer;
 };
 
 /// State implements the State in Finite State Transducer
@@ -77,9 +79,9 @@ public:
         /// Note this is NOT enabled for now since it is experimental
         Bitmap,
     };
-    State() = default;
 
-    State(const State & state) = default;
+    State() = default;
+    State(const State & State) = default;
 
     UInt64 hash() const;
 
@@ -91,22 +93,12 @@ public:
 
     UInt64 serialize(WriteBuffer & write_buffer);
 
-    bool isFinal() const
-    {
-        return flag_values.is_final == 1;
-    }
-    void setFinal(bool value)
-    {
-        flag_values.is_final = value;
-    }
-    EncodingMethod getEncodingMethod() const
-    {
-        return flag_values.encoding_method;
-    }
-    void readFlag(ReadBuffer & read_buffer)
-    {
-        read_buffer.readStrict(reinterpret_cast<char&>(flag));
-    }
+    bool isFinal() const { return flag_values.is_final == 1; }
+    void setFinal(bool value) { flag_values.is_final = value; }
+
+    EncodingMethod getEncodingMethod() const { return flag_values.encoding_method; }
+
+    void readFlag(ReadBuffer & read_buffer);
 
     /// Transient ID of the state which is used for building FST. It won't be serialized
     UInt64 id = 0;
@@ -116,6 +108,7 @@ public:
 
     /// Arcs which are started from state, the 'char' is the label on the arc
     std::unordered_map<char, Arc> arcs;
+
 private:
     struct FlagValues
     {
@@ -132,22 +125,21 @@ private:
 
 bool operator==(const State & state1, const State & state2);
 
-inline constexpr size_t MAX_TERM_LENGTH = 256;
+static constexpr size_t MAX_TERM_LENGTH = 256;
 
-/// FSTBuilder is used to build Finite State Transducer by adding words incrementally.
+/// FstBuilder is used to build Finite State Transducer by adding words incrementally.
 /// Note that all the words have to be added in sorted order in order to achieve minimized result.
-/// In the end, the caller should call build() to serialize minimized FST to WriteBuffer
-class FSTBuilder
+/// In the end, the caller should call build() to serialize minimized FST to WriteBuffer.
+class FstBuilder
 {
 public:
-    explicit FSTBuilder(WriteBuffer & write_buffer_);
+    explicit FstBuilder(WriteBuffer & write_buffer_);
 
-    void add(const std::string & word, Output output);
+    void add(std::string_view word, Output output);
     UInt64 build();
 private:
     StatePtr findMinimized(const State & s, bool & found);
     void minimizePreviousWordSuffix(Int64 down_to);
-    static size_t getCommonPrefixLength(const String & word1, const String & word2);
 
     std::array<StatePtr, MAX_TERM_LENGTH + 1> temp_states;
     String previous_word;
@@ -171,8 +163,8 @@ class FiniteStateTransducer
 public:
     FiniteStateTransducer() = default;
     explicit FiniteStateTransducer(std::vector<UInt8> data_);
-    std::pair<UInt64, bool> getOutput(const String & term);
     void clear();
+    std::pair<UInt64, bool> getOutput(std::string_view term);
     std::vector<UInt8> & getData() { return data; }
 
 private:

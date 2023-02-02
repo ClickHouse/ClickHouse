@@ -59,6 +59,8 @@ public:
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
     size_t getNumFiles() const override;
+    size_t getNumProcessedFiles() const override;
+    UInt64 getProcessedFilesSize() const override;
     UInt64 getUncompressedSize() const override;
     UInt64 getCompressedSize() const override;
     Strings listFiles(const String & directory, bool recursive) const override;
@@ -101,9 +103,15 @@ private:
     std::shared_ptr<IArchiveReader> getArchiveReader(const String & suffix) const;
     std::shared_ptr<IArchiveWriter> getArchiveWriter(const String & suffix);
 
-    /// Increases `uncompressed_size` by a specific value and `num_files` by 1.
+    /// Increases `uncompressed_size` by a specific value,
+    /// also increases `num_files` by 1.
     void increaseUncompressedSize(UInt64 file_size);
     void increaseUncompressedSize(const FileInfo & info);
+
+    /// Increases `num_processed_files` by a specific value,
+    /// also increases `num_processed_files` by 1.
+    void increaseProcessedSize(UInt64 file_size) const;
+    void increaseProcessedSize(const FileInfo & info);
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
@@ -121,6 +129,8 @@ private:
     std::optional<UUID> uuid;
     time_t timestamp = 0;
     size_t num_files = 0;
+    mutable size_t num_processed_files = 0;
+    mutable UInt64 processed_files_size = 0;
     UInt64 uncompressed_size = 0;
     UInt64 compressed_size = 0;
     int version;
