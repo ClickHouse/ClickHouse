@@ -367,6 +367,27 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         rename_step->setStepDescription("Change column names to column identifiers");
         query_plan.addStep(std::move(rename_step));
     }
+    else
+    {
+        Planner planner(select_query_info.query_tree,
+            SelectQueryOptions(from_stage),
+            select_query_info.planner_context,
+            PlannerConfiguration{.only_analyze = true});
+        planner.buildQueryPlanIfNeeded();
+
+        auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
+        materializeBlockInplace(expected_header);
+
+        auto rename_actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            expected_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position,
+            true /*ignore_constant_values*/);
+        auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
+        std::string step_description = table_expression_data.isRemote() ? "Change remote column names to local column names" : "Change column names";
+        rename_step->setStepDescription(std::move(step_description));
+        query_plan.addStep(std::move(rename_step));
+    }
 
     return {std::move(query_plan), from_stage};
 }
@@ -918,6 +939,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 select_query_options,
                 planner_context,
                 is_single_table_expression));
+
+            if (query_plans_stack.back().from_stage != QueryProcessingStage::FetchColumns)
+                break;
         }
     }
 

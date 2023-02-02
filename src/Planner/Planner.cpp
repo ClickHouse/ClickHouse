@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_PREWHERE;
 }
 
 /** ClickHouse query planner.
@@ -131,6 +132,37 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
             "Storage {} (table {}) does not support transactions",
             storage->getName(),
             storage->getStorageID().getNameForLogs());
+    }
+}
+
+void checkStorageSupportPrewhere(const QueryTreeNodePtr & query_node)
+{
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    auto table_expression = extractLeftTableExpression(query_node_typed.getJoinTree());
+
+    if (auto * table_node = table_expression->as<TableNode>())
+    {
+        auto storage = table_node->getStorage();
+        if (!storage->supportsPrewhere())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Storage {} (table {}) does not support PREWHERE",
+                storage->getName(),
+                storage->getStorageID().getNameForLogs());
+    }
+    else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+    {
+        auto storage = table_function_node->getStorage();
+        if (!storage->supportsPrewhere())
+            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                "Table function storage {} (table {}) does not support PREWHERE",
+                storage->getName(),
+                storage->getStorageID().getNameForLogs());
+    }
+    else
+    {
+        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+            "Subquery {} does not support PREWHERE",
+            query_node->formatASTForErrorMessage());
     }
 }
 
@@ -1090,6 +1122,8 @@ void Planner::buildPlanForQueryNode()
 
     if (query_node.hasPrewhere())
     {
+        checkStorageSupportPrewhere(query_tree);
+
         if (query_node.hasWhere())
             query_node.getWhere() = mergeConditionNodes({query_node.getPrewhere(), query_node.getWhere()}, query_context);
         else
