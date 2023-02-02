@@ -1518,8 +1518,7 @@ try
         global_context->setMMappedFileCache(mmap_cache_size);
 
     /// A cache for query results.
-    global_context->setQueryCache();
-    global_context->updateQueryCacheConfiguration(config());
+    global_context->setQueryCache(config());
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
