@@ -27,6 +27,8 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/GetObjectAttributesRequest.h>
+#    include <aws/s3/model/GetObjectRequest.h>
 #    include <aws/s3/model/HeadObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
@@ -40,7 +42,11 @@
 
 namespace ProfileEvents
 {
+    extern const Event S3GetObjectAttributes;
+    extern const Event S3GetObjectMetadata;
     extern const Event S3HeadObject;
+    extern const Event DiskS3GetObjectAttributes;
+    extern const Event DiskS3GetObjectMetadata;
     extern const Event DiskS3HeadObject;
 }
 
@@ -126,7 +132,7 @@ public:
         const auto & [level, prio] = convertLogLevel(log_level);
         if (tag_loggers.contains(tag))
         {
-            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
+            LOG_IMPL(tag_loggers[tag], level, prio, fmt::runtime(message));
         }
         else
         {
@@ -859,7 +865,9 @@ namespace S3
 
             boost::to_upper(name);
             if (name != S3 && name != COS && name != OBS && name != OSS)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
+                                quoteString(name));
 
             if (name == S3)
                 storage_name = name;
@@ -885,69 +893,8 @@ namespace S3
         /// S3 specification requires at least 3 and at most 63 characters in bucket name.
         /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
         if (bucket.length() < 3 || bucket.length() > 63)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
-    }
-
-    bool isNotFoundError(Aws::S3::S3Errors error)
-    {
-        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
-    }
-
-    Aws::S3::Model::HeadObjectOutcome headObject(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
-    {
-        ProfileEvents::increment(ProfileEvents::S3HeadObject);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
-
-        Aws::S3::Model::HeadObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        return client.HeadObject(req);
-    }
-
-    S3::ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
-    {
-        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
-
-        if (outcome.IsSuccess())
-        {
-            auto read_result = outcome.GetResultWithOwnership();
-            return {.size = static_cast<size_t>(read_result.GetContentLength()), .last_modification_time = read_result.GetLastModified().Millis() / 1000};
-        }
-        else if (throw_on_error)
-        {
-            const auto & error = outcome.GetError();
-            throw DB::Exception(ErrorCodes::S3_ERROR,
-                "Failed to HEAD object: {}. HTTP response code: {}",
-                error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
-        }
-        return {};
-    }
-
-    size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool throw_on_error, bool for_disk_s3)
-    {
-        return getObjectInfo(client, bucket, key, version_id, throw_on_error, for_disk_s3).size;
-    }
-
-    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
-    {
-        auto outcome = headObject(client, bucket, key, version_id, for_disk_s3);
-
-        if (outcome.IsSuccess())
-            return true;
-
-        const auto & error = outcome.GetError();
-        if (isNotFoundError(error.GetErrorType()))
-            return false;
-
-        throw S3Exception(error.GetErrorType(),
-            "Failed to check existence of key {} in bucket {}: {}",
-            key, bucket, error.GetMessage());
     }
 }
 
@@ -991,7 +938,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
             auto header_str = config.getString(config_elem + "." + subkey);
             auto delimiter = header_str.find(':');
             if (delimiter == std::string::npos)
-                throw Exception("Malformed s3 header value", ErrorCodes::INVALID_CONFIG_PARAMETER);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
             headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
         }
     }

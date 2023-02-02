@@ -95,18 +95,18 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception("QueryProfiler disabled because they cannot work under sanitizers", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif !USE_UNWIND
     UNUSED(thread_id);
     UNUSED(clock_type);
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work with stock libunwind");
 #else
     /// Sanity check.
     if (!hasPHDRCache())
-        throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
 
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
     if (period < 1000000)
@@ -144,8 +144,8 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
             /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
             if (errno == 0)
-                throw Exception("Failed to create thread timer. The function 'timer_create' returned non-zero but didn't set errno. This is bug in your OS.",
-                    ErrorCodes::CANNOT_CREATE_TIMER);
+                throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer. The function "
+                                "'timer_create' returned non-zero but didn't set errno. This is bug in your OS.");
 
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }

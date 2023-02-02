@@ -39,6 +39,15 @@ enum class WeekModeFlag : UInt8
 };
 using YearWeek = std::pair<UInt16, UInt8>;
 
+/// Modes for toDayOfWeek() function.
+enum class WeekDayMode
+{
+    WeekStartsMonday1 = 0,
+    WeekStartsMonday0 = 1,
+    WeekStartsSunday0 = 2,
+    WeekStartsSunday1 = 3
+};
+
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
   */
@@ -619,8 +628,27 @@ public:
     template <typename DateOrTime>
     inline Int16 toYear(DateOrTime v) const { return lut[toLUTIndex(v)].year; }
 
+    /// 1-based, starts on Monday
     template <typename DateOrTime>
     inline UInt8 toDayOfWeek(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_week; }
+
+    template <typename DateOrTime>
+    inline UInt8 toDayOfWeek(DateOrTime v, UInt8 week_day_mode) const
+    {
+        WeekDayMode mode = check_week_day_mode(week_day_mode);
+
+        UInt8 res = toDayOfWeek(v);
+        using enum WeekDayMode;
+        bool start_from_sunday = (mode == WeekStartsSunday0 || mode == WeekStartsSunday1);
+        bool zero_based = (mode == WeekStartsMonday0 || mode == WeekStartsSunday0);
+
+        if (start_from_sunday)
+            res = res % 7 + 1;
+        if (zero_based)
+            --res;
+
+        return res;
+    }
 
     template <typename DateOrTime>
     inline UInt8 toDayOfMonth(DateOrTime v) const { return lut[toLUTIndex(v)].day_of_month; }
@@ -842,6 +870,12 @@ public:
         if (!(week_format & static_cast<UInt8>(WeekModeFlag::MONDAY_FIRST)))
             week_format ^= static_cast<UInt8>(WeekModeFlag::FIRST_WEEKDAY);
         return week_format;
+    }
+
+    /// Check and change mode to effective.
+    inline WeekDayMode check_week_day_mode(UInt8 mode) const /// NOLINT
+    {
+        return static_cast<WeekDayMode>(mode & 3);
     }
 
     /** Calculate weekday from d.

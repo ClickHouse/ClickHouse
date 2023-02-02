@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
@@ -84,6 +85,16 @@ namespace
         void operator() (const UUID & x) const
         {
             operator()(x.toUnderType());
+        }
+        void operator() (const IPv4 & x) const
+        {
+            UInt8 type = Field::Types::IPv4;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const IPv6 & x) const
+        {
+            return operator()(String(reinterpret_cast<const char *>(&x), 16));
         }
         void operator() (const Float64 & x) const
         {
@@ -189,7 +200,7 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
 String MergeTreePartition::getID(const Block & partition_key_sample) const
 {
     if (value.size() != partition_key_sample.columns())
-        throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid partition key size: {}", value.size());
 
     if (value.empty())
         return "all"; /// It is tempting to use an empty string here. But that would break directory structure in ZK.
@@ -201,7 +212,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     bool are_all_integral = true;
     for (const Field & field : value)
     {
-        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64)
+        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64 && field.getType() != Field::Types::IPv4)
         {
             are_all_integral = false;
             break;
@@ -220,6 +231,8 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
 
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
+            else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
+                result += toString(value[i].get<IPv4>().toUnderType());
             else
                 result += applyVisitor(to_string_visitor, value[i]);
 

@@ -164,5 +164,3 @@ clickhouse也支持自己使用keyfile的方式来维护kerbros的凭证。配�
 
 -   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 -   [后台消息代理调度池大小](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
-
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/kafka/) <!--hide-->

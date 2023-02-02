@@ -39,7 +39,7 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Disk name can contain only alphanumeric and '_' ({})", disk_name);
 
         if (disk_name == default_disk_name)
             has_default_disk = true;
@@ -118,11 +118,8 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeBackQuotedString(name, warning);
         }
 
-        if (num_disks_removed_from_config > 0)
-        {
-            writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
-            LOG_WARNING(&Poco::Logger::get("DiskSelector"), fmt::runtime(warning.str()));
-        }
+        LOG_WARNING(&Poco::Logger::get("DiskSelector"), "{} disappeared from configuration, "
+                                                        "this change will be applied after restart of ClickHouse", warning.str());
     }
 
     return result;

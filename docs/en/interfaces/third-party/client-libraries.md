@@ -74,5 +74,3 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
