@@ -348,7 +348,7 @@ public:
         const ContextPtr & context);
 
     /// Return original node (input) for alias in output if exists
-    const Node* getOriginalNodeForOutputAlias(const String & output_name);
+    const Node * getOriginalNodeForOutputAlias(const String & output_name);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
