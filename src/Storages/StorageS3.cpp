@@ -110,6 +110,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 class IOutputFormat;
@@ -262,6 +263,9 @@ private:
             list_objects_pool.wait();
             outcome_future = listObjectsAsync();
         }
+
+        if (result_batch.empty())
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files using prefix {}", request.GetPrefix());
 
         KeysWithInfo temp_buffer;
         temp_buffer.reserve(result_batch.size());
