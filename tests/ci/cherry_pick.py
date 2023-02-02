@@ -225,7 +225,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         )
         git_runner(f"{self.git_prefix} reset --soft {merge_base}")
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
-        git_runner(f"{self.git_prefix} commit -a --allow-empty -F -", input=title)
+        git_runner(f"{self.git_prefix} commit --allow-empty -F -", input=title)
 
         # Push with force, create the backport PR, lable and assign it
         git_runner(
