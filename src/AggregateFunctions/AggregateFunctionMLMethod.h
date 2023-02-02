@@ -172,7 +172,7 @@ private:
 class Nesterov : public IWeightsUpdater
 {
 public:
-    explicit Nesterov(size_t num_params, Float64 alpha_ = 0.9) : alpha(alpha_) \
+    explicit Nesterov(size_t num_params, Float64 alpha_ = 0.9) : alpha(alpha_)
     {
         accumulated_gradient.resize(num_params + 1, 0);
     }
