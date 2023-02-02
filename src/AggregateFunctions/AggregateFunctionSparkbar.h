@@ -18,6 +18,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 template<typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
