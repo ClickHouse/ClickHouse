@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Common/Exception.h"
 #include "config.h"
 
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
+#include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
@@ -15,9 +15,15 @@
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3ServiceClientModel.h>
 #include <aws/core/client/AWSErrorMarshaller.h>
+#include <aws/core/client/RetryStrategy.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace S3
 {
@@ -85,6 +91,70 @@ class S3Client : public Aws::S3::S3Client
 {
 public:
     template <typename... Args>
+    static std::unique_ptr<S3Client> createClient(Args &&... args)
+    {
+        (verifyArgument(args), ...);
+        return std::unique_ptr<S3Client>(new S3Client(std::forward<Args>(args)...));
+    }
+
+    S3Client & operator=(const S3Client &) = delete;
+
+    S3Client(S3Client && other) = delete;
+    S3Client & operator= (S3Client &&) = delete;
+
+    ~S3Client() override
+    {
+        try
+        {
+            S3ClientCacheRegistry::instance().unregisterClient(cache.get());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            throw;
+        }
+    }
+
+    /// Decorator for RetryStrategy needed for this client to work correctly
+    class RetryStrategy : public Aws::Client::RetryStrategy
+    {
+    public:
+        explicit RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_);
+
+        bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+
+        long CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+
+        long GetMaxAttempts() const override;
+
+        void GetSendToken() override;
+
+        bool HasSendToken() override;
+
+        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome) override;
+        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError) override;
+    private:
+        std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy;
+    };
+
+    Model::HeadObjectOutcome HeadObject(const HeadObjectRequest & request) const;
+    Model::ListObjectsV2Outcome ListObjectsV2(const ListObjectsV2Request & request) const;
+    Model::ListObjectsOutcome ListObjects(const ListObjectsRequest & request) const;
+    Model::GetObjectOutcome GetObject(const GetObjectRequest & request) const;
+
+    Model::AbortMultipartUploadOutcome AbortMultipartUpload(const AbortMultipartUploadRequest & request) const;
+    Model::CreateMultipartUploadOutcome CreateMultipartUpload(const CreateMultipartUploadRequest & request) const;
+    Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const;
+    Model::UploadPartOutcome UploadPart(const UploadPartRequest & request) const;
+    Model::UploadPartCopyOutcome UploadPartCopy(const UploadPartCopyRequest & request) const;
+
+    Model::CopyObjectOutcome CopyObject(const CopyObjectRequest & request) const;
+    Model::PutObjectOutcome PutObject(const PutObjectRequest & request) const;
+    Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
+    Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
+
+private:
+    template <typename... Args>
     explicit S3Client(Args &&... args)
         : Aws::S3::S3Client(std::forward<Args>(args)...)
         , log(&Poco::Logger::get("S3Client"))
@@ -109,49 +179,6 @@ public:
         S3ClientCacheRegistry::instance().registerClient(cache);
     }
 
-    S3Client & operator=(const S3Client &) = delete;
-
-    S3Client(S3Client && other) = delete;
-    S3Client & operator= (S3Client &&) = delete;
-
-    ~S3Client() override
-    {
-        try
-        {
-            S3ClientCacheRegistry::instance().unregisterClient(cache.get());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            throw;
-        }
-    }
-
-    class RetryStrategy : public Aws::Client::DefaultRetryStrategy
-    {
-    public:
-        using Aws::Client::DefaultRetryStrategy::DefaultRetryStrategy;
-
-        bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
-    };
-
-    Model::HeadObjectOutcome HeadObject(const HeadObjectRequest & request) const;
-    Model::ListObjectsV2Outcome ListObjectsV2(const ListObjectsV2Request & request) const;
-    Model::ListObjectsOutcome ListObjects(const ListObjectsRequest & request) const;
-    Model::GetObjectOutcome GetObject(const GetObjectRequest & request) const;
-
-    Model::AbortMultipartUploadOutcome AbortMultipartUpload(const AbortMultipartUploadRequest & request) const;
-    Model::CreateMultipartUploadOutcome CreateMultipartUpload(const CreateMultipartUploadRequest & request) const;
-    Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const;
-    Model::UploadPartOutcome UploadPart(const UploadPartRequest & request) const;
-    Model::UploadPartCopyOutcome UploadPartCopy(const UploadPartCopyRequest & request) const;
-
-    Model::CopyObjectOutcome CopyObject(const CopyObjectRequest & request) const;
-    Model::PutObjectOutcome PutObject(const PutObjectRequest & request) const;
-    Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
-    Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
-
-private:
     /// Make regular functions private
     using Aws::S3::S3Client::HeadObject;
     using Aws::S3::S3Client::ListObjectsV2;
@@ -186,6 +213,7 @@ private:
         if (auto uri = getURIForBucket(bucket); uri.has_value())
             request.overrideURI(std::move(*uri));
 
+
         bool found_new_endpoint = false;
         // if we found correct endpoint after 301 responses, update the cache for future requests
         SCOPE_EXIT(
@@ -203,7 +231,7 @@ private:
             if (result.IsSuccess())
                 return result;
 
-            auto error = result.GetError();
+            const auto & error = result.GetError();
 
             std::string new_region;
             if (checkIfWrongRegionDefined(bucket, error, new_region))
@@ -245,13 +273,26 @@ private:
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
-    bool updateURIForBucketForHead(const std::string & bucket) const;
+    std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
 
     std::string getRegionForBucket(const std::string & bucket, bool force_detect = false) const;
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
+
+    template <typename T>
+    static void verifyArgument(const T & /*arg*/)
+    {}
+
+    template <std::derived_from<Aws::Client::ClientConfiguration> T>
+    static void verifyArgument(const T & client_config)
+    {
+        if (!client_config.retryStrategy)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The S3 client can only be used with Client::RetryStrategy, define it in the client configuration");
+
+        assert_cast<const RetryStrategy &>(*client_config.retryStrategy);
+    }
 
     std::string explicit_region;
     mutable bool detect_region = true;

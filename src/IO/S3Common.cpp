@@ -739,7 +739,7 @@ namespace S3
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HTTPHeaderEntries headers,
-        [[maybe_unused]]bool use_environment_credentials,
+        bool use_environment_credentials,
         bool use_insecure_imds_request)
     {
         PocoHTTPClientConfiguration client_configuration = cfg_;
@@ -770,8 +770,8 @@ namespace S3
                 use_environment_credentials,
                 use_insecure_imds_request);
 
-        client_configuration.retryStrategy = std::make_shared<S3Client::RetryStrategy>(1, 1000);
-        return std::make_unique<S3Client>(
+        client_configuration.retryStrategy = std::make_shared<S3Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
+        return S3Client::createClient(
             std::move(credentials_provider),
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,

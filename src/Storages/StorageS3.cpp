@@ -143,7 +143,7 @@ public:
         Strings * read_keys_,
         const S3Settings::RequestSettings & request_settings_)
         : WithContext(context_)
-        , client(client_)
+        , client(S3::S3Client::createClient(client_))
         , globbed_uri(globbed_uri_)
         , query(query_)
         , virtual_header(virtual_header_)
@@ -347,7 +347,7 @@ private:
         return list_objects_scheduler([this]
         {
             ProfileEvents::increment(ProfileEvents::S3ListObjects);
-            auto outcome = client.ListObjectsV2(request);
+            auto outcome = client->ListObjectsV2(request);
 
             /// Outcome failure will be handled on the caller side.
             if (outcome.IsSuccess())
@@ -362,7 +362,7 @@ private:
     KeysWithInfo buffer;
     KeysWithInfo::iterator buffer_iter;
 
-    S3::S3Client client;
+    std::unique_ptr<S3::S3Client> client;
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;

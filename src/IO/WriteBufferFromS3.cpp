@@ -293,7 +293,7 @@ void WriteBufferFromS3::writePart()
     }
 }
 
-void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & req)
+void WriteBufferFromS3::fillUploadRequest(S3::UploadPartRequest & req)
 {
     /// Increase part number.
     ++part_number;
@@ -469,7 +469,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     }
 }
 
-void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
+void WriteBufferFromS3::fillPutRequest(S3::PutObjectRequest & req)
 {
     req.SetBucket(bucket);
     req.SetKey(key);

@@ -28,14 +28,50 @@ namespace ErrorCodes
 namespace S3
 {
 
+S3Client::RetryStrategy::RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_)
+    : wrapped_strategy(std::move(wrapped_strategy_))
+{
+    if (!wrapped_strategy)
+        wrapped_strategy = Aws::Client::InitRetryStrategy();
+}
+
 bool S3Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
-    return Aws::Client::DefaultRetryStrategy::ShouldRetry(error, attemptedRetries);
+    return wrapped_strategy->ShouldRetry(error, attemptedRetries);
 }
 
+long S3Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
+{
+    return wrapped_strategy->CalculateDelayBeforeNextRetry(error, attemptedRetries);
+}
+
+long S3Client::RetryStrategy::GetMaxAttempts() const
+{
+    return wrapped_strategy->GetMaxAttempts();
+}
+
+void S3Client::RetryStrategy::GetSendToken()
+{
+    return wrapped_strategy->GetSendToken();
+}
+
+bool S3Client::RetryStrategy::HasSendToken()
+{
+    return wrapped_strategy->HasSendToken();
+}
+
+void S3Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome)
+{
+    return wrapped_strategy->RequestBookkeeping(httpResponseOutcome);
+}
+
+void S3Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError)
+{
+    return wrapped_strategy->RequestBookkeeping(httpResponseOutcome, lastError);
+}
 
 bool S3Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
@@ -111,8 +147,8 @@ Model::HeadObjectOutcome S3Client::HeadObject(const HeadObjectRequest & request)
     auto bucket_uri = getURIForBucket(bucket);
     if (!bucket_uri)
     {
-        if (!updateURIForBucketForHead(bucket))
-            return result;
+        if (auto maybe_error = updateURIForBucketForHead(bucket); maybe_error.has_value())
+            return *maybe_error;
 
         if (auto region = getRegionForBucket(bucket); !region.empty())
         {
@@ -267,13 +303,15 @@ std::optional<S3::URI> S3Client::getURIFromError(const Aws::S3::S3Error & error)
 }
 
 // Do a list request because head requests don't have body in response
-bool S3Client::updateURIForBucketForHead(const std::string & bucket) const
+std::optional<Aws::S3::S3Error> S3Client::updateURIForBucketForHead(const std::string & bucket) const
 {
     ListObjectsV2Request req;
     req.SetBucket(bucket);
     req.SetMaxKeys(1);
     auto result = ListObjectsV2(req);
-    return result.IsSuccess();
+    if (result.IsSuccess())
+        return std::nullopt;
+    return result.GetError();
 }
 
 std::optional<S3::URI> S3Client::getURIForBucket(const std::string & bucket) const

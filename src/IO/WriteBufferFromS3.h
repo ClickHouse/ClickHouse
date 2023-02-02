@@ -26,12 +26,6 @@ namespace Aws::S3
 class S3Client;
 }
 
-namespace Aws::S3::Model
-{
-    class UploadPartRequest;
-    class PutObjectRequest;
-}
-
 namespace DB
 {
 
@@ -76,11 +70,11 @@ private:
     void finalizeImpl() override;
 
     struct UploadPartTask;
-    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req);
+    void fillUploadRequest(S3::UploadPartRequest & req);
     void processUploadRequest(UploadPartTask & task);
 
     struct PutObjectTask;
-    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
+    void fillPutRequest(S3::PutObjectRequest & req);
     void processPutRequest(const PutObjectTask & task);
 
     void waitForReadyBackGroundTasks();
