@@ -11,6 +11,7 @@ class ASTDeleteQuery : public ASTQueryWithTableAndOutput
 public:
     String getID(char delim) const final;
     ASTPtr clone() const final;
+    QueryKind getQueryKind() const override { return QueryKind::Delete; }
 
     ASTPtr predicate;
 
