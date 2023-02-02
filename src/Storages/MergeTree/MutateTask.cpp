@@ -109,13 +109,29 @@ static void splitMutationCommands(
                 }
             }
         }
+
+        auto alter_conversions = part->storage.getAlterConversionsForPart(part);
         /// If it's compact part, then we don't need to actually remove files
         /// from disk we just don't read dropped columns
         for (const auto & column : part->getColumns())
         {
             if (!mutated_columns.contains(column.name))
-                for_interpreter.emplace_back(
-                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+            {
+                if (alter_conversions.columnHasNewName(column.name))
+                {
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::Type::READ_COLUMN,
+                        .column_name = alter_conversions.getColumnNewName(column.name),
+                        .data_type = column.type
+                    });
+                }
+                else
+                {
+                    for_interpreter.emplace_back(
+                        MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+                }
+            }
         }
     }
     else
@@ -145,6 +161,22 @@ static void splitMutationCommands(
                     part_columns.rename(command.column_name, command.rename_to);
 
                 for_file_renames.push_back(command);
+            }
+        }
+
+        auto alter_conversions = part->storage.getAlterConversionsForPart(part);
+        for (const auto & part_column : part_columns)
+        {
+            if (alter_conversions.columnHasNewName(part_column.name))
+            {
+                auto new_column_name = alter_conversions.getColumnNewName(part_column.name);
+                for_file_renames.push_back({
+                    .type = MutationCommand::Type::RENAME_COLUMN,
+                    .column_name = part_column.name,
+                    .rename_to = new_column_name,
+                });
+
+                part_columns.rename(part_column.name, new_column_name);
             }
         }
     }
@@ -276,12 +308,30 @@ getColumnsForNewDataPart(
                 /// Column was renamed and no other column renamed to it's name
                 /// or column is dropped.
                 if (!renamed_columns_to_from.contains(it->name) && (was_renamed || was_removed))
+                {
                     it = storage_columns.erase(it);
+                }
                 else
                 {
-                    /// Take a type from source part column.
-                    /// It may differ from column type in storage.
-                    it->type = source_col->second;
+
+                    if (was_removed)
+                    { /// DROP COLUMN xxx, RENAME COLUMN yyy TO xxx
+                        auto renamed_from = renamed_columns_to_from.at(it->name);
+                        auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
+                        if (!maybe_name_and_type)
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Got incorrect mutation commands, column {} was renamed from {}, but it doesn't exist in source columns {}",
+                                it->name, renamed_from, source_columns.toString());
+
+                        it->type = maybe_name_and_type->type;
+                    }
+                    else
+                    {
+                        /// Take a type from source part column.
+                        /// It may differ from column type in storage.
+                        it->type = source_col->second;
+                    }
                     ++it;
                 }
             }

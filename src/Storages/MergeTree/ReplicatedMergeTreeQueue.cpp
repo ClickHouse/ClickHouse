@@ -1759,12 +1759,15 @@ MutationCommands ReplicatedMergeTreeQueue::getFirstAlterMutationCommandsForPart(
     if (in_partition == mutations_by_partition.end())
         return MutationCommands{};
 
-    Int64 part_version = part->info.getDataVersion();
+    Int64 part_mutation_version = part->info.getMutationVersion();
+    MutationCommands result;
     for (auto [mutation_version, mutation_status] : in_partition->second)
-        if (mutation_version > part_version && mutation_status->entry->alter_version != -1)
-            return mutation_status->entry->commands;
+    {
+        if (mutation_version > part_mutation_version && mutation_status->entry->alter_version != -1)
+            result.insert(result.end(), mutation_status->entry->commands.begin(), mutation_status->entry->commands.end());
+    }
 
-    return MutationCommands{};
+    return result;
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(

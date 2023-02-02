@@ -17,6 +17,8 @@ struct AlterConversions
     /// Rename map new_name -> old_name
     std::unordered_map<std::string, std::string> rename_map;
 
+    bool columnHasNewName(const std::string & old_name) const;
+    std::string getColumnNewName(const std::string & old_name) const;
     bool isColumnRenamed(const std::string & new_name) const { return rename_map.count(new_name) > 0; }
     std::string getColumnOldName(const std::string & new_name) const { return rename_map.at(new_name); }
 };
