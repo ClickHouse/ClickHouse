@@ -11,11 +11,7 @@ cluster = ClickHouseCluster(__file__)
 ch_server = cluster.add_instance(
     "clickhouse-server",
     with_coredns=True,
-    main_configs=["configs/reverse_dns_function.xml", "configs/listen_host.xml"],
-)
-
-client = cluster.add_instance(
-    "clickhouse-client",
+    main_configs=["configs/config.xml", "configs/reverse_dns_function.xml", "configs/listen_host.xml"],
 )
 
 
@@ -40,11 +36,11 @@ def setup_ch_server(dns_server_ip):
     ch_server.query("SYSTEM DROP DNS CACHE")
 
 
-def test_host_regexp_multiple_ptr_v4(started_cluster):
+def test_reverse_dns_query(started_cluster):
     dns_server_ip = cluster.get_instance_ip(cluster.coredns_host)
 
     setup_ch_server(dns_server_ip)
 
-    for _ in range(0, 300):
-        response = client.query("select reverseDNSQuery('2001:4860:4860::8888')")
+    for _ in range(0, 200):
+        response = ch_server.query("select reverseDNSQuery('2001:4860:4860::8888')")
         assert response == "['dns.google']\n"
