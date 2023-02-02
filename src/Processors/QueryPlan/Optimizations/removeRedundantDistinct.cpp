@@ -13,17 +13,17 @@
 namespace DB::QueryPlanOptimizations
 {
 
-constexpr bool debug_logging_enabled = true;
-void logDebug(const String & prefix, const String & message)
-{
-    if constexpr (debug_logging_enabled)
-    {
-        LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{}: {}", prefix, message);
-    }
-}
-
 namespace
 {
+    constexpr bool debug_logging_enabled = false;
+    void logActionsDAG(const String & prefix, const ActionsDAGPtr & actions)
+    {
+        if constexpr (debug_logging_enabled)
+        {
+            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{}: {}", prefix, actions->dumpDAG());
+        }
+    }
+
     std::set<std::string_view> getDistinctColumns(const DistinctStep * distinct)
     {
         /// find non-const columns in DISTINCT
@@ -99,6 +99,8 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
             dag_stack.pop_back();
             path_actions->mergeInplace(std::move(*clone));
         }
+
+        logActionsDAG("merged DAG:\n{}", path_actions);
 
         /// compare columns of two DISTINCTs
         for (const auto & column : distinct_columns)
