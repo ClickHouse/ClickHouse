@@ -1466,13 +1466,13 @@
     </rocksdb>
     -->
 
-    <!-- Configuration for the query result cache -->
-    <!-- <query_result_cache> -->
+    <!-- Configuration for the query cache -->
+    <!-- <query_cache> -->
     <!--     <size>1073741824</size> -->
     <!--     <max_entries>1024</max_entries> -->
     <!--     <max_entry_size>1048576</max_entry_size> -->
     <!--     <max_entry_records>30000000</max_entry_records> -->
-    <!-- </query_result_cache> -->
+    <!-- </query_cache> -->
 
     <!-- Uncomment if enable merge tree metadata cache -->
     <!--merge_tree_metadata_cache>
