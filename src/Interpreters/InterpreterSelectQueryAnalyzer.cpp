@@ -5,6 +5,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <DataTypes/DataTypesNumber.h>
+
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 
@@ -48,6 +50,22 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
     }
 }
 
+ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOptions & select_query_options)
+{
+    auto result_context = Context::createCopy(context);
+
+    if (select_query_options.shard_num)
+        result_context->addSpecialScalar(
+            "_shard_num",
+            Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
+    if (select_query_options.shard_count)
+        result_context->addSpecialScalar(
+            "_shard_count",
+            Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
+
+    return result_context;
+}
+
 QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const SelectQueryOptions & select_query_options, const ContextPtr & context)
 {
     auto query_tree = buildQueryTree(query, context);
@@ -75,7 +93,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ContextPtr & context_,
     const SelectQueryOptions & select_query_options_)
     : query(normalizeAndValidateQuery(query_))
-    , context(Context::createCopy(context_))
+    , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context))
     , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
@@ -87,7 +105,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ContextPtr & context_,
     const SelectQueryOptions & select_query_options_)
     : query(query_tree_->toAST())
-    , context(Context::createCopy(context_))
+    , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
     , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
@@ -124,15 +142,10 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
-    planner.buildQueryPlanIfNeeded();
-    auto & query_plan = planner.getQueryPlan();
-
-    QueryPlanOptimizationSettings optimization_settings;
-    BuildQueryPipelineSettings build_pipeline_settings;
-    auto pipeline_builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
+    auto pipeline_builder = buildQueryPipeline();
 
     BlockIO result;
-    result.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+    result.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
     if (!select_query_options.ignore_quota && (select_query_options.to_stage == QueryProcessingStage::Complete))
         result.pipeline.setQuota(context->getQuota());
@@ -151,8 +164,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
-    QueryPlanOptimizationSettings optimization_settings;
-    BuildQueryPipelineSettings build_pipeline_settings;
+    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
+    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
 
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
 }
