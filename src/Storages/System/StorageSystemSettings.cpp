@@ -55,11 +55,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         res_columns[7]->insert(setting.getTypeName());
     };
 
-    // we can have multiple aliases to the same setting
-    std::unordered_map<std::string_view, std::vector<std::string_view>> setting_to_alias_mapping;
-    for (const auto & [alias, destination] : SettingsTraits::settings_aliases)
-        setting_to_alias_mapping[destination].push_back(alias);
-
+    const auto & settings_to_aliases = Settings::Traits::settingsToAliases();
     for (const auto & setting : settings.all())
     {
         const auto & setting_name = setting.getName();
@@ -68,7 +64,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
         fill_data_for_setting(setting_name, setting);
         res_columns[8]->insert("");
 
-        if (auto it = setting_to_alias_mapping.find(setting_name); it != setting_to_alias_mapping.end())
+        if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
             for (const auto alias : it->second)
             {
