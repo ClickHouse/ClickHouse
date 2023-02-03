@@ -24,6 +24,7 @@ struct ChunkAndProgress
 
 struct ParallelReadingExtension
 {
+    MergeTreeAllRangesCallback all_callback;
     MergeTreeReadTaskCallback callback;
     size_t count_participating_replicas{0};
     size_t number_of_current_replica{0};
@@ -48,8 +49,7 @@ public:
         UInt64 preferred_max_column_in_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
-        const Names & virt_column_names_ = {},
-        std::optional<ParallelReadingExtension> extension_ = {});
+        const Names & virt_column_names_ = {});
 
     virtual ~IMergeTreeSelectAlgorithm();
 
@@ -89,8 +89,6 @@ protected:
     virtual void finalizeNewTask() = 0;
 
     size_t estimateMaxBatchSizeForHugeRanges();
-
-    virtual bool canUseConsistentHashingForParallelReading() { return false; }
 
     /// Closes readers and unlock part locks
     virtual void finish() = 0;
@@ -164,11 +162,6 @@ protected:
 
     MergeTreeReadTaskPtr task;
 
-    std::optional<ParallelReadingExtension> extension;
-    bool no_more_tasks{false};
-    std::deque<MergeTreeReadTaskPtr> delayed_tasks;
-    std::deque<MarkRanges> buffered_ranges;
-
     /// This setting is used in base algorithm only to additionally limit the number of granules to read.
     /// It is changed in ctor of MergeTreeThreadSelectAlgorithm.
     ///
@@ -186,44 +179,8 @@ private:
 
     std::atomic<bool> is_cancelled{false};
 
-    enum class Status
-    {
-        Accepted,
-        Cancelled,
-        Denied
-    };
-
-    /// Calls getNewTaskImpl() to get new task, then performs a request to a coordinator
-    /// The coordinator may modify the set of ranges to read from a part or could
-    /// deny the whole request. In the latter case it creates new task and retries.
-    /// Then it calls finalizeNewTask() to create readers for a task if it is needed.
     bool getNewTask();
-    bool getNewTaskParallelReading();
 
-    /// After PK analysis the range of marks could be extremely big
-    /// We divide this range to a set smaller consecutive ranges
-    /// Then, depending on the type of reading (concurrent, in order or in reverse order)
-    /// we can calculate a consistent hash function with the number of buckets equal to
-    /// the number of replicas involved. And after that we can throw away some ranges with
-    /// hash not equals to the number of the current replica.
-    bool getTaskFromBuffer();
-
-    /// But we can't throw that ranges completely, because if we have different sets of parts
-    /// on replicas (have merged part on one, but not on another), then such a situation is possible
-    /// - Coordinator allows to read from a big merged part, but this part is present only on one replica.
-    ///   And that replica calculates consistent hash and throws away some ranges
-    /// - Coordinator denies other replicas to read from another parts (source parts for that big one)
-    /// At the end, the result of the query is wrong, because we didn't read all the data.
-    /// So, we have to remember parts and mark ranges with hash different then current replica number.
-    /// An we have to ask the coordinator about its permission to read from that "delayed" parts.
-    /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
-    bool getDelayedTasks();
-
-    /// It will form a request to coordinator and
-    /// then reinitialize the mark ranges of this->task object
-    Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
-
-    void splitCurrentTaskRangesAndFillBuffer();
     static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 };
 
