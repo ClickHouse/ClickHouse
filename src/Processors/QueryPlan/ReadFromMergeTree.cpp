@@ -820,6 +820,7 @@ static void addMergingFinal(
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts_with_ranges,
     const Names & column_names,
+    const InputOrderInfoPtr & input_order_info,
     ActionsDAGPtr & out_projection)
 {
     const auto & settings = context->getSettingsRef();
@@ -894,15 +895,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (new_parts.empty())
                 continue;
 
+            auto read_type = ReadFromMergeTree::ReadType::InOrder;
+            if (input_order_info && input_order_info->direction == -1)
+                read_type = ReadType::InReverseOrder;
+
             if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
                 // Let's split parts into layers to ensure data parallelism of FINAL.
-                auto reading_step_getter = [this, &column_names, &info](auto parts)
+                auto reading_step_getter = [this, &column_names, &info, read_type](auto parts)
                 {
                     return this->read(
                         std::move(parts),
                         column_names,
-                        ReadFromMergeTree::ReadType::InOrder,
+                        read_type,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
@@ -913,7 +918,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             else
             {
                 pipes.emplace_back(read(
-                    std::move(new_parts), column_names, ReadFromMergeTree::ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache));
+                    std::move(new_parts), column_names, read_type, num_streams, 0, info.use_uncompressed_cache));
             }
 
             /// Drop temporary columns, added by 'sorting_key_expr'
@@ -928,11 +933,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             pipe.addSimpleTransform([sorting_expr](const Block & header)
                                     { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
-        /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
-        /// with level > 0 then we won't postprocess this part
+        /// If do_not_merge_across_partitions_select_final is true
+        /// and there is only one part in partition with level > 0
+        /// then we won't postprocess this part
+        bool should_read_in_order = !input_order_info || input_order_info->direction == 0;
         if (settings.do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0)
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
+            !should_read_in_order)
         {
             partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
             continue;
@@ -1397,6 +1405,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         pipe = spreadMarkRangesAmongStreamsFinal(
             std::move(result.parts_with_ranges),
             column_names_to_read,
+            input_order_info,
             result_projection);
     }
     else if (input_order_info)
