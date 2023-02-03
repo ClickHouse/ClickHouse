@@ -559,11 +559,6 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     return true;
 }
 
-ExecutionStatus ExecutionStatus::fromCurrentException(bool with_stacktrace)
-{
-    return ExecutionStatus(getCurrentExceptionCode(), getCurrentExceptionMessage(with_stacktrace, true));
-}
-
 ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message, bool with_stacktrace)
 {
     String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, true);
