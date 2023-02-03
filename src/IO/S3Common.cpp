@@ -16,7 +16,6 @@
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
 #    include <aws/core/auth/STSCredentialsProvider.h>
-#    include <aws/core/client/DefaultRetryStrategy.h>
 #    include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #    include <aws/core/platform/Environment.h>
 #    include <aws/core/platform/OSVersionInfo.h>
@@ -26,16 +25,12 @@
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/GetObjectAttributesRequest.h>
-#    include <aws/s3/model/GetObjectRequest.h>
-#    include <aws/s3/model/HeadObjectRequest.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <Poco/URI.h>
-#    include <re2/re2.h>
-#    include <boost/algorithm/string/case_conv.hpp>
+#    include <IO/S3/Client.h>
+#    include <IO/S3/URI.h>
+#    include <IO/S3/Requests.h>
 #    include <Common/logger_useful.h>
 
 #    include <fstream>
@@ -705,92 +700,6 @@ public:
     }
 };
 
-/// Extracts the endpoint from a constructed S3 client.
-String getEndpoint(const Aws::S3::S3Client & client)
-{
-    const auto * endpoint_provider = dynamic_cast<const Aws::S3::Endpoint::S3DefaultEpProviderBase *>(const_cast<Aws::S3::S3Client &>(client).accessEndpointProvider().get());
-    if (!endpoint_provider)
-        return {};
-    String endpoint;
-    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
-    return endpoint;
-}
-
-/// Performs a request to get the size and last modification time of an object.
-/// The function performs either HeadObject or GetObjectAttributes request depending on the endpoint.
-std::pair<std::optional<DB::S3::ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
-    const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
-{
-    auto endpoint = getEndpoint(client);
-    bool use_get_object_attributes_request = (endpoint.find(".amazonaws.com") != String::npos);
-
-    if (use_get_object_attributes_request)
-    {
-        /// It's better not to use `HeadObject` requests for AWS S3 because they don't work well with the global region.
-        /// Details: `HeadObject` request never returns a response body (even if there is an error) however
-        /// if the request was sent without specifying a region in the endpoint (i.e. for example "https://test.s3.amazonaws.com/mydata.csv"
-        /// instead of "https://test.s3-us-west-2.amazonaws.com/mydata.csv") then that response body is one of the main ways
-        /// to determine the correct region and try to repeat the request again with the correct region.
-        /// For any other request type (`GetObject`, `ListObjects`, etc.) AWS SDK does that because they have response bodies,
-        /// but for `HeadObject` there is no response body so this way doesn't work. That's why we use `GetObjectAttributes` request instead.
-        /// See https://github.com/aws/aws-sdk-cpp/issues/1558 and also the function S3ErrorMarshaller::ExtractRegion() for more information.
-
-        ProfileEvents::increment(ProfileEvents::S3GetObjectAttributes);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectAttributes);
-
-        Aws::S3::Model::GetObjectAttributesRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        req.SetObjectAttributes({Aws::S3::Model::ObjectAttributes::ObjectSize});
-
-        auto outcome = client.GetObjectAttributes(req);
-        if (outcome.IsSuccess())
-        {
-            const auto & result = outcome.GetResult();
-            DB::S3::ObjectInfo object_info;
-            object_info.size = static_cast<size_t>(result.GetObjectSize());
-            object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
-            return {object_info, {}};
-        }
-
-        return {std::nullopt, outcome.GetError()};
-    }
-    else
-    {
-        /// By default we use `HeadObject` requests.
-        /// We cannot just use `GetObjectAttributes` requests always because some S3 providers (e.g. Minio)
-        /// don't support `GetObjectAttributes` requests.
-
-        ProfileEvents::increment(ProfileEvents::S3HeadObject);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
-
-        Aws::S3::Model::HeadObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        auto outcome = client.HeadObject(req);
-        if (outcome.IsSuccess())
-        {
-            const auto & result = outcome.GetResult();
-            DB::S3::ObjectInfo object_info;
-            object_info.size = static_cast<size_t>(result.GetContentLength());
-            object_info.last_modification_time = result.GetLastModified().Millis() / 1000;
-            return {object_info, {}};
-        }
-
-        return {std::nullopt, outcome.GetError()};
-    }
-}
-
 }
 
 
@@ -798,7 +707,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int S3_ERROR;
 }
 
@@ -824,7 +732,7 @@ namespace S3
         return ret;
     }
 
-    std::unique_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+    std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         const PocoHTTPClientConfiguration & cfg_,
         bool is_virtual_hosted_style,
         const String & access_key_id,
@@ -839,7 +747,7 @@ namespace S3
 
         if (!server_side_encryption_customer_key_base64.empty())
         {
-            /// See S3Client::GeneratePresignedUrlWithSSEC().
+            /// See Client::GeneratePresignedUrlWithSSEC().
 
             headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
                 Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
@@ -862,7 +770,9 @@ namespace S3
                 use_environment_credentials,
                 use_insecure_imds_request);
 
-        return std::make_unique<Aws::S3::S3Client>(
+        client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
+        return Client::create(
+            client_configuration.s3_max_redirects,
             std::move(credentials_provider),
             std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
@@ -887,182 +797,6 @@ namespace S3
             for_disk_s3,
             get_request_throttler,
             put_request_throttler);
-    }
-
-    URI::URI(const std::string & uri_)
-    {
-        /// Case when bucket name represented in domain name of S3 URL.
-        /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
-        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss)([.\-][a-z0-9\-.:]+))");
-
-        /// Case when bucket name and key represented in path of S3 URL.
-        /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
-        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
-        static const RE2 path_style_pattern("^/([^/]*)/(.*)");
-
-        static constexpr auto S3 = "S3";
-        static constexpr auto COSN = "COSN";
-        static constexpr auto COS = "COS";
-        static constexpr auto OBS = "OBS";
-        static constexpr auto OSS = "OSS";
-
-        uri = Poco::URI(uri_);
-
-        storage_name = S3;
-
-        if (uri.getHost().empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
-
-        /// Extract object version ID from query string.
-        bool has_version_id = false;
-        for (const auto & [query_key, query_value] : uri.getQueryParameters())
-            if (query_key == "versionId")
-            {
-                version_id = query_value;
-                has_version_id = true;
-            }
-
-        /// Poco::URI will ignore '?' when parsing the path, but if there is a vestionId in the http parameter,
-        /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-        /// If no "vertionId" in the http parameter, '?' can be used as a wildcard.
-        /// It is necessary to encode '?' to avoid deletion during parsing path.
-        if (!has_version_id && uri_.find('?') != String::npos)
-        {
-            String uri_with_question_mark_encode;
-            Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-            uri = Poco::URI(uri_with_question_mark_encode);
-        }
-
-        String name;
-        String endpoint_authority_from_uri;
-
-        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
-        {
-            is_virtual_hosted_style = true;
-            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
-            validateBucket(bucket, uri);
-
-            if (!uri.getPath().empty())
-            {
-                /// Remove leading '/' from path to extract key.
-                key = uri.getPath().substr(1);
-            }
-
-            boost::to_upper(name);
-            if (name != S3 && name != COS && name != OBS && name != OSS)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
-                                quoteString(name));
-
-            if (name == S3)
-                storage_name = name;
-            else if (name == OBS)
-                storage_name = OBS;
-            else if (name == OSS)
-                storage_name = OSS;
-            else
-                storage_name = COSN;
-        }
-        else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
-        {
-            is_virtual_hosted_style = false;
-            endpoint = uri.getScheme() + "://" + uri.getAuthority();
-            validateBucket(bucket, uri);
-        }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
-    }
-
-    void URI::validateBucket(const String & bucket, const Poco::URI & uri)
-    {
-        /// S3 specification requires at least 3 and at most 63 characters in bucket name.
-        /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
-        if (bucket.length() < 3 || bucket.length() > 63)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {}{}",
-                            quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
-    }
-
-    bool isNotFoundError(Aws::S3::S3Errors error)
-    {
-        return error == Aws::S3::S3Errors::RESOURCE_NOT_FOUND || error == Aws::S3::S3Errors::NO_SUCH_KEY;
-    }
-
-    ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
-    {
-        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
-        if (object_info)
-        {
-            return *object_info;
-        }
-        else if (throw_on_error)
-        {
-            throw DB::Exception(ErrorCodes::S3_ERROR,
-                "Failed to get object attributes: {}. HTTP response code: {}",
-                error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
-        }
-        return {};
-    }
-
-    size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
-    {
-        return getObjectInfo(client, bucket, key, version_id, for_disk_s3, throw_on_error).size;
-    }
-
-    bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3)
-    {
-        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
-        if (object_info)
-            return true;
-
-        if (isNotFoundError(error.GetErrorType()))
-            return false;
-
-        throw S3Exception(error.GetErrorType(),
-            "Failed to check existence of key {} in bucket {}: {}",
-            key, bucket, error.GetMessage());
-    }
-
-    void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, std::string_view description)
-    {
-        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, for_disk_s3);
-        if (object_info)
-            return;
-        throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
-                          (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
-    }
-
-    std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id, bool for_disk_s3, bool throw_on_error)
-    {
-        ProfileEvents::increment(ProfileEvents::S3GetObjectMetadata);
-        if (for_disk_s3)
-            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectMetadata);
-
-        /// We must not use the `HeadObject` request, see the comment about `HeadObjectRequest` in S3Common.h.
-
-        Aws::S3::Model::GetObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        /// Only the first byte will be read.
-        /// We don't need that first byte but the range should be set otherwise the entire object will be read.
-        req.SetRange("bytes=0-0");
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        auto outcome = client.GetObject(req);
-
-        if (outcome.IsSuccess())
-            return outcome.GetResult().GetMetadata();
-
-        if (!throw_on_error)
-            return {};
-
-        const auto & error = outcome.GetError();
-        throw S3Exception(error.GetErrorType(),
-            "Failed to get metadata of key {} in bucket {}: {}",
-            key, bucket, error.GetMessage());
     }
 }
 

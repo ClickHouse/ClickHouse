@@ -15,7 +15,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -24,7 +24,7 @@
 
 namespace Aws::S3
 {
-    class S3Client;
+    class Client;
 }
 
 namespace DB
@@ -66,7 +66,7 @@ public:
     {
     public:
         DisclosedGlobIterator(
-            const Aws::S3::S3Client & client_,
+            const S3::Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
             const Block & virtual_header,
@@ -88,10 +88,11 @@ public:
     {
     public:
         explicit KeysIterator(
-            const Aws::S3::S3Client & client_,
+            const S3::Client & client_,
             const std::string & version_id_,
             const std::vector<String> & keys_,
             const String & bucket_,
+            const S3Settings::RequestSettings & request_settings_,
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
@@ -133,7 +134,7 @@ public:
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
         String compression_hint_,
-        const std::shared_ptr<const Aws::S3::S3Client> & client_,
+        const std::shared_ptr<const S3::Client> & client_,
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
@@ -154,7 +155,7 @@ private:
     UInt64 max_block_size;
     S3Settings::RequestSettings request_settings;
     String compression_hint;
-    std::shared_ptr<const Aws::S3::S3Client> client;
+    std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
@@ -286,7 +287,7 @@ public:
     struct S3Configuration
     {
         const S3::URI uri;
-        std::shared_ptr<const Aws::S3::S3Client> client;
+        std::shared_ptr<const S3::Client> client;
 
         S3::AuthSettings auth_settings;
         S3Settings::RequestSettings request_settings;
