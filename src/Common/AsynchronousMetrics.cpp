@@ -68,8 +68,8 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
     openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory/memory.max", cgroupmem_v2_limit_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory/memory.current", cgroupmem_v2_usage_in_bytes);
+    openFileIfExists("/sys/fs/cgroup/memory.max", cgroupmem_v2_limit_in_bytes);
+    openFileIfExists("/sys/fs/cgroup/memory.current", cgroupmem_v2_usage_in_bytes);
 
     openSensors();
     openBlockDevices();
