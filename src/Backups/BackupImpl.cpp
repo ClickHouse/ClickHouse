@@ -271,16 +271,22 @@ size_t BackupImpl::getNumFiles() const
     return num_files;
 }
 
-size_t BackupImpl::getNumProcessedFiles() const
+UInt64 BackupImpl::getTotalSize() const
 {
     std::lock_guard lock{mutex};
-    return num_processed_files;
+    return total_size;
 }
 
-UInt64 BackupImpl::getProcessedFilesSize() const
+size_t BackupImpl::getNumEntries() const
 {
     std::lock_guard lock{mutex};
-    return processed_files_size;
+    return num_entries;
+}
+
+UInt64 BackupImpl::getSizeOfEntries() const
+{
+    std::lock_guard lock{mutex};
+    return size_of_entries;
 }
 
 UInt64 BackupImpl::getUncompressedSize() const
@@ -293,6 +299,18 @@ UInt64 BackupImpl::getCompressedSize() const
 {
     std::lock_guard lock{mutex};
     return compressed_size;
+}
+
+size_t BackupImpl::getNumReadFiles() const
+{
+    std::lock_guard lock{mutex};
+    return num_read_files;
+}
+
+UInt64 BackupImpl::getNumReadBytes() const
+{
+    std::lock_guard lock{mutex};
+    return num_read_bytes;
 }
 
 void BackupImpl::writeBackupMetadata()
@@ -323,12 +341,18 @@ void BackupImpl::writeBackupMetadata()
         }
     }
 
-    size_t index = 0;
-    for (const auto & info : all_file_infos)
+    num_files = all_file_infos.size();
+    total_size = 0;
+    num_entries = 0;
+    size_of_entries = 0;
+
+    for (size_t i = 0; i != all_file_infos.size(); ++i)
     {
-        String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
+        const auto & info = all_file_infos[i];
+        String prefix = i ? "contents.file[" + std::to_string(i) + "]." : "contents.file.";
         config->setString(prefix + "name", info.file_name);
         config->setUInt64(prefix + "size", info.size);
+
         if (info.size)
         {
             config->setString(prefix + "checksum", hexChecksum(info.checksum));
@@ -348,8 +372,14 @@ void BackupImpl::writeBackupMetadata()
             if (info.pos_in_archive != static_cast<size_t>(-1))
                 config->setUInt64(prefix + "pos_in_archive", info.pos_in_archive);
         }
-        increaseUncompressedSize(info);
-        ++index;
+
+        total_size += info.size;
+        bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+        if (has_entry)
+        {
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
+        }
     }
 
     std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -366,8 +396,7 @@ void BackupImpl::writeBackupMetadata()
     out->write(str.data(), str.size());
     out->finalize();
 
-    increaseUncompressedSize(str.size());
-    increaseProcessedSize(str.size());
+    uncompressed_size = size_of_entries + str.size();
 }
 
 
@@ -392,8 +421,6 @@ void BackupImpl::readBackupMetadata()
 
     String str;
     readStringUntilEOF(str, *in);
-    increaseUncompressedSize(str.size());
-    increaseProcessedSize(str.size());
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
     const Poco::XML::Node * config_root = getRootNode(config);
@@ -411,6 +438,11 @@ void BackupImpl::readBackupMetadata()
 
     if (config_root->getNodeByPath("base_backup_uuid"))
         base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
+
+    num_files = 0;
+    total_size = 0;
+    num_entries = 0;
+    size_of_entries = 0;
 
     const auto * contents = config_root->getNodeByPath("contents");
     for (const Poco::XML::Node * child = contents->firstChild(); child; child = child->nextSibling())
@@ -456,10 +488,20 @@ void BackupImpl::readBackupMetadata()
             }
 
             coordination->addFileInfo(info);
-            increaseUncompressedSize(info);
+
+            ++num_files;
+            total_size += info.size;
+            bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+            if (has_entry)
+            {
+                ++num_entries;
+                size_of_entries += info.size - info.base_size;
+            }
         }
     }
 
+    uncompressed_size = size_of_entries + str.size();
+    compressed_size = uncompressed_size;
     if (!use_archives)
         setCompressedSize();
 }
@@ -612,7 +654,8 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
     if (open_mode != OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
 
-    increaseProcessedSize(size_and_checksum.first);
+    ++num_read_files;
+    num_read_bytes += size_and_checksum.first;
 
     if (!size_and_checksum.first)
     {
@@ -780,7 +823,8 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     {
         std::lock_guard lock{mutex};
-        increaseProcessedSize(info);
+        ++num_files;
+        total_size += info.size;
     }
 
     /// Empty file, nothing to backup
@@ -909,7 +953,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     {
         LOG_TRACE(log, "Will copy file {}", adjusted_path);
 
-        if (!num_files_written)
+        if (!num_entries)
             checkLockFile(true);
 
         if (use_archives)
@@ -951,7 +995,12 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         }
     }
 
-    ++num_files_written;
+    {
+        std::lock_guard lock{mutex};
+        ++num_entries;
+        size_of_entries += info.size - info.base_size;
+        uncompressed_size += info.size - info.base_size;
+    }
 }
 
 
@@ -980,29 +1029,6 @@ void BackupImpl::finalizeWriting()
     writing_finalized = true;
 }
 
-
-void BackupImpl::increaseUncompressedSize(UInt64 file_size)
-{
-    uncompressed_size += file_size;
-    ++num_files;
-}
-
-void BackupImpl::increaseUncompressedSize(const FileInfo & info)
-{
-    if ((info.size > info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)))
-        increaseUncompressedSize(info.size - info.base_size);
-}
-
-void BackupImpl::increaseProcessedSize(UInt64 file_size) const
-{
-    processed_files_size += file_size;
-    ++num_processed_files;
-}
-
-void BackupImpl::increaseProcessedSize(const FileInfo & info)
-{
-    increaseProcessedSize(info.size);
-}
 
 void BackupImpl::setCompressedSize()
 {

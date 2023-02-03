@@ -5,7 +5,7 @@
 #if USE_AWS_S3
 #include <Storages/StorageS3Settings.h>
 #include <base/types.h>
-#include <aws/s3/S3Client.h>
+#include <IO/S3/Client.h>
 
 
 namespace DB::S3
@@ -20,7 +20,7 @@ struct ObjectInfo
 };
 
 ObjectInfo getObjectInfo(
-    const Aws::S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id = {},
@@ -30,7 +30,7 @@ ObjectInfo getObjectInfo(
     bool throw_on_error = true);
 
 size_t getObjectSize(
-    const Aws::S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id = {},
@@ -39,7 +39,7 @@ size_t getObjectSize(
     bool throw_on_error = true);
 
 bool objectExists(
-    const Aws::S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id = {},
@@ -48,7 +48,7 @@ bool objectExists(
 
 /// Throws an exception if a specified object doesn't exist. `description` is used as a part of the error message.
 void checkObjectExists(
-    const Aws::S3::S3Client & client,
+    const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id = {},
