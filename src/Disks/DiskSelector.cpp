@@ -118,8 +118,13 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeBackQuotedString(name, warning);
         }
 
-        LOG_WARNING(&Poco::Logger::get("DiskSelector"), "{} disappeared from configuration, "
-                                                        "this change will be applied after restart of ClickHouse", warning.str());
+        if (num_disks_removed_from_config > 0)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("DiskSelector"),
+                "{} disappeared from configuration, this change will be applied after restart of ClickHouse",
+                warning.str());
+        }
     }
 
     return result;
