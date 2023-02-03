@@ -291,6 +291,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     else
         path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
+    std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();

@@ -1,5 +1,5 @@
 [Unit]
-Description=ClickHouse Server (analytic DBMS for big data)
+Description=ClickHouse Keeper - zookeeper compatible distributed coordination server
 Requires=network-online.target
 # NOTE: that After/Wants=time-sync.target is not enough, you need to ensure
 # that the time was adjusted already, if you use systemd-timesyncd you are
@@ -15,7 +15,7 @@ Group=clickhouse
 Restart=always
 RestartSec=30
 RuntimeDirectory=%p  # %p is resolved to the systemd unit name
-ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=%t/%p/%p.pid
+ExecStart=/usr/bin/clickhouse-keeper --config=/etc/clickhouse-keeper/keeper_config.xml --pid-file=%t/%p/%p.pid
 # Minus means that this file is optional.
 EnvironmentFile=-/etc/default/%p
 LimitCORE=infinity
