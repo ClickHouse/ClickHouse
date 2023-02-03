@@ -1129,7 +1129,6 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             {
                 if (commands->empty())
                 {
-                    current_ast_elements += commands_size;
                     commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
                     last_mutation_to_apply = it;
                 }
