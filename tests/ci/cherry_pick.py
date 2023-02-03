@@ -208,6 +208,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         self.cherrypick_pr.add_to_labels(Labels.CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
         self._assign_new_pr(self.cherrypick_pr)
+        # update cherrypick PR to get the state for PR.mergable
+        self.cherrypick_pr.update()
 
     def create_backport(self):
         assert self.cherrypick_pr is not None
