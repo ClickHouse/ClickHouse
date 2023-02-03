@@ -53,7 +53,7 @@ bool Span::addAttribute(std::string_view name, std::function<String()> value_sup
 
     try
     {
-        const String value = value_supplier();
+        auto value = value_supplier();
         return value.empty() ? false : addAttributeImpl(name, value);
     }
     catch (...)
