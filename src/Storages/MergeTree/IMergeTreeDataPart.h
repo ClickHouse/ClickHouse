@@ -139,6 +139,7 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
 
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
@@ -517,6 +518,10 @@ private:
     /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.
     ColumnsDescription columns_description;
+
+    /// The same as above but after call of Nested::collect().
+    /// It is used while reading from wide parts.
+    ColumnsDescription columns_description_with_collected_nested;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
