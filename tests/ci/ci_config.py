@@ -209,6 +209,26 @@ CI_CONFIG = {
         "Stateful tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
+        # Stateful tests for parallel replicas
+        "Stateful tests (release, ParallelReplicas)": {
+            "required_build": "package_release",
+        },
+        "Stateful tests (debug, ParallelReplicas)": {
+            "required_build": "package_debug",
+        },
+        "Stateful tests (asan, ParallelReplicas)": {
+            "required_build": "package_asan",
+        },
+        "Stateful tests (msan, ParallelReplicas)": {
+            "required_build": "package_msan",
+        },
+        "Stateful tests (ubsan, ParallelReplicas)": {
+            "required_build": "package_ubsan",
+        },
+        "Stateful tests (tsan, ParallelReplicas)": {
+            "required_build": "package_tsan",
+        },
+        # End stateful tests for parallel replicas
         "Stateless tests (asan)": {
             "required_build": "package_asan",
         },

@@ -442,6 +442,7 @@ class FailureReason(enum.Enum):
     STRESS = "stress"
     BUILD = "not running for current build"
     BACKWARD_INCOMPATIBLE = "test is backward incompatible"
+    NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -728,6 +729,9 @@ class TestCase:
             and not args.disabled
         ):
             return FailureReason.DISABLED
+
+        elif "no-parallel-replicas" in tags and args.no_parallel_replicas:
+            return FailureReason.NO_PARALLEL_REPLICAS
 
         elif args.skip and any(s in self.name for s in args.skip):
             return FailureReason.SKIP
@@ -2399,6 +2403,13 @@ if __name__ == "__main__":
         default=False,
         help="Report statistics about log messages",
     )
+    parser.add_argument(
+        "--no-parallel-replicas",
+        action="store_true",
+        default=False,
+        help="Do not include tests that are not supported with parallel replicas feature",
+    )
+
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):

@@ -15,11 +15,6 @@ namespace Poco
 class Logger;
 }
 
-namespace Aws::S3
-{
-class S3Client;
-}
-
 namespace DB
 {
 

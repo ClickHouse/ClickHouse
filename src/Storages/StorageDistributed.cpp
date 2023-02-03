@@ -140,52 +140,6 @@ namespace ActionLocks
 namespace
 {
 
-/// select query has database, table and table function names as AST pointers
-/// Creates a copy of query, changes database, table and table function names.
-ASTPtr rewriteSelectQuery(
-    ContextPtr context,
-    const ASTPtr & query,
-    const std::string & remote_database,
-    const std::string & remote_table,
-    ASTPtr table_function_ptr = nullptr)
-{
-    auto modified_query_ast = query->clone();
-
-    ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
-
-    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
-    // settings won't break any remote parser. It's also more reasonable since the query settings
-    // are written into the query context and will be sent by the query pipeline.
-    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-
-    if (table_function_ptr)
-        select_query.addTableFunction(table_function_ptr);
-    else
-        select_query.replaceDatabaseAndTable(remote_database, remote_table);
-
-    /// Restore long column names (cause our short names are ambiguous).
-    /// TODO: aliased table functions & CREATE TABLE AS table function cases
-    if (!table_function_ptr)
-    {
-        RestoreQualifiedNamesVisitor::Data data;
-        data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
-        data.remote_table.database = remote_database;
-        data.remote_table.table = remote_table;
-        RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
-    }
-
-    /// To make local JOIN works, default database should be added to table names.
-    /// But only for JOIN section, since the following should work using default_database:
-    /// - SELECT * FROM d WHERE value IN (SELECT l.value FROM l) ORDER BY value
-    ///   (see 01487_distributed_in_not_default_db)
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
-        /* only_replace_current_database_function_= */false,
-        /* only_replace_in_join_= */true);
-    visitor.visit(modified_query_ast);
-
-    return modified_query_ast;
-}
-
 /// Calculate maximum number in file names in directory and all subdirectories.
 /// To ensure global order of data blocks yet to be sent across server restarts.
 UInt64 getMaximumFileNumber(const std::string & dir_path)
@@ -696,6 +650,7 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
+
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
     if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
         throw Exception(ErrorCodes::ILLEGAL_FINAL, "Final modifier is not allowed together with parallel reading from replicas feature");
@@ -719,9 +674,10 @@ void StorageDistributed::read(
         query_ast = query_info.query;
     }
 
-    auto modified_query_ast = rewriteSelectQuery(
-        local_context, query_ast,
+    const auto & modified_query_ast = ClusterProxy::rewriteSelectQuery(
+        local_context, query_info.query,
         remote_database, remote_table, remote_table_function_ptr);
+
 
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
@@ -746,25 +702,13 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-
-    auto settings = local_context->getSettingsRef();
-    bool parallel_replicas = settings.max_parallel_replicas > 1 && settings.allow_experimental_parallel_reading_from_replicas && !settings.use_hedged_requests;
-
-    if (parallel_replicas)
-        ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, main_table, remote_table_function_ptr,
-            select_stream_factory, modified_query_ast,
-            local_context, query_info,
-            sharding_key_expr, sharding_key_column_name,
-            query_info.cluster, processed_stage);
-    else
-        ClusterProxy::executeQuery(
-            query_plan, header, processed_stage,
-            main_table, remote_table_function_ptr,
-            select_stream_factory, log, modified_query_ast,
-            local_context, query_info,
-            sharding_key_expr, sharding_key_column_name,
-            query_info.cluster);
+    ClusterProxy::executeQuery(
+        query_plan, header, processed_stage,
+        main_table, remote_table_function_ptr,
+        select_stream_factory, log, modified_query_ast,
+        local_context, query_info,
+        sharding_key_expr, sharding_key_column_name,
+        query_info.cluster);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
