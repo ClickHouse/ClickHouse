@@ -1849,7 +1849,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
     catch (...)
     {
-        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException(true));
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
 }
@@ -1932,7 +1932,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     }
     catch (...)
     {
-        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException(true));
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
 }

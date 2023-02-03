@@ -632,7 +632,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             if (task.is_initial_query)
                 throw;
             tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
-            task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
+            task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution", false);
         }
 
         if (task.execution_status.code != 0)
