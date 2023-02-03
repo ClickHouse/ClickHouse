@@ -23,21 +23,24 @@ struct Span
     UInt64 finish_time_us = 0;
     Map attributes;
 
-    void addAttribute(std::string_view name, UInt64 value);
-    void addAttributeIfNotZero(std::string_view name, UInt64 value);
-    void addAttribute(std::string_view name, std::string_view value);
-    void addAttributeIfNotEmpty(std::string_view name, std::string_view value);
-    void addAttribute(std::string_view name, std::function<String()> value_supplier);
-
-    /// Following two methods are declared as noexcept to make sure they're exception safe
-    /// This is because they're usually called in exception handler
-    void addAttribute(const Exception & e) noexcept;
-    void addAttribute(std::exception_ptr e) noexcept;
+    /// Following methods are declared as noexcept to make sure they're exception safe.
+    /// This is because sometimes they will be called in exception handlers/dtor.
+    /// Returns true if attribute is successfully added and false otherwise.
+    bool addAttribute(std::string_view name, UInt64 value) noexcept;
+    bool addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept;
+    bool addAttribute(std::string_view name, std::string_view value) noexcept;
+    bool addAttributeIfNotEmpty(std::string_view name, std::string_view value) noexcept;
+    bool addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept;
+    bool addAttribute(const Exception & e) noexcept;
+    bool addAttribute(std::exception_ptr e) noexcept;
 
     bool isTraceEnabled() const
     {
         return trace_id != UUID();
     }
+
+private:
+    bool addAttributeImpl(std::string_view name, std::string_view value) noexcept;
 };
 
 /// See https://www.w3.org/TR/trace-context/ for trace_flags definition
