@@ -144,7 +144,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(const ASTPtr & s
     else if (select_or_union_query->as<ASTSelectQuery>())
         query_node = buildSelectExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, context);
     else
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported", select_or_union_query->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported",
+                        select_or_union_query->formatForErrorMessage());
 
     return query_node;
 }
@@ -312,7 +313,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_by_limit)
         current_query_tree->getLimitByLimit() = buildExpression(select_limit_by_limit, current_context);
 
-    auto select_limit_by_offset = select_query_typed.limitOffset();
+    auto select_limit_by_offset = select_query_typed.limitByOffset();
     if (select_limit_by_offset)
         current_query_tree->getLimitByOffset() = buildExpression(select_limit_by_offset, current_context);
 
@@ -737,7 +738,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
             }
             else
             {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}", table_element.table_expression->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}",
+                                table_element.table_expression->formatForErrorMessage());
             }
         }
 

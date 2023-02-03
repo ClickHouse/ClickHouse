@@ -97,7 +97,7 @@ public:
     void checkCreated() const
     {
         if (!isLocked())
-            throw Exception("EphemeralLock is not created", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
     }
 
     ~EphemeralLockInZooKeeper();

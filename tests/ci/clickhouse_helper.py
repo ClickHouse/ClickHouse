@@ -183,6 +183,7 @@ def prepare_tests_results_for_clickhouse(
         current_row["test_duration_ms"] = int(test_time * 1000)
         current_row["test_name"] = test_name
         current_row["test_status"] = test_status
+        current_row["test_context_raw"] = test_result.raw_logs or ""
         result.append(current_row)
 
     return result

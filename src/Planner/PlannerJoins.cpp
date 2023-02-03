@@ -725,7 +725,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
 }
 
 }

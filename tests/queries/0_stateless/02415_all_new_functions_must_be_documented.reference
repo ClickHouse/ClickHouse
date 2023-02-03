@@ -344,8 +344,6 @@ hasAny
 hasColumnInTable
 hasSubstr
 hasThreadFuzzer
-hasToken
-hasTokenCaseInsensitive
 hashid
 hex
 hiveHash
@@ -648,7 +646,9 @@ simpleJSONHas
 sin
 sinh
 sipHash128
+sipHash128Keyed
 sipHash64
+sipHash64Keyed
 sleep
 sleepEachRow
 snowflakeToDateTime

@@ -45,17 +45,16 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isInteger(arguments[0]) && !isIPv4(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {}",
+                arguments[0]->getName(), getName());
 
         if (arguments[0]->getSizeOfValueInMemory() > sizeof(HashType))
-            throw Exception("Function " + getName() + " accepts " + std::to_string(sizeof(HashType) * 8) + "-bit integers at most"
-                    + ", got " + arguments[0]->getName(),
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} accepts {}-bit integers at most, got {}",
+                    getName(), sizeof(HashType) * 8, arguments[0]->getName());
 
         if (!isInteger(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of the second argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}",
+                arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
@@ -74,8 +73,8 @@ public:
         if (isColumnConst(*arguments[1].column))
             return executeConstBuckets(arguments);
         else
-            throw Exception(
-                "The second argument of function " + getName() + " (number of buckets) must be constant", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be constant",
+                getName());
     }
 
 private:
@@ -87,12 +86,11 @@ private:
     inline BucketsType checkBucketsRange(T buckets) const
     {
         if (unlikely(buckets <= 0))
-            throw Exception(
-                "The second argument of function " + getName() + " (number of buckets) must be positive number", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} (number of buckets) must be positive number", getName());
 
         if (unlikely(static_cast<UInt64>(buckets) > Impl::max_buckets))
-            throw Exception("The value of the second argument of function " + getName() + " (number of buckets) must not be greater than "
-                    + std::to_string(Impl::max_buckets), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the second argument of function {} "
+                            "(number of buckets) must not be greater than {}", getName(), Impl::max_buckets);
 
         return static_cast<BucketsType>(buckets);
     }
@@ -136,8 +134,8 @@ private:
         else if (which.isIPv4())
             executeType<IPv4>(hash_col, num_buckets, res_col.get());
         else
-            throw Exception("Illegal type " + hash_type->getName() + " of the first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the first argument of function {}",
+                hash_type->getName(), getName());
 
         return res_col;
     }
@@ -147,7 +145,7 @@ private:
     {
         auto col_hash = checkAndGetColumn<ColumnVector<CurrentHashType>>(col_hash_ptr.get());
         if (!col_hash)
-            throw Exception("Illegal type of the first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of the first argument of function {}", getName());
 
         auto & vec_result = col_result->getData();
         const auto & vec_hash = col_hash->getData();
