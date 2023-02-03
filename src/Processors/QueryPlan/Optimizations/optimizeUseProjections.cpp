@@ -11,26 +11,17 @@
 #include <Functions/FunctionsLogical.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/logger_useful.h>
 #include <stack>
 
 namespace DB::QueryPlanOptimizations
 {
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
+static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
-    {
-        /// Already read-in-order, skip.
-        if (reading->getQueryInfo().input_order_info)
-            return nullptr;
-
-        const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
-        if (sorting_key.column_names.empty())
-            return nullptr;
-
         return &node;
-    }
 
     if (node.children.size() != 1)
         return nullptr;
@@ -41,7 +32,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     return nullptr;
 }
 
-void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
+static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
 {
     if (dag)
         dag->mergeInplace(std::move(*expression->clone()));
@@ -51,7 +42,7 @@ void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
 
 
 /// This function builds a common DAG which is a gerge of DAGs from Filter and Expression steps chain.
-bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, ActionsDAG::NodeRawConstPtrs & filter_nodes)
+static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, ActionsDAG::NodeRawConstPtrs & filter_nodes)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -92,6 +83,7 @@ bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, ActionsDAG
             return false;
 
         appendExpression(dag, actions);
+        return true;
     }
 
     if (auto * filter = typeid_cast<FilterStep *>(step))
@@ -101,10 +93,12 @@ bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, ActionsDAG
             return false;
 
         appendExpression(dag, actions);
-        if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
-            filter_nodes.push_back(filter_expression);
-        else
+        const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName());
+        if (!filter_expression)
             return false;
+
+        filter_nodes.push_back(filter_expression);
+        return true;
     }
 
     return false;
@@ -374,16 +368,22 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (!aggregating)
         return;
 
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 2");
     if (!aggregating->canUseProjection())
         return;
 
-    QueryPlan::Node * reading_node = findReadingStep(node);
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 3");
+    QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
     if (!reading_node)
         return;
+
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 4");
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
     if (!reading)
         return;
+
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 5");
 
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
@@ -396,10 +396,14 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (agg_projections.empty())
         return;
 
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Has agg projection");
+
     ActionsDAGPtr dag;
     ActionsDAG::NodeRawConstPtrs filter_nodes;
     if (!buildAggregatingDAG(*node.children.front(), dag, filter_nodes))
         return;
+
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
 
     const ActionsDAG::Node * filter_node = nullptr;
     if (!filter_nodes.empty())
@@ -426,9 +430,13 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     candidates.reserve(agg_projections.size());
     for (const auto * projection : agg_projections)
     {
+
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try projection {}", projection->name);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata);
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
         if (auto proj_dag = analyzeAggregateProjection(info, *dag, keys, aggregates))
         {
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
             candidates.emplace_back(AggregateProjectionCandidate{
                 .info = std::move(info),
                 .projection = projection,
@@ -519,10 +527,15 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (!best_candidate)
         return;
 
+    auto storage_snapshot = reading->getStorageSnapshot();
+    auto proj_snapshot = std::make_shared<StorageSnapshot>(
+        storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
+    proj_snapshot->addProjection(best_candidate->projection);
+
     auto projection_reading = reader.readFromParts(
         {},
         best_candidate->dag->getRequiredColumnsNames(),
-        reading->getStorageSnapshot(),
+        proj_snapshot,
         query_info,
         context,
         reading->getMaxBlockSize(),
@@ -559,7 +572,7 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         aggregating->requestOnlyMergeForAggregateProjection(expr_or_filter_node.step->getOutputStream());
         node.children.front() = &expr_or_filter_node;
 
-        optimizeAggregationInOrder(node, nodes);
+        //optimizeAggregationInOrder(node, nodes);
     }
     else
     {

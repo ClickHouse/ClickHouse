@@ -30,6 +30,9 @@ struct QueryPlanOptimizationSettings
     /// If aggregation-in-order optimisation is enabled
     bool aggregation_in_order = false;
 
+    /// If reading from projection can be applied
+    bool optimize_projection = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

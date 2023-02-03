@@ -14,6 +14,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.distinct_in_order = from.optimize_distinct_in_order;
     settings.read_in_order = from.optimize_read_in_order && from.query_plan_read_in_order;
     settings.aggregation_in_order = from.optimize_aggregation_in_order && from.query_plan_aggregation_in_order;
+    settings.optimize_projection = from.allow_experimental_projection_optimization && from.query_plan_optimize_projection;
     return settings;
 }
 

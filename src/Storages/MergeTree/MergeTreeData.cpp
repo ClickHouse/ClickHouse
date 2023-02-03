@@ -6159,6 +6159,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (analysis_result.join != nullptr || analysis_result.array_join != nullptr)
         can_use_aggregate_projection = false;
 
+    if (settings.query_plan_optimize_projection)
+        can_use_aggregate_projection = false;
+
     /// Check if all needed columns can be provided by some aggregate projection. Here we also try
     /// to find expression matches. For example, suppose an aggregate projection contains a column
     /// named sum(x) and the given query also has an expression called sum(x), it's a match. This is
