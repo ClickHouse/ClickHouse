@@ -235,10 +235,10 @@ static void onExceptionBeforeStart(
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
-    // Try log query_kind if ast is valid
+    // Log query_kind if ast is valid
     if (ast)
     {
-        elem.query_kind = magic_enum::enum_name(ast->getQueryKind());
+        elem.query_kind = ast->getQueryKind();
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
@@ -807,6 +807,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (settings.log_formatted_queries)
                 elem.formatted_query = queryToString(ast);
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
+            elem.query_kind = ast->getQueryKind();
 
             elem.client_info = client_info;
 
