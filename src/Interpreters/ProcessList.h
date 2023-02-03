@@ -52,7 +52,7 @@ class ProcessListEntry;
 struct QueryStatusInfo
 {
     String query;
-    IAST::QueryKind query_kind;
+    IAST::QueryKind query_kind{};
     UInt64 elapsed_microseconds;
     size_t read_rows;
     size_t read_bytes;
@@ -136,7 +136,7 @@ protected:
     OvercommitTracker * global_overcommit_tracker = nullptr;
 
     /// This is used to control the maximum number of SELECT or INSERT queries.
-    IAST::QueryKind query_kind;
+    IAST::QueryKind query_kind{};
 
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.

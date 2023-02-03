@@ -59,7 +59,7 @@ struct QueryLogElement
     String formatted_query;
     UInt64 normalized_query_hash{};
 
-    IAST::QueryKind query_kind;
+    IAST::QueryKind query_kind{};
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
