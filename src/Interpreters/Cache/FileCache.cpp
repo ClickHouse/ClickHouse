@@ -905,33 +905,45 @@ void FileCache::loadMetadata()
     }
 }
 
+void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &)
+{
+    cleanup_keys_metadata_queue->clear([this](const Key & cleanup_key)
+    {
+        auto it = metadata.find(cleanup_key);
+        if (it == metadata.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in metadata", cleanup_key.toString());
+
+        /// We must also lock the key.
+        auto guard = it->second->guard;
+        auto key_lock = guard->lock();
+
+        /// Remove key from metadata.
+        metadata.erase(it);
+
+        try
+        {
+            /// Delete key directory if not yet deleted.
+            const fs::path path = fs::path(getPathInLocalCache(cleanup_key));
+            if (fs::exists(path))
+                fs::remove_all(path);
+
+            /// Delete three digit directory if empty.
+            const fs::path prefix_path = path.parent_path();
+            if (fs::exists(prefix_path) && fs::is_empty(prefix_path))
+                fs::remove_all(prefix_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    });
+    /// TODO: add assertCacheCorrectness().
+}
+
 LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_not_found_policy)
 {
     auto lock = metadata_guard.lock();
-
-    // cleanup_keys_metadata_queue->clear([this](const Key & cleanup_key)
-    // {
-    //     auto it = metadata.find(cleanup_key);
-    //     if (it == metadata.end())
-    //         throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in metadata", cleanup_key);
-
-    //     auto guard = it->second->guard;
-    //     auto key_lock = guard->lock();
-
-    //     [[maybe_unused]] const bool erased = metadata.erase(it);
-    //     chassert(erased);
-
-    //     try
-    //     {
-    //         const fs::path prefix_path = fs::path(getPathInLocalCache(cleanup_key)).parent_path();
-    //         if (fs::exists(prefix_path) && fs::is_empty(prefix_path))
-    //             fs::remove_all(prefix_path);
-    //     }
-    //     catch (...)
-    //     {
-    //         tryLogCurrentException(__PRETTY_FUNCTION__);
-    //     }
-    // });
+    performDelayedRemovalOfDeletedKeysFromMetadata(lock);
 
     auto find_metadata = [&]() -> CacheMetadata::iterator
     {
