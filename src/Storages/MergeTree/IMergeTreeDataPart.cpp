@@ -661,6 +661,7 @@ void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, b
         appendFilesOfPartitionAndMinMaxIndex(files);
         appendFilesOfTTLInfos(files);
         appendFilesOfDefaultCompressionCodec(files);
+        appendFilesOfMetadataVersion(files);
     }
 
     if (!parent_part && include_projection)
@@ -978,6 +979,11 @@ void IMergeTreeDataPart::removeVersionMetadata()
 void IMergeTreeDataPart::appendFilesOfDefaultCompressionCodec(Strings & files)
 {
     files.push_back(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+}
+
+void IMergeTreeDataPart::appendFilesOfMetadataVersion(Strings & files)
+{
+    files.push_back(METADATA_VERSION_FILE_NAME);
 }
 
 CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
@@ -1345,6 +1351,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     ///TODO read metadata here
     setColumns(loaded_columns, infos, loaded_metadata_version);
 }
+
+
 
 /// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const

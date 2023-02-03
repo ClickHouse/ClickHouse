@@ -7536,11 +7536,6 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
             /// and columns in storage.
             if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (!part_columns.has(command.column_name))
-                    continue;
-
-                part_columns.rename(command.column_name, command.rename_to);
-
                 if (auto it = rename_map.find(command.column_name); it != rename_map.end())
                 {
                     auto rename_source = it->second;
@@ -7548,7 +7543,6 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
 
                     rename_map[command.rename_to] = rename_source;
                 }
-
                 else
                     rename_map[command.rename_to] = command.column_name;
             }

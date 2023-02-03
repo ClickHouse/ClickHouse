@@ -589,6 +589,8 @@ private:
 
     static void appendFilesOfDefaultCompressionCodec(Strings & files);
 
+    static void appendFilesOfMetadataVersion(Strings & files);
+
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
