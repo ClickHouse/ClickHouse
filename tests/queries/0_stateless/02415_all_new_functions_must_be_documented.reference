@@ -647,6 +647,8 @@ sin
 sinh
 sipHash128
 sipHash128Keyed
+sipHash128Reference
+sipHash128ReferenceKeyed
 sipHash64
 sipHash64Keyed
 sleep
