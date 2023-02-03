@@ -416,10 +416,11 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_)
 {
     columns = new_columns;
     serialization_infos = new_infos;
+    metadata_version = metadata_version_;
 
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
@@ -797,6 +798,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().exists(TXN_VERSION_METADATA_FILE_NAME))
         result.emplace(TXN_VERSION_METADATA_FILE_NAME);
+
+    if (getDataPartStorage().exists(METADATA_VERSION_FILE_NAME))
+        result.emplace(METADATA_VERSION_FILE_NAME);
 
     return result;
 }
@@ -1288,8 +1292,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     NamesAndTypesList loaded_columns;
 
-    bool exists = metadata_manager->exists("columns.txt");
-    if (!exists)
+    if (!metadata_manager->exists("columns.txt"))
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::Compact)
@@ -1322,14 +1325,25 @@ void IMergeTreeDataPart::loadColumns(bool require)
     };
 
     SerializationInfoByName infos(loaded_columns, settings);
-    exists =  metadata_manager->exists(SERIALIZATION_FILE_NAME);
-    if (exists)
+    if (metadata_manager->exists(SERIALIZATION_FILE_NAME))
     {
         auto in = metadata_manager->read(SERIALIZATION_FILE_NAME);
         infos.readJSON(*in);
     }
 
-    setColumns(loaded_columns, infos);
+    int32_t loaded_metadata_version;
+    if (metadata_manager->exists(METADATA_VERSION_FILE_NAME))
+    {
+        auto in = metadata_manager->read(METADATA_VERSION_FILE_NAME);
+        readIntText(loaded_metadata_version, *in);
+    }
+    else
+    {
+        loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+    }
+
+    ///TODO read metadata here
+    setColumns(loaded_columns, infos, loaded_metadata_version);
 }
 
 /// Project part / part with project parts / compact part doesn't support LWD.

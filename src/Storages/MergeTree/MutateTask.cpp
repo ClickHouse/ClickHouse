@@ -1700,7 +1700,7 @@ bool MutateTask::prepare()
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
         ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
-    ctx->new_data_part->setColumns(new_columns, new_infos);
+    ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     /// Don't change granularity type while mutating subset of columns

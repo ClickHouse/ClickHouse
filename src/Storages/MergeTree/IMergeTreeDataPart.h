@@ -139,7 +139,8 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
+    int32_t getMetadataVersion() const { return metadata_version; }
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
@@ -310,6 +311,8 @@ public:
 
     mutable VersionMetadata version;
 
+    int32_t metadata_version;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -382,6 +385,8 @@ public:
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+
+    static inline constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
