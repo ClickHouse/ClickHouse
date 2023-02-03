@@ -63,7 +63,9 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
     return nullptr;
 }
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node, std::vector<IQueryPlanStep*>& backward_path)
+using StepStack = std::vector<IQueryPlanStep*>;
+
+QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))
@@ -84,6 +86,24 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, std::vector<IQueryPlan
         return findReadingStep(*node.children.front(), backward_path);
 
     return nullptr;
+}
+
+void updateStepsDataStreams(StepStack & steps_to_update)
+{
+    /// update data stream's sorting properties for found transforms
+    if (!steps_to_update.empty())
+    {
+        const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
+        chassert(dynamic_cast<ISourceStep *>(steps_to_update.back()));
+        steps_to_update.pop_back();
+
+        while (!steps_to_update.empty())
+        {
+            dynamic_cast<ITransformingStep *>(steps_to_update.back())->updateInputStream(*input_stream);
+            input_stream = &steps_to_update.back()->getOutputStream();
+            steps_to_update.pop_back();
+        }
+    }
 }
 
 /// FixedColumns are columns which values become constants after filtering.
@@ -992,7 +1012,7 @@ AggregationInputOrder buildInputOrderInfo(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node, std::vector<IQueryPlanStep*>& backward_path)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node, StepStack & backward_path)
 {
     QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
     if (!reading_node)
@@ -1040,7 +1060,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     return nullptr;
 }
 
-AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, std::vector<IQueryPlanStep*>& backward_path)
+AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, StepStack & backward_path)
 {
     QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
     if (!reading_node)
@@ -1101,7 +1121,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
-    std::vector<IQueryPlanStep*> steps_to_update;
+    StepStack steps_to_update;
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
@@ -1164,20 +1184,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
-
-        /// update data stream's sorting properties for found transforms
-        if (!steps_to_update.empty())
-        {
-            const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
-            steps_to_update.pop_back();
-
-            while (!steps_to_update.empty())
-            {
-                dynamic_cast<ITransformingStep*>(steps_to_update.back())->updateInputStream(*input_stream);
-                input_stream = &steps_to_update.back()->getOutputStream();
-                steps_to_update.pop_back();
-            }
-        }
+        /// update data stream's sorting properties
+        updateStepsDataStreams(steps_to_update);
     }
 }
 
@@ -1198,6 +1206,8 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), steps_to_update); order_info.input_order)
     {
         aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
+        /// update data stream's sorting properties
+        updateStepsDataStreams(steps_to_update);
     }
 }
 
