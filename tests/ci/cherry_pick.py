@@ -467,7 +467,8 @@ def clear_repo():
 
 @contextmanager
 def stash():
-    need_stash = bool(git_runner("git diff HEAD"))
+    # diff.ignoreSubmodules=all don't show changed submodules
+    need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
     if need_stash:
         git_runner("git stash push --no-keep-index -m 'running cherry_pick.py'")
     try:
