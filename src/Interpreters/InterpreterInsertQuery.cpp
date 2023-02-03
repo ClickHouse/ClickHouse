@@ -560,10 +560,8 @@ StorageID InterpreterInsertQuery::getDatabaseTable() const
     return query_ptr->as<ASTInsertQuery &>().table_id;
 }
 
-
 void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_)
 {
-    elem.query_kind = "Insert";
     const auto & insert_table = context_->getInsertionTable();
     if (!insert_table.empty())
     {

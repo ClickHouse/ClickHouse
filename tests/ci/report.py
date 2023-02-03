@@ -224,7 +224,10 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
                 # The value can be emtpy, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
-                    result.set_raw_logs(line[3])
+                    # Python does not support TSV, so we unescape manually
+                    result.set_raw_logs(
+                        line[3].replace("\\t", "\t").replace("\\n", "\n")
+                    )
                 else:
                     result.set_log_files(line[3])
 
