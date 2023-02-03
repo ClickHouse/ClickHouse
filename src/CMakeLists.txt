@@ -343,8 +343,8 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 endif ()
 
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
+target_link_libraries(common PUBLIC ch_contrib::re2_st)
+target_link_libraries(common PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
         PUBLIC

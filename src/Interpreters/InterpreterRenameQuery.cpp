@@ -197,7 +197,6 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
 
 void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
-    elem.query_kind = "Rename";
     const auto & rename = ast->as<const ASTRenameQuery &>();
     for (const auto & element : rename.elements)
     {
