@@ -183,6 +183,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
+        UInt64 max_block_size = 8192;
     } parquet;
 
     struct Pretty
