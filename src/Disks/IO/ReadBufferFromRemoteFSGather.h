@@ -48,7 +48,7 @@ public:
     size_t getImplementationBufferOffset() const;
 
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
+    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
     bool nextImpl() override;
 
@@ -70,6 +70,8 @@ private:
 
     String current_file_path;
     size_t current_file_size = 0;
+
+    std::optional<StoredObject> current_object;
 
     bool with_cache;
 

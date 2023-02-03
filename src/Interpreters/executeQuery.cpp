@@ -14,6 +14,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/StreamInQueryCacheTransform.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -187,12 +188,12 @@ static void logException(ContextPtr context, QueryLogElement & elem)
     message.format_string = elem.exception_format_string;
 
     if (elem.stack_trace.empty())
-        message.message = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
                         context->getClientInfo().current_address.toString(),
                         comment,
                         toOneLineQuery(elem.query));
     else
-        message.message = fmt::format(
+        message.text = fmt::format(
             "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
@@ -246,7 +247,7 @@ static void onExceptionBeforeStart(
 
     elem.exception_code = getCurrentExceptionCode();
     auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-    elem.exception = std::move(exception_message.message);
+    elem.exception = std::move(exception_message.text);
     elem.exception_format_string = exception_message.format_string;
 
     elem.client_info = context->getClientInfo();
@@ -707,10 +708,59 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (OpenTelemetry::CurrentContext().isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                    String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                 }
+
                 res = interpreter->execute();
+
+                /// If
+                /// - it is a SELECT query,
+                /// - passive (read) use of the query cache is enabled, and
+                /// - the query cache knows the query result
+                /// then replace the pipeline by a new pipeline with a single source that is populated from the query cache
+                auto query_cache = context->getQueryCache();
+                bool read_result_from_query_cache = false; /// a query must not read from *and* write to the query cache at the same time
+                if (query_cache != nullptr
+                    && (settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_reads_from_query_cache)
+                    && res.pipeline.pulling())
+                {
+                    QueryCache::Key key(
+                        ast, res.pipeline.getHeader(),
+                        std::make_optional<String>(context->getUserName()),
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                    QueryCache::Reader reader = query_cache->createReader(key);
+                    if (reader.hasCacheEntryForKey())
+                    {
+                        res.pipeline = QueryPipeline(reader.getPipe());
+                        read_result_from_query_cache = true;
+                    }
+                }
+
+                /// If
+                /// - it is a SELECT query, and
+                /// - active (write) use of the query cache is enabled
+                /// then add a processor on top of the pipeline which stores the result in the query cache.
+                if (!read_result_from_query_cache
+                    && query_cache != nullptr
+                    && settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_writes_to_query_cache
+                    && res.pipeline.pulling()
+                    && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
+                {
+                    QueryCache::Key key(
+                        ast, res.pipeline.getHeader(),
+                        settings.query_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+
+                    const size_t num_query_runs = query_cache->recordQueryRun(key);
+                    if (num_query_runs > settings.query_cache_min_query_runs)
+                    {
+                        auto stream_in_query_cache_transform = std::make_shared<StreamInQueryCacheTransform>(res.pipeline.getHeader(), query_cache, key,
+                                std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()));
+                        res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
+                    }
+                }
+
             }
         }
 
@@ -858,6 +908,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
+                                    allow_experimental_query_cache = settings.allow_experimental_query_cache,
+                                    use_query_cache = settings.use_query_cache,
+                                    enable_writes_to_query_cache = settings.enable_writes_to_query_cache,
+                                    query_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
                                     log_queries_min_type = settings.log_queries_min_type,
                                     log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
@@ -867,6 +921,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
+                /// If active (write) use of the query cache is enabled and the query is eligible for result caching, then store the query
+                /// result buffered in the special-purpose cache processor (added on top of the pipeline) into the cache.
+                auto query_cache = context->getQueryCache();
+                if (query_cache != nullptr
+                    && pulling_pipeline
+                    && allow_experimental_query_cache && use_query_cache && enable_writes_to_query_cache
+                    && (!astContainsNonDeterministicFunctions(ast, context) || query_cache_store_results_of_queries_with_nondeterministic_functions))
+                {
+                    query_pipeline.finalizeWriteInQueryCache();
+                }
+
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
 
                 if (process_list_elem)
@@ -1024,7 +1089,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
                 elem.exception_code = getCurrentExceptionCode();
                 auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-                elem.exception = std::move(exception_message.message);
+                elem.exception = std::move(exception_message.text);
                 elem.exception_format_string = exception_message.format_string;
 
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
@@ -1199,7 +1264,7 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)
-                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+                    throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
 

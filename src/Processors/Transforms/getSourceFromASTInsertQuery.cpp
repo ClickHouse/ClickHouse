@@ -37,17 +37,17 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
     if (!ast_insert_query)
-        throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: query requires data to insert, but it is not INSERT query");
 
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception("Query has infile and was send directly to server", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
     if (ast_insert_query->format.empty())
     {
         if (input_function)
-            throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
         else
-            throw Exception("Logical error: INSERT query requires format to be set", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: INSERT query requires format to be set");
     }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.

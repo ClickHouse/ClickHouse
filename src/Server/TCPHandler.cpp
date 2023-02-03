@@ -303,7 +303,7 @@ void TCPHandler::runImpl()
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
                 if (context != query_context)
-                    throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in external tables initializer");
 
                 /// Get blocks of temporary tables
                 readData();
@@ -318,7 +318,7 @@ void TCPHandler::runImpl()
             query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
             {
                 if (context != query_context)
-                    throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
                 auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
                 state.need_receive_data_for_input = true;
@@ -338,7 +338,7 @@ void TCPHandler::runImpl()
             query_context->setInputBlocksReaderCallback([this] (ContextPtr context) -> Block
             {
                 if (context != query_context)
-                    throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
                 if (!readDataNext())
                 {
@@ -515,7 +515,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<DB::Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception = std::make_unique<DB::Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
 
         try
@@ -895,7 +895,7 @@ void TCPHandler::receiveUnexpectedTablesStatusRequest()
     TablesStatusRequest skip_request;
     skip_request.read(*in, client_tcp_protocol_version);
 
-    throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet TablesStatusRequest received from client");
 }
 
 void TCPHandler::sendPartUUIDs()
@@ -1137,10 +1137,10 @@ void TCPHandler::receiveHello()
         if (packet_type == 'G' || packet_type == 'P')
         {
             writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
-            throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
+            throw Exception(ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT, "Client has connected to wrong port");
         }
         else
-            throw NetException("Unexpected packet from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client");
     }
 
     readStringBinary(client_name, *in);
@@ -1155,7 +1155,7 @@ void TCPHandler::receiveHello()
     readStringBinary(password, *in);
 
     if (user.empty())
-        throw NetException("Unexpected packet from client (no user in Hello package)", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
 
     LOG_DEBUG(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
         client_name,
@@ -1208,7 +1208,7 @@ void TCPHandler::receiveUnexpectedHello()
     readStringBinary(skip_string, *in);
     readStringBinary(skip_string, *in);
 
-    throw NetException("Unexpected packet Hello received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Hello received from client");
 }
 
 
@@ -1296,7 +1296,7 @@ bool TCPHandler::receivePacket()
             return false;
 
         default:
-            throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet {} from client", toString(packet_type));
     }
 }
 
@@ -1311,7 +1311,7 @@ void TCPHandler::receiveUnexpectedIgnoredPartUUIDs()
 {
     std::vector<UUID> skip_part_uuids;
     readVectorBinary(skip_part_uuids, *in);
-    throw NetException("Unexpected packet IgnoredPartUUIDs received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet IgnoredPartUUIDs received from client");
 }
 
 
@@ -1334,14 +1334,14 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         }
         else
         {
-            throw Exception(fmt::format("Received {} packet after requesting read task",
-                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type));
         }
     }
     UInt64 version;
     readVarUInt(version, *in);
     if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
-        throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
+        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol version for distributed processing mismatched");
     String response;
     readStringBinary(response, *in);
     return response;
@@ -1367,8 +1367,8 @@ std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTa
         }
         else
         {
-            throw Exception(fmt::format("Received {} packet after requesting read task",
-                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type));
         }
     }
     PartitionReadResponse response;
@@ -1475,9 +1475,8 @@ void TCPHandler::receiveQuery()
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else
-        auto exception = Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::AUTHENTICATION_FAILED);
+        auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
         session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
         throw exception; /// NOLINT
 #endif
@@ -1564,7 +1563,7 @@ void TCPHandler::receiveUnexpectedQuery()
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         skip_settings.read(*in, settings_format);
 
-    throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
 }
 
 bool TCPHandler::receiveData(bool scalar)
@@ -1647,7 +1646,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
         state.read_all_data = true;
 
     if (throw_exception)
-        throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Data received from client");
 
     return read_ok;
 }
@@ -1766,7 +1765,7 @@ bool TCPHandler::isQueryCancelled()
         {
             case Protocol::Client::Cancel:
                 if (state.empty())
-                    throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+                    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Cancel received from client");
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
                 /// For testing connection collector.
@@ -1781,7 +1780,7 @@ bool TCPHandler::isQueryCancelled()
                 return true;
 
             default:
-                throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));
         }
     }
 
