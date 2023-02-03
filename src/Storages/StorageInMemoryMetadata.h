@@ -50,6 +50,8 @@ struct StorageInMemoryMetadata
 
     String comment;
 
+    int32_t metadata_version;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -89,6 +91,8 @@ struct StorageInMemoryMetadata
 
     /// Set SELECT query for (Materialized)View
     void setSelectQuery(const SelectQueryDescription & select_);
+
+    void setMetadataVersion(int32_t metadata_version_);
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
@@ -217,6 +221,9 @@ struct StorageInMemoryMetadata
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
+
+    int32_t getMetadataVersion() const { return metadata_version; }
+    bool hasMetadataVersion() const { return metadata_version != -1; }
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;

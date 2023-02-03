@@ -7548,6 +7548,7 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
 
                     rename_map[command.rename_to] = rename_source;
                 }
+
                 else
                     rename_map[command.rename_to] = command.column_name;
             }
@@ -7935,7 +7936,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createEmptyPart(
     if (settings->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns, {});
+    new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
 
     new_data_part->partition = partition;
