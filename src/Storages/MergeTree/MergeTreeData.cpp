@@ -3049,8 +3049,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         for (const auto & changed_setting : new_changes)
         {
-            const auto & setting_name = changed_setting.getName();
-            const auto & new_value = changed_setting.getFieldValue();
+            const auto & setting_name = changed_setting.name;
+            const auto & new_value = changed_setting.value;
             MergeTreeSettings::checkCanSet(setting_name, new_value);
             const Field * current_value = current_changes.tryGet(setting_name);
 
@@ -3076,7 +3076,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// Check if it is safe to reset the settings
         for (const auto & current_setting : current_changes)
         {
-            const auto & setting_name = current_setting.getName();
+            const auto & setting_name = current_setting.name;
             const Field * new_value = new_changes.tryGet(setting_name);
             /// Prevent unsetting readonly setting
             if (MergeTreeSettings::isReadonlySetting(setting_name) && !new_value)
@@ -3174,9 +3174,9 @@ void MergeTreeData::changeSettings(
 
         for (const auto & change : new_changes)
         {
-            if (change.getName() == "storage_policy")
+            if (change.name == "storage_policy")
             {
-                StoragePolicyPtr new_storage_policy = getContext()->getStoragePolicy(change.getFieldValue().safeGet<String>());
+                StoragePolicyPtr new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
                 StoragePolicyPtr old_storage_policy = getStoragePolicy();
 
                 /// StoragePolicy of different version or name is guaranteed to have different pointer

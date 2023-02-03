@@ -151,7 +151,7 @@ ConfigurationPtr createConfiguration(const std::string & root_name, const Settin
 
     auto config = Configuration::createEmptyConfiguration(root_name);
     for (const auto & setting : settings)
-        Configuration::setConfigValue<String>(*config, setting.getName(), convertFieldToString(setting.getFieldValue()));
+        Configuration::setConfigValue<String>(*config, setting.name, convertFieldToString(setting.value));
 
     return config;
 }

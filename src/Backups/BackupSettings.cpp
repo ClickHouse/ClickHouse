@@ -41,16 +41,16 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
         for (const auto & setting : settings)
         {
-            if (setting.getName() == "compression_level")
-                res.compression_level = static_cast<int>(SettingFieldInt64{setting.getFieldValue()}.value);
+            if (setting.name == "compression_level")
+                res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
             else
 #define GET_SETTINGS_FROM_BACKUP_QUERY_HELPER(TYPE, NAME) \
-            if (setting.getName() == #NAME) \
-                res.NAME = SettingField##TYPE{setting.getFieldValue()}.value; \
+            if (setting.name == #NAME) \
+                res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
             LIST_OF_BACKUP_SETTINGS(GET_SETTINGS_FROM_BACKUP_QUERY_HELPER)
-            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.getName());
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }
     }
 

@@ -186,7 +186,7 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
-            buffer << fmt::format(" {}={}", change.getName(), toString(change.getFieldValue()));
+            buffer << fmt::format(" {}={}", change.name, toString(change.value));
     }
 }
 

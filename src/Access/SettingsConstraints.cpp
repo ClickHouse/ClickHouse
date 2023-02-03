@@ -175,19 +175,19 @@ template <class T>
 bool getNewValueToCheck(const T & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
 {
     Field current_value;
-    bool has_current_value = current_settings.tryGet(change.getName(), current_value);
+    bool has_current_value = current_settings.tryGet(change.name, current_value);
 
     /// Setting isn't checked if value has not changed.
-    if (has_current_value && change.getFieldValue() == current_value)
+    if (has_current_value && change.value == current_value)
         return false;
 
     if (throw_on_failure)
-        new_value = T::castValueUtil(change.getName(), change.getFieldValue());
+        new_value = T::castValueUtil(change.name, change.value);
     else
     {
         try
         {
-            new_value = T::castValueUtil(change.getName(), change.getFieldValue());
+            new_value = T::castValueUtil(change.name, change.value);
         }
         catch (...)
         {
@@ -204,7 +204,7 @@ bool getNewValueToCheck(const T & current_settings, SettingChange & change, Fiel
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    const String & setting_name = change.getName();
+    const String & setting_name = change.name;
 
     if (setting_name == "profile")
         return true;
@@ -219,7 +219,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         {
             if (e.code() == ErrorCodes::UNKNOWN_SETTING)
             {
-                if (const auto hints = current_settings.getHints(change.getName()); !hints.empty())
+                if (const auto hints = current_settings.getHints(change.name); !hints.empty())
                 {
                     e.addMessage(fmt::format("Maybe you meant {}", toString(hints)));
                 }
@@ -242,12 +242,12 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
     Field new_value;
     if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
-    return getMergeTreeChecker(change.getName()).check(change, new_value, reaction);
+    return getMergeTreeChecker(change.name).check(change, new_value, reaction);
 }
 
 bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
 {
-    const String & setting_name = change.getName();
+    const String & setting_name = change.name;
 
     auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
@@ -298,7 +298,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
                 setting_name, applyVisitor(FieldVisitorToString(), min_value));
         }
         else
-            change.setValue(min_value);
+            change.value = min_value;
     }
 
     if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
@@ -309,7 +309,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
                 setting_name, applyVisitor(FieldVisitorToString(), max_value));
         }
         else
-            change.setValue(max_value);
+            change.value = max_value;
     }
 
     return true;

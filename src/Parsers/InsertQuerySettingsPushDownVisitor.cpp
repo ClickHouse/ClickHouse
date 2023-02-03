@@ -49,7 +49,7 @@ void InsertQuerySettingsPushDownMatcher::visit(ASTSelectQuery & select_query, AS
     {
         auto it = std::find_if(insert_settings.begin(), insert_settings.end(), [&](auto & select_setting)
         {
-            return select_setting.getName() == setting.getName();
+            return select_setting.name == setting.name;
         });
         if (it == insert_settings.end())
             insert_settings.push_back(setting);

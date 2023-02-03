@@ -619,11 +619,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
-            auto finder = [&change](const SettingChange & c) { return c.getName() == change.getName(); };
+            auto finder = [&change](const SettingChange & c) { return c.name == change.name; };
             auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
 
             if (it != settings_from_storage.end())
-                it->setValue(change.getFieldValue());
+                it->value = change.value;
             else
                 settings_from_storage.push_back(change);
         }
@@ -633,7 +633,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
-            auto finder = [&setting_name](const SettingChange & c) { return c.getName() == setting_name; };
+            auto finder = [&setting_name](const SettingChange & c) { return c.name == setting_name; };
             auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
 
             if (it != settings_from_storage.end())

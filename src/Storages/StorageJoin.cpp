@@ -305,8 +305,8 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const auto & setting : args.storage_def->settings->changes)
             {
-                const auto & setting_name = setting.getName();
-                const auto & setting_value = setting.getFieldValue();
+                const auto & setting_name = setting.name;
+                const auto & setting_value = setting.value;
                 if (setting_name == "join_use_nulls")
                     join_use_nulls = setting_value;
                 else if (setting_name == "max_rows_in_join")

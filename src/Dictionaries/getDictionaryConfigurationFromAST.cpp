@@ -127,9 +127,9 @@ void buildLayoutConfiguration(
         root->appendChild(settings_element);
         for (const auto & change : settings->changes)
         {
-            AutoPtr<Element> setting_change_element(doc->createElement(change.getName()));
+            AutoPtr<Element> setting_change_element(doc->createElement(change.name));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(change.getFieldValue())));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(change.value)));
             setting_change_element->appendChild(setting_value);
         }
     }
@@ -531,9 +531,9 @@ void buildSourceConfiguration(
         outer_element->appendChild(settings_element);
         for (const auto & change : settings->changes)
         {
-            AutoPtr<Element> setting_change_element(doc->createElement(change.getName()));
+            AutoPtr<Element> setting_change_element(doc->createElement(change.name));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(change.getFieldValue())));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(change.value)));
             setting_change_element->appendChild(setting_value);
         }
     }
