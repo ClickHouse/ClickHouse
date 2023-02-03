@@ -13,9 +13,9 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
 {
     for (const auto & change : changes)
     {
-        hash_state.update(change.getName().size());
-        hash_state.update(change.getName());
-        applyVisitor(FieldVisitorHash(hash_state), change.getFieldValue());
+        hash_state.update(change.name.size());
+        hash_state.update(change.name);
+        applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
 }
 
@@ -33,8 +33,8 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
         else
             first = false;
 
-        formatSettingName(change.getName(), format.ostr);
-        format.ostr << " = " << change.getValueString();
+        formatSettingName(change.name, format.ostr);
+        format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
     }
 
     for (const auto & setting_name : default_settings)
