@@ -86,7 +86,6 @@ FROM
             val_middle,
             id
         FROM middle_table
-        FINAL
     ) AS middle_table ON `--left_table.id` = `--middle_table.id`
 ) AS `--.s`
 ALL INNER JOIN
