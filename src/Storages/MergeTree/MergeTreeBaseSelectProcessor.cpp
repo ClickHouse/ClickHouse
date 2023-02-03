@@ -456,11 +456,6 @@ namespace
 
         bool columnExists(const String & name) const { return block.has(name); }
 
-        void insertStringColumn(const ColumnPtr & column, const String & name)
-        {
-            block.insert({column, std::make_shared<DataTypeString>(), name});
-        }
-
         void insertUInt8Column(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataTypeUInt8>(), name});
@@ -474,6 +469,11 @@ namespace
         void insertUUIDColumn(const ColumnPtr & column, const String & name)
         {
             block.insert({column, std::make_shared<DataTypeUUID>(), name});
+        }
+
+        void insertLowCardinalityColumn(const ColumnPtr & column, const String & name)
+        {
+            block.insert({column, std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), name});
         }
 
         void insertPartitionValueColumn(
@@ -566,7 +566,7 @@ static void injectPartConstVirtualColumns(
                 else
                     column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
 
-                inserter.insertStringColumn(column, virtual_column_name);
+                inserter.insertLowCardinalityColumn(column, virtual_column_name);
             }
             else if (virtual_column_name == "_part_index")
             {
@@ -598,7 +598,7 @@ static void injectPartConstVirtualColumns(
                 else
                     column = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn();
 
-                inserter.insertStringColumn(column, virtual_column_name);
+                inserter.insertLowCardinalityColumn(column, virtual_column_name);
             }
             else if (virtual_column_name == "_partition_value")
             {
