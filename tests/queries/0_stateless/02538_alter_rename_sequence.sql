@@ -5,7 +5,7 @@ CREATE TABLE wrong_metadata(
     column2 UInt64,
     column3 UInt64
 )
-ENGINE ReplicatedMergeTree('/test/tables/wrong_metadata', '1')
+ENGINE ReplicatedMergeTree('/test/{database}/tables/wrong_metadata', '1')
 ORDER BY tuple();
 
 INSERT INTO wrong_metadata VALUES (1, 2, 3);
@@ -34,7 +34,7 @@ CREATE TABLE wrong_metadata_wide(
     column2 UInt64,
     column3 UInt64
 )
-ENGINE ReplicatedMergeTree('/test/tables/wrong_metadata_wide', '1')
+ENGINE ReplicatedMergeTree('/test/{database}/tables/wrong_metadata_wide', '1')
 ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
