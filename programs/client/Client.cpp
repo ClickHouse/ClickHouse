@@ -127,6 +127,69 @@ void Client::showWarnings()
     }
 }
 
+void Client::parseConnectionsCredentials()
+{
+    /// It is not possible to correctly handle multiple --host --port options.
+    if (hosts_and_ports.size() >= 2)
+        return;
+
+    String host;
+    std::optional<UInt16> port;
+    if (hosts_and_ports.empty())
+    {
+        host = config().getString("host", "localhost");
+        if (config().has("port"))
+            port = config().getInt("port");
+    }
+    else
+    {
+        host = hosts_and_ports.front().host;
+        port = hosts_and_ports.front().port;
+    }
+
+    Strings keys;
+    config().keys("connections_credentials", keys);
+    for (const auto & connection : keys)
+    {
+        const String & prefix = "connections_credentials." + connection;
+
+        const String & connection_name = config().getString(prefix + ".name", "");
+        if (connection_name != host)
+            continue;
+
+        String connection_hostname;
+        if (config().has(prefix + ".hostname"))
+            connection_hostname = config().getString(prefix + ".hostname");
+        else
+            connection_hostname = connection_name;
+
+        /// Set "host" unconditionally (since it is used as a "name"), while
+        /// other options only if they are not set yet (config.xml/cli
+        /// options).
+        config().setString("host", connection_hostname);
+        if (!hosts_and_ports.empty())
+            hosts_and_ports.front().host = connection_hostname;
+
+        if (config().has(prefix + ".port") && !port.has_value())
+            config().setInt("port", config().getInt(prefix + ".port"));
+        if (config().has(prefix + ".secure") && !config().has("secure"))
+            config().setBool("secure", config().getBool(prefix + ".secure"));
+        if (config().has(prefix + ".user") && !config().has("user"))
+            config().setString("user", config().getString(prefix + ".user"));
+        if (config().has(prefix + ".password") && !config().has("password"))
+            config().setString("password", config().getString(prefix + ".password"));
+        if (config().has(prefix + ".database") && !config().has("database"))
+            config().setString("database", config().getString(prefix + ".database"));
+        if (config().has(prefix + ".history_file") && !config().has("history_file"))
+        {
+            String history_file = config().getString(prefix + ".history_file");
+            if (history_file.starts_with("~") && !home_path.empty())
+                history_file = home_path + "/" + history_file.substr(1);
+            config().setString("history_file", history_file);
+        }
+    }
+}
+
 /// Make query to get all server warnings
 std::vector<String> Client::loadWarningMessages()
 {
@@ -215,6 +278,8 @@ void Client::initialize(Poco::Util::Application & self)
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
     if (env_password)
         config().setString("password", env_password);
+
+    parseConnectionsCredentials();
 
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
