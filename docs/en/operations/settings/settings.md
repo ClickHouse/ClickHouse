@@ -1303,7 +1303,7 @@ Default value: `3`.
 
 ## use_query_cache {#use-query-cache}
 
-If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-readsfrom-query-cache)
+If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-reads-from-query-cache)
 and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in more detail how the cache is used.
 
 Possible values:
