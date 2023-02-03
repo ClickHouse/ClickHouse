@@ -198,7 +198,7 @@ public:
         return delegate->getLastModified(wrapped_path);
     }
 
-    time_t getLastChanged(const String & path) const override
+    Poco::Timestamp getLastChanged(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->getLastChanged(wrapped_path);

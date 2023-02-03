@@ -370,6 +370,11 @@ Poco::Timestamp getModificationTimestamp(const std::string & path)
     return Poco::Timestamp::fromEpochTime(getModificationTime(path));
 }
 
+Poco::Timestamp getChangeTimestamp(const std::string & path)
+{
+    return Poco::Timestamp::fromEpochTime(getChangeTime(path));
+}
+
 void setModificationTime(const std::string & path, time_t time)
 {
     struct utimbuf tb;

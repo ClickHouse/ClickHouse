@@ -53,7 +53,7 @@ Poco::Timestamp FakeMetadataStorageFromDisk::getLastModified(const std::string &
     return disk->getLastModified(path);
 }
 
-time_t FakeMetadataStorageFromDisk::getLastChanged(const std::string & path) const
+Poco::Timestamp FakeMetadataStorageFromDisk::getLastChanged(const std::string & path) const
 {
     return disk->getLastChanged(path);
 }

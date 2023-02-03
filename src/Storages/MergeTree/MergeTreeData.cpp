@@ -2368,7 +2368,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirectory()
         time_t current_time = time(nullptr);
         ssize_t threshold = current_time - getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
         auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
-        time_t last_change_time = part_info.disk->getLastChanged(path);
+        time_t last_change_time = part_info.disk->getLastChanged(path).epochTime();
         time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
         time_t last_touch_time = std::max(last_change_time, last_modification_time);
 
