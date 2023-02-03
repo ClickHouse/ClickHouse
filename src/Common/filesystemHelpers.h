@@ -93,6 +93,7 @@ Poco::Timestamp getModificationTimestamp(const std::string & path);
 void setModificationTime(const std::string & path, time_t time);
 /// st_ctime
 time_t getChangeTime(const std::string & path);
+Poco::Timestamp getChangeTimestamp(const std::string & path);
 
 bool isSymlink(const fs::path & path);
 fs::path readSymlink(const fs::path & path);
