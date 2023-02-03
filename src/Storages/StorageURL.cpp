@@ -13,7 +13,6 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/IOThreadPool.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/WriteBufferFromHTTP.h>
@@ -625,6 +624,11 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         if (it == urls_to_check.cend())
             return nullptr;
 
+        const auto & settings = context->getSettingsRef();
+        const auto & config = context->getConfigRef();
+        Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+
         auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
             it,
             urls_to_check.cend(),
@@ -632,7 +636,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             {},
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            timeouts,
             compression_method,
             credentials,
             headers,
@@ -686,6 +690,11 @@ Pipe IStorageURLBase::read(
 
     size_t max_download_threads = local_context->getSettingsRef().max_download_threads;
 
+    const auto & settings = local_context->getSettingsRef();
+    const auto & config = local_context->getConfigRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+
     if (urlWithGlobs(uri))
     {
         size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
@@ -716,7 +725,7 @@ Pipe IStorageURLBase::read(
                 local_context,
                 columns_description,
                 max_block_size,
-                ConnectionTimeouts::getHTTPTimeouts(local_context),
+                timeouts,
                 compression_method,
                 download_threads,
                 headers,
@@ -740,7 +749,7 @@ Pipe IStorageURLBase::read(
             local_context,
             columns_description,
             max_block_size,
-            ConnectionTimeouts::getHTTPTimeouts(local_context),
+            timeouts,
             compression_method,
             max_download_threads,
             headers,
@@ -775,6 +784,12 @@ Pipe StorageURLWithFailover::read(
 
     auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
     uri_info->uri_list_to_read.emplace_back(uri_options);
+
+    const auto & settings = local_context->getSettingsRef();
+    const auto & config = local_context->getConfigRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         uri_info,
         getReadMethod(),
@@ -786,7 +801,7 @@ Pipe StorageURLWithFailover::read(
         local_context,
         columns_description,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(local_context),
+        timeouts,
         compression_method,
         local_context->getSettingsRef().max_download_threads,
         headers,
@@ -806,6 +821,11 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
     bool is_partitioned_implementation = partition_by_ast && has_wildcards;
 
+    const auto & settings = context->getSettingsRef();
+    const auto & config = context->getConfigRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+
     if (is_partitioned_implementation)
     {
         return std::make_shared<PartitionedStorageURLSink>(
@@ -815,7 +835,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             format_settings,
             metadata_snapshot->getSampleBlock(),
             context,
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            timeouts,
             compression_method,
             http_method);
     }
@@ -827,7 +847,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             format_settings,
             metadata_snapshot->getSampleBlock(),
             context,
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            timeouts,
             compression_method,
             http_method);
     }
@@ -890,13 +910,17 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
 {
     auto settings = context->getSettingsRef();
 
+    const auto & config = context->getConfigRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+
     try
     {
         ReadWriteBufferFromHTTP buf(
             Poco::URI(url),
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            timeouts,
             credentials,
             settings.max_http_get_redirects,
             settings.max_read_buffer_size,

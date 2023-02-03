@@ -1,6 +1,6 @@
 #include "LibraryBridgeHelper.h"
 
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 
 namespace DB
 {
@@ -12,8 +12,10 @@ LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
     , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , bridge_host(config.getString("library_bridge.host", DEFAULT_HOST))
     , bridge_port(config.getUInt("library_bridge.port", DEFAULT_PORT))
-    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_))
 {
+    const auto & settings = context_->getSettingsRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+    http_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
 }
 
 
