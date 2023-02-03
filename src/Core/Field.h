@@ -110,10 +110,6 @@ struct CustomType
         virtual const char * getTypeName() const = 0;
         virtual String toString() const = 0;
 
-        // virtual std::unique_ptr<CustomTypeImpl> clone() const;
-        // virtual std::optional<Types::Which> getBaseTypeIfConvertible() const;
-        // virtual std::optional<Field> tryConvertToBaseType(Types::Which dest_type) const
-
         bool operator < (const CustomTypeImpl &) const { throwNotImpleneted("<"); }
         bool operator <= (const CustomTypeImpl &) const { throwNotImpleneted("<="); }
         bool operator > (const CustomTypeImpl &) const { throwNotImpleneted(">"); }
@@ -127,7 +123,12 @@ struct CustomType
         }
     };
 
+    CustomType() = default;
+    explicit CustomType(std::shared_ptr<CustomTypeImpl> impl_) : impl(impl_) {}
+
+    const char * getTypeName() const { return impl->getTypeName(); }
     String toString() const { return impl->toString(); }
+    const CustomTypeImpl & getImpl() { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
     bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
@@ -136,7 +137,6 @@ struct CustomType
     bool operator == (const CustomType & rhs) const { return *impl == *rhs.impl; }
 
     std::shared_ptr<CustomTypeImpl> impl;
-
 };
 
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);

@@ -7,7 +7,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/SettingValueFromAST.h>
+#include <Parsers/FieldFromAST.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
@@ -217,16 +217,16 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     /// for SETTINGS disk=disk(type='s3', path='', ...)
     else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.getName());
-        change.setValue(std::make_unique<SettingValueFromAST>(function_ast));
+        tryGetIdentifierNameInto(name, change.name);
+        change.value = createFieldFromAST(function_ast);
 
         return true;
     }
     else if (!literal_or_map_p.parse(pos, value, expected))
         return false;
 
-    tryGetIdentifierNameInto(name, change.getName());
-    change.setValue(value->as<ASTLiteral &>().value);
+    tryGetIdentifierNameInto(name, change.name);
+    change.value = value->as<ASTLiteral &>().value;
 
     return true;
 }
@@ -282,16 +282,16 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     else if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        change.getName() = name;
-        change.setValue(std::make_unique<SettingValueFromAST>(function_ast));
+        change.name = name;
+        change.value = createFieldFromAST(function_ast);
 
         return true;
     }
     else if (!value_p.parse(pos, node, expected))
         return false;
 
-    change.getName() = name;
-    change.setValue(node->as<ASTLiteral &>().value);
+    change.name = name;
+    change.value = node->as<ASTLiteral &>().value;
 
     return true;
 }
