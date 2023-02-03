@@ -37,6 +37,34 @@ namespace
         return non_const_columns;
     }
 
+    const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
+    {
+        /// find alias in output
+        const ActionsDAG::Node * output_alias = nullptr;
+        for (const auto * node : actions->getOutputs())
+        {
+            if (node->result_name == output_name && node->type == ActionsDAG::ActionType::ALIAS)
+            {
+                output_alias = node;
+                break;
+            }
+        }
+        if (!output_alias)
+            return nullptr;
+
+        /// find original(non alias) node it refers to
+        const ActionsDAG::Node * node = output_alias;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            chassert(!node->children.empty());
+            node = node->children.front();
+        }
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return nullptr;
+
+        return node;
+    }
+
     bool canRemoveDistinct(const QueryPlan::Node * distinct_node)
     {
         const DistinctStep * distinct_step = typeid_cast<DistinctStep *>(distinct_node->step.get());
@@ -98,7 +126,7 @@ namespace
             /// compare columns of two DISTINCTs
             for (const auto & column : distinct_columns)
             {
-                const auto * alias_node = path_actions->getOriginalNodeForOutputAlias(String(column));
+                const auto * alias_node = getOriginalNodeForOutputAlias(path_actions, String(column));
                 if (!alias_node)
                     return false;
 
@@ -129,7 +157,7 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
     for (const auto * node : parent_node->children)
     {
         /// check if it is distinct node
-        if (typeid_cast<const DistinctStep *>(node->step.get()))
+        if (typeid_cast<const DistinctStep *>(node->step.get()) == nullptr)
             continue;
 
         if (canRemoveDistinct(node))
