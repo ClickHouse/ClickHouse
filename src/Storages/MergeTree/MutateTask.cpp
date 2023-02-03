@@ -97,40 +97,33 @@ static void splitMutationCommands(
                     else
                         mutated_columns.emplace(command.column_name);
                 }
-
-                if (command.type == MutationCommand::Type::RENAME_COLUMN)
-                {
-                    for_interpreter.push_back(
-                    {
-                        .type = MutationCommand::Type::READ_COLUMN,
-                        .column_name = command.rename_to,
-                    });
-                    part_columns.rename(command.column_name, command.rename_to);
-                }
             }
         }
 
         auto alter_conversions = part->storage.getAlterConversionsForPart(part);
         /// If it's compact part, then we don't need to actually remove files
         /// from disk we just don't read dropped columns
-        for (const auto & column : part->getColumns())
+
+        for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
+        {
+            if (part_columns.has(rename_from))
+            {
+                for_interpreter.push_back(
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = rename_to,
+                });
+
+                part_columns.rename(rename_from, rename_to);
+            }
+        }
+
+        for (const auto & column : part_columns)
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (alter_conversions.columnHasNewName(column.name))
-                {
-                    for_interpreter.push_back(
-                    {
-                        .type = MutationCommand::Type::READ_COLUMN,
-                        .column_name = alter_conversions.getColumnNewName(column.name),
-                        .data_type = column.type
-                    });
-                }
-                else
-                {
-                    for_interpreter.emplace_back(
-                        MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
-                }
+                for_interpreter.emplace_back(
+                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
             }
         }
     }
@@ -157,22 +150,18 @@ static void splitMutationCommands(
             {
                 if (command.type == MutationCommand::Type::READ_COLUMN)
                     for_interpreter.push_back(command);
-                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-                    part_columns.rename(command.column_name, command.rename_to);
 
                 for_file_renames.push_back(command);
             }
         }
 
         auto alter_conversions = part->storage.getAlterConversionsForPart(part);
-        for (const auto & part_column : part_columns)
+        for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
         {
-            if (alter_conversions.columnHasNewName(part_column.name))
+            if (part_columns.has(rename_from))
             {
-                auto new_column_name = alter_conversions.getColumnNewName(part_column.name);
-                for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = part_column.name, .rename_to = new_column_name});
-
-                part_columns.rename(part_column.name, new_column_name);
+                for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
+                part_columns.rename(rename_from, rename_to);
             }
         }
     }
@@ -585,6 +574,13 @@ static NameToNameVector collectFilesForRenames(
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = getStreamCounts(source_part, source_part->getColumns().getNames());
     NameToNameVector rename_vector;
+    NameSet collected_names;
+
+    auto add_rename = [&rename_vector, &collected_names] (const std::string & file_rename_from, const std::string & file_rename_to)
+    {
+        if (collected_names.emplace(file_rename_from).second)
+            rename_vector.emplace_back(file_rename_from, file_rename_to);
+    };
 
     /// Remove old data
     for (const auto & command : commands_for_removes)
@@ -593,19 +589,19 @@ static NameToNameVector collectFilesForRenames(
         {
             if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
             {
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
+                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
             }
             else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
             {
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
+                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
         {
             if (source_part->checksums.has(command.column_name + ".proj"))
-                rename_vector.emplace_back(command.column_name + ".proj", "");
+                add_rename(command.column_name + ".proj", "");
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
@@ -615,8 +611,8 @@ static NameToNameVector collectFilesForRenames(
                 /// Delete files if they are no longer shared with another column.
                 if (--stream_counts[stream_name] == 0)
                 {
-                    rename_vector.emplace_back(stream_name + ".bin", "");
-                    rename_vector.emplace_back(stream_name + mrk_extension, "");
+                    add_rename(stream_name + ".bin", "");
+                    add_rename(stream_name + mrk_extension, "");
                 }
             };
 
@@ -628,6 +624,7 @@ static NameToNameVector collectFilesForRenames(
             String escaped_name_from = escapeForFileName(command.column_name);
             String escaped_name_to = escapeForFileName(command.rename_to);
 
+
             ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
                 String stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
@@ -635,8 +632,8 @@ static NameToNameVector collectFilesForRenames(
 
                 if (stream_from != stream_to)
                 {
-                    rename_vector.emplace_back(stream_from + ".bin", stream_to + ".bin");
-                    rename_vector.emplace_back(stream_from + mrk_extension, stream_to + mrk_extension);
+                    add_rename(stream_from + ".bin", stream_to + ".bin");
+                    add_rename(stream_from + mrk_extension, stream_to + mrk_extension);
                 }
             };
 
@@ -656,8 +653,8 @@ static NameToNameVector collectFilesForRenames(
             {
                 if (!new_streams.contains(old_stream) && --stream_counts[old_stream] == 0)
                 {
-                    rename_vector.emplace_back(old_stream + ".bin", "");
-                    rename_vector.emplace_back(old_stream + mrk_extension, "");
+                    add_rename(old_stream + ".bin", "");
+                    add_rename(old_stream + mrk_extension, "");
                 }
             }
         }
@@ -1358,13 +1355,27 @@ private:
         ctx->new_data_part->storeVersionMetadata();
 
         NameSet hardlinked_files;
+
+        /// NOTE: Renames must be done in order
+        for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
+        {
+            if (rename_to.empty()) /// It's DROP COLUMN
+            {
+                /// pass
+            }
+            else
+            {
+                ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
+                    ctx->source_part->getDataPartStorage(), rename_from, rename_to);
+                hardlinked_files.insert(rename_from);
+            }
+        }
         /// Create hardlinks for unchanged files
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (ctx->files_to_skip.contains(it->name()))
                 continue;
 
-            String destination;
             String file_name = it->name();
 
             auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
@@ -1374,20 +1385,17 @@ private:
 
             if (rename_it != ctx->files_to_rename.end())
             {
-                if (rename_it->second.empty())
-                    continue;
-                destination = rename_it->second;
+                /// RENAMEs and DROPs already processed
+                continue;
             }
-            else
-            {
-                destination = it->name();
-            }
+
+            String destination = it->name();
 
             if (it->isFile())
             {
                 ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
-                    ctx->source_part->getDataPartStorage(), it->name(), destination);
-                hardlinked_files.insert(it->name());
+                    ctx->source_part->getDataPartStorage(), file_name, destination);
+                hardlinked_files.insert(file_name);
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {

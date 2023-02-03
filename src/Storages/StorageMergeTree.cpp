@@ -2080,17 +2080,17 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 }
 
 
-MutationCommands StorageMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
+std::map<int64_t, MutationCommands> StorageMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
     Int64 part_mutation_version = part->info.getMutationVersion();
 
-    MutationCommands result;
+    std::map<int64_t, MutationCommands> result;
     for (const auto & current_mutation_by_version : current_mutations_by_version)
     {
         if (static_cast<int64_t>(current_mutation_by_version.first) > part_mutation_version)
-            result.insert(result.end(), current_mutation_by_version.second.commands.begin(), current_mutation_by_version.second.commands.end());
+            result[current_mutation_by_version.first] = current_mutation_by_version.second.commands;
     }
     return result;
 }
