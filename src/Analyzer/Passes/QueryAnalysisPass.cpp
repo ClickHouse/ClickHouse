@@ -5391,7 +5391,12 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals());
+        auto column_names_and_types = storage_snapshot->getColumns(
+            GetColumnsOptions(GetColumnsOptions::All)
+                .withSubcolumns()
+                .withVirtuals()
+                .withExtendedObjects());
+
         const auto & columns_description = storage_snapshot->metadata->getColumns();
 
         std::vector<std::pair<std::string, ColumnNodePtr>> alias_columns_to_resolve;
