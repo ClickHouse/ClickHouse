@@ -1975,14 +1975,14 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res) const
         res.emplace_back(*entry);
 }
 
-std::vector<String> ReplicatedMergeTreeQueue::getLogEntryIds() const
+std::unordered_set<String> ReplicatedMergeTreeQueue::getLogEntryIds() const
 {
-    std::vector<String> result;
+    std::unordered_set<String> result;
     std::lock_guard lock(state_mutex);
 
     result.reserve(queue.size());
     for (const auto & entry : queue)
-        result.emplace_back(entry->log_entry_id);
+        result.insert(entry->log_entry_id);
 
     return result;
 }
@@ -2481,7 +2481,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
     /// Notify if queue is empty
     if (queue.empty())
-        (*it)(0,"");
+        (*it)(0, std::nullopt);
 
     return SubscriberHandler(it, *this);
 }
@@ -2492,7 +2492,7 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const String & removed_log_entry_id)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
@@ -2501,7 +2501,7 @@ void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const St
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
 {
-    notifySubscribers(0, "");
+    notifySubscribers(0, std::nullopt);
 }
 
 String padIndex(Int64 index)

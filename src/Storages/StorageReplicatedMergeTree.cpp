@@ -7525,41 +7525,22 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
 
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
-    std::vector<String> wait_for_ids = queue.getLogEntryIds();
+    std::unordered_set<String> wait_for_ids = queue.getLogEntryIds();
 
     if (!wait_for_ids.empty())
     {
-        String waiting_for_log_entry_id = wait_for_ids.back();
-
         /// This is significant, because the execution of this task could be delayed at BackgroundPool.
         /// And we force it to be executed.
         background_operations_assignee.trigger();
 
         Poco::Event target_entry_event;
-        auto callback = [&target_entry_event, &wait_for_ids, waiting_for_log_entry_id](size_t new_queue_size, const String & removed_log_entry_id)
+        auto callback = [&target_entry_event, &wait_for_ids](size_t new_queue_size, std::optional<String> removed_log_entry_id)
         {
-            if (removed_log_entry_id == wait_for_ids.at(0))
-            {
-                wait_for_ids.erase(wait_for_ids.begin());
-            }
-            else
-            {
-                auto iterator = std::find(wait_for_ids.begin(), wait_for_ids.end(), removed_log_entry_id);
-                if (iterator == wait_for_ids.end())
-                {
-                    /// Item not present in queue is removed
-                    target_entry_event.set();
-                }
-                else
-                {
-                    /// Remove items till the removed_log_entry_id (including it)
-                    wait_for_ids.erase(wait_for_ids.begin(),iterator + 1);
-                }
-            }
+            if (removed_log_entry_id.has_value())
+                wait_for_ids.erase(removed_log_entry_id.value());
 
             if (wait_for_ids.empty() || new_queue_size == 0)
                 target_entry_event.set();
-
         };
         const auto handler = queue.addSubscriber(std::move(callback));
 

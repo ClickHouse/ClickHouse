@@ -163,7 +163,7 @@ private:
     /// A subscriber callback is called when an entry queue is deleted
     mutable std::mutex subscribers_mutex;
 
-    using SubscriberCallBack = std::function<void(size_t /* queue_size */, const String & /* removed_log_entry_id*/)>;
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */, std::optional<String> /* removed_log_entry_id */)>;
     using Subscribers = std::list<SubscriberCallBack>;
     using SubscriberIterator = Subscribers::iterator;
 
@@ -181,7 +181,7 @@ private:
     Subscribers subscribers;
 
     /// Notify subscribers about queue change (new queue size and entry that was removed)
-    void notifySubscribers(size_t new_queue_size, const String & removed_log_entry_id);
+    void notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(
@@ -451,7 +451,7 @@ public:
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getEntries(LogEntriesData & res) const;
 
-    std::vector<String> getLogEntryIds() const;
+    std::unordered_set<String> getLogEntryIds() const;
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
