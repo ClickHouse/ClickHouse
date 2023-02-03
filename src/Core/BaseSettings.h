@@ -860,12 +860,25 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
-        static inline const AliasMap settings_aliases = \
+        static inline const AliasMap aliases_to_settings = \
             DefineAliases() LIST_OF_SETTINGS_MACRO(ALIAS_TO, ALIAS_FROM); \
+        \
+        using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
+        static inline const SettingsToAliasesMap & settingsToAliases() \
+        { \
+            static SettingsToAliasesMap setting_to_aliases_mapping = [] \
+            { \
+                std::unordered_map<std::string_view, std::vector<std::string_view>> map; \
+                for (const auto & [alias, destination] : aliases_to_settings) \
+                    map[destination].push_back(alias); \
+                return map; \
+            }(); \
+            return setting_to_aliases_mapping; \
+        } \
         \
         static std::string_view resolveName(std::string_view name) \
         { \
-            if (auto it = settings_aliases.find(name); it != settings_aliases.end()) \
+            if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
                 return it->second; \
             return name; \
         } \
