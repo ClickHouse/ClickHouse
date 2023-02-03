@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Tags: use-vectorscan, no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
