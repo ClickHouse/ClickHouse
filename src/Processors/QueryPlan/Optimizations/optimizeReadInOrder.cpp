@@ -63,20 +63,25 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
     return nullptr;
 }
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
+QueryPlan::Node * findReadingStep(QueryPlan::Node & node, std::vector<IQueryPlanStep*>& backward_path)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))
+    {
+        backward_path.push_back(node.step.get());
         return &node;
+    }
 
     if (node.children.size() != 1)
         return nullptr;
 
+    backward_path.push_back(node.step.get());
+
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
-        return findReadingStep(*node.children.front());
+        return findReadingStep(*node.children.front(), backward_path);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
-        return findReadingStep(*node.children.front());
+        return findReadingStep(*node.children.front(), backward_path);
 
     return nullptr;
 }
@@ -987,9 +992,9 @@ AggregationInputOrder buildInputOrderInfo(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node, std::vector<IQueryPlanStep*>& backward_path)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node);
+    QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
     if (!reading_node)
         return nullptr;
 
@@ -1035,9 +1040,9 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     return nullptr;
 }
 
-AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node)
+AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, std::vector<IQueryPlanStep*>& backward_path)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node);
+    QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
     if (!reading_node)
         return {};
 
@@ -1096,6 +1101,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
+    std::vector<IQueryPlanStep*> steps_to_update;
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
@@ -1105,7 +1111,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         infos.reserve(node.children.size());
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, *child));
+            infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
 
             if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
                 max_sort_descr = &infos.back()->sort_description_for_merging;
@@ -1155,9 +1161,23 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         sorting->convertToFinishSorting(*max_sort_descr);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front()))
+    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+
+        /// update data stream's sorting properties for found transforms
+        if (!steps_to_update.empty())
+        {
+            const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
+            steps_to_update.pop_back();
+
+            while (!steps_to_update.empty())
+            {
+                dynamic_cast<ITransformingStep*>(steps_to_update.back())->updateInputStream(*input_stream);
+                input_stream = &steps_to_update.back()->getOutputStream();
+                steps_to_update.pop_back();
+            }
+        }
     }
 }
 
@@ -1174,7 +1194,8 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     /// TODO: maybe add support for UNION later.
-    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front()); order_info.input_order)
+    std::vector<IQueryPlanStep*> steps_to_update;
+    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), steps_to_update); order_info.input_order)
     {
         aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
     }
