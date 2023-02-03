@@ -419,7 +419,8 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     std::optional<FilterAnalysisResult> where_analysis_result_optional;
     std::optional<size_t> where_action_step_index_optional;
 
-    ColumnsWithTypeAndName current_output_columns = join_tree_input_columns;
+    const auto * input_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+    ColumnsWithTypeAndName current_output_columns = input_columns ? *input_columns : join_tree_input_columns;
 
     if (query_node.hasWhere())
     {
@@ -446,6 +447,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     if (window_analysis_result_optional)
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
+    auto projection_analysis_result = analyzeProjection(query_node, current_output_columns, planner_context, actions_chain);
+    current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
     std::optional<SortAnalysisResult> sort_analysis_result_optional;
     if (query_node.hasOrderBy())
     {
@@ -461,10 +465,8 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
-    auto projection_analysis_result = analyzeProjection(query_node, current_output_columns, planner_context, actions_chain);
-
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & project_names_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
+    const auto & project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
     auto project_names_actions = std::make_shared<ActionsDAG>(project_names_input);
     project_names_actions->project(projection_analysis_result.projection_column_names_with_display_aliases);
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
