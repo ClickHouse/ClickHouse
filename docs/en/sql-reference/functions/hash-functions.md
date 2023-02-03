@@ -201,6 +201,74 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## sipHash128Reference
+
+Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
+
+**Syntax**
+
+```sql
+sipHash128Reference(par1,...)
+```
+
+**Arguments**
+
+Same as for [sipHash128](#hash_functions-siphash128).
+
+**Returned value**
+
+A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(sipHash128Reference('foo', '\x01', 3));
+```
+
+Result:
+
+```response
+┌─hex(sipHash128Reference('foo', '', 3))─┐
+│ 4D1BE1A22D7F5933C0873E1698426260       │
+└────────────────────────────────────────┘
+```
+
+## sipHash128ReferenceKeyed
+
+Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.
+
+**Syntax**
+
+```sql
+sipHash128ReferenceKeyed((k0, k1), par1,...)
+```
+
+**Arguments**
+
+Same as [sipHash128Reference](#hash_functions-siphash128reference), but the first argument is a tuple of two UInt64 values representing the key.
+
+**Returned value**
+
+A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\x01', 3));
+```
+
+Result:
+
+```response
+┌─hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
+│ 630133C9722DC08646156B8130C4CDC8                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## cityHash64
 
 Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
