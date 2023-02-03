@@ -154,7 +154,7 @@ private:
 
         if (from_x >= to_x)
         {
-            size_t sz = updateFrame(values, 1);
+            size_t sz = updateFrame(values, 8);
             values.push_back('\0');
             offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
             return;
@@ -168,15 +168,24 @@ private:
             if (point.getKey() < from_x || to_x < point.getKey())
                 continue;
 
-            size_t index = (point.getKey() - from_x) * histogram.size() / (to_x - from_x + 1);
+            X delta = to_x - from_x;
+            if (delta < std::numeric_limits<X>::max())
+                delta = delta + 1;
 
-            /// In case of overflow, just saturate
-            if (std::numeric_limits<Y>::max() - histogram[index] < point.getMapped())
-                histogram[index] = std::numeric_limits<Y>::max();
-            else
+            X value = point.getKey() - from_x;
+            Float64 w = histogram.size();
+            size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
+
+            if (std::numeric_limits<Y>::max() - histogram[index] > point.getMapped())
+            {
                 histogram[index] += point.getMapped();
-
-            fhistogram[index] += 1;
+                fhistogram[index] += 1;
+            }
+            else
+            {
+                /// In case of overflow, just saturate
+                histogram[index] = std::numeric_limits<Y>::max();
+            }
         }
 
         for (size_t i = 0; i < histogram.size(); ++i)
@@ -185,30 +194,18 @@ private:
                 histogram[i] /= fhistogram[i];
         }
 
-        Y y_min = std::numeric_limits<Y>::max();
-        Y y_max = std::numeric_limits<Y>::min();
-        bool has_valid_y = false;
+        Y y_max = 0;
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
                 continue;
-            has_valid_y = true;
-            y_min = std::min(y_min, y);
             y_max = std::max(y_max, y);
         }
 
-        if (!has_valid_y)
+        if (y_max == 0)
         {
             values.push_back('\0');
             offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
-            return;
-        }
-
-        if (y_min >= y_max)
-        {
-            size_t sz = updateFrame(values, 1);
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
             return;
         }
 
@@ -217,7 +214,7 @@ private:
             if (isNaN(y) || y <= 0)
                 y = 0;
             else
-                y = (y - y_min) * 7 / (y_max - y_min) + 1;
+                y = y * 7 / y_max + 1;
         }
 
         size_t sz = 0;
