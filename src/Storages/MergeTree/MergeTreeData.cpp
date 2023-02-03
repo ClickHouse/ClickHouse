@@ -837,8 +837,14 @@ Block MergeTreeData::getSampleBlockWithVirtualColumns() const
 {
     DataTypePtr partition_value_type = getPartitionValueType();
     return {
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(
+            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "_part"),
+        ColumnWithTypeAndName(
+            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "_partition_id"),
         ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
         ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
 }
