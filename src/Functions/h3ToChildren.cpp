@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -115,7 +115,7 @@ public:
                 throw Exception(
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
-                    getName(), vec_size, toString(child_resolution));
+                    getName(), toString(vec_size), toString(child_resolution));
 
             std::vector<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);

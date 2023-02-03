@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
-
 set any_join_distinct_right_table_keys = 1;
 set joined_subquery_requires_alias = 0;
 

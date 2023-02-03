@@ -14,7 +14,8 @@ public:
     /// Pass empty 'already_written_offset_columns' first time then and pass the same object to subsequent instances of MergedColumnOnlyOutputStream
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
-        const MergeTreeMutableDataPartPtr & data_part,
+        DataPartStorageBuilderPtr data_part_storage_builder_,
+        const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const Block & header_,
         CompressionCodecPtr default_codec_,

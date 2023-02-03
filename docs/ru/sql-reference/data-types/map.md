@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/map
 sidebar_position: 65
 sidebar_label: Map(key, value)
 ---
@@ -94,3 +93,5 @@ SELECT a.values FROM t_map;
 
 -   функция [map()](../../sql-reference/functions/tuple-map-functions.md#function-map)
 -   функция [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast)
+
+[Original article](https://clickhouse.com/docs/ru/data-types/map/) <!--hide-->

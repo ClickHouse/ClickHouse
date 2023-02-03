@@ -105,7 +105,6 @@ private:
 };
 
 /// Split expression `expr_1 AND expr_2 AND ... AND expr_n` into vector `[expr_1, expr_2, ..., expr_n]`
-ASTs splitConjunctionsAst(const ASTPtr & node);
-void splitConjunctionsAst(const ASTPtr & node, ASTs & result);
+std::vector<ASTPtr> collectConjunctions(const ASTPtr & node);
 
 }

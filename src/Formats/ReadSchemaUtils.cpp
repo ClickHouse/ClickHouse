@@ -155,10 +155,7 @@ ColumnsDescription readSchemaFromFormat(
                     }
                     catch (...)
                     {
-                        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                                        "Cannot extract table structure from {} format file. "
-                                        "Error: {}. You can specify the structure manually",
-                                        format_name, exception_message);
+                        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
                     }
                 }
 
@@ -170,9 +167,7 @@ ColumnsDescription readSchemaFromFormat(
             return cached_columns;
 
         if (names_and_types.empty())
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "All attempts to extract table structure from files failed. "
-                            "Errors:{}\nYou can specify the structure manually", exception_messages);
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:{}\nYou can specify the structure manually", exception_messages);
 
         /// If we have "INSERT SELECT" query then try to order
         /// columns as they are ordered in table schema for formats
@@ -191,9 +186,7 @@ ColumnsDescription readSchemaFromFormat(
         }
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "{} file format doesn't support schema inference. You must specify the structure manually",
-                        format_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} file format doesn't support schema inference. You must specify the structure manually", format_name);
 
     return ColumnsDescription(names_and_types);
 }
@@ -202,6 +195,69 @@ ColumnsDescription readSchemaFromFormat(const String & format_name, const std::o
 {
     std::unique_ptr<ReadBuffer> buf_out;
     return readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, retry, context, buf_out);
+}
+
+DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type)
+{
+    if (!type)
+        return nullptr;
+
+    WhichDataType which(type);
+
+    if (which.isNothing())
+        return nullptr;
+
+    if (which.isNullable())
+    {
+        const auto * nullable_type = assert_cast<const DataTypeNullable *>(type.get());
+        return makeNullableRecursivelyAndCheckForNothing(nullable_type->getNestedType());
+    }
+
+    if (which.isArray())
+    {
+        const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
+        auto nested_type = makeNullableRecursivelyAndCheckForNothing(array_type->getNestedType());
+        return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
+    }
+
+    if (which.isTuple())
+    {
+        const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
+        DataTypes nested_types;
+        for (const auto & element : tuple_type->getElements())
+        {
+            auto nested_type = makeNullableRecursivelyAndCheckForNothing(element);
+            if (!nested_type)
+                return nullptr;
+            nested_types.push_back(nested_type);
+        }
+        return std::make_shared<DataTypeTuple>(std::move(nested_types));
+    }
+
+    if (which.isMap())
+    {
+        const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
+        auto key_type = makeNullableRecursivelyAndCheckForNothing(map_type->getKeyType());
+        auto value_type = makeNullableRecursivelyAndCheckForNothing(map_type->getValueType());
+        return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
+    }
+
+    if (which.isLowCarnality())
+    {
+        const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
+        auto nested_type = makeNullableRecursivelyAndCheckForNothing(lc_type->getDictionaryType());
+        return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
+    }
+
+    return makeNullable(type);
+}
+
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
+{
+    NamesAndTypesList result;
+    for (auto & [name, type] : header.getNamesAndTypesList())
+        result.emplace_back(name, makeNullableRecursivelyAndCheckForNothing(type));
+    return result;
 }
 
 SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)

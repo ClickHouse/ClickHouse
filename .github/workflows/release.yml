@@ -15,8 +15,7 @@ jobs:
     - name: Deploy packages and assets
       run: |
         GITHUB_TAG="${GITHUB_REF#refs/tags/}"
-        curl --silent --data '' \
-          '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true'
+        curl '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true' -d ''
   ############################################################################################
   ##################################### Docker images  #######################################
   ############################################################################################
@@ -37,6 +36,8 @@ jobs:
     - name: Cleanup
       if: always()
       run: |
-        docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-        docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+        # shellcheck disable=SC2046
+        docker kill $(docker ps -q) ||:
+        # shellcheck disable=SC2046
+        docker rm -f $(docker ps -a -q) ||:
         sudo rm -fr "$TEMP_PATH"

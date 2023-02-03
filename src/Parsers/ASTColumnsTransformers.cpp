@@ -19,15 +19,6 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
-void ASTColumnsTransformerList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    for (const auto & child : children)
-    {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
-    }
-}
-
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 {
     if (const auto * apply = transformer->as<ASTColumnsApplyTransformer>())
@@ -60,13 +51,7 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
         settings.ostr << func_name;
 
         if (parameters)
-        {
-            auto nested_frame = frame;
-            nested_frame.expression_list_prepend_whitespace = false;
-            settings.ostr << "(";
-            parameters->formatImpl(settings, state, nested_frame);
-            settings.ostr << ")";
-        }
+            parameters->formatImpl(settings, state, frame);
     }
 
     if (!column_name_prefix.empty())
@@ -226,7 +211,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         for (const auto & child : children)
             expected_columns.insert(child->as<const ASTIdentifier &>().name());
 
-        for (auto * it = nodes.begin(); it != nodes.end();)
+        for (auto it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -243,7 +228,7 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     }
     else
     {
-        for (auto * it = nodes.begin(); it != nodes.end();)
+        for (auto it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -263,8 +248,9 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
         std::for_each(expected_columns.begin(), expected_columns.end(),
             [&](String x) { expected_columns_str += (" " + x) ; });
 
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer EXCEPT expects following column(s) :{}",
-            expected_columns_str);
+        throw Exception(
+            "Columns transformer EXCEPT expects following column(s) :" + expected_columns_str,
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 }
 
@@ -273,13 +259,9 @@ void ASTColumnsExceptTransformer::setPattern(String pattern)
     original_pattern = std::move(pattern);
     column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
     if (!column_matcher->ok())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "COLUMNS pattern {} cannot be compiled: {}",
-            original_pattern, column_matcher->error());
-}
-
-const std::shared_ptr<re2::RE2> & ASTColumnsExceptTransformer::getMatcher() const
-{
-    return column_matcher;
+        throw DB::Exception(
+            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
+            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 }
 
 bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) const
@@ -375,8 +357,9 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
     {
         auto & replacement = replace_child->as<Replacement &>();
         if (replace_map.find(replacement.name) != replace_map.end())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
+            throw Exception(
+                "Expressions in columns transformer REPLACE should not contain the same replacement more than once",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         replace_map.emplace(replacement.name, replacement.expr);
     }
 
@@ -416,8 +399,9 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
                 expected_columns += ", ";
             expected_columns += elem.first;
         }
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Columns transformer REPLACE expects following column(s) : {}",
-            expected_columns);
+        throw Exception(
+            "Columns transformer REPLACE expects following column(s) : " + expected_columns,
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 
 }

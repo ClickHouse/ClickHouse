@@ -1,3 +1,4 @@
+<?xml version="1.0"?>
 <clickhouse>
     <tcp_port_secure>9440</tcp_port_secure>
     <remote_servers>

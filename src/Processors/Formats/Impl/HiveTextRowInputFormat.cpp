@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
-#include <Common/assert_cast.h>
 
 #if USE_HIVE
 
@@ -30,14 +29,14 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
-    const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
+    const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(
-        header_, buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(*buf_, format_settings_))
+        header_, *buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(std::move(buf_), format_settings_))
 {
 }
 
-HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_)
-    : CSVFormatReader(buf_, format_settings_), input_field_names(format_settings_.hive_text.input_field_names)
+HiveTextFormatReader::HiveTextFormatReader(std::unique_ptr<PeekableReadBuffer> buf_, const FormatSettings & format_settings_)
+    : CSVFormatReader(*buf_, format_settings_), buf(std::move(buf_)), input_field_names(format_settings_.hive_text.input_field_names)
 {
 }
 
@@ -67,8 +66,8 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine(
         "HiveText",
-        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t> {
-            return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows);
+        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size) -> std::pair<bool, size_t> {
+            return fileSegmentationEngineCSVImpl(in, memory, min_chunk_size, 0);
         });
 }
 

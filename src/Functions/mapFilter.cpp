@@ -51,7 +51,7 @@ struct MapFilterImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
+                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_filter_const->getValue<UInt8>())
                 return map_column.clone();

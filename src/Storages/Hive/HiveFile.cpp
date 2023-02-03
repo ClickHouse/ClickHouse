@@ -32,7 +32,7 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (const ::arrow::Status & _s = (status); !_s.ok())                   \
-            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
 
@@ -54,7 +54,7 @@ Range createRangeFromOrcStatistics(const StatisticsType * stats)
     }
     else
     {
-        return Range::createWholeUniverseWithoutNull();
+        return Range();
     }
 }
 
@@ -64,14 +64,14 @@ Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
     /// We must check if there are minimum or maximum values in statistics in case of
     /// null values or NaN/Inf values of double type.
     if (!stats->HasMinMax())
-        return Range::createWholeUniverseWithoutNull();
+        return Range();
     return Range(FieldType(stats->min()), true, FieldType(stats->max()), true);
 }
 
 Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
 {
     if (!stats->HasMinMax())
-        return Range::createWholeUniverseWithoutNull();
+        return Range();
     String min_val(reinterpret_cast<const char *>(stats->min().ptr), stats->min().len);
     String max_val(reinterpret_cast<const char *>(stats->max().ptr), stats->max().len);
     return Range(min_val, true, max_val, true);
@@ -116,7 +116,7 @@ void IHiveFile::loadSplitMinMaxIndexes()
 Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
 {
     if (!col_stats || col_stats->hasNull())
-        return Range::createWholeUniverseWithoutNull();
+        return {};
 
     if (const auto * int_stats = dynamic_cast<const orc::IntegerColumnStatistics *>(col_stats))
     {
@@ -155,7 +155,7 @@ Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
     {
         return createRangeFromOrcStatistics<UInt16>(date_stats);
     }
-    return Range::createWholeUniverseWithoutNull();
+    return {};
 }
 
 void HiveORCFile::prepareReader()
@@ -194,7 +194,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
 
     size_t range_num = index_names_and_types.size();
     auto idx = std::make_unique<IMergeTreeDataPart::MinMaxIndex>();
-    idx->hyperrectangle.resize(range_num, Range::createWholeUniverseWithoutNull());
+    idx->hyperrectangle.resize(range_num);
 
     size_t i = 0;
     for (const auto & name_type : index_names_and_types)
@@ -210,7 +210,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
         {
             size_t pos = it->second;
             /// Attention: column statistics start from 1. 0 has special purpose.
-            const orc::ColumnStatistics * col_stats = statistics->getColumnStatistics(static_cast<unsigned>(pos + 1));
+            const orc::ColumnStatistics * col_stats = statistics->getColumnStatistics(pos + 1);
             idx->hyperrectangle[i] = buildRange(col_stats);
         }
         ++i;
@@ -249,8 +249,9 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
     auto stripe_num = raw_reader->getNumberOfStripes();
     auto stripe_stats_num = raw_reader->getNumberOfStripeStatistics();
     if (stripe_num != stripe_stats_num)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num);
+        throw Exception(
+            fmt::format("orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num),
+            ErrorCodes::BAD_ARGUMENTS);
 
     split_minmax_idxes.resize(stripe_num);
     for (size_t i = 0; i < stripe_num; ++i)
@@ -296,7 +297,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     const auto * schema = meta->schema();
     for (size_t pos = 0; pos < num_cols; ++pos)
     {
-        String column{schema->Column(static_cast<int>(pos))->name()};
+        String column{schema->Column(pos)->name()};
         boost::to_lower(column);
         parquet_column_positions[column] = pos;
     }
@@ -305,9 +306,9 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     split_minmax_idxes.resize(num_row_groups);
     for (size_t i = 0; i < num_row_groups; ++i)
     {
-        auto row_group_meta = meta->RowGroup(static_cast<int>(i));
+        auto row_group_meta = meta->RowGroup(i);
         split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        split_minmax_idxes[i]->hyperrectangle.resize(num_cols, Range::createWholeUniverseWithoutNull());
+        split_minmax_idxes[i]->hyperrectangle.resize(num_cols);
 
         size_t j = 0;
         auto it = index_names_and_types.begin();
@@ -320,7 +321,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
                 continue;
 
             size_t pos = mit->second;
-            auto col_chunk = row_group_meta->ColumnChunk(static_cast<int>(pos));
+            auto col_chunk = row_group_meta->ColumnChunk(pos);
             if (!col_chunk->is_stats_set())
                 continue;
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <condition_variable>
 #include <functional>
 #include <optional>
 
@@ -10,19 +9,10 @@
 #include <IO/ReadBuffer.h>
 
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
 
 
 namespace DB
 {
-
-enum class CoordinationMode
-{
-    Default,
-    /// For reading in order
-    WithOrder,
-    ReverseOrder
-};
 
 /// Represents a segment [left; right]
 struct PartBlockRange
@@ -36,44 +26,32 @@ struct PartBlockRange
     }
 };
 
-struct ParallelReadRequest
+struct PartitionReadRequest
 {
-    CoordinationMode mode;
-    size_t replica_num;
-    size_t min_number_of_marks;
-
-    /// Extension for ordered mode
-    RangesInDataPartsDescription description;
+    String partition_id;
+    String part_name;
+    String projection_name;
+    PartBlockRange block_range;
+    MarkRanges mark_ranges;
 
     void serialize(WriteBuffer & out) const;
-    String describe() const;
+    void describe(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);
-    void merge(ParallelReadRequest & other);
+
+    UInt64 getConsistentHash(size_t buckets) const;
 };
 
-struct ParallelReadResponse
+struct PartitionReadResponse
 {
-    bool finish{false};
-    RangesInDataPartsDescription description;
+    bool denied{false};
+    MarkRanges mark_ranges{};
 
     void serialize(WriteBuffer & out) const;
-    String describe() const;
-    void deserialize(ReadBuffer & in);
-};
-
-
-struct InitialAllRangesAnnouncement
-{
-    RangesInDataPartsDescription description;
-    size_t replica_num;
-
-    void serialize(WriteBuffer & out) const;
-    String describe();
     void deserialize(ReadBuffer & in);
 };
 
 
-using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
-using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
+
 
 }

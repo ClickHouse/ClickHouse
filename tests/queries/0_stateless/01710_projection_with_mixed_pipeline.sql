@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 drop table if exists t;
 
 create table t (x UInt32) engine = MergeTree order by tuple() settings index_granularity = 8;

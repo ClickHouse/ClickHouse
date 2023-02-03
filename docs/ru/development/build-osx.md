@@ -1,6 +1,5 @@
 ---
-slug: /ru/development/build-osx
-sidebar_position: 66
+sidebar_position: 65
 sidebar_label: Сборка на Mac OS X
 ---
 
@@ -129,3 +128,5 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 3. Перезагрузитесь.
 
 4. Чтобы проверить, как это работает, выполните команду `ulimit -n`.
+
+[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->
