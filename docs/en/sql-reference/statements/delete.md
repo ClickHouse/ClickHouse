@@ -4,9 +4,8 @@ sidebar_position: 36
 sidebar_label: DELETE
 description: Lightweight deletes simplify the process of deleting data from the database.
 keywords: [delete]
+title: DELETE Statement
 ---
-
-# DELETE Statement
 
 ``` sql
 DELETE FROM [db.]table [ON CLUSTER cluster] [WHERE expr]
