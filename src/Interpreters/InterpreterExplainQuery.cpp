@@ -313,28 +313,28 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
     for (const auto & change : set_query.changes)
     {
-        if (!settings.has(change.getName()))
+        if (!settings.has(change.name))
             throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting \"{}\" for EXPLAIN {} query. "
-                            "Supported settings: {}", change.getName(), Settings::name, settings.getSettingsList());
+                            "Supported settings: {}", change.name, Settings::name, settings.getSettingsList());
 
-        if (change.getFieldValue().getType() != Field::Types::UInt64)
+        if (change.value.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Invalid type {} for setting \"{}\" only integer settings are supported",
-                change.getFieldValue().getTypeName(), change.getName());
+                change.value.getTypeName(), change.name);
 
-        if (settings.hasBooleanSetting(change.getName()))
+        if (settings.hasBooleanSetting(change.name))
         {
-            auto value = change.getFieldValue().get<UInt64>();
+            auto value = change.value.get<UInt64>();
             if (value > 1)
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for setting \"{}\". "
-                                "Expected boolean type", value, change.getName());
+                                "Expected boolean type", value, change.name);
 
-            settings.setBooleanSetting(change.getName(), value);
+            settings.setBooleanSetting(change.name, value);
         }
         else
         {
-            auto value = change.getFieldValue().get<UInt64>();
-            settings.setIntegerSetting(change.getName(), value);
+            auto value = change.value.get<UInt64>();
+            settings.setIntegerSetting(change.name, value);
         }
     }
 

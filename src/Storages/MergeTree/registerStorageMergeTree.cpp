@@ -17,7 +17,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/SettingValueFromAST.h>
+#include <Parsers/FieldFromAST.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -592,16 +592,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->settings)
         {
-            for (auto & change : args.storage_def->settings->changes)
+            for (auto & [name, value] : args.storage_def->settings->changes)
             {
-                auto value = change.getValue();
-                auto * ast_value = dynamic_cast<SettingValueFromAST *>(value.get());
-                if (ast_value && isDiskFunction(ast_value->value))
+                CustomType custom;
+                if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
                 {
-                    const auto & ast_function = assert_cast<const ASTFunction &>(*ast_value->value);
-                    auto disk_name = getOrCreateDiskFromDiskAST(ast_function, context);
-                    ast_value->setField(disk_name);
-                    break;
+                    auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+                    if (ast && isDiskFunction(ast))
+                    {
+                        const auto & ast_function = assert_cast<const ASTFunction &>(*ast);
+                        auto disk_name = getOrCreateDiskFromDiskAST(ast_function, context);
+                        value = disk_name;
+                        break;
+                    }
                 }
             }
         }

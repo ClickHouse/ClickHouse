@@ -1513,11 +1513,11 @@ void Context::applySettingChange(const SettingChange & change)
 {
     try
     {
-        setSetting(change.getName(), change.getFieldValue());
+        setSetting(change.name, change.value);
     }
     catch (Exception & e)
     {
-        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}", change.getName(), change.getValueString()));
+        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}", change.name, toString(change.value)));
         throw;
     }
 }

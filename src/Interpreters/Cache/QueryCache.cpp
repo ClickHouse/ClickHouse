@@ -79,7 +79,7 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                const auto & name = change.getName();
+                const auto & name = change.name;
                 return name == "allow_experimental_query_cache"
                     || name.starts_with("query_cache")
                     || name.ends_with("query_cache");

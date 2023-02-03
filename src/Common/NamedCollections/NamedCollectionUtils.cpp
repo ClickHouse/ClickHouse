@@ -182,18 +182,18 @@ public:
         std::unordered_map<std::string, Field> result_changes_map;
         for (const auto & change : query.changes)
         {
-            auto [it, inserted] = result_changes_map.emplace(change.getName(), change.getFieldValue());
+            auto [it, inserted] = result_changes_map.emplace(change.name, change.value);
             if (!inserted)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Value with key `{}` is used twice in the SET query (collection name: {})",
-                    change.getName(), query.collection_name);
+                    change.name, query.collection_name);
             }
         }
 
         for (const auto & change : create_query.changes)
-            result_changes_map.emplace(change.getName(), change.getFieldValue());
+            result_changes_map.emplace(change.name, change.value);
 
         for (const auto & delete_key : query.delete_keys)
         {
@@ -254,7 +254,7 @@ private:
 
         std::set<std::string, std::less<>> keys;
         for (const auto & change : query.changes)
-            keys.insert(change.getName());
+            keys.insert(change.name);
 
         return NamedCollection::create(
             *config, collection_name, "", keys, SourceId::SQL, /* is_mutable */true);
@@ -379,7 +379,7 @@ void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr contex
     auto collection_lock = collection->lock();
 
     for (const auto & change : query.changes)
-        collection->setOrUpdate<String, true>(change.getName(), convertFieldToString(change.getFieldValue()));
+        collection->setOrUpdate<String, true>(change.name, convertFieldToString(change.value));
 
     for (const auto & key : query.delete_keys)
         collection->remove<true>(key);
