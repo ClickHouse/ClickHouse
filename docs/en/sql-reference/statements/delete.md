@@ -2,6 +2,8 @@
 slug: /en/sql-reference/statements/delete
 sidebar_position: 36
 sidebar_label: DELETE
+description: Lightweight deletes simplify the process of deleting data from the database.
+keywords: [delete]
 ---
 
 # DELETE Statement
