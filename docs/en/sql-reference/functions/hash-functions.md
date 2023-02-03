@@ -183,7 +183,7 @@ Same as [sipHash128](#hash_functions-siphash128), but the first argument is a tu
 
 **Returned value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Example**
 
