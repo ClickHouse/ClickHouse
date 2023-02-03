@@ -78,13 +78,13 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 key0 = 0, UInt64 key1 = 0) /// NOLINT
+    SipHash(UInt64 k0 = 0, UInt64 k1 = 0) /// NOLINT
     {
         /// Initialize the state with some random bytes and seed.
-        v0 = 0x736f6d6570736575ULL ^ key0;
-        v1 = 0x646f72616e646f6dULL ^ key1;
-        v2 = 0x6c7967656e657261ULL ^ key0;
-        v3 = 0x7465646279746573ULL ^ key1;
+        v0 = 0x736f6d6570736575ULL ^ k0;
+        v1 = 0x646f72616e646f6dULL ^ k1;
+        v2 = 0x6c7967656e657261ULL ^ k0;
+        v3 = 0x7465646279746573ULL ^ k1;
 
         cnt = 0;
         current_word = 0;
@@ -164,13 +164,8 @@ public:
     void get128(char * out)
     {
         finalize();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStore<UInt64>(out + 8, v0 ^ v1);
-        unalignedStore<UInt64>(out, v2 ^ v3);
-#else
         unalignedStore<UInt64>(out, v0 ^ v1);
         unalignedStore<UInt64>(out + 8, v2 ^ v3);
-#endif
     }
 
     template <typename T>
@@ -194,13 +189,6 @@ public:
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
     }
-
-    UInt128 get128()
-    {
-        UInt128 res;
-        get128(res);
-        return res;
-    }
 };
 
 
@@ -216,28 +204,20 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     hash.get128(out);
 }
 
-inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
-{
-    SipHash hash(key0, key1);
-    hash.update(data, size);
-    return hash.get128();
-}
-
 inline UInt128 sipHash128(const char * data, const size_t size)
 {
-    return sipHash128Keyed(0, 0, data, size);
-}
-
-inline UInt64 sipHash64Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
-{
-    SipHash hash(key0, key1);
+    SipHash hash;
     hash.update(data, size);
-    return hash.get64();
+    UInt128 res;
+    hash.get128(res);
+    return res;
 }
 
 inline UInt64 sipHash64(const char * data, const size_t size)
 {
-    return sipHash64Keyed(0, 0, data, size);
+    SipHash hash;
+    hash.update(data, size);
+    return hash.get64();
 }
 
 template <typename T>

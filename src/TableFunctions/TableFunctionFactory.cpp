@@ -3,7 +3,6 @@
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/KnownObjectNames.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 
@@ -21,14 +20,13 @@ void TableFunctionFactory::registerFunction(
     const std::string & name, Value value, CaseSensitiveness case_sensitiveness)
 {
     if (!table_functions.emplace(name, value).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
+        throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
+            ErrorCodes::LOGICAL_ERROR);
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), value).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: "
-                        "the case insensitive table function name '{}' is not unique", name);
-
-    KnownTableFunctionNames::instance().add(name, (case_sensitiveness == CaseInsensitive));
+        throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 TableFunctionPtr TableFunctionFactory::get(

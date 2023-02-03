@@ -118,7 +118,8 @@ function clone_submodules
             contrib/libcpuid
             contrib/libdivide
             contrib/double-conversion
-            contrib/llvm-project
+            contrib/libcxx
+            contrib/libcxxabi
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -137,9 +138,6 @@ function clone_submodules
             contrib/hashidsxx
             contrib/c-ares
             contrib/morton-nd
-            contrib/xxHash
-            contrib/simdjson
-            contrib/liburing
         )
 
         git submodule sync
@@ -160,9 +158,7 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
-        "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
-        "-DENABLE_LIBURING=1"
     )
 
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
@@ -192,7 +188,7 @@ function build
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
 
             strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
+            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
         ccache --evict-older-than 1d ||:
@@ -238,7 +234,6 @@ function run_tests
         --check-zookeeper-session
         --order random
         --print-time
-        --report-logs-stats
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Common/AsynchronousMetrics.h>
+#include <Interpreters/AsynchronousMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/NamesAndTypes.h>

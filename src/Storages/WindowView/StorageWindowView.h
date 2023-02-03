@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -214,7 +213,7 @@ private:
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
-    SharedMutex fire_signal_mutex;
+    std::shared_mutex fire_signal_mutex;
     mutable std::mutex sample_block_lock; /// Mutex to protect access to sample block
 
     IntervalKind::Kind window_kind;

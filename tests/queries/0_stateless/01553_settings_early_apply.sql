@@ -1,5 +1,3 @@
-set output_format_write_statistics=0;
-
 select * from numbers(100) settings max_result_rows = 1; -- { serverError 396 }
 select * from numbers(100) FORMAT JSON settings max_result_rows = 1; -- { serverError 396 }
 select * from numbers(100) FORMAT TSVWithNamesAndTypes settings max_result_rows = 1; -- { serverError 396 }

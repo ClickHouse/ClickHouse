@@ -37,13 +37,13 @@ bool parseNaN(ReadBuffer & buf)
 void assertInfinity(ReadBuffer & buf)
 {
     if (!parseInfinity(buf))
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse infinity.");
+        throw Exception("Cannot parse infinity.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 void assertNaN(ReadBuffer & buf)
 {
     if (!parseNaN(buf))
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse NaN.");
+        throw Exception("Cannot parse NaN.", ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 

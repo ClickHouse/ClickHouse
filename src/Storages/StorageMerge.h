@@ -109,8 +109,6 @@ private:
 
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
-    bool tableSupportsPrewhere() const;
-
     friend class ReadFromMerge;
 };
 
@@ -195,10 +193,10 @@ private:
         size_t streams_num,
         bool concat_streams = false);
 
-    static void convertingSourceStream(
+    void convertingSourceStream(
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
-        ContextPtr context,
-        QueryPipelineBuilder & builder);
+        ContextPtr context, ASTPtr & query,
+        QueryPipelineBuilder & builder, QueryProcessingStage::Enum processed_stage);
 };
 
 }

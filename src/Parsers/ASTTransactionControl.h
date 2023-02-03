@@ -27,8 +27,6 @@ public:
 
     void formatImpl(const FormatSettings & format, FormatState & /*state*/, FormatStateStacked /*frame*/) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
-
-    QueryKind getQueryKind() const override;
 };
 
 }

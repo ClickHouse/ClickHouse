@@ -3,6 +3,7 @@ clusterAllReplicas
 dictionary
 executable
 file
+format
 generateRandom
 input
 jdbc

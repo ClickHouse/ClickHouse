@@ -12,10 +12,11 @@ jobs:
   PythonUnitTests:
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -23,32 +24,34 @@ jobs:
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
@@ -56,17 +59,18 @@ jobs:
     needs: [DockerHubPushAmd64, DockerHubPushAarch64]
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Download changed aarch64 images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}
       - name: Download changed amd64 images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}
@@ -75,7 +79,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
@@ -90,12 +94,13 @@ jobs:
           REPO_COPY=${{runner.temp}}/compatibility_check/ClickHouse
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Download json reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
       - name: CompatibilityCheck
@@ -127,25 +132,28 @@ jobs:
           BUILD_NAME=package_release
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: actions/checkout@v2
         with:
-          clear-repository: true
-          submodules: true
           fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -169,25 +177,28 @@ jobs:
           BUILD_NAME=package_aarch64
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: actions/checkout@v2
         with:
-          clear-repository: true
-          submodules: true
           fetch-depth: 0 # For a proper version and performance artifacts
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -211,24 +222,26 @@ jobs:
           BUILD_NAME=package_asan
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
+        uses: actions/checkout@v2
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -252,24 +265,26 @@ jobs:
           BUILD_NAME=package_tsan
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
+        uses: actions/checkout@v2
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -293,24 +308,26 @@ jobs:
           BUILD_NAME=package_debug
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-          submodules: true
+        uses: actions/checkout@v2
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -334,25 +351,28 @@ jobs:
           BUILD_NAME=binary_darwin
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: actions/checkout@v2
         with:
-          clear-repository: true
-          submodules: true
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -376,25 +396,28 @@ jobs:
           BUILD_NAME=binary_darwin_aarch64
           EOF
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: actions/checkout@v2
         with:
-          clear-repository: true
-          submodules: true
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync
+          git -C "$GITHUB_WORKSPACE" submodule update --single-branch --depth=1 --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
@@ -413,10 +436,12 @@ jobs:
       - BuilderDebAarch64
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: actions/checkout@v2
         with:
-          clear-repository: true
           fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       - name: Check docker clickhouse/clickhouse-server building
         run: |
@@ -452,13 +477,14 @@ jobs:
           NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Report Builder
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -490,13 +516,14 @@ jobs:
           NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Report Builder
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -529,13 +556,14 @@ jobs:
           KILL_TIMEOUT=10800
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -566,13 +594,14 @@ jobs:
           KILL_TIMEOUT=3600
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Functional test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -606,13 +635,14 @@ jobs:
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Stress test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -642,13 +672,14 @@ jobs:
           REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
           EOF
       - name: Download json reports
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Integration test
         run: |
           sudo rm -fr "$TEMP_PATH"
@@ -675,12 +706,12 @@ jobs:
       - CompatibilityCheck
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
+        uses: actions/checkout@v2
       - name: Finish label
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 finish_check.py
-          python3 merge_pr.py

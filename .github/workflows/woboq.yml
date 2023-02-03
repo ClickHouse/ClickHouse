@@ -21,10 +21,12 @@ jobs:
           REPO_COPY=${{runner.temp}}/codebrowser/ClickHouse
           IMAGES_PATH=${{runner.temp}}/images_path
           EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: ClickHouse/checkout@v1
+        uses: actions/checkout@v2
         with:
-          clear-repository: true
           submodules: 'true'
       - name: Codebrowser
         run: |

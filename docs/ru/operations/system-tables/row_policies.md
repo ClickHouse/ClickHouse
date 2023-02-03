@@ -33,3 +33,4 @@ slug: /ru/operations/system-tables/row_policies
 ## Смотрите также {#see-also}
 
 -   [SHOW POLICIES](../../sql-reference/statements/show.md#show-policies-statement)
+

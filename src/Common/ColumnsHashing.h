@@ -243,8 +243,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     {
         const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
         if (!low_cardinality_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
-                            "Excepted LowCardinality, got {}", column->getName());
+            throw Exception("Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
+                            "Excepted LowCardinality, got " + column->getName(), ErrorCodes::LOGICAL_ERROR);
         return *low_cardinality_column;
     }
 
@@ -255,7 +255,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
         if (!context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
+            throw Exception("Cache wasn't created for HashMethodSingleLowCardinalityColumn",
+                            ErrorCodes::LOGICAL_ERROR);
 
         LowCardinalityDictionaryCache * lcd_cache;
         if constexpr (use_cache)
@@ -264,8 +265,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             if (!lcd_cache)
             {
                 const auto & cached_val = *context;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSingleLowCardinalityColumn cache: {}",
-                                demangle(typeid(cached_val).name()));
+                throw Exception("Invalid type for HashMethodSingleLowCardinalityColumn cache: "
+                                + demangle(typeid(cached_val).name()), ErrorCodes::LOGICAL_ERROR);
             }
         }
 
@@ -325,7 +326,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(positions)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(positions)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(positions)->getElement(row);
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
+            default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
         }
     }
 

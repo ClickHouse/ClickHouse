@@ -104,7 +104,7 @@ private:
     NamesAndTypesList requested_columns;
 
     /// Actual columns description in part.
-    const ColumnsDescription & part_columns;
+    ColumnsDescription part_columns;
 };
 
 }

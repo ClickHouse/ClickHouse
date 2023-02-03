@@ -1,30 +1,41 @@
 #include <Client/ClientBase.h>
-#include <Client/LineReader.h>
-#include <Client/ClientBaseHelpers.h>
-#include <Client/TestHint.h>
-#include <Client/InternalTextLogs.h>
-#include <Client/TestTags.h>
 
-#include <base/argsToConfig.h>
-#include <base/safeExit.h>
-#include <Core/Block.h>
-#include <Core/Protocol.h>
+#include <iostream>
+#include <filesystem>
+#include <map>
+#include <unordered_map>
+
+#include "config.h"
+
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
+#include <base/argsToConfig.h>
+#include <base/LineReader.h>
 #include <Common/scope_guard_safe.h>
+#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
+#include <Formats/FormatFactory.h>
+
+#include "config_version.h"
+
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Formats/FormatFactory.h>
+#include <Storages/ColumnsDescription.h>
+
+#include <Client/ClientBaseHelpers.h>
+#include <Client/TestHint.h>
+#include "TestTags.h"
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -32,7 +43,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -41,36 +51,26 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
+#include <Client/InternalTextLogs.h>
 #include <IO/ForkWriteBuffer.h>
-
-#include <Access/AccessControl.h>
-#include <Storages/ColumnsDescription.h>
-
+#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <boost/algorithm/string/case_conv.hpp>
-#include <iostream>
-#include <filesystem>
-#include <map>
-#include <unordered_map>
-
-#include "config_version.h"
-#include "config.h"
 
 
 namespace fs = std::filesystem;
@@ -413,7 +413,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
     if (!select && !external_tables.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
+        throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
@@ -451,7 +451,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     catch (const Exception &)
     {
         /// Catch client errors like NO_ROW_DELIMITER
-        throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+        throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
     }
 
     /// Received data block is immediately displayed to the user.
@@ -595,7 +595,7 @@ try
             if (query_with_output->format != nullptr)
             {
                 if (has_vertical_output_suffix)
-                    throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
+                    throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
             }
@@ -629,7 +629,7 @@ try
 }
 catch (...)
 {
-    throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+    throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
 }
 
 
@@ -1034,13 +1034,7 @@ void ClientBase::onEndOfStream()
         progress_indication.clearProgressOutput(*tty_buf);
 
     if (output_format)
-    {
-        /// Do our best to estimate the start of the query so the output format matches the one reported by the server
-        bool is_running = false;
-        output_format->setStartTime(
-            clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
         output_format->finalize();
-    }
 
     resetOutput();
 
@@ -1116,8 +1110,6 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    if (output_format)
-        output_format->finalize();
     output_format.reset();
     logs_out_stream.reset();
 
@@ -1170,9 +1162,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             default:
-                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception or Log, got {})",
-                    String(Protocol::Server::toString(packet.type)));
+                throw NetException(
+                    "Unexpected packet from server (expected Data, Exception or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")",
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
         }
     }
 }
@@ -1212,7 +1205,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         const auto & settings = global_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
-            throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+            throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
         else
             return;
     }
@@ -1255,9 +1248,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     auto columns_description_for_query = columns_description.empty() ? ColumnsDescription(sample.getNamesAndTypesList()) : columns_description;
     if (columns_description_for_query.empty())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Column description is empty and it can't be built from sample from table. "
-                        "Cannot execute query.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
     }
 
     /// If INSERT data must be sent.
@@ -1375,7 +1366,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else
-        throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+        throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 }
 
 
@@ -1409,11 +1400,6 @@ try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
-
-    if (need_render_progress)
-    {
-        pipeline.setProgressCallback([this](const Progress & progress){ onProgress(progress); });
-    }
 
     Block block;
     while (executor.pull(block))
@@ -1459,6 +1445,12 @@ catch (...)
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
+    if (need_render_progress)
+    {
+        /// Add callback to track reading from fd.
+        std_in.setProgressCallback(global_context);
+    }
+
     /// Send data read from stdin.
     try
     {
@@ -1515,9 +1507,10 @@ bool ClientBase::receiveEndOfQuery()
                 break;
 
             default:
-                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
-                    String(Protocol::Server::toString(packet.type)));
+                throw NetException(
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got "
+                        + String(Protocol::Server::toString(packet.type)) + ")",
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
         }
     }
 }
@@ -1570,15 +1563,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             updateLoggerLevel(logs_level_field->safeGet<String>());
     }
 
-    if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
-    {
-        if (!create_user_query->attach && create_user_query->temporary_password_for_checks)
-        {
-            global_context->getAccessControl().checkPasswordComplexityRules(create_user_query->temporary_password_for_checks.value());
-            create_user_query->temporary_password_for_checks.reset();
-        }
-    }
-
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
@@ -1622,7 +1606,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
             if (input_function && insert->format.empty())
-                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
+                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
 
             processInsertQuery(query_to_execute, parsed_query);
         }
@@ -1686,11 +1670,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     else if (print_time_to_stderr)
     {
         std::cerr << progress_indication.elapsedSeconds() << "\n";
-    }
-
-    if (!is_interactive && print_num_processed_rows)
-    {
-        std::cout << "Processed rows: " << processed_rows << "\n";
     }
 
     if (have_error && report_error)
@@ -1897,7 +1876,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     // Surprisingly, this is a client error. A server error would
                     // have been reported without throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
 
@@ -2068,9 +2047,9 @@ void ClientBase::initQueryIdFormats()
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "query_id could be specified only in non-interactive mode");
+        throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
     if (print_time_to_stderr)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "time option could be specified only in non-interactive mode");
+        throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
     initQueryIdFormats();
 
@@ -2312,8 +2291,7 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     {
         auto hints = this->getHints(unrecognized_options[0]);
         if (!hints.empty())
-            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}",
-                            unrecognized_options[0], toString(hints));
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}", unrecognized_options[0], toString(hints));
 
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
     }
@@ -2391,7 +2369,6 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
-        ("processed-rows", "print the number of locally processed rows")
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
@@ -2470,8 +2447,6 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("print-profile-events", true);
     if (options.count("profile-events-delay-ms"))
         config().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
-    if (options.count("processed-rows"))
-        print_num_processed_rows = true;
     if (options.count("progress"))
     {
         switch (options["progress"].as<ProgressOption>())
