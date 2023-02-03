@@ -29,7 +29,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
+static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
 {
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
@@ -64,7 +64,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
     return nullptr;
 }
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
+static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))
@@ -89,7 +89,7 @@ using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
-void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
+static void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(&filter_expression);
@@ -138,7 +138,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
     }
 }
 
-void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
+static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
 {
     if (dag)
         dag->mergeInplace(std::move(*expression->clone()));
