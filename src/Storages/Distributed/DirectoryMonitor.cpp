@@ -20,7 +20,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
 #include <Disks/IDisk.h>
 #include <boost/algorithm/string/find_iterator.hpp>

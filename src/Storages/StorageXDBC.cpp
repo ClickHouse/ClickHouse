@@ -5,7 +5,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
@@ -130,13 +130,18 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
     request_uri.addQueryParameter("format_name", format_name);
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
+    const auto & settings = local_context->getSettingsRef();
+    const auto & config = local_context->getConfigRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+
     return std::make_shared<StorageURLSink>(
         request_uri.toString(),
         format_name,
         getFormatSettings(local_context),
         metadata_snapshot->getSampleBlock(),
         local_context,
-        ConnectionTimeouts::getHTTPTimeouts(local_context),
+        timeouts,
         compression_method);
 }
 

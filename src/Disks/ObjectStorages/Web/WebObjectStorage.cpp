@@ -40,11 +40,17 @@ void WebObjectStorage::initialize(const String & uri_path) const
     try
     {
         Poco::Net::HTTPBasicCredentials credentials{};
+
+        const auto & settings = getContext()->getSettingsRef();
+        const auto & config = getContext()->getConfigRef();
+        Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+
         ReadWriteBufferFromHTTP metadata_buf(
             Poco::URI(fs::path(uri_path) / ".index"),
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
-            ConnectionTimeouts::getHTTPTimeouts(getContext()),
+            timeouts,
             credentials,
             /* max_redirects= */ 0,
             /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,

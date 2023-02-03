@@ -8,7 +8,7 @@
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
 #include <DataTypes/DataTypeString.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
