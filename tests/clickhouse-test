@@ -491,7 +491,7 @@ class SettingsRandomizer:
         if random.random() < 0.2
         else random.randint(1, 1024 * 1024 * 1024),
         "local_filesystem_read_method": lambda: random.choice(
-            ["read", "pread", "mmap", "pread_threadpool"]
+            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
@@ -790,6 +790,9 @@ class TestCase:
     ):
         description = ""
 
+        if debug_log:
+            debug_log = "\n".join(debug_log.splitlines()[:100])
+
         if proc:
             if proc.returncode is None:
                 try:
@@ -932,7 +935,7 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and total_time > 60
+            and total_time > 120
             and "long" not in self.tags
         ):
             if debug_log:
@@ -1138,6 +1141,9 @@ class TestCase:
                 proc, stdout, stderr, debug_log, total_time
             )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
+            # to avoid breaking CSV parser
+            result.description = result.description.replace('\0', '')
+
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(
                     args, result.description
