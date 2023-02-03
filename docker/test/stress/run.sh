@@ -13,15 +13,28 @@ sysctl kernel.core_pattern='core.%e.%p-%P'
 
 OK="\tOK\t\\N\t"
 FAIL="\tFAIL\t\\N\t"
+
+FAILURE_CONTEXT_LINES=50
+FAILURE_CONTEXT_MAX_LINE_WIDTH=400
+
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
-    clickhouse local -S 's String' --input-format=LineAsString -q "select * from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
+    # Also limit lines width just in case (too long lines are not really useful usually)
+    clickhouse local -S 's String' --input-format=LineAsString -q "select substr(s, 1, $FAILURE_CONTEXT_MAX_LINE_WIDTH)
+      from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
 }
-
 function head_escaped()
 {
-    head -50 $1 | escaped
+    head -n $FAILURE_CONTEXT_LINES $1 | escaped
+}
+function unts()
+{
+    grep -Po "[0-9][0-9]:[0-9][0-9] \K.*"
+}
+function trim_server_logs()
+{
+    head -n $FAILURE_CONTEXT_LINES "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
 }
 
 function install_packages()
@@ -167,7 +180,7 @@ function start()
         then
             echo "Cannot start clickhouse-server"
             rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
-            echo -e "Cannot start clickhouse-server$FAIL$(head_escaped /test_output/application_errors.txt)" >> /test_output/test_results.tsv
+            echo -e "Cannot start clickhouse-server$FAIL$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
             tail -n100 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
@@ -389,7 +402,7 @@ start
 
 # NOTE Hung check is implemented in docker/tests/stress/stress
 rg -Fa "No queries hung" /test_output/test_results.tsv | grep -Fa "OK" \
-  || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log)"
+  || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log | unts)"
 
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -402,7 +415,7 @@ start
 
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
-    && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(head_escaped /test_output/application_errors.txt)" \
+    && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
 
 stop
@@ -435,7 +448,7 @@ rg -Fa "Code: 49. DB::Exception: " /var/log/clickhouse-server/clickhouse-server*
 
 # No such key errors
 rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
-    && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(head_escaped /test_output/no_such_key_errors.txt)" >> /test_output/test_results.tsv \
+    && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
     || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 
 # Remove file no_such_key_errors.txt if it's empty
@@ -448,7 +461,7 @@ rg -Fa "########################################" /var/log/clickhouse-server/cli
 
 # It also checks for crash without stacktrace (printed by watchdog)
 rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server*.log > /test_output/fatal_messages.txt \
-    && echo -e "Fatal message in clickhouse-server.log (see fatal_messages.txt)$FAIL$(head_escaped /test_output/fatal_messages.txt)" >> /test_output/test_results.tsv \
+    && echo -e "Fatal message in clickhouse-server.log (see fatal_messages.txt)$FAIL$(trim_server_logs fatal_messages.txt)" >> /test_output/test_results.tsv \
     || echo -e "No fatal messages in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
 # Remove file fatal_messages.txt if it's empty
@@ -457,8 +470,13 @@ rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server*.log > /test_out
 rg -Fa "########################################" /test_output/* > /dev/null \
     && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
 
+function get_gdb_log_context()
+{
+    rg -A50 -Fa " received signal " /test_output/gdb.log | head_escaped
+}
+
 rg -Fa " received signal " /test_output/gdb.log > /dev/null \
-    && echo -e "Found signal in gdb.log$FAIL$(rg -A50 -Fa " received signal " /test_output/gdb.log | escaped)" >> /test_output/test_results.tsv
+    && echo -e "Found signal in gdb.log$FAIL$(get_gdb_log_context)" >> /test_output/test_results.tsv
 
 if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
     echo -e "Backward compatibility check\n"
@@ -579,7 +597,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         start 500
         clickhouse-client --query "SELECT 'Backward compatibility check: Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
             || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/bc_check_application_errors.txt \
-            && echo -e "Backward compatibility check: Server failed to start$FAIL$(head_escaped /test_output/bc_check_application_errors.txt)" >> /test_output/test_results.tsv)
+            && echo -e "Backward compatibility check: Server failed to start$FAIL$(trim_server_logs bc_check_application_errors.txt)" >> /test_output/test_results.tsv)
 
         clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -634,7 +652,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "Session expired" \
                    -e "TOO_MANY_PARTS" \
             /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | rg -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
-            && echo -e "Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)$FAIL$(head_escaped /test_output/bc_check_error_messages.txt)" \
+            && echo -e "Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)$FAIL$(trim_server_logs bc_check_error_messages.txt)" \
                 >> /test_output/test_results.tsv \
             || echo -e "Backward compatibility check: No Error messages in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
@@ -657,7 +675,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         # Logical errors
         echo "Check for Logical errors in server log:"
         rg -Fa -A20 "Code: 49. DB::Exception:" /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_logical_errors.txt \
-            && echo -e "Backward compatibility check: Logical error thrown (see clickhouse-server.log or bc_check_logical_errors.txt)$FAIL$(head_escaped /test_output/bc_check_logical_errors.txt)" \
+            && echo -e "Backward compatibility check: Logical error thrown (see clickhouse-server.log or bc_check_logical_errors.txt)$FAIL$(trim_server_logs bc_check_logical_errors.txt)" \
                 >> /test_output/test_results.tsv \
             || echo -e "Backward compatibility check: No logical errors$OK" >> /test_output/test_results.tsv
 
@@ -672,7 +690,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         # It also checks for crash without stacktrace (printed by watchdog)
         echo "Check for Fatal message in server log:"
         rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.backward.*.log > /test_output/bc_check_fatal_messages.txt \
-            && echo -e "Backward compatibility check: Fatal message in clickhouse-server.log (see bc_check_fatal_messages.txt)$FAIL$(head_escaped /test_output/bc_check_fatal_messages.txt)" \
+            && echo -e "Backward compatibility check: Fatal message in clickhouse-server.log (see bc_check_fatal_messages.txt)$FAIL$(trim_server_logs bc_check_fatal_messages.txt)" \
                 >> /test_output/test_results.tsv \
             || echo -e "Backward compatibility check: No fatal messages in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
