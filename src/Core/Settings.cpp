@@ -87,9 +87,7 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
     // we can have multiple aliases to the same setting
     std::unordered_map<std::string_view, std::vector<std::string_view>> setting_to_alias_mapping;
     for (const auto & [alias, destination] : SettingsTraits::settings_aliases)
-    {
         setting_to_alias_mapping[destination].push_back(alias);
-    }
 
     for (const auto & field : all())
     {
@@ -109,9 +107,7 @@ void Settings::addProgramOptionsAsMultitokens(boost::program_options::options_de
     // we can have multiple aliases to the same setting
     std::unordered_map<std::string_view, std::vector<std::string_view>> setting_to_alias_mapping;
     for (const auto & [alias, destination] : SettingsTraits::settings_aliases)
-    {
         setting_to_alias_mapping[destination].push_back(alias);
-    }
 
     for (const auto & field : all())
     {
