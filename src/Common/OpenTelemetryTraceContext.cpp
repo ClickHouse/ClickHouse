@@ -19,7 +19,7 @@ bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
     if (!this->isTraceEnabled() || name.empty())
         return false;
 
-    return addAttribute(name, toString(value));
+    return addAttributeImpl(name, toString(value));
 }
 
 bool Span::addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept
@@ -27,7 +27,7 @@ bool Span::addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept
     if (!this->isTraceEnabled() || name.empty() || value == 0)
         return false;
 
-    return addAttribute(name, toString(value));
+    return addAttributeImpl(name, toString(value));
 }
 
 bool Span::addAttribute(std::string_view name, std::string_view value) noexcept
@@ -35,30 +35,26 @@ bool Span::addAttribute(std::string_view name, std::string_view value) noexcept
     if (!this->isTraceEnabled() || name.empty())
         return false;
 
-    try
-    {
-        this->attributes.push_back(Tuple{name, value});
-    }
-    catch (...)
-    {
-        return false;
-    }
-    return true;
+    return addAttributeImpl(name, value);
 }
 
 bool Span::addAttributeIfNotEmpty(std::string_view name, std::string_view value) noexcept
 {
-    return value.empty() ? false : addAttribute(name, value);
+    if (!this->isTraceEnabled() || name.empty() || value.empty())
+        return false;
+
+    return addAttributeImpl(name, value);
 }
 
 bool Span::addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept
 {
-    if (!this->isTraceEnabled() || !value_supplier)
+    if (!this->isTraceEnabled() || name.empty() || !value_supplier)
         return false;
 
     try
     {
-        return addAttributeIfNotEmpty(name, value_supplier());
+        const String value = value_supplier();
+        return value.empty() ? false : addAttributeImpl(name, value);
     }
     catch (...)
     {
@@ -72,7 +68,7 @@ bool Span::addAttribute(const Exception & e) noexcept
     if (!this->isTraceEnabled())
         return false;
 
-    return addAttribute("clickhouse.exception", getExceptionMessage(e, false));
+    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
 }
 
 bool Span::addAttribute(std::exception_ptr e) noexcept
@@ -80,7 +76,20 @@ bool Span::addAttribute(std::exception_ptr e) noexcept
     if (!this->isTraceEnabled() || e == nullptr)
         return false;
 
-    return addAttribute("clickhouse.exception", getExceptionMessage(e, false));
+    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
+}
+
+bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexcept
+{
+    try
+    {
+        this->attributes.push_back(Tuple{name, value});
+    }
+    catch (...)
+    {
+        return false;
+    }
+    return true;
 }
 
 SpanHolder::SpanHolder(std::string_view _operation_name)
