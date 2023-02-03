@@ -192,6 +192,12 @@ DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateD
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const CustomType &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator()(const bool &) const
 {
     return DataTypeFactory::instance().get("Bool");

@@ -597,6 +597,7 @@ String fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::UUID: return "UUID";
         case Field::Types::Which::IPv4: return "IPv4";
         case Field::Types::Which::IPv6: return "IPv6";
+        case Field::Types::Which::CustomType: return "CustomType";
     }
 }
 
