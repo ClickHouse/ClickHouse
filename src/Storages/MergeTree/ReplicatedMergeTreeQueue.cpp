@@ -1760,7 +1760,7 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
     if (in_partition == mutations_by_partition.end())
         return {};
 
-    Int64 part_data_version = part->info.getDataVersion();
+    Int64 part_metadata_version = part->getMetadataVersion();
     std::map<int64_t, MutationCommands> result;
     /// Here we return mutation commands for part which has bigger mutation version than part mutation version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
@@ -1771,13 +1771,12 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
     {
         if (mutation_status->entry->alter_version != -1)
         {
-            if (mutation_version > part_data_version)
+            if (mutation_status->entry->alter_version > part_metadata_version)
             {
                 result[mutation_version] = mutation_status->entry->commands;
             }
             else
             {
-                result[mutation_version] = mutation_status->entry->commands;
                 break;
             }
         }
