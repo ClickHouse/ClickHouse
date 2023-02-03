@@ -1,4 +1,5 @@
 ---
+slug: /zh/getting-started/install
 sidebar_position: 11
 sidebar_label: 安装部署
 ---
@@ -134,8 +135,6 @@ do
     || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
 done
 
-exit 0
-
 tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
@@ -146,7 +145,7 @@ sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
 tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
   || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
+sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
 sudo /etc/init.d/clickhouse-server start
 
 tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
@@ -277,5 +276,3 @@ SELECT 1
 **恭喜，系统已经工作了!**
 
 为了继续进行实验，你可以尝试下载测试数据集或查看[教程](./tutorial.md)。
-
-[原始文章](https://clickhouse.com/docs/en/getting_started/install/) <!--hide-->

@@ -3,9 +3,9 @@
 #if USE_HDFS
 #include <mutex>
 #include <Common/logger_useful.h>
-#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+
 
 namespace CurrentMetrics
 {
@@ -35,7 +35,7 @@ namespace ErrorCodes
 }
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
-    AsynchronousReaderPtr reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
+    IAsynchronousReader & reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
     : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , priority(settings_.priority)
@@ -66,13 +66,13 @@ bool AsynchronousReadBufferFromHDFS::hasPendingDataToRead()
 std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromHDFS::asyncReadInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
     request.priority = priority;
     request.ignore = 0;
-    return reader->submit(request);
+    return reader.submit(request);
 }
 
 void AsynchronousReadBufferFromHDFS::prefetch()
@@ -179,10 +179,10 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
     if (whence != SEEK_SET)
-        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
     if (offset < 0)
-        throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset);
 
     size_t new_pos = offset;
 

@@ -5,7 +5,7 @@
 #include <signal.h>
 #include <time.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 
 namespace Poco

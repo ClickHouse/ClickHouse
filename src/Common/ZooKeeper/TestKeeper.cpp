@@ -218,7 +218,8 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
             created_node.stat.mtime = created_node.stat.ctime;
             created_node.stat.numChildren = 0;
-            created_node.stat.dataLength = data.length();
+            created_node.stat.dataLength = static_cast<int>(data.length());
+            created_node.stat.ephemeralOwner = is_ephemeral ? 1 : 0;
             created_node.data = data;
             created_node.is_ephemeral = is_ephemeral;
             created_node.is_sequental = is_sequential;
@@ -507,15 +508,15 @@ ResponsePtr TestKeeperSyncRequest::createResponse() const { return std::make_sha
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 
 
-TestKeeper::TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_)
-    : root_path(root_path_), operation_timeout(operation_timeout_)
+TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
+    : args(args_)
 {
     container.emplace("/", Node());
 
-    if (!root_path.empty())
+    if (!args.chroot.empty())
     {
-        if (root_path.back() == '/')
-            root_path.pop_back();
+        if (args.chroot.back() == '/')
+            args.chroot.pop_back();
     }
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
@@ -547,7 +548,7 @@ void TestKeeper::processingThread()
         {
             RequestInfo info;
 
-            UInt64 max_wait = static_cast<UInt64>(operation_timeout.totalMilliseconds());
+            UInt64 max_wait = static_cast<UInt64>(args.operation_timeout_ms);
             if (requests_queue.tryPop(info, max_wait))
             {
                 if (expired)
@@ -556,7 +557,7 @@ void TestKeeper::processingThread()
 
                 ++zxid;
 
-                info.request->addRootPath(root_path);
+                info.request->addRootPath(args.chroot);
                 auto [response, _] = info.request->process(container, zxid);
 
                 if (info.watch)
@@ -580,7 +581,7 @@ void TestKeeper::processingThread()
                 if (response->error == Error::ZOK)
                     info.request->processWatches(watches, list_watches);
 
-                response->removeRootPath(root_path);
+                response->removeRootPath(args.chroot);
                 if (info.callback)
                     info.callback(*response);
             }
@@ -689,7 +690,7 @@ void TestKeeper::pushRequest(RequestInfo && request)
         if (expired)
             throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
-        if (!requests_queue.tryPush(std::move(request), operation_timeout.totalMilliseconds()))
+        if (!requests_queue.tryPush(std::move(request), args.operation_timeout_ms))
             throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
     }
     catch (...)

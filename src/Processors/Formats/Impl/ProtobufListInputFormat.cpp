@@ -30,6 +30,12 @@ ProtobufListInputFormat::ProtobufListInputFormat(
 {
 }
 
+void ProtobufListInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    reader->setReadBuffer(in_);
+    IRowInputFormat::setReadBuffer(in_);
+}
+
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
     if (reader->eof())
@@ -81,6 +87,8 @@ void registerInputFormatProtobufList(FormatFactory & factory)
                     FormatSchemaInfo(settings, "Protobuf", true), settings.protobuf.input_flatten_google_wrappers);
             });
     factory.markFormatSupportsSubsetOfColumns("ProtobufList");
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "ProtobufList", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 void registerProtobufListSchemaReader(FormatFactory & factory)

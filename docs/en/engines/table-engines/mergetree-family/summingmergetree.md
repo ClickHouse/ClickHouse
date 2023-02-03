@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/summingmergetree
 sidebar_position: 50
 sidebar_label:  SummingMergeTree
 ---
@@ -33,7 +34,7 @@ For a description of request parameters, see [request description](../../../sql-
 `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
     The columns must be of a numeric type and must not be in the primary key.
 
-    If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
+ If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
 
 ### Query clauses
 
@@ -138,5 +139,3 @@ Examples:
 When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

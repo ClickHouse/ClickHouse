@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include "Common/Exception.h"
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -9,6 +10,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -29,12 +31,17 @@ AzureObjectStorage::AzureObjectStorage(
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
+    , log(&Poco::Logger::get("AzureObjectStorage"))
 {
+    data_source_description.type = DataSourceType::AzureBlobStorage;
+    data_source_description.description = client.get()->GetUrl();
+    data_source_description.is_cached = false;
+    data_source_description.is_encrypted = false;
 }
 
 std::string AzureObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    return getRandomASCIIString(32);
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const
@@ -101,12 +108,12 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 
     if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
-        auto reader = getThreadPoolReader();
+        auto & reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(reader_impl));
     }
     else
     {
-        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl));
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl), disk_read_settings);
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings_ptr->min_bytes_for_seek);
     }
 }
@@ -121,7 +128,9 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     const WriteSettings & write_settings)
 {
     if (mode != WriteMode::Rewrite)
-        throw Exception("Azure storage doesn't support append", ErrorCodes::UNSUPPORTED_METHOD);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Azure storage doesn't support append");
+
+    LOG_TEST(log, "Writing file: {}", object.absolute_path);
 
     auto buffer = std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
@@ -133,28 +142,44 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.absolute_path);
 }
 
-void AzureObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
+void AzureObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
 {
     auto client_ptr = client.get();
 
     Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
     blobs_list_options.Prefix = path;
+    if (max_keys)
+        blobs_list_options.PageSizeHint = max_keys;
+    else
+        blobs_list_options.PageSizeHint = settings.get()->list_object_keys_size;
 
     auto blobs_list_response = client_ptr->ListBlobs(blobs_list_options);
-    auto blobs_list = blobs_list_response.Blobs;
+    for (;;)
+    {
+        auto blobs_list = blobs_list_response.Blobs;
 
-    for (const auto & blob : blobs_list)
-        children.emplace_back(blob.Name, blob.BlobSize);
+        for (const auto & blob : blobs_list)
+            children.emplace_back(blob.Name, blob.BlobSize);
+
+        if (max_keys && children.size() >= static_cast<size_t>(max_keys))
+            break;
+        if (!blobs_list_response.HasPage())
+            break;
+        blobs_list_response.MoveToNextPage();
+    }
 }
 
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void AzureObjectStorage::removeObject(const StoredObject & object)
 {
     const auto & path = object.absolute_path;
+    LOG_TEST(log, "Removing single object: {}", path);
     auto client_ptr = client.get();
     auto delete_info = client_ptr->DeleteBlob(path);
     if (!delete_info.Value.Deleted)
-        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", path);
+        throw Exception(
+            ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
+            path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
 }
 
 void AzureObjectStorage::removeObjects(const StoredObjects & objects)
@@ -162,23 +187,52 @@ void AzureObjectStorage::removeObjects(const StoredObjects & objects)
     auto client_ptr = client.get();
     for (const auto & object : objects)
     {
+        LOG_TEST(log, "Removing object: {} (total: {})", object.absolute_path, objects.size());
         auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
         if (!delete_info.Value.Deleted)
-            throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", object.absolute_path);
+            throw Exception(
+                ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
+                object.absolute_path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
     }
 }
 
 void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     auto client_ptr = client.get();
-    auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
+    try
+    {
+        LOG_TEST(log, "Removing single object: {}", object.absolute_path);
+        auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
+    }
+    catch (const Azure::Storage::StorageException & e)
+    {
+        /// If object doesn't exist...
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+            return;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
+    }
 }
 
 void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     auto client_ptr = client.get();
     for (const auto & object : objects)
-        auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
+    {
+        try
+        {
+            auto delete_info = client_ptr->DeleteBlob(object.absolute_path);
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            /// If object doesn't exist...
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                return;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw;
+        }
+    }
+
 }
 
 

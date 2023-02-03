@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/alter/view
 sidebar_position: 50
 sidebar_label: VIEW
 ---

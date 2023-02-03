@@ -125,9 +125,9 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
+    DatabaseAtomic::startupTables(thread_pool, mode);
     startup_task->activateAndSchedule();
 }
 
@@ -264,7 +264,8 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 
     const auto & create = query->as<ASTCreateQuery>();
     if (!create->attach)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
 
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();

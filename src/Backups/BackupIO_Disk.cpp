@@ -6,6 +6,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_) : disk(disk_), path(path_)
 {
 }
@@ -69,12 +75,51 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
     return disk->writeFile(file_path);
 }
 
+void BackupWriterDisk::removeFile(const String & file_name)
+{
+    disk->removeFileIfExists(path / file_name);
+    if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
+        disk->removeDirectory(path);
+}
+
 void BackupWriterDisk::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
         disk->removeFileIfExists(path / file_name);
     if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
         disk->removeDirectory(path);
+}
+
+DataSourceDescription BackupWriterDisk::getDataSourceDescription() const
+{
+    return disk->getDataSourceDescription();
+}
+
+DataSourceDescription BackupReaderDisk::getDataSourceDescription() const
+{
+    return disk->getDataSourceDescription();
+}
+
+bool BackupWriterDisk::supportNativeCopy(DataSourceDescription data_source_description) const
+{
+    return data_source_description == disk->getDataSourceDescription();
+}
+
+void BackupWriterDisk::copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
+{
+    if (!src_disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot natively copy data to disk without source disk");
+
+    if ((src_offset != 0) || (src_size != src_disk->getFileSize(src_file_name)))
+    {
+        auto create_read_buffer = [src_disk, src_file_name] { return src_disk->readFile(src_file_name); };
+        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
+        return;
+    }
+
+    auto file_path = path / dest_file_name;
+    disk->createDirectories(file_path.parent_path());
+    src_disk->copyFile(src_file_name, *disk, file_path);
 }
 
 }

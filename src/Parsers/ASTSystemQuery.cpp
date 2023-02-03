@@ -166,6 +166,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     else if (  type == Type::RESTART_REPLICA
             || type == Type::RESTORE_REPLICA
             || type == Type::SYNC_REPLICA
+            || type == Type::WAIT_LOADING_PARTS
             || type == Type::FLUSH_DISTRIBUTED
             || type == Type::RELOAD_DICTIONARY
             || type == Type::RELOAD_MODEL
@@ -185,7 +186,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         print_identifier(database->as<ASTIdentifier>()->name());
     }
-    else if (type == Type::DROP_REPLICA)
+    else if (type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA)
     {
         print_drop_replica();
     }
@@ -200,6 +201,14 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (!filesystem_cache_path.empty())
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
+    }
+    else if (type == Type::UNFREEZE)
+    {
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(backup_name);
+    }
+    else if (type == Type::SYNC_FILE_CACHE)
+    {
+        settings.ostr << (settings.hilite ? hilite_none : "");
     }
 }
 

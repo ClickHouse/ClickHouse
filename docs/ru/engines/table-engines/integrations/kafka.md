@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/kafka
 sidebar_position: 8
 sidebar_label: Kafka
 ---
@@ -86,14 +87,15 @@ SETTINGS
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Attention"
-    Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
+:::note "Attention"
+Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
+:::
 
 ``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
 ```
-    :::
+
 </details>
 
 ## Описание {#opisanie}
@@ -192,4 +194,3 @@ ClickHouse может поддерживать учетные данные Kerbe
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 -   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
-

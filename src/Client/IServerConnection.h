@@ -82,10 +82,13 @@ public:
 
     virtual const String & getDescription() const = 0;
 
+    virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
+
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
+        const NameToNameMap & query_parameters,
         const String & query_id_,
         UInt64 stage,
         const Settings * settings,
@@ -121,7 +124,7 @@ public:
     virtual bool isConnected() const = 0;
 
     /// Check if connection is still active with ping request.
-    virtual bool checkConnected() = 0;
+    virtual bool checkConnected(const ConnectionTimeouts & /*timeouts*/) = 0;
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state

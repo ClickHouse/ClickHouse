@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/comparison-functions
 sidebar_position: 36
 sidebar_label: Comparison
 ---
@@ -31,4 +32,3 @@ Strings are compared by bytes. A shorter string is smaller than all strings that
 ## lessOrEquals, \<= operator
 
 ## greaterOrEquals, \>= operator
-

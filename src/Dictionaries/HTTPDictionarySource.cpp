@@ -32,8 +32,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Configuration & configuration_,
     const Poco::Net::HTTPBasicCredentials & credentials_,
     Block & sample_block_,
-    ContextPtr context_,
-    bool created_from_ddl)
+    ContextPtr context_)
     : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
@@ -42,9 +41,6 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
-    if (created_from_ddl)
-        context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
-
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
 }
@@ -231,7 +227,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         auto settings_config_prefix = config_prefix + ".http";
         Poco::Net::HTTPBasicCredentials credentials;
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
+        HTTPHeaderEntries header_entries;
         String url;
         String endpoint;
         String format;
@@ -249,8 +245,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             credentials.setPassword(named_collection->configuration.password);
 
             header_entries.reserve(named_collection->configuration.headers.size());
-            for (const auto & header : named_collection->configuration.headers)
-                header_entries.emplace_back(std::make_tuple(header.first, header.second.get<String>()));
+            for (const auto & [key, value] : named_collection->configuration.headers)
+                header_entries.emplace_back(key, value);
         }
         else
         {
@@ -275,7 +271,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                 {
                     const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
                     const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
-                    header_entries.emplace_back(std::make_tuple(header_key, header_value));
+                    header_entries.emplace_back(header_key, header_value);
                 }
             }
 
@@ -303,7 +299,10 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
-        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);
+        if (created_from_ddl)
+            context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
+
+        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
     factory.registerSource("http", create_table_source);
 }

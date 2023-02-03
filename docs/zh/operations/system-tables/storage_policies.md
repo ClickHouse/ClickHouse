@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/storage_policies
+---
 # system.storage_policies {#system_tables-storage_policies}
 
 包含有关 [服务器配置](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure) 中定义的存储策略和卷信息。
@@ -13,5 +16,3 @@
 -   `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — 设置中 `prefer_not_to_merge` 的值. 当这个设置启用时，不允许在此卷上合并数据。这将允许控制 ClickHouse 如何与运行速度较慢的磁盘一起工作。
 
 如果存储策略包含多个卷，则每个卷的信息将在表中作为单独一行存储。
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/storage_policies) <!--hide-->

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/NATS/Buffer_fwd.h>
 #include <Storages/NATS/NATSHandler.h>
 #include <Storages/UVLoop.h>
 
@@ -64,6 +63,9 @@ private:
     natsConnection * connection;
     // true if at any point successfully connected to NATS
     bool has_connection = false;
+
+    // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert
+    bool skip_verification = false;
 
     std::mutex mutex;
 };

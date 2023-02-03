@@ -40,7 +40,7 @@ public:
 #ifdef __SSE2__
 protected:
     static constexpr auto n = sizeof(__m128i);
-    const int page_size = ::getPageSize();
+    const Int64 page_size = ::getPageSize();
 
     bool pageSafe(const void * const ptr) const
     {
@@ -761,7 +761,7 @@ public:
     {
         if (std::any_of(needle_, needle_ + needle_size_, isTokenSeparator))
         {
-            throw Exception{"Needle must not contain whitespace or separator characters", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
         }
 
     }

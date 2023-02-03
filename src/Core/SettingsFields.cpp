@@ -39,7 +39,7 @@ namespace
                 return false;
             if (boost::iequals(str, "true"))
                 return true;
-            throw Exception("Cannot parse bool from string '" + str + "'", ErrorCodes::CANNOT_PARSE_BOOL);
+            throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
             return parseWithSizeSuffix<T>(str);
@@ -153,6 +153,9 @@ template struct SettingFieldNumber<Int64>;
 template struct SettingFieldNumber<float>;
 template struct SettingFieldNumber<bool>;
 
+template struct SettingAutoWrapper<SettingFieldNumber<UInt64>>;
+template struct SettingAutoWrapper<SettingFieldNumber<Int64>>;
+template struct SettingAutoWrapper<SettingFieldNumber<float>>;
 
 namespace
 {
@@ -372,7 +375,7 @@ namespace
     char stringToChar(const String & str)
     {
         if (str.size() > 1)
-            throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "A setting's value string has to be an exactly one character long");
         if (str.empty())
             return '\0';
         return str[0];

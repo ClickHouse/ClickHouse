@@ -8,11 +8,18 @@ from time import sleep
 from typing import List, Optional, Tuple
 
 import github
-from github.GithubException import RateLimitExceededException
-from github.Issue import Issue
-from github.NamedUser import NamedUser
-from github.PullRequest import PullRequest
-from github.Repository import Repository
+
+# explicit reimport
+# pylint: disable=useless-import-alias
+from github.GithubException import (
+    RateLimitExceededException as RateLimitExceededException,
+)
+from github.Issue import Issue as Issue
+from github.NamedUser import NamedUser as NamedUser
+from github.PullRequest import PullRequest as PullRequest
+from github.Repository import Repository as Repository
+
+# pylint: enable=useless-import-alias
 
 CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
 
@@ -23,9 +30,11 @@ Issues = List[Issue]
 
 
 class GitHub(github.Github):
-    def __init__(self, *args, **kwargs):
-        # Define meta attribute
+    def __init__(self, *args, create_cache_dir=True, **kwargs):
+        # Define meta attribute and apply setter logic
         self._cache_path = Path(CACHE_PATH)
+        if create_cache_dir:
+            self.cache_path = self.cache_path
         # And set Path
         super().__init__(*args, **kwargs)
         self._retries = 0
@@ -90,7 +99,7 @@ class GitHub(github.Github):
         raise exception
 
     # pylint: enable=signature-differs
-    def get_pulls_from_search(self, *args, **kwargs) -> PullRequests:
+    def get_pulls_from_search(self, *args, **kwargs) -> PullRequests:  # type: ignore
         """The search api returns actually issues, so we need to fetch PullRequests"""
         issues = self.search_issues(*args, **kwargs)
         repos = {}
@@ -168,7 +177,7 @@ class GitHub(github.Github):
             self.dump(user, prfd)  # type: ignore
         return user
 
-    def _get_cached(self, path: Path):
+    def _get_cached(self, path: Path):  # type: ignore
         with open(path, "rb") as ob_fd:
             return self.load(ob_fd)  # type: ignore
 
@@ -190,11 +199,11 @@ class GitHub(github.Github):
         return False, cached_obj
 
     @property
-    def cache_path(self):
+    def cache_path(self) -> Path:
         return self._cache_path
 
     @cache_path.setter
-    def cache_path(self, value: str):
+    def cache_path(self, value: str) -> None:
         self._cache_path = Path(value)
         if self._cache_path.exists():
             assert self._cache_path.is_dir()
@@ -208,5 +217,6 @@ class GitHub(github.Github):
         return self._retries
 
     @retries.setter
-    def retries(self, value: int):
+    def retries(self, value: int) -> None:
+        assert isinstance(value, int)
         self._retries = value

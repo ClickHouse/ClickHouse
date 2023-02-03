@@ -33,7 +33,7 @@ bool CurrentThread::isInitialized()
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
-        throw Exception("Thread #" + std::to_string(getThreadId()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} status was not initialized", std::to_string(getThreadId()));
 
     return *current_thread;
 }
@@ -41,13 +41,6 @@ ThreadStatus & CurrentThread::get()
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
     return current_thread ? current_thread->performance_counters : ProfileEvents::global_counters;
-}
-
-MemoryTracker * CurrentThread::getMemoryTracker()
-{
-    if (unlikely(!current_thread))
-        return nullptr;
-    return &current_thread->memory_tracker;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)

@@ -9,6 +9,8 @@
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
+    extern const Event OverflowBreak;
+    extern const Event OverflowThrow;
 }
 
 
@@ -99,16 +101,18 @@ void ExecutionSpeedLimits::throttle(
 }
 
 template <typename... Args>
-static bool handleOverflowMode(OverflowMode mode, int code, fmt::format_string<Args...> fmt, Args &&... args)
+static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
 {
     switch (mode)
     {
         case OverflowMode::THROW:
+            ProfileEvents::increment(ProfileEvents::OverflowThrow);
             throw Exception(code, std::move(fmt), std::forward<Args>(args)...);
         case OverflowMode::BREAK:
+            ProfileEvents::increment(ProfileEvents::OverflowBreak);
             return false;
         default:
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown overflow mode");
     }
 }
 

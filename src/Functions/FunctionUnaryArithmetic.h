@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
@@ -12,7 +13,7 @@
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
-#include <Common/config.h>
+#include "config.h"
 #include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -145,7 +146,8 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
             DataTypeDecimal<Decimal256>,
-            DataTypeFixedString
+            DataTypeFixedString,
+            DataTypeInterval
         >(type, std::forward<F>(f));
     }
 
@@ -211,6 +213,12 @@ public:
                     return false;
                 result = std::make_shared<DataType>(type.getN());
             }
+            else if constexpr (std::is_same_v<DataTypeInterval, DataType>)
+            {
+                if constexpr (!IsUnaryOperation<Op>::negate)
+                    return false;
+                result = std::make_shared<DataTypeInterval>(type.getKind());
+            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -227,8 +235,8 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + String(name),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), String(name));
         return result;
     }
 
@@ -305,7 +313,7 @@ public:
             return false;
         });
         if (!valid)
-            throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}'s argument does not match the expected data type", getName());
 
         return result_column;
     }
