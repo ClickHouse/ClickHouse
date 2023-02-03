@@ -244,6 +244,8 @@ private:
         LockedCachePriority & priority,
         IterateAndCollectLocksFunc && func,
         LockedKeysMap & locked_map);
+
+    void performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &);
 };
 
 }
