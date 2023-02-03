@@ -5,8 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-parallel_file=$CUR_DIR/$CLICKHOUSE_TEST_UNIQUE_NAME"_parallel"
-non_parallel_file=$CUR_DIR/$CLICKHOUSE_TEST_UNIQUE_NAME"_non_parallel"
+parallel_file=$CLICKHOUSE_TMP/$CLICKHOUSE_TEST_UNIQUE_NAME"_parallel"
+non_parallel_file=$CLICKHOUSE_TMP/$CLICKHOUSE_TEST_UNIQUE_NAME"_non_parallel"
 
 format=$1
 

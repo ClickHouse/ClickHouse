@@ -53,7 +53,7 @@ void SinkMeiliSearch::writeBlockData(const Block & block) const
     auto response = connection.updateQuery(vbuf);
     auto jres = JSON(response).begin();
     if (jres.getName() == "message")
-        throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
+        throw Exception::createRuntime(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
 }
 
 void SinkMeiliSearch::consume(Chunk chunk)

@@ -70,7 +70,7 @@ Pipe StorageInput::read(
     }
 
     if (pipe.empty())
-        throw Exception("Input stream is not initialized, input() must be used only in INSERT SELECT query", ErrorCodes::INVALID_USAGE_OF_INPUT);
+        throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "Input stream is not initialized, input() must be used only in INSERT SELECT query");
 
     return std::move(pipe);
 }

@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 SELECT JSONExtract('{"a": 123456}', 'FixedString(11)');
 SELECT JSONExtract('{"a": 123456}', 'FixedString(12)');
 SELECT JSONExtract('{"a": "123456"}', 'a', 'FixedString(5)');
