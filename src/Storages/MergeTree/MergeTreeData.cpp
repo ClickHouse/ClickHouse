@@ -7522,16 +7522,44 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 
 AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    MutationCommands commands = getAlterMutationCommandsForPart(part);
+    std::map<int64_t, MutationCommands> commands_map = getAlterMutationCommandsForPart(part);
 
+    auto part_columns = part->getColumnsDescription();
     AlterConversions result{};
-    for (const auto & command : commands)
+    auto & rename_map = result.rename_map;
+    for (const auto & [version, commands] : commands_map)
     {
-        /// Currently we need explicit conversions only for RENAME alter
-        /// all other conversions can be deduced from diff between part columns
-        /// and columns in storage.
-        if (command.type == MutationCommand::Type::RENAME_COLUMN)
-            result.rename_map[command.rename_to] = command.column_name;
+        for (const auto & command : commands)
+        {
+            /// Currently we need explicit conversions only for RENAME alter
+            /// all other conversions can be deduced from diff between part columns
+            /// and columns in storage.
+            if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            {
+                if (!part_columns.has(command.column_name))
+                    continue;
+
+                part_columns.rename(command.column_name, command.rename_to);
+
+                if (auto it = rename_map.find(command.column_name); it != rename_map.end())
+                {
+                    auto rename_source = it->second;
+                    rename_map.erase(it);
+
+                    rename_map[command.rename_to] = rename_source;
+                }
+                else
+                    rename_map[command.rename_to] = command.column_name;
+            }
+        }
+    }
+
+    for (auto it = rename_map.begin(); it != rename_map.end();)
+    {
+        if (it->first == it->second)
+            it = rename_map.erase(it);
+        else
+            ++it;
     }
 
     return result;
