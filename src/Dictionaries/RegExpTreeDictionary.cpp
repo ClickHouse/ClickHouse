@@ -173,6 +173,7 @@ namespace
             return false;
         }
 
+        [[maybe_unused]]
         bool check(const String & data) const
         {
 
@@ -251,15 +252,15 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
             }
         }
         regex_nodes.emplace(id, node);
-        if (checker.check(regex))
-        {
-            complex_regexp_nodes.push_back(node);
-        }
-        else
+#if USE_VECTORSCAN
+        if (!checker.check(regex))
         {
             regexps.push_back(regex);
             regexp_ids.push_back(id);
         }
+        else
+#endif
+            complex_regexp_nodes.push_back(node);
     }
 }
 
@@ -308,7 +309,7 @@ void RegExpTreeDictionary::loadData()
             initRegexNodes(block);
         }
         initGraph();
-        if (regexps.empty())
+        if (regexps.empty() && complex_regexp_nodes.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
         LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", regexps.size(), complex_regexp_nodes.size());
         #if USE_VECTORSCAN
@@ -415,7 +416,6 @@ bool RegExpTreeDictionary::setAttributes(
     return attributes_to_set.size() == attributes.size();
 }
 
-#if USE_VECTORSCAN
 namespace
 {
     struct MatchContext
@@ -429,6 +429,7 @@ namespace
         MatchContext(const std::vector<UInt64> & regexp_ids_, const std::unordered_map<UInt64, UInt64> & topology_order_)
             : regexp_ids(regexp_ids_), topology_order(topology_order_) {}
 
+        [[maybe_unused]]
         void insertIdx(unsigned int idx)
         {
             UInt64 node_id = regexp_ids[idx-1];
@@ -456,14 +457,14 @@ namespace
         }
     };
 }
-#endif // USE_VECTORSCAN
 
 std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
-    [[maybe_unused]] const ColumnString::Chars & keys_data,
-    [[maybe_unused]] const ColumnString::Offsets & keys_offsets,
-    [[maybe_unused]] const std::unordered_map<String, const DictionaryAttribute &> & attributes,
-    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> & defaults) const
+    const ColumnString::Chars & keys_data,
+    const ColumnString::Offsets & keys_offsets,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    const std::unordered_map<String, ColumnPtr> & defaults) const
 {
+
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
     hs_error_t err = hs_clone_scratch(hyperscan_regex->get()->getScratch(), &scratch);
@@ -474,6 +475,16 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
     }
 
     MultiRegexps::ScratchPtr smart_scratch(scratch);
+    auto on_match = [](unsigned int id,
+                    unsigned long long /* from */, // NOLINT
+                    unsigned long long /* to */, // NOLINT
+                    unsigned int /* flags */,
+                    void * context) -> int
+    {
+        static_cast<MatchContext *>(context)->insertIdx(id);
+        return 0;
+    };
+#endif
 
     std::unordered_map<String, MutableColumnPtr> columns;
 
@@ -485,16 +496,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
         columns[name] = std::move(col_ptr);
     }
 
-    auto on_match = [](unsigned int id,
-                    unsigned long long /* from */, // NOLINT
-                    unsigned long long /* to */, // NOLINT
-                    unsigned int /* flags */,
-                    void * context) -> int
-    {
-        static_cast<MatchContext *>(context)->insertIdx(id);
-        return 0;
-    };
-
     UInt64 offset = 0;
     for (size_t key_idx = 0; key_idx < keys_offsets.size(); ++key_idx)
     {
@@ -503,6 +504,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
 
         MatchContext match_result(regexp_ids, topology_order);
 
+#if USE_VECTORSCAN
         err = hs_scan(
             hyperscan_regex->get()->getDB(),
             reinterpret_cast<const char *>(keys_data.data()) + offset,
@@ -514,6 +516,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
 
         if (err != HS_SUCCESS)
             throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
+#endif
 
         for (const auto & node_ptr : complex_regexp_nodes)
         {
@@ -577,9 +580,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
         result.emplace(name, std::move(mutable_ptr));
 
     return result;
-#else
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Multi search all indices is not implemented when USE_VECTORSCAN is off");
-#endif // USE_VECTORSCAN
 }
 
 Columns RegExpTreeDictionary::getColumns(
