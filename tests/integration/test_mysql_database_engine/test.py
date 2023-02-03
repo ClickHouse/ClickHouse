@@ -75,7 +75,6 @@ def test_mysql_ddl_for_mysql_database(started_cluster):
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
-        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
         )
@@ -123,13 +122,11 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
-        mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
         )
 
-        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
         )
@@ -160,13 +157,10 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
-        mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query(
             "CREATE TABLE `test_database`.`test_table` ( `i``d` int(11) NOT NULL, PRIMARY KEY (`i``d`)) ENGINE=InnoDB;"
         )
-
-        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test_database, 'root', 'clickhouse')"
         )
@@ -199,8 +193,9 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
-        mysql_node.query("DROP DATABASE IF EXISTS test")
-        mysql_node.query("CREATE DATABASE test DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'"
+        )
         mysql_node.query(
             "CREATE TABLE test.t1_mysql_local ("
             "pays    VARCHAR(55) DEFAULT 'FRA' NOT NULL,"
@@ -214,8 +209,6 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
             "opco    VARCHAR(5) DEFAULT ''"
             ")"
         )
-        clickhouse_node.query("DROP TABLE IF EXISTS default.t1_remote_mysql SYNC")
-        clickhouse_node.query("DROP TABLE IF EXISTS default.t2_remote_mysql SYNC")
         clickhouse_node.query(
             "CREATE TABLE default.t1_remote_mysql AS mysql('mysql57:3306','test','t1_mysql_local','root','clickhouse')"
         )
@@ -273,7 +266,6 @@ def test_column_comments_for_mysql_database_engine(started_cluster):
         mysql_node.query("DROP DATABASE IF EXISTS test_database")
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
 
-        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')"
         )
@@ -306,11 +298,9 @@ def test_data_types_support_level_for_mysql_database_engine(started_cluster):
             "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
         )
     ) as mysql_node:
-        mysql_node.query("DROP DATABASE IF EXISTS test")
         mysql_node.query(
             "CREATE DATABASE IF NOT EXISTS test DEFAULT CHARACTER SET 'utf8'"
         )
-        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
         clickhouse_node.query(
             "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test, 'root', 'clickhouse')",
             settings={"mysql_datatypes_support_level": "decimal,datetime64"},

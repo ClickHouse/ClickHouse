@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-parallel-replicas
+-- Tags: no-random-settings
 
 SET max_bytes_before_external_group_by = 200000000;
 

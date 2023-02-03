@@ -38,8 +38,6 @@ public:
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
-    void setReadBuffer(ReadBuffer & in_) override;
-
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;

@@ -3,7 +3,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileName.h>
-#include <Interpreters/Context_fwd.h>
 #include <base/time.h>
 
 #include <functional>
@@ -51,8 +50,6 @@ public:
     }
 
     size_t getFileSize() override;
-
-    void setProgressCallback(ContextPtr context);
 
 protected:
     std::optional<size_t> file_size;

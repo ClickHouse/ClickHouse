@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/setThreadName.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -76,7 +77,7 @@ decltype(auto) ClusterCopier::retry(T && func, UInt64 max_tries)
     std::exception_ptr exception;
 
     if (max_tries == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot perform zero retries");
+        throw Exception("Cannot perform zero retries", ErrorCodes::LOGICAL_ERROR);
 
     for (UInt64 try_number = 1; try_number <= max_tries; ++try_number)
     {
@@ -122,7 +123,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         }
         catch (Exception & e)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition {} has incorrect format. {}", partition_text_quoted, e.displayText());
+            throw Exception("Partition " + partition_text_quoted + " has incorrect format. " + e.displayText(), ErrorCodes::BAD_ARGUMENTS);
         }
     };
 
@@ -324,8 +325,8 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
 
         if (!table_is_done)
         {
-            throw Exception(ErrorCodes::UNFINISHED, "Too many tries to process table {}. Abort remaining execution",
-                            task_table.table_id);
+            throw Exception("Too many tries to process table " + task_table.table_id + ". Abort remaining execution",
+                            ErrorCodes::UNFINISHED);
         }
     }
 }
@@ -665,7 +666,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         }
 
         if (inject_fault)
-            throw Exception(ErrorCodes::UNFINISHED, "Copy fault injection is activated");
+            throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
     }
 
     /// Create node to signal that we finished moving
@@ -752,7 +753,7 @@ std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_
     auto res = std::make_shared<ASTCreateQuery>(create);
 
     if (create.storage == nullptr || new_storage_ast == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage is not specified");
+        throw Exception("Storage is not specified", ErrorCodes::LOGICAL_ERROR);
 
     res->setDatabase(new_table.first);
     res->setTable(new_table.second);
@@ -774,7 +775,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         const CleanStateClock & clean_state_clock)
 {
     if (is_safe_mode)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is prohibited in safe mode");
+        throw Exception("DROP PARTITION is prohibited in safe mode", ErrorCodes::NOT_IMPLEMENTED);
 
     TaskTable & task_table = task_partition.task_shard.task_table;
     ShardPartitionPiece & partition_piece = task_partition.pieces[current_piece_number];
@@ -943,7 +944,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     for (const String & partition_name : task_table.ordered_partition_names)
     {
         if (!task_table.cluster_partitions.contains(partition_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no expected partition {}. It is a bug", partition_name);
+            throw Exception("There are no expected partition " + partition_name + ". It is a bug", ErrorCodes::LOGICAL_ERROR);
 
         ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
 
@@ -1005,7 +1006,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             /// Previously when we discovered that shard does not contain current partition, we skipped it.
             /// At this moment partition have to be present.
             if (it_shard_partition == shard->partition_tasks.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no such partition in a shard. This is a bug.");
+                throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
             auto & partition = it_shard_partition->second;
 
             expected_shards.emplace_back(shard);
@@ -1586,7 +1587,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             auto cancel_check = [&] ()
             {
                 if (zookeeper->expired())
-                    throw Exception(ErrorCodes::UNFINISHED, "ZooKeeper session is expired, cancel INSERT SELECT");
+                    throw Exception("ZooKeeper session is expired, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
 
                 if (!future_is_dirty_checker.valid())
                     future_is_dirty_checker = zookeeper->asyncExists(piece_is_dirty_flag_path);
@@ -1602,7 +1603,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                         LogicalClock dirt_discovery_epoch (status.stat.mzxid);
                         if (dirt_discovery_epoch == clean_state_clock.discovery_zxid)
                             return false;
-                        throw Exception(ErrorCodes::UNFINISHED, "Partition is dirty, cancel INSERT SELECT");
+                        throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
                     }
                 }
 
@@ -1645,7 +1646,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 future_is_dirty_checker.get();
 
             if (inject_fault)
-                throw Exception(ErrorCodes::UNFINISHED, "Copy fault injection is activated");
+                throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
         }
         catch (...)
         {
@@ -2040,7 +2041,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
 
                 while (true)
                 {
-                    auto block = remote_query_executor->readBlock();
+                    auto block = remote_query_executor->read();
                     if (!block)
                         break;
                 }

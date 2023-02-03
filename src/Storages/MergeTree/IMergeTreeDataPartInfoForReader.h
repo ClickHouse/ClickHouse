@@ -1,7 +1,6 @@
 #pragma once
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
 
 namespace DB
@@ -41,10 +40,6 @@ public:
     virtual DataPartStoragePtr getDataPartStorage() const = 0;
 
     virtual const NamesAndTypesList & getColumns() const = 0;
-
-    virtual const ColumnsDescription & getColumnsDescription() const = 0;
-
-    virtual const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const = 0;
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 

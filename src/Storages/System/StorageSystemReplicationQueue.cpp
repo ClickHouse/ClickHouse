@@ -38,7 +38,6 @@ NamesAndTypesList StorageSystemReplicationQueue::getNamesAndTypes()
         { "is_currently_executing",  std::make_shared<DataTypeUInt8>() },
         { "num_tries",               std::make_shared<DataTypeUInt32>() },
         { "last_exception",          std::make_shared<DataTypeString>() },
-        { "last_exception_time",     std::make_shared<DataTypeDateTime>() },
         { "last_attempt_time",       std::make_shared<DataTypeDateTime>() },
         { "num_postponed",           std::make_shared<DataTypeUInt32>() },
         { "postpone_reason",         std::make_shared<DataTypeString>() },
@@ -142,8 +141,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
             res_columns[col_num++]->insert(entry.detach);
             res_columns[col_num++]->insert(entry.currently_executing);
             res_columns[col_num++]->insert(entry.num_tries);
-            res_columns[col_num++]->insert(entry.exception ? getExceptionMessage(entry.exception, true) : "");
-            res_columns[col_num++]->insert(UInt64(entry.last_exception_time));
+            res_columns[col_num++]->insert(entry.exception ? getExceptionMessage(entry.exception, false) : "");
             res_columns[col_num++]->insert(UInt64(entry.last_attempt_time));
             res_columns[col_num++]->insert(entry.num_postponed);
             res_columns[col_num++]->insert(entry.postpone_reason);

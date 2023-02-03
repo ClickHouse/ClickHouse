@@ -57,7 +57,8 @@ public:
     void insertChunk(Chunk && chunk, size_t rows_size)
     {
         if (merged_rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert to MergedData from Chunk because MergedData is not empty.");
+            throw Exception("Cannot insert to MergedData from Chunk because MergedData is not empty.",
+                            ErrorCodes::LOGICAL_ERROR);
 
         UInt64 num_rows = chunk.getNumRows();
         columns = chunk.mutateColumns();

@@ -222,7 +222,7 @@ namespace
             {
                 Int64 t_milliseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000) / scale_multiplier, t_milliseconds))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_milliseconds / milliseconds * milliseconds;
                 else
@@ -259,7 +259,7 @@ namespace
             {
                 Int64 t_microseconds = 0;
                 if (common::mulOverflow(t, static_cast<Int64>(1000000) / scale_multiplier, t_microseconds))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_microseconds / microseconds * microseconds;
                 else
@@ -296,7 +296,7 @@ namespace
             {
                 Int64 t_nanoseconds = 0;
                 if (common::mulOverflow(t, (static_cast<Int64>(1000000000) / scale_multiplier), t_nanoseconds))
-                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                    throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
                 if (likely(t >= 0))
                     return t_nanoseconds / nanoseconds * nanoseconds;
                 else
@@ -329,8 +329,10 @@ public:
         auto check_first_argument = [&]
         {
             if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "Should be a date or a date with time", arguments[0].type->getName(), getName());
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             first_argument_is_date = isDate(arguments[0].type);
         };
 
@@ -341,8 +343,10 @@ public:
         {
             interval_type = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
             if (!interval_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "Should be an interval of time", arguments[1].type->getName(), getName());
+                throw Exception(
+                    "Illegal type " + arguments[1].type->getName() + " of argument of function " + getName()
+                        + ". Should be an interval of time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             result_type_is_date = (interval_type->getKind() == IntervalKind::Year)
                 || (interval_type->getKind() == IntervalKind::Quarter) || (interval_type->getKind() == IntervalKind::Month)
                 || (interval_type->getKind() == IntervalKind::Week);
@@ -353,9 +357,10 @@ public:
         auto check_timezone_argument = [&]
         {
             if (!WhichDataType(arguments[2].type).isString())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                    "This argument is optional and must be a constant string with timezone name",
-                    arguments[2].type->getName(), getName());
+                throw Exception(
+                    "Illegal type " + arguments[2].type->getName() + " of argument of function " + getName()
+                        + ". This argument is optional and must be a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (first_argument_is_date && result_type_is_date)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "The timezone argument of function {} with interval type {} is allowed only when the 1st argument "
@@ -376,9 +381,10 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                getName(), arguments.size());
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be 2 or 3",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         if (result_type_is_date)
@@ -456,8 +462,9 @@ private:
             if (time_column_vec)
                 return dispatchForIntervalColumn(assert_cast<const DataTypeDate32&>(from_datatype), *time_column_vec, interval_column, result_type, time_zone);
         }
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
-            "Must contain dates or dates with time", getName());
+        throw Exception(
+            "Illegal column for first argument of function " + getName() + ". Must contain dates or dates with time",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     template <typename ColumnType, typename FromDataType>
@@ -467,15 +474,16 @@ private:
     {
         const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
         if (!interval_type)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for second argument of function {}, must be an interval of time.", getName());
+            throw Exception(
+                "Illegal column for second argument of function " + getName() + ", must be an interval of time.",
+                ErrorCodes::ILLEGAL_COLUMN);
         const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
         if (!interval_column_const_int64)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                            "Illegal column for second argument of function {}, must be a const interval of time.",
-                            getName());
+            throw Exception(
+                "Illegal column for second argument of function " + getName() + ", must be a const interval of time.", ErrorCodes::ILLEGAL_COLUMN);
         Int64 num_units = interval_column_const_int64->getValue<Int64>();
         if (num_units <= 0)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Value for second argument of function {} must be positive.", getName());
+            throw Exception("Value for second argument of function " + getName() + " must be positive.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         switch (interval_type->getKind())
         {

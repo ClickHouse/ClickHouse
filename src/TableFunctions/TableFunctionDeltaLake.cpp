@@ -31,9 +31,9 @@ void TableFunctionDeltaLake::parseArgumentsImpl(
     const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & base_configuration)
 {
     if (args.empty() || args.size() > 6)
-        throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
 
-    auto * header_it = StorageURL::collectHeaders(args, base_configuration.headers, context);
+    auto header_it = StorageURL::collectHeaders(args, base_configuration, context);
     if (header_it != args.end())
         args.erase(header_it);
 

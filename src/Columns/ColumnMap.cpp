@@ -88,12 +88,12 @@ bool ColumnMap::isDefaultAt(size_t n) const
 
 StringRef ColumnMap::getDataAt(size_t) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
+    throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void ColumnMap::insertData(const char *, size_t)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
+    throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void ColumnMap::insert(const Field & x)

@@ -98,3 +98,5 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+[原始文章](https://clickhouse.com/docs/en/operations/utils/clickhouse-local/) <!--hide-->

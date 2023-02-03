@@ -25,10 +25,7 @@ then
     # Add files.
     cp -R "${BUILD_DIR}"/* .
     echo -n "${BASE_DOMAIN}" > CNAME
-    cat > README.md << 'EOF'
-## This repo is the source for https://content.clickhouse.com
-It's built in [the action](https://github.com/ClickHouse/ClickHouse/blob/master/.github/workflows/docs_release.yml) in the DocsRelease job.
-EOF
+    echo -n "" > README.md
     echo -n "" > ".nojekyll"
     cp "${BASE_DIR}/../../LICENSE" .
     git add ./*

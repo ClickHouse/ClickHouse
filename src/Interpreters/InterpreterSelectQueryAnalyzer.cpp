@@ -16,9 +16,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
-#include <Core/ProtocolDefines.h>
-#include "config_version.h"
-
 namespace DB
 {
 
@@ -48,17 +45,13 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
     }
 }
 
-QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const SelectQueryOptions & select_query_options, const ContextPtr & context)
+QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const ContextPtr & context)
 {
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
-
-    if (select_query_options.ignore_ast_optimizations)
-        query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
-    else
-        query_tree_pass_manager.run(query_tree);
+    query_tree_pass_manager.run(query_tree);
 
     return query_tree;
 }
@@ -67,24 +60,24 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const SelectQu
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
-    const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_)
+    const SelectQueryOptions & select_query_options_,
+    ContextPtr context_)
     : query(normalizeAndValidateQuery(query_))
-    , context(Context::createCopy(context_))
+    , query_tree(buildQueryTreeAndRunPasses(query, context_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context))
+    , context(std::move(context_))
     , planner(query_tree, select_query_options)
 {
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const QueryTreeNodePtr & query_tree_,
-    const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_)
+    const SelectQueryOptions & select_query_options_,
+    ContextPtr context_)
     : query(query_tree_->toAST())
-    , context(Context::createCopy(context_))
-    , select_query_options(select_query_options_)
     , query_tree(query_tree_)
+    , select_query_options(select_query_options_)
+    , context(std::move(context_))
     , planner(query_tree, select_query_options)
 {
 }
@@ -119,20 +112,9 @@ QueryPlan && InterpreterSelectQueryAnalyzer::extractQueryPlan() &&
     return std::move(planner).extractQueryPlan();
 }
 
-QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
+void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
 {
-    planner.buildQueryPlanIfNeeded();
-    auto & query_plan = planner.getQueryPlan();
-
-    QueryPlanOptimizationSettings optimization_settings;
-    BuildQueryPipelineSettings build_pipeline_settings;
-
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
-}
-
-void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
-{
-    planner.addStorageLimits(storage_limits);
+    elem.query_kind = "Select";
 }
 
 }

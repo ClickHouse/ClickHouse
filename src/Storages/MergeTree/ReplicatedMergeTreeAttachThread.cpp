@@ -191,7 +191,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    storage.startupImpl(/* from_attach_thread */ true);
+    storage.startupImpl();
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

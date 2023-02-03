@@ -1,13 +1,10 @@
 import pytest
 import asyncio
-import glob
 import re
 import random
 import os.path
-from collections import namedtuple
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
-
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -65,13 +62,6 @@ def get_path_to_backup(backup_name):
     return os.path.join(instance.cluster.instances_dir, "backups", name)
 
 
-def find_files_in_backup_folder(backup_name):
-    path = get_path_to_backup(backup_name)
-    files = [f for f in glob.glob(path + "/**", recursive=True) if os.path.isfile(f)]
-    files += [f for f in glob.glob(path + "/.**", recursive=True) if os.path.isfile(f)]
-    return files
-
-
 session_id_counter = 0
 
 
@@ -87,63 +77,6 @@ def has_mutation_in_backup(mutation_id, backup_name, database, table):
             get_path_to_backup(backup_name),
             f"data/{database}/{table}/mutations/{mutation_id}.txt",
         )
-    )
-
-
-BackupInfo = namedtuple(
-    "BackupInfo",
-    "name id status error num_files total_size num_entries uncompressed_size compressed_size files_read bytes_read",
-)
-
-
-def get_backup_info_from_system_backups(by_id=None, by_name=None):
-    where_condition = "1"
-    if by_id:
-        where_condition = f"id = '{by_id}'"
-    elif by_name:
-        where_condition = f"name = '{by_name}'"
-
-    [
-        name,
-        id,
-        status,
-        error,
-        num_files,
-        total_size,
-        num_entries,
-        uncompressed_size,
-        compressed_size,
-        files_read,
-        bytes_read,
-    ] = (
-        instance.query(
-            f"SELECT name, id, status, error, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read "
-            f"FROM system.backups WHERE {where_condition} LIMIT 1"
-        )
-        .strip("\n")
-        .split("\t")
-    )
-
-    num_files = int(num_files)
-    total_size = int(total_size)
-    num_entries = int(num_entries)
-    uncompressed_size = int(uncompressed_size)
-    compressed_size = int(compressed_size)
-    files_read = int(files_read)
-    bytes_read = int(bytes_read)
-
-    return BackupInfo(
-        name=name,
-        id=id,
-        status=status,
-        error=error,
-        num_files=num_files,
-        total_size=total_size,
-        num_entries=num_entries,
-        uncompressed_size=uncompressed_size,
-        compressed_size=compressed_size,
-        files_read=files_read,
-        bytes_read=bytes_read,
     )
 
 
@@ -257,67 +190,6 @@ def test_incremental_backup():
         f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
-
-
-def test_increment_backup_without_changes():
-    backup_name = new_backup_name()
-    incremental_backup_name = new_backup_name()
-
-    create_and_fill_table(n=1)
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == TSV([["1", "0"]])
-
-    # prepare first backup without base_backup
-    id_backup = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[
-        0
-    ]
-    backup_info = get_backup_info_from_system_backups(by_id=id_backup)
-
-    assert backup_info.status == "BACKUP_CREATED"
-    assert backup_info.error == ""
-    assert backup_info.num_files > 0
-    assert backup_info.total_size > 0
-    assert (
-        0 < backup_info.num_entries and backup_info.num_entries <= backup_info.num_files
-    )
-    assert backup_info.uncompressed_size > 0
-    assert backup_info.compressed_size == backup_info.uncompressed_size
-
-    # create second backup without changes based on the first one
-    id_backup2 = instance.query(
-        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
-    ).split("\t")[0]
-
-    backup2_info = get_backup_info_from_system_backups(by_id=id_backup2)
-
-    assert backup2_info.status == "BACKUP_CREATED"
-    assert backup2_info.error == ""
-    assert backup2_info.num_files == backup_info.num_files
-    assert backup2_info.total_size == backup_info.total_size
-    assert backup2_info.num_entries == 0
-    assert backup2_info.uncompressed_size > 0
-    assert backup2_info.compressed_size == backup2_info.uncompressed_size
-
-    # restore the second backup
-    # we expect to see all files in the meta info of the restore and a sum of uncompressed and compressed sizes
-    id_restore = instance.query(
-        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
-    ).split("\t")[0]
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table2") == TSV(
-        [["1", "0"]]
-    )
-
-    restore_info = get_backup_info_from_system_backups(by_id=id_restore)
-
-    assert restore_info.status == "RESTORED"
-    assert restore_info.error == ""
-    assert restore_info.num_files == backup2_info.num_files
-    assert restore_info.total_size == backup2_info.total_size
-    assert restore_info.num_entries == backup2_info.num_entries
-    assert restore_info.uncompressed_size == backup2_info.uncompressed_size
-    assert restore_info.compressed_size == backup2_info.compressed_size
-    assert restore_info.files_read == backup2_info.num_files
-    assert restore_info.bytes_read == backup2_info.total_size
 
 
 def test_incremental_backup_overflow():
@@ -556,24 +428,6 @@ def test_zip_archive_with_settings():
         f"RESTORE TABLE test.table FROM {backup_name} SETTINGS password='qwerty'"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-
-
-def test_zip_archive_with_bad_compression_method():
-    backup_name = f"Disk('backups', 'archive_with_bad_compression_method.zip')"
-    create_and_fill_table()
-
-    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-
-    expected_error = "Unknown compression method specified for a zip archive"
-    assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='archive_with_bad_compression_method', compression_method='foobar'"
-    )
-    assert (
-        instance.query(
-            "SELECT status FROM system.backups WHERE id='archive_with_bad_compression_method'"
-        )
-        == "BACKUP_FAILED\n"
-    )
 
 
 def test_async():
@@ -1229,55 +1083,31 @@ def test_operation_id():
 
 
 def test_system_backups():
-    # Backup
     create_and_fill_table(n=30)
 
     backup_name = new_backup_name()
+
     id = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
 
-    info = get_backup_info_from_system_backups(by_id=id)
-    escaped_backup_name = backup_name.replace("'", "\\'")
-    assert info.name == escaped_backup_name
-    assert info.status == "BACKUP_CREATED"
-    assert info.error == ""
-    assert info.num_files > 0
-    assert info.total_size > 0
-    assert 0 < info.num_entries and info.num_entries <= info.num_files
-    assert info.uncompressed_size > 0
-    assert info.compressed_size == info.uncompressed_size
-    assert info.files_read == 0
-    assert info.bytes_read == 0
-
-    files_in_backup_folder = find_files_in_backup_folder(backup_name)
-    assert info.num_entries == len(files_in_backup_folder) - 1
-    assert info.uncompressed_size == sum(
-        os.path.getsize(f) for f in files_in_backup_folder
+    [name, status, num_files, uncompressed_size, compressed_size, error] = (
+        instance.query(
+            f"SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'"
+        )
+        .strip("\n")
+        .split("\t")
     )
 
-    # The concrete values can change.
-    info.num_files == 91
-    info.total_size == 4973
-    info.num_entries == 55
-    info.uncompressed_size == 19701
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    num_files = int(num_files)
+    compressed_size = int(compressed_size)
+    uncompressed_size = int(uncompressed_size)
+    assert name == escaped_backup_name
+    assert status == "BACKUP_CREATED"
+    assert num_files > 1
+    assert uncompressed_size > 1
+    assert compressed_size == uncompressed_size
+    assert error == ""
 
-    instance.query("DROP TABLE test.table")
-
-    # Restore
-    id = instance.query(f"RESTORE TABLE test.table FROM {backup_name}").split("\t")[0]
-    restore_info = get_backup_info_from_system_backups(by_id=id)
-
-    assert restore_info.name == escaped_backup_name
-    assert restore_info.status == "RESTORED"
-    assert restore_info.error == ""
-    assert restore_info.num_files == info.num_files
-    assert restore_info.total_size == info.total_size
-    assert restore_info.num_entries == info.num_entries
-    assert restore_info.uncompressed_size == info.uncompressed_size
-    assert restore_info.compressed_size == info.compressed_size
-    assert restore_info.files_read == restore_info.num_files
-    assert restore_info.bytes_read == restore_info.total_size
-
-    # Failed backup.
     backup_name = new_backup_name()
     expected_error = "Table test.non_existent_table was not found"
     assert expected_error in instance.query_and_get_error(
@@ -1285,17 +1115,22 @@ def test_system_backups():
     )
 
     escaped_backup_name = backup_name.replace("'", "\\'")
-    info = get_backup_info_from_system_backups(by_name=escaped_backup_name)
+    [status, num_files, uncompressed_size, compressed_size, error] = (
+        instance.query(
+            f"SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'"
+        )
+        .strip("\n")
+        .split("\t")
+    )
 
-    assert info.status == "BACKUP_FAILED"
-    assert expected_error in info.error
-    assert info.num_files == 0
-    assert info.total_size == 0
-    assert info.num_entries == 0
-    assert info.uncompressed_size == 0
-    assert info.compressed_size == 0
-    assert info.files_read == 0
-    assert info.bytes_read == 0
+    num_files = int(num_files)
+    compressed_size = int(compressed_size)
+    uncompressed_size = int(uncompressed_size)
+    assert status == "BACKUP_FAILED"
+    assert num_files == 0
+    assert uncompressed_size == 0
+    assert compressed_size == 0
+    assert expected_error in error
 
 
 def test_mutation():

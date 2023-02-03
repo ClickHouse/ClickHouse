@@ -113,8 +113,6 @@ public:
 
     WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
 
-    FileCachePtr getCache() const { return cache; }
-
 private:
     FileCache::Key getCacheKey(const std::string & path) const;
 

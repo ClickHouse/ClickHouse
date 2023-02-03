@@ -104,16 +104,7 @@ struct MergeTreeSource::AsyncReadingState
 
     void schedule(ThreadPool::Job job)
     {
-        try
-        {
-            callback_runner(std::move(job), 0);
-        }
-        catch (...)
-        {
-            /// Roll back stage in case of exception from ThreadPool::schedule
-            control->stage = Stage::NotStarted;
-            throw;
-        }
+        callback_runner(std::move(job), 0);
     }
 
     ChunkAndProgress getResult()

@@ -8,7 +8,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
-#include <IO/S3/Requests.h>
 
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
@@ -17,6 +16,8 @@
 #include <Formats/FormatFactory.h>
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -100,7 +101,7 @@ std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 
     const auto & client = base_configuration.client;
 
-    S3::ListObjectsV2Request request;
+    Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
     bool is_finished{false};

@@ -56,7 +56,7 @@ FourLetterCommandFactory & FourLetterCommandFactory::instance()
 void FourLetterCommandFactory::checkInitialization() const
 {
     if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
+        throw Exception("Four letter command  not initialized", ErrorCodes::LOGICAL_ERROR);
 }
 
 bool FourLetterCommandFactory::isKnown(int32_t code)
@@ -74,7 +74,7 @@ FourLetterCommandPtr FourLetterCommandFactory::get(int32_t code)
 void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
 {
     if (commands.contains(command->code()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command {} already registered", command->name());
+        throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
 
     commands.emplace(command->code(), std::move(command));
 }
