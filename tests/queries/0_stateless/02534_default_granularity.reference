@@ -1,1 +1,0 @@
-CREATE TABLE default.users_02534\n(\n    `id` Int16,\n    `name` String,\n    INDEX bf_idx name TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192

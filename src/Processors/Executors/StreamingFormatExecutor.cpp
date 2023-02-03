@@ -34,15 +34,8 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 
 size_t StreamingFormatExecutor::execute(ReadBuffer & buffer)
 {
-    auto & initial_buf = format->getReadBuffer();
     format->setReadBuffer(buffer);
-    size_t rows = execute();
-    /// Format destructor can touch read buffer (for example when we use PeekableReadBuffer),
-    /// but we cannot control lifetime of provided read buffer. To avoid heap use after free
-    /// we can set initial read buffer back, because initial read buffer was created before
-    /// format, so it will be destructed after it.
-    format->setReadBuffer(initial_buf);
-    return rows;
+    return execute();
 }
 
 size_t StreamingFormatExecutor::execute()
@@ -84,7 +77,7 @@ size_t StreamingFormatExecutor::execute()
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:
                 case IProcessor::Status::ExpandPipeline:
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Source processor returned status {}", IProcessor::statusToName(status));
+                    throw Exception("Source processor returned status " + IProcessor::statusToName(status), ErrorCodes::LOGICAL_ERROR);
             }
         }
     }

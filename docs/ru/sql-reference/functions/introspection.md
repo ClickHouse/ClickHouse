@@ -1,16 +1,14 @@
 ---
-slug: /ru/sql-reference/functions/introspection
-sidebar_position: 65
-sidebar_label: "Функции интроспекции"
+toc_priority: 65
+toc_title: "Функции интроспекции"
 ---
 
 # Функции интроспекции {#introspection-functions}
 
 Функции из этого раздела могут использоваться для интроспекции [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) и [DWARF](https://en.wikipedia.org/wiki/DWARF) в целях профилирования запросов.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Эти функции выполняются медленно и могут приводить к нежелательным последствиям в плане безопасности.
-:::
 
 Для правильной работы функций интроспекции:
 
@@ -372,3 +370,5 @@ SELECT logTrace('logTrace message');
 │                            0 │
 └──────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/query_language/functions/introspection/) <!--hide-->

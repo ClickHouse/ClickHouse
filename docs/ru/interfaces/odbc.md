@@ -1,10 +1,10 @@
 ---
-slug: /ru/interfaces/odbc
-sidebar_position: 23
-sidebar_label: "ODBC-драйвер"
+toc_priority: 23
+toc_title: "ODBC-драйвер"
 ---
 
 
 # ODBC-драйвер {#odbc-draiver}
 
 -   [Официальный драйвер](https://github.com/ClickHouse/clickhouse-odbc).
+

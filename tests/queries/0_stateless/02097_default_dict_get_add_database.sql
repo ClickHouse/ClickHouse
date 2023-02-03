@@ -26,8 +26,8 @@ SOURCE(CLICKHOUSE(TABLE 'test_table'));
 
 CREATE TABLE test_table_default
 (
-    data_1 DEFAULT dictGetUInt64('02097_db.test_dictionary', 'data_column_1', toUInt64(0)),
-    data_2 DEFAULT dictGet(02097_db.test_dictionary, 'data_column_2', toUInt64(0))
+    data_1 DEFAULT dictGetUInt64('test_dictionary', 'data_column_1', toUInt64(0)),
+    data_2 DEFAULT dictGet(test_dictionary, 'data_column_2', toUInt64(0))
 )
 ENGINE=TinyLog;
 

@@ -1,11 +1,10 @@
 #pragma once
-#include "config.h"
+#include "config_core.h"
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/StoragePostgreSQL.h>
 
 
 namespace DB
@@ -28,7 +27,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     postgres::PoolWithFailoverPtr connection_pool;
-    std::optional<StoragePostgreSQL::Configuration> configuration;
+    std::optional<StoragePostgreSQLConfiguration> configuration;
 };
 
 }

@@ -48,17 +48,15 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     const ColumnOffsets * offsets_concrete = typeid_cast<const ColumnOffsets *>(offsets.get());
 
     if (!offsets_concrete)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
+        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
 
-    if (!offsets_concrete->empty() && data && !data->empty())
+    if (!offsets_concrete->empty() && data)
     {
         Offset last_offset = offsets_concrete->getData().back();
 
         /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
-                data->size(), last_offset);
+            throw Exception("offsets_column has data inconsistent with nested_column", ErrorCodes::LOGICAL_ERROR);
     }
 
     /** NOTE
@@ -71,7 +69,7 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column)
     : data(std::move(nested_column))
 {
     if (!data->empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not empty data passed to ColumnArray, but no offsets passed");
+        throw Exception("Not empty data passed to ColumnArray, but no offsets passed", ErrorCodes::LOGICAL_ERROR);
 
     offsets = ColumnOffsets::create();
 }
@@ -141,7 +139,7 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.get<Array &>();
+    Array & res_arr = DB::get<Array &>(res);
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -197,7 +195,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
             data->insertData(pos, field_size);
 
         if (pos != end)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect length argument for method ColumnArray::insertData");
+            throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
     }
 
     getOffsets().push_back(getOffsets().back() + elems);
@@ -262,8 +260,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = offsets->size();
     if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", s, hash.getData().size());
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
     WeakHash32 internal_hash(data->size());
     data->updateWeakHash32(internal_hash);
@@ -277,13 +275,13 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
     {
         /// This row improves hash a little bit according to integration tests.
         /// It is the same as to use previous hash value as the first element of array.
-        hash_data[i] = static_cast<UInt32>(intHashCRC32(hash_data[i]));
+        hash_data[i] = intHashCRC32(hash_data[i]);
 
         for (size_t row = prev_offset; row < offsets_data[i]; ++row)
             /// It is probably not the best way to combine hashes.
             /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
             /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
-            hash_data[i] = static_cast<UInt32>(intHashCRC32(internal_hash_data[row], hash_data[i]));
+            hash_data[i] = intHashCRC32(internal_hash_data[row], hash_data[i]);
 
         prev_offset = offsets_data[i];
     }
@@ -297,7 +295,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.get<const Array &>();
+    const Array & array = DB::get<const Array &>(x);
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -518,19 +516,17 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     const ColumnArray & src_concrete = assert_cast<const ColumnArray &>(src);
 
     if (start + length > src_concrete.getOffsets().size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnArray::insertRangeFrom method. "
-            "[start({}) + length({}) > offsets.size({})]", start, length, src_concrete.getOffsets().size());
+        throw Exception("Parameter out of bound in ColumnArray::insertRangeFrom method. [start(" + std::to_string(start) + ") + length(" + std::to_string(length) + ") > offsets.size(" + std::to_string(src_concrete.getOffsets().size()) + ")]",
+            ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
 
-    Offsets & cur_offsets = getOffsets();
-    /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
-    cur_offsets.reserve(cur_offsets.size() + length);
-
     getData().insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
 
+    Offsets & cur_offsets = getOffsets();
     const Offsets & src_offsets = src_concrete.getOffsets();
+
     if (start == 0 && cur_offsets.empty())
     {
         cur_offsets.assign(src_offsets.begin(), src_offsets.begin() + length);
@@ -569,10 +565,10 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
     if (mask.size() < offsets_data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = offsets_data.size() - 1;
+    int index = mask.size() - 1;
+    int from = offsets_data.size() - 1;
     offsets_data.resize(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
@@ -581,7 +577,7 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
 
             --from;
             last_offset = offsets_data[from];
@@ -591,7 +587,7 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
     }
 
     if (from != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename T>
@@ -757,7 +753,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty tuple");
+        throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -955,7 +951,7 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     MutableColumnPtr res = cloneEmpty();
 
@@ -1006,7 +1002,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     MutableColumnPtr res = cloneEmpty();
 
@@ -1084,7 +1080,7 @@ ColumnPtr ColumnArray::replicateConst(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (0 == col_size)
         return cloneEmpty();
@@ -1122,7 +1118,7 @@ ColumnPtr ColumnArray::replicateGeneric(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     MutableColumnPtr res = cloneEmpty();
     ColumnArray & res_concrete = assert_cast<ColumnArray &>(*res);
@@ -1173,7 +1169,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty tuple");
+        throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)

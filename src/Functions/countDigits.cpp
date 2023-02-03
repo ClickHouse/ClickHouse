@@ -43,8 +43,8 @@ public:
         WhichDataType which_first(arguments[0]->getTypeId());
 
         if (!which_first.isInt() && !which_first.isUInt() && !which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
@@ -53,7 +53,7 @@ public:
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
+            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         auto result_column = ColumnUInt8::create();
 
@@ -69,12 +69,13 @@ public:
                 return true;
             }
 
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
+            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         };
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
         if (!callOnBasicType<void, true, false, true, false>(dec_type_idx, call))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Wrong call for {} with {}", getName(), src_column.type->getName());
+            throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         return result_column;
     }
@@ -141,7 +142,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(CountDigits)
+void registerFunctionCountDigits(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCountDigits>();
 }

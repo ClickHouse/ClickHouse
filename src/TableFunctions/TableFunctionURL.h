@@ -1,7 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunctionFileLike.h>
-#include <Storages/StorageURL.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 
 
@@ -24,18 +24,17 @@ public:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
 protected:
-    void parseArguments(const ASTPtr & ast, ContextPtr context) override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
 private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_) const override;
-
     const char * getStorageTypeName() const override { return "URL"; }
 
-    String getFormatFromFirstArgument() override;
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders() const;
 
-    StorageURL::Configuration configuration;
+    URLBasedDataSourceConfiguration configuration;
 };
 
 }

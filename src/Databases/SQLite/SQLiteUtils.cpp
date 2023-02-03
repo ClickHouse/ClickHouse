@@ -1,7 +1,7 @@
 #include "SQLiteUtils.h"
 
 #if USE_SQLITE
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -14,12 +14,11 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-static std::mutex init_sqlite_db_mutex;
 
 void processSQLiteError(const String & message, bool throw_on_error)
 {
     if (throw_on_error)
-        throw Exception::createDeprecated(message, ErrorCodes::PATH_ACCESS_DENIED);
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, message);
     else
         LOG_ERROR(&Poco::Logger::get("SQLiteEngine"), fmt::runtime(message));
 }
@@ -53,11 +52,7 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         LOG_DEBUG(&Poco::Logger::get("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
 
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status;
-    {
-        std::lock_guard lock(init_sqlite_db_mutex);
-        status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
-    }
+    int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
 
     if (status != SQLITE_OK)
     {

@@ -9,7 +9,7 @@
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -139,7 +139,7 @@ void ODBCSource::insertValue(
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
-            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+            assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
         }
         case ValueType::vtDateTime64:
@@ -163,7 +163,7 @@ void ODBCSource::insertValue(
             break;
         }
         default:
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported value type");
+            throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
     }
 }
 

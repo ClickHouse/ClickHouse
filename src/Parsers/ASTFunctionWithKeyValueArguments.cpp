@@ -29,27 +29,12 @@ void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, F
     if (second_with_brackets)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "(";
 
-    if (!settings.show_secrets && (first == "password"))
-    {
-        /// Hide password in the definition of a dictionary:
-        /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-        settings.ostr << "'[HIDDEN]'";
-    }
-    else
-    {
-        second->formatImpl(settings, state, frame);
-    }
+    second->formatImpl(settings, state, frame);
 
     if (second_with_brackets)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ")";
 
     settings.ostr << (settings.hilite ? hilite_none : "");
-}
-
-
-bool ASTPair::hasSecretParts() const
-{
-    return first == "password";
 }
 
 

@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/table-functions/mysql
-sidebar_position: 42
-sidebar_label: mysql
+toc_priority: 42
+toc_title: mysql
 ---
 
 # mysql {#mysql}
@@ -55,9 +54,9 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 
 Объект таблицы с теми же столбцами, что и в исходной таблице MySQL.
 
-    :::note "Примечание"
+!!! note "Примечание"
     Чтобы отличить табличную функцию `mysql (...)` в запросе `INSERT` от имени таблицы со списком столбцов, используйте ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
-    :::
+
 **Примеры**
 
 Таблица в MySQL:
@@ -109,3 +108,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 
 -   [Движок таблиц ‘MySQL’](../../sql-reference/table-functions/mysql.md)
 -   [Использование MySQL как источника данных для внешнего словаря](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
+

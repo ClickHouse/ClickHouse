@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/maxmap
-sidebar_position: 143
+toc_priority: 143
 ---
 
-# maxMap
+# maxMap {#agg_functions-maxmap}
 
 Syntax: `maxMap(key, value)` or `maxMap(Tuple(key, value))`
 
@@ -19,11 +18,11 @@ Example:
 
 ``` sql
 SELECT maxMap(a, b)
-FROM values('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]))
+FROM values('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]))
 ```
 
 ``` text
-┌─maxMap(a, b)───────────┐
-│ [['x','y','z'],[2,3,1]]│
-└────────────────────────┘
+┌─maxMap(a, b)──────┐
+│ ([1,2,3],[2,2,1]) │
+└───────────────────┘
 ```

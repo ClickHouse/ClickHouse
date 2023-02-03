@@ -1,5 +1,5 @@
-#include <cerrno>
-#include <ctime>
+#include <errno.h>
+#include <time.h>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -7,9 +7,8 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
-#include <Common/filesystemHelpers.h>
+#include <IO/Progress.h>
 #include <sys/stat.h>
-#include <Interpreters/Context.h>
 
 
 #ifdef HAS_RESERVED_IDENTIFIER
@@ -39,6 +38,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_ADVISE;
 }
 
@@ -56,7 +56,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
-         return false;
+        return false;
 
     size_t bytes_read = 0;
     while (!bytes_read)
@@ -80,7 +80,8 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrnoWithPath("Cannot read from file: " + getFileName(), getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throwFromErrnoWithPath("Cannot read from file " + getFileName(), getFileName(),
+                                   ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -147,7 +148,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
     else
     {
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence");
+        throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     /// Position is unchanged.
@@ -190,7 +191,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             off_t res = ::lseek(fd, seek_pos, SEEK_SET);
             if (-1 == res)
-                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
+                throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
                     ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             /// Also note that seeking past the file size is not allowed.
@@ -232,7 +233,7 @@ void ReadBufferFromFileDescriptor::rewind()
 
 
 /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
+bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 {
     fd_set fds;
     FD_ZERO(&fds);
@@ -248,9 +249,27 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
 }
 
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+off_t ReadBufferFromFileDescriptor::size()
 {
-    return getSizeFromFileDescriptor(fd, getFileName());
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+    return buf.st_size;
+}
+
+
+void ReadBufferFromFileDescriptor::setProgressCallback(ContextPtr context)
+{
+    auto file_progress_callback = context->getFileProgressCallback();
+
+    if (!file_progress_callback)
+        return;
+
+    setProfileCallback([file_progress_callback](const ProfileInfo & progress)
+    {
+        file_progress_callback(FileProgress(progress.bytes_read, 0));
+    });
 }
 
 }

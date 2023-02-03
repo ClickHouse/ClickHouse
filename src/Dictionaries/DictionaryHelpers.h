@@ -267,14 +267,6 @@ public:
         {
             return ColumnType::create(size);
         }
-        else if constexpr (std::is_same_v<DictionaryAttributeType, IPv4>)
-        {
-            return ColumnType::create(size);
-        }
-        else if constexpr (std::is_same_v<DictionaryAttributeType, IPv6>)
-        {
-            return ColumnType::create(size);
-        }
         else if constexpr (is_decimal<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
@@ -325,7 +317,7 @@ public:
             if (attribute_default_value.isNull())
                 default_value_is_null = true;
             else
-                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.get<DictionaryAttributeType>());
+                default_value = attribute_default_value.get<NearestFieldType<DictionaryAttributeType>>();
         }
         else
         {
@@ -526,7 +518,7 @@ template <DictionaryKeyType dictionary_key_type>
 void mergeBlockWithPipe(
     size_t key_columns_size,
     Block & block_to_update,
-    QueryPipeline pipeline)
+    Pipe pipe)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
@@ -575,6 +567,8 @@ void mergeBlockWithPipe(
     }
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
+
+    QueryPipeline pipeline(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
     Block block;
@@ -697,3 +691,5 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array, size_t s
 }
 
 }
+
+

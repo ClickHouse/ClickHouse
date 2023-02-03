@@ -40,12 +40,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
+            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Block sample_block(arguments);
         size_t size = arguments.size();
@@ -63,7 +63,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(PartitionId)
+void registerFunctionPartitionId(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPartitionId>();
 }

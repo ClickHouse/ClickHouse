@@ -9,14 +9,18 @@ import time
 
 import helpers.client
 import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
 from helpers.network import PartitionManager
-from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import exec_query_with_retry
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+CONFIG_PATH = os.path.join(
+    SCRIPT_DIR, "./{}/dummy/configs/config.d/defaultS3.xml".format(get_instances_dir())
+)
+
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(started_cluster):
@@ -99,11 +103,7 @@ def started_cluster():
         cluster.add_instance(
             "dummy",
             with_minio=True,
-            main_configs=[
-                "configs/defaultS3.xml",
-                "configs/named_collections.xml",
-                "configs/schema_cache.xml",
-            ],
+            main_configs=["configs/defaultS3.xml", "configs/named_collections.xml"],
         )
         cluster.add_instance(
             "s3_max_redirects",
@@ -111,20 +111,6 @@ def started_cluster():
             main_configs=["configs/defaultS3.xml"],
             user_configs=["configs/s3_max_redirects.xml"],
         )
-        cluster.add_instance(
-            "s3_non_default",
-            with_minio=True,
-        )
-        cluster.add_instance(
-            "s3_with_environment_credentials",
-            with_minio=True,
-            env_variables={
-                "AWS_ACCESS_KEY_ID": "minio",
-                "AWS_SECRET_ACCESS_KEY": "minio123",
-            },
-            main_configs=["configs/use_environment_credentials.xml"],
-        )
-
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -176,7 +162,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
     put_query = f"""insert into table function s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{filename}',
-                    {maybe_auth}'CSV', '{table_format}', '{compression}') settings s3_truncate_on_insert=1 values {values}"""
+                    {maybe_auth}'CSV', '{table_format}', {compression}) values settings s3_truncate_on_insert=1 {values}"""
 
     try:
         run_query(instance, put_query)
@@ -338,7 +324,7 @@ def test_empty_put(started_cluster, auth):
 
     run_query(instance, put_query)
 
-    assert (
+    try:
         run_query(
             instance,
             "select count(*) from s3('http://{}:{}/{}/{}', {}'CSV', '{}')".format(
@@ -350,8 +336,10 @@ def test_empty_put(started_cluster, auth):
                 table_format,
             ),
         )
-        == "0\n"
-    )
+
+        assert False, "Query should be failed."
+    except helpers.client.QueryRuntimeException as e:
+        assert str(e).find("The specified key does not exist") != 0
 
 
 # Test put values in CSV format.
@@ -374,7 +362,7 @@ def test_put_csv(started_cluster, maybe_auth, positive):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') settings s3_truncate_on_insert=1 format CSV".format(
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV settings s3_truncate_on_insert=1".format(
         started_cluster.minio_ip,
         MINIO_INTERNAL_PORT,
         bucket,
@@ -404,7 +392,7 @@ def test_put_get_with_redirect(started_cluster):
     values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     values_csv = "1,1,1\n1,1,1\n11,11,11\n"
     filename = "test.csv"
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
         bucket,
@@ -443,7 +431,7 @@ def test_put_with_zero_redirect(started_cluster):
     filename = "test.csv"
 
     # Should work without redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
         started_cluster.minio_ip,
         MINIO_INTERNAL_PORT,
         bucket,
@@ -454,7 +442,7 @@ def test_put_with_zero_redirect(started_cluster):
     run_query(instance, query)
 
     # Should not work with redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') settings s3_truncate_on_insert=1 values {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
         bucket,
@@ -529,7 +517,7 @@ def test_put_get_with_globs(started_cluster):
         # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
     ],
 )
-def test_multipart(started_cluster, maybe_auth, positive):
+def test_multipart_put(started_cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
     bucket = (
@@ -547,9 +535,8 @@ def test_multipart(started_cluster, maybe_auth, positive):
 
     one_line_length = 6  # 3 digits, 2 commas, 1 line separator.
 
-    total_rows = csv_size_bytes // one_line_length
     # Generate data having size more than one part
-    int_data = [[1, 2, 3] for i in range(total_rows)]
+    int_data = [[1, 2, 3] for i in range(csv_size_bytes // one_line_length)]
     csv_data = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in int_data])
 
     assert len(csv_data) > min_part_size_bytes
@@ -585,37 +572,6 @@ def test_multipart(started_cluster, maybe_auth, positive):
         assert proxy_logs.count("PUT /{}/{}".format(bucket, filename)) >= 2
 
         assert csv_data == get_s3_file_content(started_cluster, bucket, filename)
-
-    # select uploaded data from many threads
-    select_query = (
-        "select sum(column1), sum(column2), sum(column3) "
-        "from s3('http://{host}:{port}/{bucket}/{filename}', {auth}'CSV', '{table_format}')".format(
-            host=started_cluster.minio_redirect_host,
-            port=started_cluster.minio_redirect_port,
-            bucket=bucket,
-            filename=filename,
-            auth=maybe_auth,
-            table_format=table_format,
-        )
-    )
-    try:
-        select_result = run_query(
-            instance,
-            select_query,
-            settings={
-                "max_download_threads": random.randint(4, 16),
-                "max_download_buffer_size": 1024 * 1024,
-            },
-        )
-    except helpers.client.QueryRuntimeException:
-        if positive:
-            raise
-    else:
-        assert positive
-        assert (
-            select_result
-            == "\t".join(map(str, [total_rows, total_rows * 2, total_rows * 3])) + "\n"
-        )
 
 
 def test_remote_host_filter(started_cluster):
@@ -695,37 +651,60 @@ def test_s3_glob_scheherazade(started_cluster):
 
 
 def run_s3_mocks(started_cluster):
-    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
-    start_mock_servers(
-        started_cluster,
-        script_dir,
-        [
-            ("mock_s3.py", "resolver", "8080"),
-            ("unstable_server.py", "resolver", "8081"),
-            ("echo.py", "resolver", "8082"),
-            ("no_list_objects.py", "resolver", "8083"),
-        ],
+    logging.info("Starting s3 mocks")
+    mocks = (
+        ("mock_s3.py", "resolver", "8080"),
+        ("unstable_server.py", "resolver", "8081"),
+        ("echo.py", "resolver", "8082"),
     )
+    for mock_filename, container, port in mocks:
+        container_id = started_cluster.get_container_id(container)
+        current_dir = os.path.dirname(__file__)
+        started_cluster.copy_file_to_container(
+            container_id,
+            os.path.join(current_dir, "s3_mocks", mock_filename),
+            mock_filename,
+        )
+        started_cluster.exec_in_container(
+            container_id, ["python", mock_filename, port], detach=True
+        )
+
+    # Wait for S3 mocks to start
+    for mock_filename, container, port in mocks:
+        num_attempts = 100
+        for attempt in range(num_attempts):
+            ping_response = started_cluster.exec_in_container(
+                started_cluster.get_container_id(container),
+                ["curl", "-s", f"http://localhost:{port}/"],
+                nothrow=True,
+            )
+            if ping_response != "OK":
+                if attempt == num_attempts - 1:
+                    assert ping_response == "OK", 'Expected "OK", but got "{}"'.format(
+                        ping_response
+                    )
+                else:
+                    time.sleep(1)
+            else:
+                logging.debug(
+                    f"mock {mock_filename} ({port}) answered {ping_response} on attempt {attempt}"
+                )
+                break
+
+    logging.info("S3 mocks started")
 
 
-def replace_config(path, old, new):
-    config = open(path, "r")
+def replace_config(old, new):
+    config = open(CONFIG_PATH, "r")
     config_lines = config.readlines()
     config.close()
     config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(path, "w")
+    config = open(CONFIG_PATH, "w")
     config.writelines(config_lines)
     config.close()
 
 
 def test_custom_auth_headers(started_cluster):
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        "./{}/dummy/configs/config.d/defaultS3.xml".format(
-            started_cluster.instances_dir_name
-        ),
-    )
-
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
@@ -749,7 +728,6 @@ def test_custom_auth_headers(started_cluster):
     assert run_query(instance, "SELECT * FROM test") == "1\t2\t3\n"
 
     replace_config(
-        config_path,
         "<header>Authorization: Bearer TOKEN",
         "<header>Authorization: Bearer INVALID_TOKEN",
     )
@@ -757,7 +735,6 @@ def test_custom_auth_headers(started_cluster):
     ret, err = instance.query_and_get_answer_with_error("SELECT * FROM test")
     assert ret == "" and err != ""
     replace_config(
-        config_path,
         "<header>Authorization: Bearer INVALID_TOKEN",
         "<header>Authorization: Bearer TOKEN",
     )
@@ -777,7 +754,7 @@ def test_custom_auth_headers_exclusion(started_cluster):
         print(result)
 
     assert ei.value.returncode == 243
-    assert "HTTP response code: 403" in ei.value.stderr
+    assert "Forbidden Error" in ei.value.stderr
 
 
 def test_infinite_redirect(started_cluster):
@@ -798,7 +775,10 @@ def test_infinite_redirect(started_cluster):
 
 @pytest.mark.parametrize(
     "extension,method",
-    [pytest.param("bin", "gzip", id="bin"), pytest.param("gz", "auto", id="gz")],
+    [
+        pytest.param("bin", "gzip", id="bin"),
+        pytest.param("gz", "auto", id="gz"),
+    ],
 )
 def test_storage_s3_get_gzip(started_cluster, extension, method):
     bucket = started_cluster.minio_bucket
@@ -984,9 +964,6 @@ def test_predefined_connection_configuration(started_cluster):
     )
     assert result == instance.query("SELECT number FROM numbers(10)")
 
-    result = instance.query_and_get_error("SELECT * FROM s3(no_collection)")
-    assert "There is no named collection `no_collection`" in result
-
 
 result = ""
 
@@ -1045,61 +1022,61 @@ def test_seekable_formats(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
-    exec_query_with_retry(
-        instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+    instance.query(
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) settings s3_truncate_on_insert=1"
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 1000000
+    assert int(result) == 5000000
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) settings s3_truncate_on_insert=1",
     )
 
-    result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
-    )
-    assert int(result) == 1000000
-
-    instance.query(f"SELECT * FROM {table_function} FORMAT Null")
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert int(result) == 5000000
 
     instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
-        f"SELECT formatReadableSize(ProfileEvents['ReadBufferFromS3Bytes']) FROM system.query_log WHERE startsWith(query, 'SELECT * FROM s3') AND memory_usage > 0 AND type='QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1"
+        f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM s3') AND memory_usage > 0 ORDER BY event_time desc"
     )
-    result = result.strip()
-    assert result.endswith("MiB")
+
     result = result[: result.index(".")]
-    assert int(result) > 80
+    assert int(result) < 200
 
 
 def test_seekable_formats_url(started_cluster):
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    instance = started_cluster.instances["dummy"]
 
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
-    exec_query_with_retry(
-        instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+    instance.query(
+        f"insert into table function {table_function} select number, randomString(100) from numbers(5000000) settings s3_truncate_on_insert=1"
     )
 
+    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 1000000
+    assert int(result) == 5000000
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} select number, randomString(100) from numbers(5000000) settings s3_truncate_on_insert=1",
     )
 
-    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
+    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_orc', 'ORC', 'a Int32, b String')"
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert int(result) == 5000000
+
+    instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
+        f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM url') AND memory_usage > 0 ORDER BY event_time desc"
     )
-    assert int(result) == 1000000
+
+    result = result[: result.index(".")]
+    assert int(result) < 200
 
 
 def test_empty_file(started_cluster):
@@ -1299,7 +1276,7 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
-    assert result.strip() == "c1\tNullable(Int64)"
+    assert result.strip() == "c1\tNullable(Float64)"
 
     result = instance.query(
         f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
@@ -1309,52 +1286,12 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
-    assert result.strip() == "c1\tNullable(Int64)"
+    assert result.strip() == "c1\tNullable(Float64)"
 
     result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
     assert sorted(result.split()) == ["0", "\\N"]
-
-    instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
-    )
-
-    url_filename = "test{1,3}.jsoncompacteachrow"
-
-    result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_s3=0"
-    )
-
-    assert "All attempts to extract table structure from files failed" in result
-
-    result = instance.query_and_get_error(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0"
-    )
-
-    assert "All attempts to extract table structure from files failed" in result
-
-    instance.query(
-        f"insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
-    )
-
-    result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow') settings schema_inference_use_cache_for_s3=0"
-    )
-
-    assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
-    )
-
-    url_filename = "test{0,1,2,3}.jsoncompacteachrow"
-
-    result = instance.query_and_get_error(
-        f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}') settings schema_inference_use_cache_for_url=0"
-    )
-
-    assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
-    )
 
 
 def test_signatures(started_cluster):
@@ -1438,319 +1375,3 @@ def test_insert_select_schema_inference(started_cluster):
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_insert_select.native')"
     )
     assert int(result) == 1
-
-
-def test_parallel_reading_with_memory_limit(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') select * from numbers(1000000)"
-    )
-
-    result = instance.query_and_get_error(
-        f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_memory_limit.native') settings max_memory_usage=1000"
-    )
-
-    assert "Memory limit (for query) exceeded" in result
-
-    time.sleep(5)
-
-    # Check that server didn't crash
-    result = instance.query("select 1")
-    assert int(result) == 1
-
-
-def test_wrong_format_usage(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native') select * from numbers(10e6)"
-    )
-    # size(test_wrong_format.native) = 10e6*8+16(header) ~= 76MiB
-
-    # ensure that not all file will be loaded into memory
-    result = instance.query_and_get_error(
-        f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_wrong_format.native', 'Parquet') settings input_format_allow_seeks=0, max_memory_usage='10Mi'"
-    )
-
-    assert "Not a Parquet file" in result
-
-
-def check_profile_event_for_query(instance, query, profile_event, amount):
-    instance.query("system flush logs")
-    query = query.replace("'", "\\'")
-    res = int(
-        instance.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
-        )
-    )
-
-    assert res == amount
-
-
-def check_cache_misses(instance, file, storage_name, started_cluster, bucket, amount=1):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheMisses", amount)
-
-
-def check_cache_hits(instance, file, storage_name, started_cluster, bucket, amount=1):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheHits", amount)
-
-
-def check_cache_invalidations(
-    instance, file, storage_name, started_cluster, bucket, amount=1
-):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(
-        instance, query, "SchemaInferenceCacheInvalidations", amount
-    )
-
-
-def check_cache_evictions(
-    instance, file, storage_name, started_cluster, bucket, amount=1
-):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(
-        instance, query, "SchemaInferenceCacheEvictions", amount
-    )
-
-
-def run_describe_query(instance, file, storage_name, started_cluster, bucket):
-    query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    instance.query(query)
-
-
-def check_cache(instance, expected_files):
-    sources = instance.query("select source from system.schema_inference_cache")
-    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(
-        expected_files
-    )
-
-
-def test_schema_inference_cache(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-
-    def test(storage_name):
-        instance.query("system drop schema cache")
-        instance.query(
-            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
-        )
-        time.sleep(1)
-
-        run_describe_query(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache(instance, ["test_cache0.jsonl"])
-        check_cache_misses(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_hits(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-
-        instance.query(
-            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
-        )
-        time.sleep(1)
-
-        run_describe_query(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_invalidations(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-
-        instance.query(
-            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
-        )
-        time.sleep(1)
-
-        run_describe_query(
-            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache(instance, ["test_cache0.jsonl", "test_cache1.jsonl"])
-        check_cache_misses(
-            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_hits(
-            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
-        )
-
-        instance.query(
-            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache2.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
-        )
-        time.sleep(1)
-
-        run_describe_query(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache(instance, ["test_cache1.jsonl", "test_cache2.jsonl"])
-        check_cache_misses(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_evictions(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_hits(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_hits(
-            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache(instance, ["test_cache0.jsonl", "test_cache1.jsonl"])
-        check_cache_misses(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_evictions(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache(instance, ["test_cache0.jsonl", "test_cache2.jsonl"])
-        check_cache_misses(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_evictions(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_hits(
-            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        )
-
-        run_describe_query(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-        check_cache_hits(
-            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
-        )
-
-        instance.query(
-            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
-        )
-        time.sleep(1)
-
-        files = "test_cache{0,1,2,3}.jsonl"
-        run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_hits(instance, files, storage_name, started_cluster, bucket)
-
-        instance.query(f"system drop schema cache for {storage_name}")
-        check_cache(instance, [])
-
-        run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
-
-        instance.query("system drop schema cache")
-        check_cache(instance, [])
-
-        run_describe_query(instance, files, storage_name, started_cluster, bucket)
-        check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
-
-    test("s3")
-    test("url")
-
-
-def test_ast_auth_headers(started_cluster):
-    bucket = started_cluster.minio_restricted_bucket
-    instance = started_cluster.instances["s3_non_default"]  # type: ClickHouseInstance
-    filename = "test.csv"
-
-    result = instance.query_and_get_error(
-        f"select count() from s3('http://resolver:8080/{bucket}/{filename}', 'CSV')"
-    )
-
-    assert "HTTP response code: 403" in result
-    assert "S3_ERROR" in result
-
-    result = instance.query(
-        f"select * from s3('http://resolver:8080/{bucket}/{filename}', 'CSV', headers(Authorization=`Bearer TOKEN`))"
-    )
-
-    assert result.strip() == "1\t2\t3"
-
-
-def test_environment_credentials(started_cluster):
-    filename = "test.csv"
-    bucket = started_cluster.minio_restricted_bucket
-
-    instance = started_cluster.instances["s3_with_environment_credentials"]
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
-    )
-    assert (
-        "100"
-        == instance.query(
-            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
-        ).strip()
-    )
-
-
-def test_s3_list_objects_failure(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
-    filename = "test_no_list_{_partition_id}.csv"
-
-    put_query = f"""
-        INSERT INTO TABLE FUNCTION
-        s3('http://resolver:8083/{bucket}/{filename}', 'CSV', 'c1 UInt32')
-        PARTITION BY c1 % 20
-        SELECT number FROM numbers(100)
-        SETTINGS s3_truncate_on_insert=1
-    """
-
-    run_query(instance, put_query)
-
-    T = 10
-    for _ in range(0, T):
-        started_cluster.exec_in_container(
-            started_cluster.get_container_id("resolver"),
-            [
-                "curl",
-                "-X",
-                "POST",
-                f"http://localhost:8083/reset_counters?max={random.randint(1, 15)}",
-            ],
-        )
-
-        get_query = """
-            SELECT sleep({seconds}) FROM s3('http://resolver:8083/{bucket}/test_no_list_*', 'CSV', 'c1 UInt32')
-            SETTINGS s3_list_object_keys_size = 1, max_threads = {max_threads}, enable_s3_requests_logging = 1
-            """.format(
-            bucket=bucket, seconds=random.random(), max_threads=random.randint(2, 20)
-        )
-
-        with pytest.raises(helpers.client.QueryRuntimeException) as ei:
-            result = run_query(instance, get_query)
-            print(result)
-
-        assert ei.value.returncode == 243
-        assert "Could not list objects" in ei.value.stderr

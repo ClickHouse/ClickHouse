@@ -3,6 +3,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -16,9 +17,15 @@ namespace ErrorCodes
 TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
                                                      ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                                                      std::string row_between_delimiter_)
-    : IOutputFormat(header_, out_), settings(settings_), serializations(header_.getSerializations()), format(std::move(format_))
+    : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_))
     , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
+    const auto & sample = getPort(PortKind::Main).getHeader();
+    size_t columns = sample.columns();
+    serializations.resize(columns);
+    for (size_t i = 0; i < columns; ++i)
+        serializations[i] = sample.safeGetByPosition(i).type->getDefaultSerialization();
+
     /// Validate format string for whole output
     size_t data_idx = format.format_idx_to_column_idx.size() + 1;
     for (size_t i = 0; i < format.format_idx_to_column_idx.size(); ++i)
@@ -88,7 +95,7 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
     else if (part == "bytes_read")
         return ResultsetPart::BytesRead;
     else
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
+        throw Exception("Unknown output part " + part, ErrorCodes::SYNTAX_ERROR);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
@@ -133,7 +140,14 @@ void TemplateBlockOutputFormat::writePrefix()
 
 void TemplateBlockOutputFormat::finalizeImpl()
 {
+    if (finalized)
+        return;
+
     size_t parts = format.format_idx_to_column_idx.size();
+    auto outside_statistics = getOutsideStatistics();
+    if (outside_statistics)
+        statistics = std::move(*outside_statistics);
+
     for (size_t i = 0; i < parts; ++i)
     {
         auto type = std::make_shared<DataTypeUInt64>();
@@ -177,19 +191,17 @@ void TemplateBlockOutputFormat::finalizeImpl()
         }
         writeString(format.delimiters[i + 1], out);
     }
+
+    finalized = true;
 }
 
-void TemplateBlockOutputFormat::resetFormatterImpl()
-{
-    row_count = 0;
-    statistics = Statistics();
-}
 
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
     factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
+            const RowOutputFormatParams &,
             const FormatSettings & settings)
     {
         ParsedTemplateFormatString resultset_format;

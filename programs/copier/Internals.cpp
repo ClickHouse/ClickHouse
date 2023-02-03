@@ -5,7 +5,6 @@
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -60,8 +59,10 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 }
 
 
-Block getBlockWithAllStreamData(QueryPipelineBuilder builder)
+Block getBlockWithAllStreamData(QueryPipeline pipeline)
 {
+    QueryPipelineBuilder builder;
+    builder.init(std::move(pipeline));
     builder.addTransform(std::make_shared<SquashingChunksTransform>(
         builder.getHeader(),
         std::numeric_limits<size_t>::max(),
@@ -90,7 +91,9 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
+        throw Exception(
+                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+                ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (isExtendedDefinitionStorage(storage_ast))
@@ -107,13 +110,14 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
         size_t min_args = is_replicated ? 3 : 1;
 
         if (!engine.arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected arguments in {}", storage_str);
+            throw Exception("Expected arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
 
         ASTPtr arguments_ast = engine.arguments->clone();
         ASTs & arguments = arguments_ast->children;
 
         if (arguments.size() < min_args)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least {} arguments in {}", min_args, storage_str);
+            throw Exception("Expected at least " + toString(min_args) + " arguments in " + storage_str,
+                            ErrorCodes::BAD_ARGUMENTS);
 
         ASTPtr & month_arg = is_replicated ? arguments[2] : arguments[1];
         return makeASTFunction("toYYYYMM", month_arg->clone());
@@ -129,12 +133,14 @@ ASTPtr extractPrimaryKey(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
+        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+                        ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (!isExtendedDefinitionStorage(storage_ast))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Is not extended deginition storage {} Will be fixed later.", storage_str);
+        throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",
+                        ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (storage.primary_key)
@@ -153,18 +159,20 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
+        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+                        ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (!isExtendedDefinitionStorage(storage_ast))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Is not extended deginition storage {} Will be fixed later.", storage_str);
+        throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",
+                        ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (storage.order_by)
         return storage.order_by->clone();
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
+    throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 }
 
 /// Wraps only identifiers with backticks.
@@ -184,7 +192,7 @@ std::string wrapIdentifiersWithBackticks(const ASTPtr & root)
         return boost::algorithm::join(function_arguments, ", ");
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key could be represented only as columns or functions from columns.");
+    throw Exception("Primary key could be represented only as columns or functions from columns.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 
@@ -203,9 +211,9 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     size_t sorting_key_size = sorting_key_expr_list->children.size();
 
     if (primary_key_size > sorting_key_size)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
-                        "{} is greater than the sorting key length: {}",
-                        primary_key_size, sorting_key_size);
+        throw Exception("Primary key must be a prefix of the sorting key, but its length: "
+                        + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
+                        ErrorCodes::BAD_ARGUMENTS);
 
     Names primary_key_columns;
     NameSet primary_key_columns_set;
@@ -221,12 +229,12 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
         {
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Primary key must be a prefix of the sorting key, "
-                                "but the column in the position {} is {}, not {}", i, sorting_key_column, pk_column);
+                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
+                                + toString(i) + " is " + sorting_key_column +", not " + pk_column,
+                                ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key contains duplicate columns");
+                throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
             primary_key_columns.push_back(wrapIdentifiersWithBackticks(primary_key_expr_list->children[i]));
         }
@@ -243,7 +251,9 @@ bool isReplicatedTableEngine(const ASTPtr & storage_ast)
     if (!endsWith(engine.name, "MergeTree"))
     {
         String storage_str = queryToString(storage_ast);
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
+        throw Exception(
+                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+                ErrorCodes::BAD_ARGUMENTS);
     }
 
     return startsWith(engine.name, "Replicated");

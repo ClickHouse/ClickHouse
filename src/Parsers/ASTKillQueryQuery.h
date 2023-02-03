@@ -14,7 +14,6 @@ public:
         Query,      /// KILL QUERY
         Mutation,   /// KILL MUTATION
         PartMoveToShard, /// KILL PART_MOVE_TO_SHARD
-        Transaction,     /// KILL TRANSACTION
     };
 
     Type type = Type::Query;
@@ -38,12 +37,10 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override
     {
         return removeOnCluster<ASTKillQueryQuery>(clone());
     }
-
-    QueryKind getQueryKind() const override { return QueryKind::KillQuery; }
 };
 
 }

@@ -30,7 +30,7 @@ public:
     bool isAffectedByDropRange(const std::string & new_part_name, std::string & postpone_reason) const;
 
     /// Already has equal DROP_RANGE. Don't need to assign new one
-    bool hasDropRange(const MergeTreePartInfo & new_drop_range_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
+    bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
 
     /// Add DROP_RANGE to map
     void addDropRange(const ReplicatedMergeTreeLogEntryPtr & entry);
