@@ -86,9 +86,9 @@ CREATE TABLE hackernews (
     author String,
     timestamp DateTime,
     comment String,
-	dead UInt8,
-	parent UInt64,
-	poll UInt64,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
     children Array(UInt32),
     url String,
     score UInt32,
@@ -169,6 +169,20 @@ WHERE hasToken(lower(comment), 'clickhouse')
 └─────────┘
 
 1 row in set. Elapsed: 0.747 sec. Processed 4.49 million rows, 1.77 GB (6.01 million rows/s., 2.37 GB/s.)
+```
+
+We can also search for one or all of multiple terms, i.e., disjunctions or conjunctions:
+
+```sql
+-- multiple OR'ed terms
+SELECT count(*)
+FROM hackernews
+WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+
+-- multiple AND'ed terms
+SELECT count(*)
+FROM hackernews
+WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
 ```
 
 :::note
