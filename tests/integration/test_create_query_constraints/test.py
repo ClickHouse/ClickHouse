@@ -14,6 +14,7 @@ instance = cluster.add_instance(
     ],
 )
 
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
