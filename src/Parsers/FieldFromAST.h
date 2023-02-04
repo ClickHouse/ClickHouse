@@ -18,9 +18,6 @@ struct FieldFromASTImpl : public CustomType::CustomTypeImpl
     ASTPtr ast;
 };
 
-Field createFieldFromAST(ASTPtr ast)
-{
-    return CustomType(std::make_shared<FieldFromASTImpl>(ast));
-}
+Field createFieldFromAST(ASTPtr ast);
 
 }
