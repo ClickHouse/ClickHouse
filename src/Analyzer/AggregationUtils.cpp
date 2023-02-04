@@ -2,6 +2,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -74,41 +75,9 @@ void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String 
     visitor.visit(node);
 }
 
-namespace
-{
-
-class ValidateGroupingFunctionNodesVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupingFunctionNodesVisitor>
-{
-public:
-    explicit ValidateGroupingFunctionNodesVisitor(String assert_no_grouping_function_place_message_)
-        : assert_no_grouping_function_place_message(std::move(assert_no_grouping_function_place_message_))
-    {}
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        auto * function_node = node->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "grouping")
-            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
-                "GROUPING function {} is found {} in query",
-                function_node->formatASTForErrorMessage(),
-                assert_no_grouping_function_place_message);
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
-    {
-        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
-    }
-
-private:
-    String assert_no_grouping_function_place_message;
-};
-
-}
-
 void assertNoGroupingFunction(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message)
 {
-    ValidateGroupingFunctionNodesVisitor visitor(assert_no_grouping_function_place_message);
-    visitor.visit(node);
+    assertNoFunction(node, "grouping", ErrorCodes::ILLEGAL_AGGREGATION, "GROUPING", assert_no_grouping_function_place_message);
 }
 
 }
