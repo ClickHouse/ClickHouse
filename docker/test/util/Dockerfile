@@ -41,6 +41,7 @@ RUN apt-get update \
         gdb \
         git \
         gperf \
+        libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
