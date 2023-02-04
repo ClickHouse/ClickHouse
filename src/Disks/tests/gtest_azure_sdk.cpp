@@ -1,4 +1,3 @@
-#include <azure/storage/blobs/blob_options.hpp>
 #include <string>
 #include <vector>
 #include <Common/logger_useful.h>
@@ -10,6 +9,7 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/storage/common/internal/xml_wrapper.hpp>
 #include <azure/storage/blobs/blob_container_client.hpp>
+#include <azure/storage/blobs/blob_options.hpp>
 
 #include <gtest/gtest.h>
 
