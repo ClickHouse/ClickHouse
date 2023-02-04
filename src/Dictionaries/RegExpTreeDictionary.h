@@ -43,7 +43,11 @@ public:
     const std::string name = "RegExpTree";
 
     RegExpTreeDictionary(
-        const StorageID & id_, const DictionaryStructure & structure_, DictionarySourcePtr source_ptr_, Configuration configuration_);
+        const StorageID & id_,
+        const DictionaryStructure & structure_,
+        DictionarySourcePtr source_ptr_,
+        Configuration configuration_,
+        bool use_vectorscan_);
 
     std::string getTypeName() const override { return name; }
 
@@ -79,7 +83,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RegExpTreeDictionary>(getDictionaryID(), structure, source_ptr->clone(), configuration);
+        return std::make_shared<RegExpTreeDictionary>(getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan);
     }
 
     ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
@@ -122,11 +126,6 @@ private:
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
-    std::vector<std::string> regexps;
-    std::vector<UInt64>      regexp_ids;
-
-    Poco::Logger * logger;
-
     void calculateBytesAllocated();
 
     void loadData();
@@ -135,7 +134,7 @@ private:
     void initTopologyOrder(UInt64 node_idx, std::set<UInt64> & visited, UInt64 & topology_id);
     void initGraph();
 
-    std::unordered_map<String, ColumnPtr> matchSearchAllIndices(
+    std::unordered_map<String, ColumnPtr> match(
         const ColumnString::Chars & keys_data,
         const ColumnString::Offsets & keys_offsets,
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
@@ -153,6 +152,10 @@ private:
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
 
+    bool use_vectorscan;
+
+    std::vector<std::string> simple_regexps;
+    std::vector<UInt64>      regexp_ids;
     std::vector<RegexTreeNodePtr> complex_regexp_nodes;
 
     std::map<UInt64, RegexTreeNodePtr> regex_nodes;
@@ -160,6 +163,8 @@ private:
     #if USE_VECTORSCAN
     MultiRegexps::DeferredConstructedRegexpsPtr hyperscan_regex;
     #endif
+
+    Poco::Logger * logger;
 };
 
 }
