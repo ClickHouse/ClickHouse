@@ -339,6 +339,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     if (!sort_description_for_merging.empty())
     {
+        /// We don't rely here on input_stream.sort_description because it is not correctly propagated for now in all cases
+        /// see https://github.com/ClickHouse/ClickHouse/pull/45892#discussion_r1094503048
         if (explicit_sorting_required_for_aggregation_in_order)
         {
             /// We don't really care about optimality of this sorting, because it's required only in fairly marginal cases.
