@@ -6644,7 +6644,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     collectWindowFunctionNodes(query_node, window_function_nodes);
 
     if (query_node_typed.hasGroupBy())
+    {
         assertNoAggregateFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
+        assertNoGroupingFunction(query_node_typed.getGroupByNode(), "in GROUP BY");
+        assertNoWindowFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
+    }
 
     for (auto & aggregate_function_node : aggregate_function_nodes)
     {
