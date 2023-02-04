@@ -294,7 +294,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void execute(MetadataTransactionPtr tx) override
     {
-        removeMetadataRecursive(tx, path);
+        /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
+        if (metadata_storage.exists(path))
+            removeMetadataRecursive(tx, path);
     }
 
     void undo() override

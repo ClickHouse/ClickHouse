@@ -44,6 +44,7 @@
         M(arrow::Type::INT32, DB::Int32) \
         M(arrow::Type::UINT64, DB::UInt64) \
         M(arrow::Type::INT64, DB::Int64) \
+        M(arrow::Type::DURATION, DB::Int64) \
         M(arrow::Type::HALF_FLOAT, DB::Float32) \
         M(arrow::Type::FLOAT, DB::Float32) \
         M(arrow::Type::DOUBLE, DB::Float64)

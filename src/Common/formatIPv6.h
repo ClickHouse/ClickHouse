@@ -194,6 +194,9 @@ inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
             if (groups <= 1 && zptr == nullptr) /// IPv4 block can't be the first
                 return clear_dst();
 
+            if (group_start) /// first octet of IPv4 should be already parsed as an IPv6 group
+                return clear_dst();
+
             ++src;
             if (eof())
                 return clear_dst();
