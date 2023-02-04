@@ -180,6 +180,7 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
             if (setting.name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \
             else
+
             LIST_OF_RESTORE_SETTINGS(GET_SETTINGS_FROM_RESTORE_QUERY_HELPER)
             throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }

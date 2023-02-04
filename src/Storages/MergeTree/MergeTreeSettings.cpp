@@ -1,13 +1,12 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Disks/getOrCreateDiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FieldFromAST.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
-#include <Parsers/ASTFunction.h>
-#include <Disks/getOrCreateDiskFromAST.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
