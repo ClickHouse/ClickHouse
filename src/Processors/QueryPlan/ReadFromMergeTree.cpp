@@ -640,7 +640,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
 
     std::vector<RangesInDataParts> splitted_parts_and_ranges;
-    splitted_parts_and_ranges.reserve(requested_num_streams);
+    splitted_parts_and_ranges.reserve(num_streams);
 
     const auto read_type = input_order_info->direction == 1
                        ? ReadFromMergeTree::ReadType::InOrder
