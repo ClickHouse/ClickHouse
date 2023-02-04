@@ -2900,8 +2900,8 @@ class ClickHouseCluster:
 
         if sanitizer_assert_instance is not None:
             raise Exception(
-                "Sanitizer assert found in {} for instance {}".format(
-                    self.docker_logs_path, sanitizer_assert_instance
+                "Sanitizer assert found for instance {}".format(
+                    sanitizer_assert_instance
                 )
             )
         if fatal_log is not None:
