@@ -264,7 +264,7 @@ private:
             outcome_future = listObjectsAsync();
         }
 
-        if (request_settings.allow_throw_if_mismatch_files && result_batch.empty())
+        if (request_settings.throw_on_zero_files_match && result_batch.empty())
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files using prefix {}", request.GetPrefix());
 
         KeysWithInfo temp_buffer;
