@@ -145,7 +145,7 @@ std::vector<StringPiece> createStringPieces(const String & value, int num_captur
 
 void RegExpTreeDictionary::calculateBytesAllocated()
 {
-    for (const String & regex : regexps)
+    for (const String & regex : simple_regexps)
         bytes_allocated += regex.size();
     bytes_allocated += sizeof(UInt64) * regexp_ids.size();
     bytes_allocated += (sizeof(RegexTreeNode) + sizeof(UInt64)) * regex_nodes.size();
@@ -253,9 +253,9 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         }
         regex_nodes.emplace(id, node);
 #if USE_VECTORSCAN
-        if (!checker.check(regex))
+        if (use_vectorscan && !checker.check(regex))
         {
-            regexps.push_back(regex);
+            simple_regexps.push_back(regex);
             regexp_ids.push_back(id);
         }
         else
@@ -309,13 +309,15 @@ void RegExpTreeDictionary::loadData()
             initRegexNodes(block);
         }
         initGraph();
-        if (regexps.empty() && complex_regexp_nodes.empty())
+        if (simple_regexps.empty() && complex_regexp_nodes.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
-        LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", regexps.size(), complex_regexp_nodes.size());
+        LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", simple_regexps.size(), complex_regexp_nodes.size());
+        if (!use_vectorscan)
+            return;
         #if USE_VECTORSCAN
         try
         {
-            std::vector<std::string_view> regexps_views(regexps.begin(), regexps.end());
+            std::vector<std::string_view> regexps_views(simple_regexps.begin(), simple_regexps.end());
             hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
             hyperscan_regex->get();
         }
@@ -323,7 +325,6 @@ void RegExpTreeDictionary::loadData()
         {
             /// Some compile errors will be thrown as LOGICAL ERROR and cause crash, e.g. empty expression or expressions are too large.
             /// We catch the error here and rethrow again.
-            /// TODO: fallback to other engine, like re2, when exceptions occur.
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Error occurs when compiling regular expressions, reason: {}", e.message());
         }
         #endif
@@ -335,8 +336,17 @@ void RegExpTreeDictionary::loadData()
 }
 
 RegExpTreeDictionary::RegExpTreeDictionary(
-    const StorageID & id_, const DictionaryStructure & structure_, DictionarySourcePtr source_ptr_, Configuration configuration_)
-    : IDictionary(id_), structure(structure_), source_ptr(source_ptr_), configuration(configuration_), logger(&Poco::Logger::get("RegExpTreeDictionary"))
+    const StorageID & id_,
+    const DictionaryStructure & structure_,
+    DictionarySourcePtr source_ptr_,
+    Configuration configuration_,
+    bool use_vectorscan_)
+    : IDictionary(id_),
+      structure(structure_),
+      source_ptr(source_ptr_),
+      configuration(configuration_),
+      use_vectorscan(use_vectorscan_),
+      logger(&Poco::Logger::get("RegExpTreeDictionary"))
 {
     if (auto * ch_source = typeid_cast<ClickHouseDictionarySource *>(source_ptr.get()))
     {
@@ -370,7 +380,7 @@ std::pair<String, bool> processBackRefs(const String & data, const re2_st::RE2 &
         else
             result += item.literal;
     }
-    return std::make_pair(result, false);
+    return {result, false};
 }
 
 // walk towards root and collect attributes.
@@ -458,7 +468,7 @@ namespace
     };
 }
 
-std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndices(
+std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     const ColumnString::Chars & keys_data,
     const ColumnString::Offsets & keys_offsets,
     const std::unordered_map<String, const DictionaryAttribute &> & attributes,
@@ -467,23 +477,17 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
 
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
-    hs_error_t err = hs_clone_scratch(hyperscan_regex->get()->getScratch(), &scratch);
-
-    if (err != HS_SUCCESS)
+    if (use_vectorscan)
     {
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for hyperscan");
+        hs_error_t err = hs_clone_scratch(hyperscan_regex->get()->getScratch(), &scratch);
+
+        if (err != HS_SUCCESS)
+        {
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for hyperscan");
+        }
     }
 
     MultiRegexps::ScratchPtr smart_scratch(scratch);
-    auto on_match = [](unsigned int id,
-                    unsigned long long /* from */, // NOLINT
-                    unsigned long long /* to */, // NOLINT
-                    unsigned int /* flags */,
-                    void * context) -> int
-    {
-        static_cast<MatchContext *>(context)->insertIdx(id);
-        return 0;
-    };
 #endif
 
     std::unordered_map<String, MutableColumnPtr> columns;
@@ -505,17 +509,29 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchSearchAllIndice
         MatchContext match_result(regexp_ids, topology_order);
 
 #if USE_VECTORSCAN
-        err = hs_scan(
-            hyperscan_regex->get()->getDB(),
-            reinterpret_cast<const char *>(keys_data.data()) + offset,
-            static_cast<unsigned>(length),
-            0,
-            smart_scratch.get(),
-            on_match,
-            &match_result);
+        if (use_vectorscan)
+        {
+            auto on_match = [](unsigned int id,
+                            unsigned long long /* from */, // NOLINT
+                            unsigned long long /* to */, // NOLINT
+                            unsigned int /* flags */,
+                            void * context) -> int
+            {
+                static_cast<MatchContext *>(context)->insertIdx(id);
+                return 0;
+            };
+            hs_error_t err = hs_scan(
+                hyperscan_regex->get()->getDB(),
+                reinterpret_cast<const char *>(keys_data.data()) + offset,
+                static_cast<unsigned>(length),
+                0,
+                smart_scratch.get(),
+                on_match,
+                &match_result);
 
-        if (err != HS_SUCCESS)
-            throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
+            if (err != HS_SUCCESS)
+                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
+        }
 #endif
 
         for (const auto & node_ptr : complex_regexp_nodes)
@@ -608,7 +624,7 @@ Columns RegExpTreeDictionary::getColumns(
 
     /// calculate matches
     const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
-    const auto & columns_map = matchSearchAllIndices(
+    const auto & columns_map = match(
         key_column->getChars(),
         key_column->getOffsets(),
         attributes,
@@ -653,7 +669,7 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
                             "regexp_tree dictionary doesn't accept sources other than yaml source. "
                             "To active it, please set regexp_dict_allow_other_sources=true");
 
-        return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<RegExpTreeDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration, context->getSettings().regexp_dict_allow_hyperscan);
     };
 
     factory.registerLayout("regexp_tree", create_layout, true);
