@@ -45,5 +45,18 @@ test2() {
     check_replicas_read_in_order $query_id
 }
 
+test3() {
+    $CLICKHOUSE_CLIENT -nq "
+        SET max_threads = 16, prefer_localhost_replica = 1, read_in_order_two_level_merge_threshold = 1000;
+
+        EXPLAIN PIPELINE
+        SELECT URL, EventDate, max(URL)
+        FROM remote('127.0.0.{1,2}', test, hits)
+        WHERE CounterID = 1704509 AND UserID = 4322253409885123546
+        GROUP BY URL, EventDate
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, use_hedged_requests = 0"
+}
+
 test1
 test2
+test3
