@@ -312,6 +312,21 @@ class Backport:
         ]
         logging.info("Active releases: %s", ", ".join(self.release_branches))
 
+    def update_local_release_branches(self):
+        logging.info("Update local release branches")
+        branches = git_runner("git branch").split()
+        for branch in self.release_branches:
+            if branch not in branches:
+                # the local branch is not exist, so continue
+                continue
+            local_ref = git_runner(f"git rev-parse {branch}")
+            remote_ref = git_runner(f"git rev-parse {self.remote}/{branch}")
+            if local_ref == remote_ref:
+                # Do not need to update, continue
+                continue
+            logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
+            git_runner(f"git branch -f {branch} {self.remote}/{branch}")
+
     def receive_prs_for_backport(self):
         # The commits in the oldest open release branch
         oldest_branch_commits = git_runner(
@@ -498,6 +513,7 @@ def main():
     # https://github.com/python/mypy/issues/3004
     bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
     bp.receive_release_prs()
+    bp.update_local_release_branches()
     bp.receive_prs_for_backport()
     bp.process_backports()
     if bp.error is not None:
