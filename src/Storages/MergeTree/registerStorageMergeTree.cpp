@@ -1,5 +1,4 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
-#include <Disks/getOrCreateDiskFromAST.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -17,7 +16,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/FieldFromAST.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -590,37 +588,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
-        if (args.storage_def->settings)
-        {
-            for (auto & [name, value] : args.storage_def->settings->changes)
-            {
-                CustomType custom;
-                if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-                {
-                    auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-                    if (ast && isDiskFunction(ast))
-                    {
-                        const auto & ast_function = assert_cast<const ASTFunction &>(*ast);
-                        auto disk_name = getOrCreateDiskFromDiskAST(ast_function, context);
-                        value = disk_name;
-                        break;
-                    }
-                }
-            }
-        }
-
-        storage_settings->loadFromQuery(*args.storage_def);
-
         if (storage_settings->disk.changed && storage_settings->storage_policy.changed)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
 
+        storage_settings->loadFromQuery(*args.storage_def, context);
+
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
         {
             if (!args.attach)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, args.storage_def->settings->changes);
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
     }

@@ -3,6 +3,7 @@
 #include <base/unit.h>
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -192,7 +193,7 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context);
 
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
