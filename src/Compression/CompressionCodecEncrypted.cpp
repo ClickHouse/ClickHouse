@@ -11,14 +11,14 @@
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL
-#include <openssl/err.h>
-#include <boost/algorithm/hex.hpp>
-#if USE_BORINGSSL
-#include <openssl/digest.h>
-#include <openssl/aead.h>
-#else
-#include <openssl/evp.h>
-#endif
+#    include <openssl/err.h>
+#    include <boost/algorithm/hex.hpp>
+#    if USE_BORINGSSL
+#        include <openssl/digest.h>
+#        include <openssl/aead.h>
+#    else
+#        include <openssl/evp.h>
+#    endif
 #endif
 
 // Common part for both parts (with SSL and without)
@@ -205,7 +205,7 @@ auto getMethod(EncryptionMethod Method)
     }
     else
     {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -215,56 +215,66 @@ auto getMethod(EncryptionMethod Method)
 /// It returns length of encrypted text.
 size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
 {
+    int out_len;
+    int ciphertext_len;
     EVP_CIPHER_CTX *encrypt_ctx;
 
     if (!(encrypt_ctx = EVP_CIPHER_CTX_new()))
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_cryptinit = EVP_EncryptInit_ex(encrypt_ctx,
-                                                getMethod(method)(),
-                                                nullptr, nullptr, nullptr);
-    if (!ok_cryptinit)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    try
+    {
+        const int ok_cryptinit = EVP_EncryptInit_ex(encrypt_ctx,
+                                                    getMethod(method)(),
+                                                    nullptr, nullptr, nullptr);
+        if (!ok_cryptinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_cipherctrl = EVP_CIPHER_CTX_ctrl(encrypt_ctx,
-                                                  EVP_CTRL_GCM_SET_IVLEN,
-                                                  static_cast<int32_t>(nonce.size()),
-                                                  nullptr);
-    if (!ok_cipherctrl)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_cipherctrl = EVP_CIPHER_CTX_ctrl(encrypt_ctx,
+                                                    EVP_CTRL_GCM_SET_IVLEN,
+                                                    static_cast<int32_t>(nonce.size()),
+                                                    nullptr);
+        if (!ok_cipherctrl)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_nonceinit = EVP_EncryptInit_ex(encrypt_ctx, nullptr, nullptr,
-                                                reinterpret_cast<const uint8_t*>(key.data()),
-                                                reinterpret_cast<const uint8_t *>(nonce.data()));
-    if (!ok_nonceinit)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_nonceinit = EVP_EncryptInit_ex(encrypt_ctx, nullptr, nullptr,
+                                                    reinterpret_cast<const uint8_t*>(key.data()),
+                                                    reinterpret_cast<const uint8_t *>(nonce.data()));
+        if (!ok_nonceinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    size_t out_len;
-    const int ok_encryptudpate = EVP_EncryptUpdate(encrypt_ctx,
-                                                   reinterpret_cast<uint8_t *>(ciphertext_and_tag),
-                                                   reinterpret_cast<int32_t *>(&out_len),
-                                                   reinterpret_cast<const uint8_t *>(plaintext.data()),
-                                                   static_cast<int32_t>(plaintext.size()));
-    if (!ok_encryptudpate)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_encryptupdate = EVP_EncryptUpdate(encrypt_ctx,
+                                                    reinterpret_cast<uint8_t *>(ciphertext_and_tag),
+                                                    &out_len,
+                                                    reinterpret_cast<const uint8_t *>(plaintext.data()),
+                                                    static_cast<int32_t>(plaintext.size()));
+        ciphertext_len = out_len;
+        if (!ok_encryptupdate)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_encryptfinal = EVP_EncryptFinal_ex(encrypt_ctx,
-                                                    reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
-                                                    reinterpret_cast<int32_t *>(&out_len));
-    if (!ok_encryptfinal)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_encryptfinal = EVP_EncryptFinal_ex(encrypt_ctx,
+                                                        reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
+                                                        reinterpret_cast<int32_t *>(&out_len));
+        ciphertext_len += out_len;
+        if (!ok_encryptfinal)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    /* Get the tag */
-    const int ok_tag = EVP_CIPHER_CTX_ctrl(encrypt_ctx,
-                                           EVP_CTRL_GCM_GET_TAG,
-                                           tag_size,
-                                           reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size());
-    if (!ok_tag)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        /* Get the tag */
+        const int ok_tag = EVP_CIPHER_CTX_ctrl(encrypt_ctx,
+                                            EVP_CTRL_GCM_GET_TAG,
+                                            tag_size,
+                                            reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size());
 
+        if (!ok_tag)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    }
+    catch (...)
+    {
+        EVP_CIPHER_CTX_free(encrypt_ctx);
+        throw;
+    }
     EVP_CIPHER_CTX_free(encrypt_ctx);
-
-    return plaintext.size() + tag_size;
+    return ciphertext_len + tag_size;
 }
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
@@ -273,54 +283,66 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
 /// It returns length of encrypted text.
 size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
 {
+
+    int out_len;
+    int plaintext_len;
     EVP_CIPHER_CTX *decrypt_ctx;
 
     if (!(decrypt_ctx = EVP_CIPHER_CTX_new()))
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_cryptinit = EVP_DecryptInit_ex(decrypt_ctx,
-                                                getMethod(method)(),
-                                                nullptr, nullptr, nullptr);
-    if (!ok_cryptinit)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    try
+    {
+        const int ok_cryptinit = EVP_DecryptInit_ex(decrypt_ctx,
+                                                    getMethod(method)(),
+                                                    nullptr, nullptr, nullptr);
+        if (!ok_cryptinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_cipherctrl = EVP_CIPHER_CTX_ctrl(decrypt_ctx,
-                                                  EVP_CTRL_GCM_SET_IVLEN,
-                                                  static_cast<int32_t>(nonce.size()), nullptr);
-    if (!ok_cipherctrl)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_cipherctrl = EVP_CIPHER_CTX_ctrl(decrypt_ctx,
+                                                    EVP_CTRL_GCM_SET_IVLEN,
+                                                    static_cast<int32_t>(nonce.size()), nullptr);
+        if (!ok_cipherctrl)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_nonceinit = EVP_DecryptInit_ex(decrypt_ctx, nullptr, nullptr,
-                                                reinterpret_cast<const uint8_t*>(key.data()),
-                                                reinterpret_cast<const uint8_t *>(nonce.data()));
-    if (!ok_nonceinit)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_nonceinit = EVP_DecryptInit_ex(decrypt_ctx, nullptr, nullptr,
+                                                    reinterpret_cast<const uint8_t*>(key.data()),
+                                                    reinterpret_cast<const uint8_t *>(nonce.data()));
+        if (!ok_nonceinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    size_t out_len;
-    const int ok_decryptudpate = EVP_DecryptUpdate(decrypt_ctx,
-                                                   reinterpret_cast<uint8_t *>(plaintext),
-                                                   reinterpret_cast<int32_t *>(&out_len),
-                                                   reinterpret_cast<const uint8_t *>(ciphertext.data()),
-                                                   static_cast<int32_t>(ciphertext.size()) - tag_size);
-    if (!ok_decryptudpate)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_decryptudpate = EVP_DecryptUpdate(decrypt_ctx,
+                                                    reinterpret_cast<uint8_t *>(plaintext),
+                                                    reinterpret_cast<int32_t *>(&out_len),
+                                                    reinterpret_cast<const uint8_t *>(ciphertext.data()),
+                                                    static_cast<int32_t>(ciphertext.size()) - tag_size);
+        plaintext_len = out_len;
 
-    const int ok_tag = EVP_CIPHER_CTX_ctrl(decrypt_ctx,
-                                           EVP_CTRL_GCM_SET_TAG,
-                                           tag_size,
-                                           reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size);
-    if (!ok_tag)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (!ok_decryptudpate)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    const int ok_decryptfinal = EVP_DecryptFinal_ex(decrypt_ctx,
-                                                    reinterpret_cast<uint8_t *>(plaintext) + out_len,
-                                                    reinterpret_cast<int32_t *>(&out_len));
-    if (!ok_decryptfinal)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        const int ok_tag = EVP_CIPHER_CTX_ctrl(decrypt_ctx,
+                                            EVP_CTRL_GCM_SET_TAG,
+                                            tag_size,
+                                            reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size);
+        if (!ok_tag)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
+        const int ok_decryptfinal = EVP_DecryptFinal_ex(decrypt_ctx,
+                                                        reinterpret_cast<uint8_t *>(plaintext) + out_len,
+                                                        reinterpret_cast<int32_t *>(&out_len));
+
+        if (!ok_decryptfinal)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    }
+    catch (...)
+    {
+        EVP_CIPHER_CTX_free(decrypt_ctx);
+        throw;
+    }
     EVP_CIPHER_CTX_free(decrypt_ctx);
 
-    return ciphertext.size() - tag_size;
+    return plaintext_len + out_len;
 }
 #endif
 
