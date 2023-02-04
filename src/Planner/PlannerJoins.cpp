@@ -37,6 +37,7 @@
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 
 namespace DB
 {
@@ -513,23 +514,7 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     if (!join_node_typed.getJoinExpression())
         return {};
 
-    const auto * constant_node = join_node_typed.getJoinExpression()->as<ConstantNode>();
-    if (!constant_node)
-        return {};
-
-    const auto & value = constant_node->getValue();
-    auto constant_type = constant_node->getResultType();
-    constant_type = removeNullable(removeLowCardinality(constant_type));
-
-    auto which_constant_type = WhichDataType(constant_type);
-    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
-        return {};
-
-    if (value.isNull())
-        return false;
-
-    UInt8 predicate_value = value.safeGet<UInt8>();
-    return predicate_value > 0;
+    return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
 }
 
 namespace

@@ -1132,6 +1132,13 @@ void Planner::buildPlanForQueryNode()
         query_node.getPrewhere() = {};
     }
 
+    if (query_node.hasWhere())
+    {
+        auto condition_constant = tryExtractConstantFromConditionNode(query_node.getWhere());
+        if (condition_constant.has_value() && *condition_constant)
+            query_node.getWhere() = {};
+    }
+
     SelectQueryInfo select_query_info;
     select_query_info.original_query = queryNodeToSelectQuery(query_tree);
     select_query_info.query = select_query_info.original_query;
