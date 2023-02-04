@@ -260,6 +260,16 @@ void writeText(const Object & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
+void writeBinary(const CustomType &, WriteBuffer &)
+{
+    /// TODO:
+}
+
+void writeText(const CustomType & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
+}
+
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
