@@ -23,7 +23,7 @@ test1() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         SELECT URL, EventDate, max(URL)
-        FROM remote('127.0.0.{1,2}', test, hits)
+        FROM remote('127.0.0.{1,2}', test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
         GROUP BY CounterID, URL, EventDate, EventDate
         ORDER BY URL, EventDate
@@ -36,7 +36,7 @@ test2() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
         SELECT URL, EventDate, max(URL)
-        FROM remote('127.0.0.{1,2}', test, hits)
+        FROM remote('127.0.0.{1,2}', test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
         GROUP BY URL, EventDate, EventDate
         ORDER BY URL, EventDate
@@ -51,7 +51,7 @@ test3() {
 
         EXPLAIN PIPELINE
         SELECT URL, EventDate, max(URL)
-        FROM remote('127.0.0.{1,2}', test, hits)
+        FROM remote('127.0.0.{1,2}', test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
         GROUP BY URL, EventDate
         SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, use_hedged_requests = 0"
