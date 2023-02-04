@@ -4,6 +4,9 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+
 #include <Columns/getLeastSuperColumn.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -331,6 +334,27 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
 
     return function_node;
+}
+
+std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
+{
+    const auto * constant_node = condition_node->as<ConstantNode>();
+    if (!constant_node)
+        return {};
+
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 }

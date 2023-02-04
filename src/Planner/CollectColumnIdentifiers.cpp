@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class CollectTopLevelColumnIdentifiersVisitor : public InDepthQueryTreeVisitor<CollectTopLevelColumnIdentifiersVisitor, true>
+class CollectTopLevelColumnIdentifiersVisitor : public ConstInDepthQueryTreeVisitor<CollectTopLevelColumnIdentifiersVisitor>
 {
 public:
 
@@ -20,7 +20,7 @@ public:
         , planner_context(planner_context_)
     {}
 
-    static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType & child)
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
         const auto & node_type = child->getNodeType();
         return node_type != QueryTreeNodeType::TABLE

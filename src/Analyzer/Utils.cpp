@@ -10,10 +10,12 @@
 
 #include <Functions/FunctionHelpers.h>
 
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -372,6 +374,58 @@ bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, Identifier
     }
 
     return true;
+}
+
+namespace
+{
+
+class ValidateFunctionNodesVisitor : public ConstInDepthQueryTreeVisitor<ValidateFunctionNodesVisitor>
+{
+public:
+    explicit ValidateFunctionNodesVisitor(std::string_view function_name_,
+        int exception_code_,
+        std::string_view exception_function_name_,
+        std::string_view exception_place_message_)
+        : function_name(function_name_)
+        , exception_code(exception_code_)
+        , exception_function_name(exception_function_name_)
+        , exception_place_message(exception_place_message_)
+    {}
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == function_name)
+            throw Exception(exception_code,
+                "{} function {} is found {} in query",
+                exception_function_name,
+                function_node->formatASTForErrorMessage(),
+                exception_place_message);
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    {
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+private:
+    std::string_view function_name;
+    int exception_code = 0;
+    std::string_view exception_function_name;
+    std::string_view exception_place_message;
+};
+
+}
+
+void assertNoFunction(const QueryTreeNodePtr & node,
+    std::string_view function_name,
+    int exception_code,
+    std::string_view exception_function_name,
+    std::string_view exception_place_message)
+{
+    ValidateFunctionNodesVisitor visitor(function_name, exception_code, exception_function_name, exception_place_message);
+    visitor.visit(node);
 }
 
 }

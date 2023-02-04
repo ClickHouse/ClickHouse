@@ -778,8 +778,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     }
 
     auto drop_unused_columns_after_join_actions_dag = std::make_shared<ActionsDAG>(result_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-    ActionsDAG::NodeRawConstPtrs updated_outputs;
-    std::unordered_set<std::string_view> updated_outputs_names;
+    ActionsDAG::NodeRawConstPtrs drop_unused_columns_after_join_actions_dag_updated_outputs;
+    std::unordered_set<std::string_view> drop_unused_columns_after_join_actions_dag_updated_outputs_names;
     std::optional<size_t> first_skipped_column_node_index;
 
     auto & drop_unused_columns_after_join_actions_dag_outputs = drop_unused_columns_after_join_actions_dag->getOutputs();
@@ -790,7 +790,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         const auto & output = drop_unused_columns_after_join_actions_dag_outputs[i];
 
         const auto & global_planner_context = planner_context->getGlobalPlannerContext();
-        if (updated_outputs_names.contains(output->result_name)
+        if (drop_unused_columns_after_join_actions_dag_updated_outputs_names.contains(output->result_name)
             || !global_planner_context->hasColumnIdentifier(output->result_name))
             continue;
 
@@ -801,18 +801,18 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             continue;
         }
 
-        updated_outputs.push_back(output);
-        updated_outputs_names.insert(output->result_name);
+        drop_unused_columns_after_join_actions_dag_updated_outputs.push_back(output);
+        drop_unused_columns_after_join_actions_dag_updated_outputs_names.insert(output->result_name);
     }
 
     /** It is expected that JOIN TREE query plan will contain at least 1 column, even if there are no columns in outer scope.
       *
       * Example: SELECT count() FROM test_table_1 AS t1, test_table_2 AS t2;
       */
-    if (updated_outputs.empty() && first_skipped_column_node_index)
-        updated_outputs.push_back(drop_unused_columns_after_join_actions_dag_outputs[*first_skipped_column_node_index]);
+    if (drop_unused_columns_after_join_actions_dag_updated_outputs.empty() && first_skipped_column_node_index)
+        drop_unused_columns_after_join_actions_dag_updated_outputs.push_back(drop_unused_columns_after_join_actions_dag_outputs[*first_skipped_column_node_index]);
 
-    drop_unused_columns_after_join_actions_dag_outputs = std::move(updated_outputs);
+    drop_unused_columns_after_join_actions_dag_outputs = std::move(drop_unused_columns_after_join_actions_dag_updated_outputs);
 
     auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentDataStream(), std::move(drop_unused_columns_after_join_actions_dag));
     drop_unused_columns_after_join_transform_step->setStepDescription("DROP unused columns after JOIN");
@@ -823,6 +823,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
 JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_join_table_expression,
     JoinTreeQueryPlan join_tree_query_plan,
+    const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
     auto & array_join_node = array_join_table_expression->as<ArrayJoinNode &>();
@@ -837,6 +838,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
     ActionsDAGPtr array_join_action_dag = std::make_shared<ActionsDAG>(plan_output_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
+    std::unordered_set<std::string> array_join_expressions_output_nodes;
 
     NameSet array_join_column_names;
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
@@ -846,10 +848,12 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
         auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
         auto expression_dag_index_nodes = actions_visitor.visit(array_join_action_dag, array_join_expression_column.getExpressionOrThrow());
+
         for (auto & expression_dag_index_node : expression_dag_index_nodes)
         {
             const auto * array_join_column_node = &array_join_action_dag->addAlias(*expression_dag_index_node, array_join_column_identifier);
             array_join_action_dag->getOutputs().push_back(array_join_column_node);
+            array_join_expressions_output_nodes.insert(array_join_column_node->result_name);
         }
     }
 
@@ -857,6 +861,35 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), array_join_action_dag);
     array_join_actions->setStepDescription("ARRAY JOIN actions");
     plan.addStep(std::move(array_join_actions));
+
+    auto drop_unused_columns_before_array_join_actions_dag = std::make_shared<ActionsDAG>(plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs drop_unused_columns_before_array_join_actions_dag_updated_outputs;
+    std::unordered_set<std::string_view> drop_unused_columns_before_array_join_actions_dag_updated_outputs_names;
+
+    auto & drop_unused_columns_before_array_join_actions_dag_outputs = drop_unused_columns_before_array_join_actions_dag->getOutputs();
+    size_t drop_unused_columns_before_array_join_actions_dag_outputs_size = drop_unused_columns_before_array_join_actions_dag_outputs.size();
+
+    for (size_t i = 0; i < drop_unused_columns_before_array_join_actions_dag_outputs_size; ++i)
+    {
+        const auto & output = drop_unused_columns_before_array_join_actions_dag_outputs[i];
+
+        if (drop_unused_columns_before_array_join_actions_dag_updated_outputs_names.contains(output->result_name))
+            continue;
+
+        if (!array_join_expressions_output_nodes.contains(output->result_name) &&
+            !outer_scope_columns.contains(output->result_name))
+            continue;
+
+        drop_unused_columns_before_array_join_actions_dag_updated_outputs.push_back(output);
+        drop_unused_columns_before_array_join_actions_dag_updated_outputs_names.insert(output->result_name);
+    }
+
+    drop_unused_columns_before_array_join_actions_dag_outputs = std::move(drop_unused_columns_before_array_join_actions_dag_updated_outputs);
+
+    auto drop_unused_columns_before_array_join_transform_step = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(),
+        std::move(drop_unused_columns_before_array_join_actions_dag));
+    drop_unused_columns_before_array_join_transform_step->setStepDescription("DROP unused columns before ARRAY JOIN");
+    plan.addStep(std::move(drop_unused_columns_before_array_join_transform_step));
 
     auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_column_names, array_join_node.isLeft(), planner_context->getQueryContext());
     auto array_join_step = std::make_unique<ArrayJoinStep>(plan.getCurrentDataStream(), std::move(array_join_action));
@@ -885,9 +918,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     for (Int64 i = static_cast<Int64>(table_expressions_stack_size) - 1; i >= 0; --i)
     {
         table_expressions_outer_scope_columns[i] = current_outer_scope_columns;
+        auto & table_expression = table_expressions_stack[i];
+        auto table_expression_type = table_expression->getNodeType();
 
-        if (table_expressions_stack[i]->getNodeType() == QueryTreeNodeType::JOIN)
-            collectTopLevelColumnIdentifiers(table_expressions_stack[i], planner_context, current_outer_scope_columns);
+        if (table_expression_type == QueryTreeNodeType::JOIN)
+            collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
+        else if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
+            collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
     }
 
     std::vector<JoinTreeQueryPlan> query_plans_stack;
@@ -906,6 +943,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             auto query_plan = std::move(query_plans_stack.back());
             query_plans_stack.back() = buildQueryPlanForArrayJoinNode(table_expression,
                 std::move(query_plan),
+                table_expressions_outer_scope_columns[i],
                 planner_context);
         }
         else if (auto * join_node = table_expression->as<JoinNode>())
