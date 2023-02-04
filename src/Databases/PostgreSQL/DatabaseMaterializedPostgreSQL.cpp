@@ -149,8 +149,7 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
 
             need_update_on_disk = true;
         }
-        else if ((change.name == "materialized_postgresql_allow_automatic_update")
-                 || (change.name == "materialized_postgresql_max_block_size"))
+        else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
             replication_handler->setSetting(change);
             need_update_on_disk = true;

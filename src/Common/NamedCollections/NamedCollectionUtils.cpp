@@ -180,20 +180,20 @@ public:
         auto create_query = readCreateQueryFromMetadata(path, getContext()->getSettings());
 
         std::unordered_map<std::string, Field> result_changes_map;
-        for (const auto & change : query.changes)
+        for (const auto & [name, value] : query.changes)
         {
-            auto [it, inserted] = result_changes_map.emplace(change.name, change.value);
+            auto [it, inserted] = result_changes_map.emplace(name, value);
             if (!inserted)
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Value with key `{}` is used twice in the SET query (collection name: {})",
-                    change.name, query.collection_name);
+                    name, query.collection_name);
             }
         }
 
-        for (const auto & change : create_query.changes)
-            result_changes_map.emplace(change.name, change.value);
+        for (const auto & [name, value] : create_query.changes)
+            result_changes_map.emplace(name, value);
 
         for (const auto & delete_key : query.delete_keys)
         {
@@ -253,8 +253,8 @@ private:
             collection_name, query.changes);
 
         std::set<std::string, std::less<>> keys;
-        for (const auto & change : query.changes)
-            keys.insert(change.name);
+        for (const auto & [name, _] : query.changes)
+            keys.insert(name);
 
         return NamedCollection::create(
             *config, collection_name, "", keys, SourceId::SQL, /* is_mutable */true);
@@ -378,8 +378,8 @@ void updateFromSQL(const ASTAlterNamedCollectionQuery & query, ContextPtr contex
     auto collection = NamedCollectionFactory::instance().getMutable(query.collection_name);
     auto collection_lock = collection->lock();
 
-    for (const auto & change : query.changes)
-        collection->setOrUpdate<String, true>(change.name, convertFieldToString(change.value));
+    for (const auto & [name, value] : query.changes)
+        collection->setOrUpdate<String, true>(name, convertFieldToString(value));
 
     for (const auto & key : query.delete_keys)
         collection->remove<true>(key);
