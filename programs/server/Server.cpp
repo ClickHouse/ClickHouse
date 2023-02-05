@@ -82,9 +82,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
-#if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
-#endif
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -126,6 +124,10 @@
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
 namespace CurrentMetrics
@@ -750,6 +752,19 @@ try
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000));
 
+#if USE_AZURE_BLOB_STORAGE
+    /// It makes sense to deinitialize libxml after joining of all threads
+    /// in global pool because libxml uses thread-local memory allocations via
+    /// 'pthread_key_create' and 'pthread_setspecific' which should be deallocated
+    /// at 'pthread_exit'. Deinitialization of libxml leads to call of 'pthread_key_delete'
+    /// and if it is done before joining of threads, allocated memory will not be freed
+    /// and there may be memory leaks in threads that used libxml.
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
+
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
@@ -1332,9 +1347,7 @@ try
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
             global_context->updateQueryCacheConfiguration(*config);
-#if USE_BORINGSSL
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-#endif
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
@@ -1542,10 +1555,8 @@ try
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
     }
-#if USE_BORINGSSL
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-#endif
 
     SCOPE_EXIT({
         async_metrics.stop();
