@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <memory>
 #include <base/defines.h>
@@ -39,19 +40,15 @@ public:
     /// Obtain current version for read-only usage. Returns shared_ptr, that manages lifetime of version.
     Version get() const
     {
-        /// NOTE: is it possible to lock-free replace of shared_ptr?
-        std::lock_guard lock(mutex);
-        return current_version;
+        return std::atomic_load(&current_version);
     }
 
     /// Update an object with new version.
     void set(std::unique_ptr<const T> && value)
     {
-        std::lock_guard lock(mutex);
-        current_version = std::move(value);
+        std::atomic_store(&current_version, Version{std::move(value)});
     }
 
 private:
-    Version current_version TSA_GUARDED_BY(mutex);
-    mutable std::mutex mutex;
+    Version current_version;
 };
