@@ -2960,14 +2960,21 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     bool join_use_nulls = scope.context->getSettingsRef().join_use_nulls;
 
-    if (join_use_nulls
-        && (isFull(join_kind) ||
-            (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
-            (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
+    if (join_use_nulls &&
+        resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN &&
+        (isFull(join_kind) ||
+        (isLeft(join_kind) && resolved_side && *resolved_side == JoinTableSide::Right) ||
+        (isRight(join_kind) && resolved_side && *resolved_side == JoinTableSide::Left)))
     {
         resolved_identifier = resolved_identifier->clone();
         auto & resolved_column = resolved_identifier->as<ColumnNode &>();
-        resolved_column.setColumnType(makeNullable(resolved_column.getColumnType()));
+        const auto & resolved_column_type = resolved_column.getColumnType();
+        const auto & resolved_column_name = resolved_column.getColumnName();
+
+        auto to_nullable_function_resolver = FunctionFactory::instance().get("toNullable", scope.context);
+        auto to_nullable_function_arguments = {ColumnWithTypeAndName(nullptr, resolved_column_type, resolved_column_name)};
+        auto to_nullable_function = to_nullable_function_resolver->build(to_nullable_function_arguments);
+        resolved_column.setColumnType(to_nullable_function->getResultType());
     }
 
     return resolved_identifier;
