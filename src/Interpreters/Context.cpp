@@ -3629,6 +3629,32 @@ void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback
     merge_tree_read_task_callback = callback;
 }
 
+
+MergeTreeAllRangesCallback Context::getMergeTreeAllRangesCallback() const
+{
+    if (!merge_tree_all_ranges_callback.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query with id: {}", getInitialQueryId());
+
+    return merge_tree_all_ranges_callback.value();
+}
+
+
+void Context::setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback)
+{
+    merge_tree_all_ranges_callback = callback;
+}
+
+
+void Context::setParallelReplicasGroupUUID(UUID uuid)
+{
+    parallel_replicas_group_uuid = uuid;
+}
+
+UUID Context::getParallelReplicasGroupUUID() const
+{
+    return parallel_replicas_group_uuid;
+}
+
 PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 {
     auto lock = getLock();
@@ -3892,6 +3918,24 @@ WriteSettings Context::getWriteSettings() const
     res.remote_throttler = getRemoteWriteThrottler();
 
     return res;
+}
+
+bool Context::canUseParallelReplicasOnInitiator() const
+{
+    const auto & settings = getSettingsRef();
+    return settings.allow_experimental_parallel_reading_from_replicas
+        && settings.max_parallel_replicas > 1
+        && !settings.use_hedged_requests
+        && !getClientInfo().collaborate_with_initiator;
+}
+
+bool Context::canUseParallelReplicasOnFollower() const
+{
+    const auto & settings = getSettingsRef();
+    return settings.allow_experimental_parallel_reading_from_replicas
+        && settings.max_parallel_replicas > 1
+        && !settings.use_hedged_requests
+        && getClientInfo().collaborate_with_initiator;
 }
 
 }
