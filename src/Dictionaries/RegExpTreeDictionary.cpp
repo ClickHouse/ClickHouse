@@ -422,7 +422,7 @@ bool RegExpTreeDictionary::setAttributes(
     if (parent_id > 0)
         setAttributes(parent_id, attributes_to_set, data, visited_nodes, attributes, defaults, key_index);
 
-    // if all the attributes have set, the walking through can be stopped.
+    /// if all the attributes have set, the walking through can be stopped.
     return attributes_to_set.size() == attributes.size();
 }
 
@@ -542,15 +542,12 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
             }
         }
 
-        LOG_TRACE(logger, "match string is {}, first matched id is {}, match number is {}", std::string(reinterpret_cast<const char *>(keys_data.data()) + offset, length), match_result.matched_idx_set.empty() ? -1 : *match_result.matched_idx_set.begin(), match_result.matched_idx_set.size());
-
         match_result.sort();
-
-        // Walk through the regex tree util all attributes are set;
+        /// Walk through the regex tree util all attributes are set;
         std::unordered_map<String, Field> attributes_to_set;
         std::unordered_set<UInt64> visited_nodes;
 
-        // Some node matches but its parents cannot match. In this case we must regard this node unmatched.
+        /// Some node matches but its parents cannot match. In this case we must regard this node unmatched.
         auto is_invalid = [&](UInt64 id)
         {
             while (id)
@@ -584,7 +581,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
             columns[name]->insert(default_value.getDefaultValue(key_idx));
         }
 
-        // insert to columns
+        /// insert to columns
         for (const auto & [name, value] : attributes_to_set)
             columns[name]->insert(value);
 
