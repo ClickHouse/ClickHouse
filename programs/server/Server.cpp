@@ -128,6 +128,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -416,7 +420,7 @@ void Server::createServer(
         }
         else
         {
-            throw Exception{message, ErrorCodes::NETWORK_ERROR};
+            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
         }
     }
 }
@@ -750,6 +754,19 @@ try
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000));
 
+#if USE_AZURE_BLOB_STORAGE
+    /// It makes sense to deinitialize libxml after joining of all threads
+    /// in global pool because libxml uses thread-local memory allocations via
+    /// 'pthread_key_create' and 'pthread_setspecific' which should be deallocated
+    /// at 'pthread_exit'. Deinitialization of libxml leads to call of 'pthread_key_delete'
+    /// and if it is done before joining of threads, allocated memory will not be freed
+    /// and there may be memory leaks in threads that used libxml.
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
+
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
@@ -946,7 +963,7 @@ try
         if (effective_user_id == 0)
         {
             message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
         }
         else
         {
@@ -1517,13 +1534,13 @@ try
         global_context->setMMappedFileCache(mmap_cache_size);
 
     /// A cache for query results.
-    size_t query_result_cache_size = config().getUInt64("query_result_cache.size", 1_GiB);
-    if (query_result_cache_size)
-        global_context->setQueryResultCache(
-            query_result_cache_size,
-            config().getUInt64("query_result_cache.max_entries", 1024),
-            config().getUInt64("query_result_cache.max_entry_size", 1_MiB),
-            config().getUInt64("query_result_cache.max_entry_records", 30'000'000));
+    size_t query_cache_size = config().getUInt64("query_cache.size", 1_GiB);
+    if (query_cache_size)
+        global_context->setQueryCache(
+            query_cache_size,
+            config().getUInt64("query_cache.max_entries", 1024),
+            config().getUInt64("query_cache.max_entry_size", 1_MiB),
+            config().getUInt64("query_cache.max_entry_records", 30'000'000));
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB

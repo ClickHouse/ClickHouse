@@ -520,7 +520,7 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
         }
         catch (...)
         {
-            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus::fromCurrentException("", true));
             throw;
         }
     }
@@ -588,7 +588,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::writeExistingPart(MergeTreeData:
     }
     catch (...)
     {
-        PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
 }
@@ -748,9 +748,10 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             log_entry.new_part_name = part->name;
             /// TODO maybe add UUID here as well?
             log_entry.quorum = getQuorumSize(replicas_num);
+            log_entry.new_part_format = part->getFormat();
+
             if constexpr (!async_insert)
                 log_entry.block_id = block_id;
-            log_entry.new_part_type = part->getType();
 
             ops.emplace_back(zkutil::makeCreateRequest(
                 storage.zookeeper_path + "/log/log-",

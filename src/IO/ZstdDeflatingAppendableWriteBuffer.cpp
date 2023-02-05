@@ -142,8 +142,17 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
                             ZSTD_getErrorName(remaining), ZSTD_VERSION_STRING);
 
         remaining = ZSTD_compressStream2(cctx, &output, &input, ZSTD_e_end);
+
+        out->position() = out->buffer().begin() + output.pos;
+
+        if (!out->hasPendingData())
+        {
+            out->next();
+            output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
+            output.size = out->buffer().size();
+            output.pos = out->offset();
+        }
     }
-    out->position() = out->buffer().begin() + output.pos;
 }
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()

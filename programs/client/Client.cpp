@@ -1,3 +1,4 @@
+#include <boost/algorithm/string/join.hpp>
 #include <cstdlib>
 #include <fcntl.h>
 #include <map>
@@ -127,6 +128,69 @@ void Client::showWarnings()
     }
 }
 
+void Client::parseConnectionsCredentials()
+{
+    /// It is not possible to correctly handle multiple --host --port options.
+    if (hosts_and_ports.size() >= 2)
+        return;
+
+    String host;
+    std::optional<UInt16> port;
+    if (hosts_and_ports.empty())
+    {
+        host = config().getString("host", "localhost");
+        if (config().has("port"))
+            port = config().getInt("port");
+    }
+    else
+    {
+        host = hosts_and_ports.front().host;
+        port = hosts_and_ports.front().port;
+    }
+
+    Strings keys;
+    config().keys("connections_credentials", keys);
+    for (const auto & connection : keys)
+    {
+        const String & prefix = "connections_credentials." + connection;
+
+        const String & connection_name = config().getString(prefix + ".name", "");
+        if (connection_name != host)
+            continue;
+
+        String connection_hostname;
+        if (config().has(prefix + ".hostname"))
+            connection_hostname = config().getString(prefix + ".hostname");
+        else
+            connection_hostname = connection_name;
+
+        /// Set "host" unconditionally (since it is used as a "name"), while
+        /// other options only if they are not set yet (config.xml/cli
+        /// options).
+        config().setString("host", connection_hostname);
+        if (!hosts_and_ports.empty())
+            hosts_and_ports.front().host = connection_hostname;
+
+        if (config().has(prefix + ".port") && !port.has_value())
+            config().setInt("port", config().getInt(prefix + ".port"));
+        if (config().has(prefix + ".secure") && !config().has("secure"))
+            config().setBool("secure", config().getBool(prefix + ".secure"));
+        if (config().has(prefix + ".user") && !config().has("user"))
+            config().setString("user", config().getString(prefix + ".user"));
+        if (config().has(prefix + ".password") && !config().has("password"))
+            config().setString("password", config().getString(prefix + ".password"));
+        if (config().has(prefix + ".database") && !config().has("database"))
+            config().setString("database", config().getString(prefix + ".database"));
+        if (config().has(prefix + ".history_file") && !config().has("history_file"))
+        {
+            String history_file = config().getString(prefix + ".history_file");
+            if (history_file.starts_with("~") && !home_path.empty())
+                history_file = home_path + "/" + history_file.substr(1);
+            config().setString("history_file", history_file);
+        }
+    }
+}
+
 /// Make query to get all server warnings
 std::vector<String> Client::loadWarningMessages()
 {
@@ -215,6 +279,8 @@ void Client::initialize(Poco::Util::Application & self)
     const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
     if (env_password)
         config().setString("password", env_password);
+
+    parseConnectionsCredentials();
 
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
@@ -473,24 +539,28 @@ void Client::connect()
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
 void Client::printChangedSettings() const
 {
-    const auto & changes = global_context->getSettingsRef().changes();
-    if (!changes.empty())
+    auto print_changes = [](const auto & changes, std::string_view settings_name)
     {
-        fmt::print(stderr, "Changed settings: ");
-        for (size_t i = 0; i < changes.size(); ++i)
+        if (!changes.empty())
         {
-            if (i)
+            fmt::print(stderr, "Changed {}: ", settings_name);
+            for (size_t i = 0; i < changes.size(); ++i)
             {
-                fmt::print(stderr, ", ");
+                if (i)
+                    fmt::print(stderr, ", ");
+                fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
             }
-            fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
+
+            fmt::print(stderr, "\n");
         }
-        fmt::print(stderr, "\n");
-    }
-    else
-    {
-        fmt::print(stderr, "No changed settings.\n");
-    }
+        else
+        {
+            fmt::print(stderr, "No changed {}.\n", settings_name);
+        }
+    };
+
+    print_changes(global_context->getSettingsRef().changes(), "settings");
+    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
 }
 
 
@@ -719,7 +789,7 @@ bool Client::processWithFuzzing(const String & full_query)
             // uniformity.
             // Surprisingly, this is a client exception, because we get the
             // server exception w/o throwing (see onReceiveException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -854,7 +924,7 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -1287,6 +1357,8 @@ void Client::readArguments(
             }
             else if (arg == "--allow_repeated_settings")
                 allow_repeated_settings = true;
+            else if (arg == "--allow_merge_tree_settings")
+                allow_merge_tree_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }

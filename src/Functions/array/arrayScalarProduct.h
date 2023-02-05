@@ -143,11 +143,8 @@ public:
             || (res = executeNumber<Int64>(arguments))
             || (res = executeNumber<Float32>(arguments))
             || (res = executeNumber<Float64>(arguments))))
-            throw Exception
-            {
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
 
         return res;
     }
