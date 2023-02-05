@@ -1470,16 +1470,12 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     String table_to_replace_name = create.getTable();
 
     {
-        if (!create.temporary)
-        {
-            auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
-            if (database->getUUID() == UUIDHelpers::Nil)
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "{} query is supported only for Atomic databases",
-                    create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
-
-        }
+        auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        if (database->getUUID() == UUIDHelpers::Nil)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} query is supported only for Atomic databases",
+                create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
 
         UInt64 name_hash = sipHash64(create.getDatabase() + create.getTable());
         UInt16 random_suffix = thread_local_rng();
