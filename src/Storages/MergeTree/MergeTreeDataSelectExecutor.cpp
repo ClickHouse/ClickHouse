@@ -876,7 +876,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes)
 {
-    RangesInDataParts parts_with_ranges(parts.size());
+    RangesInDataParts parts_with_ranges;
+    parts_with_ranges.resize(parts.size());
     const Settings & settings = context->getSettingsRef();
 
     /// Let's start analyzing all useful indices
@@ -1010,7 +1011,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (metadata_snapshot->hasPrimaryKey())
                 ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
             else if (total_marks_count)
-                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+                ranges.ranges = MarkRanges{{MarkRange{0, total_marks_count}}};
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 

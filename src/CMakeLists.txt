@@ -343,8 +343,8 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 endif ()
 
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
+target_link_libraries(common PUBLIC ch_contrib::re2_st)
+target_link_libraries(common PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
         PUBLIC
@@ -511,6 +511,11 @@ endif()
 
 if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
+endif()
+
+if (TARGET ch_contrib::liburing)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::liburing)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LIBURING_COMPAT_INCLUDE_DIR} ${LIBURING_INCLUDE_DIR})
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
