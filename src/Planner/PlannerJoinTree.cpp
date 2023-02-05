@@ -678,7 +678,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     for (auto & column_from_joined_table : columns_from_joined_table)
     {
-        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name))
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
+            outer_scope_columns.contains(column_from_joined_table.name))
             table_join->addJoinedColumn(column_from_joined_table);
     }
 
