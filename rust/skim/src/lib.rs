@@ -11,10 +11,25 @@ mod ffi {
 
 struct Item {
     text: String,
+    orig_text: String,
+}
+impl Item {
+    fn new(text: String) -> Self {
+        return Self{
+            // Text that will be shown should not contains new lines since in this case skim may
+            // live some symbols on the screen, and this looks odd.
+            text: text.replace("\n", " "),
+            orig_text: text,
+        };
+    }
 }
 impl SkimItem for Item {
     fn text(&self) -> Cow<str> {
         return Cow::Borrowed(&self.text);
+    }
+
+    fn output(&self) -> Cow<str> {
+        return Cow::Borrowed(&self.orig_text);
     }
 }
 
@@ -34,7 +49,7 @@ fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, Stri
 
     let (tx, rx): (SkimItemSender, SkimItemReceiver) = unbounded();
     for word in words {
-        tx.send(Arc::new(Item{ text: word.to_string() })).unwrap();
+        tx.send(Arc::new(Item::new(word.to_string()))).unwrap();
     }
     // so that skim could know when to stop waiting for more items.
     drop(tx);

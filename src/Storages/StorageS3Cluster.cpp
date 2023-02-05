@@ -8,6 +8,7 @@
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
 #include <DataTypes/DataTypeString.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -32,8 +33,6 @@
 #include <Common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <memory>
 #include <string>
