@@ -3000,6 +3000,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
         == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
     )
 
+
 @pytest.mark.skip(reason="FIXME: broken")
 def test_max_rows_per_message(rabbitmq_cluster):
     num_rows = 5
