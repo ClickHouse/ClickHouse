@@ -679,9 +679,8 @@ void StorageDistributed::read(
     }
 
     const auto & modified_query_ast = ClusterProxy::rewriteSelectQuery(
-        local_context, query_info.query,
+        local_context, query_ast,
         remote_database, remote_table, remote_table_function_ptr);
-
 
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
