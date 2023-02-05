@@ -99,7 +99,11 @@ void updateStepsDataStreams(StepStack & steps_to_update)
 
         while (!steps_to_update.empty())
         {
-            dynamic_cast<ITransformingStep *>(steps_to_update.back())->updateInputStream(*input_stream);
+            auto * transforming_step = dynamic_cast<ITransformingStep *>(steps_to_update.back());
+            if (!transforming_step)
+                break;
+
+            transforming_step->updateInputStream(*input_stream);
             input_stream = &steps_to_update.back()->getOutputStream();
             steps_to_update.pop_back();
         }
