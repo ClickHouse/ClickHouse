@@ -1433,6 +1433,25 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                                                        const InterpreterCreateQuery::TableProperties & properties)
 {
+    if (create.temporary)
+    {
+        /// Since temporary table does not support RENAME query, so we just simply
+        /// drop old table and create new table.
+        auto ast_drop = std::make_shared<ASTDropQuery>();
+        ast_drop->setTable(create.getTable());
+        ast_drop->temporary = create.temporary;
+        ast_drop->if_exists = true;
+        ast_drop->kind = ASTDropQuery::Drop;
+        InterpreterDropQuery(ast_drop, getContext()).execute();
+
+        // If some exception happened here, will lead to old table data lost without new table creation
+        DDLGuardPtr ddl_guard;
+        InterpreterCreateQuery(query_ptr, getContext()).doCreateTable(create, properties, ddl_guard);
+        ddl_guard.reset();
+
+        return fillTableIfNeeded(create);
+    }
+
     /// Replicated database requires separate contexts for each DDL query
     ContextPtr current_context = getContext();
     if (auto txn = current_context->getZooKeeperMetadataTransaction())
@@ -1451,12 +1470,16 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     String table_to_replace_name = create.getTable();
 
     {
-        auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
-        if (database->getUUID() == UUIDHelpers::Nil)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "{} query is supported only for Atomic databases",
-                            create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+        if (!create.temporary)
+        {
+            auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+            if (database->getUUID() == UUIDHelpers::Nil)
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "{} query is supported only for Atomic databases",
+                    create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
 
+        }
 
         UInt64 name_hash = sipHash64(create.getDatabase() + create.getTable());
         UInt16 random_suffix = thread_local_rng();
@@ -1465,9 +1488,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// Avoid different table name on database replicas
             random_suffix = sipHash64(txn->getTaskZooKeeperPath());
         }
-        create.setTable(fmt::format("_tmp_replace_{}_{}",
-                            getHexUIntLowercase(name_hash),
-                            getHexUIntLowercase(random_suffix)));
+
+        create.setTable(fmt::format("_tmp_replace_{}_{}", getHexUIntLowercase(name_hash), getHexUIntLowercase(random_suffix)));
 
         ast_drop->setTable(create.getTable());
         ast_drop->is_dictionary = create.is_dictionary;
