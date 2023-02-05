@@ -163,7 +163,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(Nsted)
+REGISTER_FUNCTION(Nested)
 {
     factory.registerFunction<FunctionNested>();
 }
