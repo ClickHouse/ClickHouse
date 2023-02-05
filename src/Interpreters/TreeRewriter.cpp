@@ -1413,7 +1413,7 @@ void TreeRewriter::normalize(
     CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
     CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
 
-    if (settings.optimize_rewrite_count_distinct_if)
+    if (settings.rewrite_count_distinct_if_with_count_distinct_implementation)
     {
         CustomizeCountDistinctIfVisitor::Data data_count_distinct_if{settings.count_distinct_implementation.toString() + "If"};
         CustomizeCountDistinctIfVisitor(data_count_distinct_if).visit(query);

@@ -54,6 +54,13 @@ public:
                 function_name_lowercase = Poco::toLower(function_name);
             }
 
+            if (settings.rewrite_count_distinct_if_with_count_distinct_implementation && function_name_lowercase == "countdistinctif")
+            {
+                resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name + "If");
+                function_name = function_node->getFunctionName();
+                function_name_lowercase = Poco::toLower(function_name);
+            }
+
             /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
             if (function_name_lowercase.ends_with("ifdistinct"))
             {
