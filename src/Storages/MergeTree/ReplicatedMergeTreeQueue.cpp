@@ -1769,7 +1769,7 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
     /// of part's metadata. It mean that even if we have mutation with version X and part with data version X+10, but
     /// without mutation version part can still have wrong metadata and we have to apply this change on-fly if needed.
 
-    for (auto [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
+    for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
     {
         if (mutation_status->entry->alter_version != -1)
         {
