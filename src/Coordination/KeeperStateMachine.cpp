@@ -640,4 +640,12 @@ ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
     return nullptr;
 }
 
+void KeeperStateMachine::recalculateStorageStats()
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    LOG_INFO(log, "Recalculating storage stats");
+    storage->recalculateStats();
+    LOG_INFO(log, "Done recalculating storage stats");
+}
+
 }

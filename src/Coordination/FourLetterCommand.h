@@ -377,4 +377,17 @@ struct RequestLeaderCommand : public IFourLetterCommand
     ~RequestLeaderCommand() override = default;
 };
 
+/// Request to be leader.
+struct RecalculateCommand : public IFourLetterCommand
+{
+    explicit RecalculateCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rclc"; }
+    String run() override;
+    ~RecalculateCommand() override = default;
+};
+
 }
