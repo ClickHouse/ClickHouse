@@ -2613,6 +2613,14 @@ void MergeTreeData::dropAllData()
         if (disk->isBroken())
             continue;
 
+        /// It can naturally happen if we cannot drop table from the first time
+        /// i.e. get exceptions after remove recursive
+        if (!disk->exists(relative_data_path))
+        {
+            LOG_INFO(log, "dropAllData: path {} is already removed from disk {}", relative_data_path, disk->getName());
+            continue;
+        }
+
         LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
 
@@ -3385,6 +3393,28 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
     }
 }
 
+void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & /*lock*/) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & columns = metadata_snapshot->getColumns();
+
+    if (!hasDynamicSubcolumns(columns))
+        return;
+
+    const auto & part_columns = part->getColumns();
+    for (const auto & part_column : part_columns)
+    {
+        auto storage_column = columns.getPhysical(part_column.name);
+        if (!storage_column.type->hasDynamicSubcolumns())
+            continue;
+
+        auto concrete_storage_column = object_columns.getPhysical(part_column.name);
+
+        /// It will throw if types are incompatible.
+        getLeastCommonTypeForDynamicColumns(storage_column.type, {concrete_storage_column.type, part_column.type}, true);
+    }
+}
+
 void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename)
 {
     part->is_temp = false;
@@ -3419,6 +3449,7 @@ bool MergeTreeData::addTempPart(
 
     checkPartPartition(part, lock);
     checkPartDuplicate(part, out_transaction, lock);
+    checkPartDynamicColumns(part, lock);
 
     DataPartPtr covering_part;
     DataPartsVector covered_parts = getActivePartsToReplace(part->info, part->name, covering_part, lock);
@@ -3459,6 +3490,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     part->assertState({DataPartState::Temporary});
     checkPartPartition(part, lock);
     checkPartDuplicate(part, out_transaction, lock);
+    checkPartDynamicColumns(part, lock);
 
     PartHierarchy hierarchy = getPartHierarchy(part->info, DataPartState::Active, lock);
 
