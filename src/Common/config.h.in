@@ -29,6 +29,7 @@
 #cmakedefine01 USE_FASTOPS
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_VECTORSCAN
+#cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_AVRO
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_PARQUET
