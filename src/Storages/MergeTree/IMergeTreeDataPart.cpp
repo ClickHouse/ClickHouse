@@ -976,6 +976,12 @@ void IMergeTreeDataPart::removeVersionMetadata()
     getDataPartStorage().removeFileIfExists("txn_version.txt");
 }
 
+
+void IMergeTreeDataPart::removeMetadataVersion()
+{
+    getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
+}
+
 void IMergeTreeDataPart::appendFilesOfDefaultCompressionCodec(Strings & files)
 {
     files.push_back(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
