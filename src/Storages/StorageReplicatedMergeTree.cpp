@@ -71,14 +71,17 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/PartLog.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/JoinedTables.h>
+
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
@@ -2337,7 +2340,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     }
     catch (...)
     {
-        PartLog::addNewParts(getContext(), res_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        PartLog::addNewParts(getContext(), res_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
 
         for (const auto & res_part : res_parts)
             unlockSharedData(*res_part);
@@ -4190,7 +4193,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     catch (...)
     {
         if (!to_detached)
-            write_part_log(ExecutionStatus::fromCurrentException());
+            write_part_log(ExecutionStatus::fromCurrentException("", true));
 
         throw;
     }
@@ -4300,7 +4303,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     }
     catch (...)
     {
-        write_part_log(ExecutionStatus::fromCurrentException());
+        write_part_log(ExecutionStatus::fromCurrentException("", true));
         throw;
     }
 
@@ -4543,9 +4546,6 @@ void StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const size_t num_streams)
 {
-    /// If true, then we will ask initiator if we can read chosen ranges
-    const bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
-
     SCOPE_EXIT({
         /// Now, copy of parts that is required for the query, stored in the processors,
         /// while snapshot_data.parts includes all parts, even one that had been filtered out with partition pruning,
@@ -4564,16 +4564,43 @@ void StorageReplicatedMergeTree::read(
         auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
         if (auto plan = reader.read(
                 column_names, storage_snapshot, query_info, local_context,
-                max_block_size, num_streams, processed_stage, std::move(max_added_blocks), enable_parallel_reading))
+                max_block_size, num_streams, processed_stage, std::move(max_added_blocks), /*enable_parallel_reading*/false))
             query_plan = std::move(*plan);
         return;
     }
 
-    if (auto plan = reader.read(
-        column_names, storage_snapshot, query_info, local_context,
-        max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
+    if (local_context->canUseParallelReplicasOnInitiator())
     {
-        query_plan = std::move(*plan);
+        auto table_id = getStorageID();
+
+        const auto & modified_query_ast =  ClusterProxy::rewriteSelectQuery(
+            local_context, query_info.query,
+            table_id.database_name, table_id.table_name, /*remote_table_function_ptr*/nullptr);
+
+        auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
+
+        Block header =
+            InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+        ClusterProxy::SelectStreamFactory select_stream_factory =
+            ClusterProxy::SelectStreamFactory(
+                header,
+                {},
+                storage_snapshot,
+                processed_stage);
+
+        ClusterProxy::executeQueryWithParallelReplicas(
+            query_plan, getStorageID(), /*remove_table_function_ptr*/ nullptr,
+            select_stream_factory, modified_query_ast,
+            local_context, query_info, cluster);
+    }
+    else
+    {
+        if (auto plan = reader.read(
+            column_names, storage_snapshot, query_info,
+            local_context, max_block_size, num_streams,
+            processed_stage, nullptr, /*enable_parallel_reading*/local_context->canUseParallelReplicasOnFollower()))
+            query_plan = std::move(*plan);
     }
 }
 
@@ -7041,7 +7068,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
             for (const auto & dst_part : dst_parts)
                 unlockSharedData(*dst_part);
 
@@ -7270,7 +7297,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         }
         catch (...)
         {
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException("", true));
 
             for (const auto & dst_part : dst_parts)
                 dest_table_storage->unlockSharedData(*dst_part);
@@ -8483,14 +8510,14 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     return res;
 }
 
-bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk)
+bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica)
 {
     auto path = getZeroCopyPartPath(part_name, disk);
     if (path)
     {
         /// FIXME
         auto lock_path = fs::path(*path) / "part_exclusive_lock";
-        if (getZooKeeper()->exists(lock_path))
+        if (getZooKeeper()->tryGet(lock_path, lock_replica))
         {
             return true;
         }
@@ -8523,7 +8550,7 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
     zookeeper->createIfNotExists(zc_zookeeper_path, "");
 
     /// Create actual lock
-    ZeroCopyLock lock(zookeeper, zc_zookeeper_path);
+    ZeroCopyLock lock(zookeeper, zc_zookeeper_path, replica_name);
     if (lock.lock->tryLock())
         return lock;
     else

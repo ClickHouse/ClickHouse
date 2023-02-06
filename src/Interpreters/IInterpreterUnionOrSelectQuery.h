@@ -44,8 +44,6 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
-
     /// Returns whether the query uses the view source from the Context
     /// The view source is a virtual storage that currently only materialized views use to replace the source table
     /// with the incoming block only
