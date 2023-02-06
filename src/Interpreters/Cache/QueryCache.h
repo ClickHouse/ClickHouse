@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Processors/Chunk.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -132,7 +133,7 @@ public:
         friend class QueryCache; /// for createReader()
     };
 
-    QueryCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_);
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     Reader createReader(const Key & key);
     Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime);
@@ -154,11 +155,13 @@ private:
     Cache cache TSA_GUARDED_BY(mutex);
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
 
-    size_t cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0; /// updated in each cache insert/delete
-    const size_t max_cache_size_in_bytes;
-    const size_t max_cache_entries;
-    const size_t max_cache_entry_size_in_bytes;
-    const size_t max_cache_entry_size_in_rows;
+    /// Cache configuration
+    size_t max_cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
+    size_t max_cache_entries TSA_GUARDED_BY(mutex) = 0;
+    size_t max_cache_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
+    size_t max_cache_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
+
+    size_t cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0; /// Updated in each cache insert/delete
 
     friend class StorageSystemQueryCache;
 };
