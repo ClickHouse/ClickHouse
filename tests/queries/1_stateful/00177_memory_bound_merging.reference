@@ -15,7 +15,7 @@ ExpressionTransform × 16
   (MergingAggregated)
   MergingAggregatedBucketTransform × 16
     Resize 1 → 16
-      FinishAggregatingInOrderTransform 2 → 1
+      FinishAggregatingInOrderTransform 3 → 1
         (Union)
           (Aggregating)
           SortingAggregatedForMemoryBoundMergingTransform 16 → 1
