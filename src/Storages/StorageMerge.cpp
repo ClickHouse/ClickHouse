@@ -664,7 +664,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
-            column.type = std::make_shared<DataTypeString>();
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(database_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -682,7 +682,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
-            column.type = std::make_shared<DataTypeString>();
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(table_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -980,7 +980,9 @@ void registerStorageMerge(StorageFactory & factory)
 
 NamesAndTypesList StorageMerge::getVirtuals() const
 {
-    NamesAndTypesList virtuals{{"_database", std::make_shared<DataTypeString>()}, {"_table", std::make_shared<DataTypeString>()}};
+    NamesAndTypesList virtuals{
+        {"_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto first_table = getFirstTable([](auto && table) { return table; });
     if (first_table)

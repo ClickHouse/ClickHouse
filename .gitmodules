@@ -257,6 +257,9 @@
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
+[submodule "contrib/idxd-config"]
+	path = contrib/idxd-config
+	url = https://github.com/intel/idxd-config
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -333,3 +336,6 @@
 [submodule "contrib/duckdb-amalgamation"]
 	path = contrib/duckdb-amalgamation
 	url = https://github.com/evillique/duckdb-amalgamation.git
+[submodule "contrib/liburing"]
+	path = contrib/liburing
+	url = https://github.com/axboe/liburing

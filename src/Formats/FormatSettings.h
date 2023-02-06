@@ -158,6 +158,7 @@ struct FormatSettings
         bool read_named_tuples_as_objects = false;
         bool write_named_tuples_as_objects = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
+        bool ignore_unknown_keys_in_named_tuple = false;
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
         bool read_numbers_as_strings = true;
@@ -182,6 +183,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
+        UInt64 max_block_size = 8192;
     } parquet;
 
     struct Pretty

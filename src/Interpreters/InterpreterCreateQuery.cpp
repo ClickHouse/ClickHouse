@@ -683,12 +683,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             for (const auto & index : create.columns_list->indices->children)
             {
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
-                if (index_desc.type == GinFilter::FilterName && getContext()->getSettingsRef().allow_experimental_inverted_index == false)
+                const auto & settings = getContext()->getSettingsRef();
+                if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Experimental Inverted Index feature is not enabled (the setting 'allow_experimental_inverted_index')");
                 }
-                if (index_desc.type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
+                if (index_desc.type == "annoy" && !settings.allow_experimental_annoy_index)
                     throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index is disabled. Turn on allow_experimental_annoy_index");
 
                 properties.indices.push_back(index_desc);
@@ -1702,7 +1703,6 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
 {
-    elem.query_kind = "Create";
     if (!as_table_saved.empty())
     {
         String database = backQuoteIfNeed(as_database_saved.empty() ? getContext()->getCurrentDatabase() : as_database_saved);
