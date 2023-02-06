@@ -55,6 +55,8 @@ public:
     {
         return removeOnCluster<ASTOptimizeQuery>(clone(), params.default_database);
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Optimize; }
 };
 
 }

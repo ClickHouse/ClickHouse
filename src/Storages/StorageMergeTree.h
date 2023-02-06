@@ -86,7 +86,7 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     bool hasLightweightDeletedMask() const override;
 

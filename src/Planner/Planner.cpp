@@ -1377,8 +1377,7 @@ void Planner::buildPlanForQueryNode()
           */
         if (query_node.hasLimit() && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
-
-        if (apply_offset && query_node.hasOffset())
+        else if (!limit_applied && apply_offset && query_node.hasOffset())
             addOffsetStep(query_plan, query_analysis_result);
 
         const auto & projection_analysis_result = expression_analysis_result.getProjection();

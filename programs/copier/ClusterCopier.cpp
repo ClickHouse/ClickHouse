@@ -6,7 +6,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/setThreadName.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -2041,7 +2040,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
 
                 while (true)
                 {
-                    auto block = remote_query_executor->read();
+                    auto block = remote_query_executor->readBlock();
                     if (!block)
                         break;
                 }
