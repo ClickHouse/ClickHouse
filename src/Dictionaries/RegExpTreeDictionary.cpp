@@ -189,12 +189,12 @@ namespace
                     const auto & match1 = matches[1];
                     const auto & match2 = matches[2];
                     if (isFigureLargerThanFifty(match1.ToString()) || isFigureLargerThanFifty(match2.ToString()))
-                        return true;
+                        return false;
                 }
                 else
                     break;
             }
-            return false;
+            return true;
         }
     };
 }
@@ -253,7 +253,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         }
         regex_nodes.emplace(id, node);
 #if USE_VECTORSCAN
-        if (use_vectorscan && !checker.isSimpleRegex(regex))
+        if (use_vectorscan && checker.isSimpleRegex(regex))
         {
             simple_regexps.push_back(regex);
             regexp_ids.push_back(id);
