@@ -144,7 +144,6 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::processWatchQueue()
                 continue;
 
             auto zookeeper = getZooKeeper();
-
             const auto & [object_type, object_name] = watched_object;
 
             if (object_name.empty())

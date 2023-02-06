@@ -31,6 +31,7 @@ void backupUserDefinedSQLObjects(
     const std::vector<std::pair<String, ASTPtr>> & objects)
 {
     std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
+    backup_entries.reserve(objects.size());
     for (const auto & [object_name, create_object_query] : objects)
         backup_entries.emplace_back(
             escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
