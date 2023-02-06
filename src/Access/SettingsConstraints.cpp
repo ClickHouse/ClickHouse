@@ -43,7 +43,8 @@ void SettingsConstraints::set(const String & full_name, const Field & min_value,
 
     auto & constraint = constraints[resolved_name];
 
-    settings_alias_cache[full_name] = resolved_name;
+    if (full_name != resolved_name)
+        settings_alias_cache[full_name] = resolved_name;
 
     if (!min_value.isNull())
         constraint.min_value = settingCastValueUtil(resolved_name, min_value);
@@ -259,7 +260,15 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
 
 bool SettingsConstraints::Checker::check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const
 {
-    std::string setting_name = resolveSettingName(change.name);
+    if (!explain.empty())
+    {
+        if (reaction == THROW_ON_VIOLATION)
+            throw Exception::createDeprecated(explain, code);
+        else
+            return false;
+    }
+
+    std::string_view setting_name = setting_name_resolver(change.name);
 
     auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
@@ -275,13 +284,6 @@ bool SettingsConstraints::Checker::check(SettingChange & change, const Field & n
         }
     };
 
-    if (!explain.empty())
-    {
-        if (reaction == THROW_ON_VIOLATION)
-            throw Exception::createDeprecated(explain, code);
-        else
-            return false;
-    }
 
     if (constraint.writability == SettingConstraintWritability::CONST)
     {
@@ -358,9 +360,9 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     else // For both readonly=0 and readonly=2
     {
         if (it == constraints.end())
-            return Checker(); // Allowed
+            return Checker(Settings::Traits::resolveName); // Allowed
     }
-    return Checker(it->second);
+    return Checker(it->second, Settings::Traits::resolveName);
 }
 
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
@@ -368,8 +370,8 @@ SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::strin
     auto full_name = settingFullName<MergeTreeSettings>(short_name);
     auto it = constraints.find(resolveSettingNameWithCache(full_name));
     if (it == constraints.end())
-        return Checker(); // Allowed
-    return Checker(it->second);
+        return Checker(MergeTreeSettings::Traits::resolveName); // Allowed
+    return Checker(it->second, MergeTreeSettings::Traits::resolveName);
 }
 
 bool SettingsConstraints::Constraint::operator==(const Constraint & other) const

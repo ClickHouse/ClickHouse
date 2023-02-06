@@ -108,11 +108,16 @@ private:
     struct Checker
     {
         Constraint constraint;
+        using NameResolver = std::function<std::string_view(std::string_view)>;
+        NameResolver setting_name_resolver;
+
         String explain;
         int code = 0;
 
         // Allows everything
-        Checker() = default;
+        explicit Checker(NameResolver setting_name_resolver_)
+            : setting_name_resolver(std::move(setting_name_resolver_))
+        {}
 
         // Forbidden with explanation
         Checker(const String & explain_, int code_)
@@ -122,8 +127,9 @@ private:
         {}
 
         // Allow or forbid depending on range defined by constraint, also used to return stored constraint
-        explicit Checker(const Constraint & constraint_)
+        explicit Checker(const Constraint & constraint_, NameResolver setting_name_resolver_)
             : constraint(constraint_)
+            , setting_name_resolver(std::move(setting_name_resolver_))
         {}
 
         // Perform checking
@@ -136,10 +142,6 @@ private:
         size_t operator()(std::string_view txt) const
         {
             return std::hash<std::string_view>{}(txt);
-        }
-        size_t operator()(const String & txt) const
-        {
-            return std::hash<String>{}(txt);
         }
     };
 
