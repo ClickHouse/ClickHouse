@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/Exception.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <stack>
@@ -11,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
+    extern const int PROJECTION_NOT_USED;
 }
 
 namespace QueryPlanOptimizations
@@ -102,6 +104,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    bool applied_projection = false;
+    bool has_reading_from_mt = false;
+
     Stack stack;
     stack.push_back({.node = &root});
 
@@ -111,11 +116,13 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (frame.next_child == 0)
         {
+            has_reading_from_mt |= typeid_cast<const ReadFromMergeTree *>(frame.node->step.get()) != nullptr;
+
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.optimize_projection)
-                optimizeUseProjections(*frame.node, nodes);
+                applied_projection |= optimizeUseProjections(*frame.node, nodes);
 
             if (optimization_settings.aggregation_in_order)
                 optimizeAggregationInOrder(*frame.node, nodes);
@@ -138,6 +145,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         stack.pop_back();
     }
+
+    if (optimization_settings.force_use_projection && has_reading_from_mt && !applied_projection)
+        throw Exception(
+            "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
+            ErrorCodes::PROJECTION_NOT_USED);
 }
 
 }

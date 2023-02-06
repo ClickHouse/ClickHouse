@@ -367,29 +367,29 @@ ActionsDAGPtr analyzeAggregateProjection(
     return proj_dag;
 }
 
-void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
-        return;
+        return false;
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
-        return;
+        return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 2");
     if (!aggregating->canUseProjection())
-        return;
+        return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 3");
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
     if (!reading_node)
-        return;
+        return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 4");
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
     if (!reading)
-        return;
+        return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 5");
 
@@ -402,14 +402,14 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             agg_projections.push_back(&projection);
 
     if (agg_projections.empty())
-        return;
+        return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Has agg projection");
 
     ActionsDAGPtr dag;
     ActionsDAG::NodeRawConstPtrs filter_nodes;
     if (!buildAggregatingDAG(*node.children.front(), dag, filter_nodes))
-        return;
+        return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
 
@@ -454,7 +454,7 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     }
 
     if (candidates.empty())
-        return;
+        return false;
 
     AggregateProjectionCandidate * best_candidate = nullptr;
     size_t best_candidate_marks = 0;
@@ -533,7 +533,7 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     }
 
     if (!best_candidate)
-        return;
+        return false;
 
     auto storage_snapshot = reading->getStorageSnapshot();
     auto proj_snapshot = std::make_shared<StorageSnapshot>(
@@ -594,6 +594,8 @@ void optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         node.step = aggregating->convertToAggregatingProjection(expr_or_filter_node.step->getOutputStream());
         node.children.push_back(&expr_or_filter_node);
     }
+
+    return true;
 }
 
 }

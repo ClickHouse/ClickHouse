@@ -169,13 +169,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             enable_parallel_reading);
 
         if (!step && settings.allow_experimental_projection_optimization && settings.force_optimize_projection
-            && !metadata_for_reading->projections.empty())
+            && !metadata_for_reading->projections.empty() && !settings.query_plan_optimize_projection)
             throw Exception(
                 "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
                 ErrorCodes::PROJECTION_NOT_USED);
 
         auto plan = std::make_unique<QueryPlan>();
-        plan->addStep(std::move(step));
+        if (step)
+            plan->addStep(std::move(step));
         return plan;
     }
 
