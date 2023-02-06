@@ -80,7 +80,6 @@
 #include <typeindex>
 #include <unordered_set>
 #include <filesystem>
-#include <ranges>
 
 #include <fmt/format.h>
 

@@ -110,17 +110,11 @@ struct CustomType
         virtual const char * getTypeName() const = 0;
         virtual String toString() const = 0;
 
-        bool operator < (const CustomTypeImpl &) const { throwNotImpleneted("<"); }
-        bool operator <= (const CustomTypeImpl &) const { throwNotImpleneted("<="); }
-        bool operator > (const CustomTypeImpl &) const { throwNotImpleneted(">"); }
-        bool operator >= (const CustomTypeImpl &) const { throwNotImpleneted(">="); }
-        bool operator == (const CustomTypeImpl &) const { throwNotImpleneted("=="); }
-
-        [[noreturn]] void throwNotImpleneted(const std::string & op) const
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operation {} is not implemented for custom type {}", op, getTypeName());
-        }
+        virtual bool operator < (const CustomTypeImpl &) const = 0;
+        virtual bool operator <= (const CustomTypeImpl &) const = 0;
+        virtual bool operator > (const CustomTypeImpl &) const = 0;
+        virtual bool operator >= (const CustomTypeImpl &) const = 0;
+        virtual bool operator == (const CustomTypeImpl &) const = 0;
     };
 
     CustomType() = default;

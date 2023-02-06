@@ -260,9 +260,10 @@ void writeText(const Object & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
-void writeBinary(const CustomType &, WriteBuffer &)
+void writeBinary(const CustomType & x, WriteBuffer & buf)
 {
-    /// TODO:
+    writeBinary(std::string_view(x.getTypeName()), buf);
+    writeBinary(x.toString(), buf);
 }
 
 void writeText(const CustomType & x, WriteBuffer & buf)
