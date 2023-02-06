@@ -183,8 +183,7 @@ void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t l
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
-    const auto& src_null_map_data = nullable_col.getNullMapData();
-    has_null = has_null ? has_null : memoryIsZero(src_null_map_data.data() ,start, length);
+    has_null = has_null ? has_null : !memoryIsZero(nullable_col.getNullMapData().data() ,start, length);
 }
 
 void ColumnNullable::insert(const Field & x)
@@ -791,7 +790,7 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
 void ColumnNullable::updateHasNull()
 {
     const UInt8* null_pos = getNullMapData().data();
-    has_null = contain_byte(null_pos, getNullMapData().size(), 1);
+    has_null = !memoryIsZero(null_pos, 0, getNullMapData().size());
     need_update_has_null = false;
 }
 
