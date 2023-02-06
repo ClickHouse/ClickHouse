@@ -79,6 +79,7 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get install \
         clang-15 \
         clang-tidy-15 \
+        libclang-rt-15-dev \
         --yes --no-install-recommends \
     && apt-get clean
 
