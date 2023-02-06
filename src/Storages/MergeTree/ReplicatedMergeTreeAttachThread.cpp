@@ -150,6 +150,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     if (replica_metadata_version_exists)
     {
         StorageInMemoryMetadata metadata_with_new_version(*metadata_snapshot);
+
         metadata_with_new_version.setMetadataVersion(parse<int>(replica_metadata_version));
         storage.setInMemoryMetadata(metadata_with_new_version);
     }

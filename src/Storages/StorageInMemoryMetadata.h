@@ -50,7 +50,7 @@ struct StorageInMemoryMetadata
 
     String comment;
 
-    int32_t metadata_version;
+    int32_t metadata_version = 0;
 
     StorageInMemoryMetadata() = default;
 
