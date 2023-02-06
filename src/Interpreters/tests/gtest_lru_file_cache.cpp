@@ -122,9 +122,9 @@ void assertDownloadFails(FileSegment & file_segment)
 
 void download(const HolderPtr & holder)
 {
-    for (auto it = holder->begin(); it != holder->end(); ++it)
+    for (auto & it : *holder)
     {
-        download(**it);
+        download(*it);
     }
 }
 
