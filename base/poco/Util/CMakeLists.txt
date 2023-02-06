@@ -1,59 +1,35 @@
-set(LIBNAME "Util")
-set(POCO_LIBNAME "Poco${LIBNAME}")
-
-# Sources
-file(GLOB SRCS_G "src/*.cpp")
-POCO_SOURCES_AUTO( SRCS ${SRCS_G})
-
-# Headers
-file(GLOB_RECURSE HDRS_G "include/*.h" )
-POCO_HEADERS_AUTO( SRCS ${HDRS_G})
-
-# Version Resource
-if(MSVC AND NOT POCO_STATIC)
-    source_group("Resources" FILES ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-    list(APPEND SRCS ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-endif()
-
-POCO_SOURCES_AUTO_PLAT( SRCS WIN32
-    src/WinRegistryConfiguration.cpp
-    src/WinRegistryKey.cpp
-    src/WinService.cpp
+set (SRCS
+    "${LIBRARY_DIR}/Util/src/AbstractConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/Application.cpp"
+    "${LIBRARY_DIR}/Util/src/ConfigurationMapper.cpp"
+    "${LIBRARY_DIR}/Util/src/ConfigurationView.cpp"
+    "${LIBRARY_DIR}/Util/src/FilesystemConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/HelpFormatter.cpp"
+    "${LIBRARY_DIR}/Util/src/IniFileConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/IntValidator.cpp"
+    "${LIBRARY_DIR}/Util/src/JSONConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/LayeredConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/LoggingConfigurator.cpp"
+    "${LIBRARY_DIR}/Util/src/LoggingSubsystem.cpp"
+    "${LIBRARY_DIR}/Util/src/MapConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/Option.cpp"
+    "${LIBRARY_DIR}/Util/src/OptionCallback.cpp"
+    "${LIBRARY_DIR}/Util/src/OptionException.cpp"
+    "${LIBRARY_DIR}/Util/src/OptionProcessor.cpp"
+    "${LIBRARY_DIR}/Util/src/OptionSet.cpp"
+    "${LIBRARY_DIR}/Util/src/PropertyFileConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/RegExpValidator.cpp"
+    "${LIBRARY_DIR}/Util/src/ServerApplication.cpp"
+    "${LIBRARY_DIR}/Util/src/Subsystem.cpp"
+    "${LIBRARY_DIR}/Util/src/SystemConfiguration.cpp"
+    "${LIBRARY_DIR}/Util/src/Timer.cpp"
+    "${LIBRARY_DIR}/Util/src/TimerTask.cpp"
+    "${LIBRARY_DIR}/Util/src/Validator.cpp"
+    "${LIBRARY_DIR}/Util/src/XMLConfiguration.cpp"
 )
 
-add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
-add_library( "${POCO_LIBNAME}" ALIAS "${LIBNAME}")
-set_target_properties( "${LIBNAME}"
-    PROPERTIES
-    VERSION ${SHARED_LIBRARY_VERSION} SOVERSION ${SHARED_LIBRARY_VERSION}
-    OUTPUT_NAME ${POCO_LIBNAME}
-    DEFINE_SYMBOL Util_EXPORTS
-    )
+add_library (_poco_util ${SRCS})
+add_library (Poco::Util ALIAS _poco_util)
 
-target_link_libraries( "${LIBNAME}" Foundation)
-if (ENABLE_XML)
-	target_link_libraries( "${LIBNAME}" XML)
-else ()
-	add_definitions( -DPOCO_UTIL_NO_XMLCONFIGURATION )
-endif()
-if (ENABLE_JSON)
-	target_link_libraries( "${LIBNAME}" JSON)
-else ()
-	add_definitions( -DPOCO_UTIL_NO_JSONCONFIGURATION )
-endif()
-
-target_include_directories( "${LIBNAME}"
-    SYSTEM PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-target_compile_definitions("${LIBNAME}" PUBLIC ${LIB_MODE_DEFINITIONS})
-
-POCO_INSTALL("${LIBNAME}")
-POCO_GENERATE_PACKAGE("${LIBNAME}")
-
-if (ENABLE_TESTS)
-    add_subdirectory(samples)
-    add_subdirectory(testsuite)
-endif ()
+target_include_directories (_poco_util SYSTEM PUBLIC "${LIBRARY_DIR}/Util/include")
+target_link_libraries (_poco_util PUBLIC Poco::JSON Poco::XML)

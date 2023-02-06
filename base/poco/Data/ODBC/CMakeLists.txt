@@ -1,43 +1,39 @@
-set(LIBNAME "DataODBC")
-set(POCO_LIBNAME "Poco${LIBNAME}")
+if (ENABLE_ODBC)
+    if (NOT TARGET ch_contrib::unixodbc)
+        message(FATAL_ERROR "Configuration error: unixodbc is not a target")
+    endif()
 
-# Sources
-file(GLOB SRCS_G "src/*.cpp")
-POCO_SOURCES_AUTO( ODBC_SRCS ${SRCS_G})
-
-# Headers
-file(GLOB_RECURSE HDRS_G "include/*.h" )
-POCO_HEADERS_AUTO( ODBC_SRCS ${HDRS_G})
-
-# Version Resource
-if(MSVC AND NOT POCO_STATIC)
-    source_group("Resources" FILES ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-    list(APPEND ODBC_SRCS ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-endif()
-
-add_definitions( ${ODBC_CFLAGS} -DTHREADSAFE)
-
-add_library( "${LIBNAME}" ${LIB_MODE} ${ODBC_SRCS} )
-add_library( "${POCO_LIBNAME}" ALIAS "${LIBNAME}")
-set_target_properties( "${LIBNAME}"
-    PROPERTIES
-    VERSION ${SHARED_LIBRARY_VERSION} SOVERSION ${SHARED_LIBRARY_VERSION}
-    OUTPUT_NAME ${POCO_LIBNAME}
-    DEFINE_SYMBOL ODBC_EXPORTS
+    set (SRCS
+        "${LIBRARY_DIR}/Data/ODBC/src/Binder.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/ConnectionHandle.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/Connector.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/EnvironmentHandle.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/Extractor.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/ODBCException.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/ODBCMetaColumn.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/ODBCStatementImpl.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/Parameter.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/Preparator.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/SessionImpl.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/TypeInfo.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/Unicode.cpp"
+        "${LIBRARY_DIR}/Data/ODBC/src/Utility.cpp"
     )
 
-target_link_libraries( "${LIBNAME}" Foundation Data ${ODBC_LIBRARIES})
-target_include_directories( "${LIBNAME}"
-    SYSTEM PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-target_compile_definitions("${LIBNAME}" PUBLIC ${LIB_MODE_DEFINITIONS})
+    add_library (_poco_data_odbc ${SRCS})
+    add_library (Poco::Data::ODBC ALIAS _poco_data_odbc)
 
-POCO_INSTALL("${LIBNAME}")
-POCO_GENERATE_PACKAGE("${LIBNAME}")
+    target_compile_options (_poco_data_odbc PRIVATE -Wno-unused-variable)
+    target_include_directories (_poco_data_odbc SYSTEM PUBLIC "${LIBRARY_DIR}/Data/ODBC/include")
+    target_link_libraries (_poco_data_odbc PUBLIC Poco::Data ch_contrib::unixodbc)
 
-if (ENABLE_TESTS)
-    add_subdirectory(testsuite)
+    message (STATUS "Using Poco::Data::ODBC")
+else ()
+    add_library (_poco_data_odbc INTERFACE)
+    add_library (Poco::Data::ODBC ALIAS _poco_data_odbc)
+    if (TARGET ch_contrib::unixodbc)
+        target_link_libraries (_poco_data_odbc INTERFACE ch_contrib::unixodbc)
+    endif()
+
+    message (STATUS "Not using Poco::Data::ODBC")
 endif ()

@@ -1,76 +1,100 @@
-# Expat CPP sources to be excluded from globbed SRCS_G
-# They are added back on the list if POCO_UNBUNDLED is not set
-set(EXPAT_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/xmlparse.cpp")
+# Poco::XML (expat)
 
-# Sources
-file(GLOB SRCS_G "src/*.cpp")
-list(REMOVE_ITEM SRCS_G ${EXPAT_CPP})
-POCO_SOURCES_AUTO(SRCS ${SRCS_G})
-
-# Headers
-file(GLOB_RECURSE HDRS_G "include/*.h")
-POCO_HEADERS_AUTO(SRCS ${HDRS_G})
-
-# Version Resource
-if(MSVC AND BUILD_SHARED_LIBS)
-	source_group("Resources" FILES ${PROJECT_SOURCE_DIR}/DLLVersion.rc)
-	list(APPEND SRCS ${PROJECT_SOURCE_DIR}/DLLVersion.rc)
-endif()
-
-# If POCO_UNBUNDLED is enabled we try to find the required packages
-# The configuration will fail if the packages are not found
-
-option(POCO_UNBUNDLED_EXPAT
-  "Set to OFF|ON (default is OFF) to control linking expat as external" ${POCO_UNBUNDLED})
-
-if (POCO_UNBUNDLED_EXPAT)
-	find_package(EXPAT REQUIRED)
-else()
-	POCO_SOURCES(SRCS expat
-		src/xmlparse.cpp
-		src/xmlrole.c
-		src/xmltok.c
-		src/xmltok_impl.c
-		src/xmltok_ns.c
-	)
-endif (POCO_UNBUNDLED_EXPAT)
-
-add_library(XML ${SRCS})
-
-add_library(Poco::XML ALIAS XML)
-set_target_properties(XML
-	PROPERTIES
-	VERSION ${SHARED_LIBRARY_VERSION} SOVERSION ${SHARED_LIBRARY_VERSION}
-	OUTPUT_NAME PocoXML
-	DEFINE_SYMBOL XML_EXPORTS
+set (SRCS_EXPAT
+    "${LIBRARY_DIR}/XML/src/xmlrole.c"
+    "${LIBRARY_DIR}/XML/src/xmltok_impl.c"
+    "${LIBRARY_DIR}/XML/src/xmltok_ns.c"
+    "${LIBRARY_DIR}/XML/src/xmltok.c"
 )
 
-target_link_libraries(XML PUBLIC Poco::Foundation)
-target_include_directories(XML
-	SYSTEM PUBLIC
-		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-		$<INSTALL_INTERFACE:include>
-	PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+add_library (_poco_xml_expat ${SRCS_EXPAT})
+add_library (Poco::XML::Expat ALIAS _poco_xml_expat)
+
+target_include_directories (_poco_xml_expat PUBLIC "${LIBRARY_DIR}/XML/include")
+target_include_directories (_poco_xml_expat PRIVATE "${LIBRARY_DIR}/Foundation/include")
+
+# Poco::XML
+
+set (SRCS
+    "${LIBRARY_DIR}/XML/src/AbstractContainerNode.cpp"
+    "${LIBRARY_DIR}/XML/src/AbstractNode.cpp"
+    "${LIBRARY_DIR}/XML/src/Attr.cpp"
+    "${LIBRARY_DIR}/XML/src/Attributes.cpp"
+    "${LIBRARY_DIR}/XML/src/AttributesImpl.cpp"
+    "${LIBRARY_DIR}/XML/src/AttrMap.cpp"
+    "${LIBRARY_DIR}/XML/src/CDATASection.cpp"
+    "${LIBRARY_DIR}/XML/src/CharacterData.cpp"
+    "${LIBRARY_DIR}/XML/src/ChildNodesList.cpp"
+    "${LIBRARY_DIR}/XML/src/Comment.cpp"
+    "${LIBRARY_DIR}/XML/src/ContentHandler.cpp"
+    "${LIBRARY_DIR}/XML/src/DeclHandler.cpp"
+    "${LIBRARY_DIR}/XML/src/DefaultHandler.cpp"
+    "${LIBRARY_DIR}/XML/src/Document.cpp"
+    "${LIBRARY_DIR}/XML/src/DocumentEvent.cpp"
+    "${LIBRARY_DIR}/XML/src/DocumentFragment.cpp"
+    "${LIBRARY_DIR}/XML/src/DocumentType.cpp"
+    "${LIBRARY_DIR}/XML/src/DOMBuilder.cpp"
+    "${LIBRARY_DIR}/XML/src/DOMException.cpp"
+    "${LIBRARY_DIR}/XML/src/DOMImplementation.cpp"
+    "${LIBRARY_DIR}/XML/src/DOMObject.cpp"
+    "${LIBRARY_DIR}/XML/src/DOMParser.cpp"
+    "${LIBRARY_DIR}/XML/src/DOMSerializer.cpp"
+    "${LIBRARY_DIR}/XML/src/DOMWriter.cpp"
+    "${LIBRARY_DIR}/XML/src/DTDHandler.cpp"
+    "${LIBRARY_DIR}/XML/src/DTDMap.cpp"
+    "${LIBRARY_DIR}/XML/src/Element.cpp"
+    "${LIBRARY_DIR}/XML/src/ElementsByTagNameList.cpp"
+    "${LIBRARY_DIR}/XML/src/Entity.cpp"
+    "${LIBRARY_DIR}/XML/src/EntityReference.cpp"
+    "${LIBRARY_DIR}/XML/src/EntityResolver.cpp"
+    "${LIBRARY_DIR}/XML/src/EntityResolverImpl.cpp"
+    "${LIBRARY_DIR}/XML/src/ErrorHandler.cpp"
+    "${LIBRARY_DIR}/XML/src/Event.cpp"
+    "${LIBRARY_DIR}/XML/src/EventDispatcher.cpp"
+    "${LIBRARY_DIR}/XML/src/EventException.cpp"
+    "${LIBRARY_DIR}/XML/src/EventListener.cpp"
+    "${LIBRARY_DIR}/XML/src/EventTarget.cpp"
+    "${LIBRARY_DIR}/XML/src/InputSource.cpp"
+    "${LIBRARY_DIR}/XML/src/LexicalHandler.cpp"
+    "${LIBRARY_DIR}/XML/src/Locator.cpp"
+    "${LIBRARY_DIR}/XML/src/LocatorImpl.cpp"
+    "${LIBRARY_DIR}/XML/src/MutationEvent.cpp"
+    "${LIBRARY_DIR}/XML/src/Name.cpp"
+    "${LIBRARY_DIR}/XML/src/NamedNodeMap.cpp"
+    "${LIBRARY_DIR}/XML/src/NamePool.cpp"
+    "${LIBRARY_DIR}/XML/src/NamespaceStrategy.cpp"
+    "${LIBRARY_DIR}/XML/src/NamespaceSupport.cpp"
+    "${LIBRARY_DIR}/XML/src/Node.cpp"
+    "${LIBRARY_DIR}/XML/src/NodeAppender.cpp"
+    "${LIBRARY_DIR}/XML/src/NodeFilter.cpp"
+    "${LIBRARY_DIR}/XML/src/NodeIterator.cpp"
+    "${LIBRARY_DIR}/XML/src/NodeList.cpp"
+    "${LIBRARY_DIR}/XML/src/Notation.cpp"
+    "${LIBRARY_DIR}/XML/src/ParserEngine.cpp"
+    "${LIBRARY_DIR}/XML/src/ProcessingInstruction.cpp"
+    "${LIBRARY_DIR}/XML/src/QName.cpp"
+    "${LIBRARY_DIR}/XML/src/SAXException.cpp"
+    "${LIBRARY_DIR}/XML/src/SAXParser.cpp"
+    "${LIBRARY_DIR}/XML/src/Text.cpp"
+    "${LIBRARY_DIR}/XML/src/TreeWalker.cpp"
+    "${LIBRARY_DIR}/XML/src/ValueTraits.cpp"
+    "${LIBRARY_DIR}/XML/src/WhitespaceFilter.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLException.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLFilter.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLFilterImpl.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLReader.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLStreamParser.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLStreamParserException.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLString.cpp"
+    "${LIBRARY_DIR}/XML/src/XMLWriter.cpp"
+
+    # expat
+    "${LIBRARY_DIR}/XML/src/xmlparse.cpp"
 )
 
-if(POCO_UNBUNDLED)
-	target_link_libraries(XML PUBLIC EXPAT::EXPAT)
-	target_compile_definitions(XML PUBLIC POCO_UNBUNDLED)
-else()
-	if(WIN32)
-		#TODO: Is XML_STATIC only required with Windows? What does it do?
-		target_compile_definitions(XML PUBLIC XML_STATIC)
-	endif()
-	target_compile_definitions(XML
-		PUBLIC XML_DTD
-		PRIVATE XML_NS HAVE_EXPAT_CONFIG_H)
-endif()
+add_library (_poco_xml ${SRCS})
+add_library (Poco::XML ALIAS _poco_xml)
 
-POCO_INSTALL(XML)
-POCO_GENERATE_PACKAGE(XML)
-
-if(ENABLE_TESTS)
-	add_subdirectory(samples)
-	add_subdirectory(testsuite)
-endif()
-
+target_compile_options (_poco_xml PRIVATE -Wno-old-style-cast)
+target_include_directories (_poco_xml SYSTEM PUBLIC "${LIBRARY_DIR}/XML/include")
+target_link_libraries (_poco_xml PUBLIC Poco::Foundation Poco::XML::Expat)

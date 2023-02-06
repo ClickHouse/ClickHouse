@@ -1,206 +1,236 @@
-set(LIBNAME "Foundation")
-set(POCO_LIBNAME "Poco${LIBNAME}")
+# Foundation (pcre)
 
-# Sources
-file(GLOB SRCS_G "src/*.cpp")
-POCO_SOURCES_AUTO( SRCS ${SRCS_G})
+set (SRCS_PCRE
+    "${LIBRARY_DIR}/Foundation/src/pcre_config.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_byte_order.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_chartables.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_compile.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_exec.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_fullinfo.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_globals.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_maketables.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_newline.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_ord2utf8.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_study.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_tables.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_dfa_exec.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_get.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_jit_compile.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_refcount.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_string_utils.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_version.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_ucd.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_valid_utf8.c"
+    "${LIBRARY_DIR}/Foundation/src/pcre_xclass.c"
+)
 
-# Headers
-file(GLOB_RECURSE HDRS_G "include/*.h" )
-POCO_HEADERS_AUTO( SRCS ${HDRS_G})
+add_library (_poco_foundation_pcre ${SRCS_PCRE})
+add_library (Poco::Foundation::PCRE ALIAS _poco_foundation_pcre)
 
-# Platform Specific
-POCO_SOURCES_AUTO_PLAT( SRCS UNIX src/SyslogChannel.cpp )
-POCO_HEADERS_AUTO( SRCS include/Poco/SyslogChannel.h )
+target_compile_options (_poco_foundation_pcre PRIVATE -Wno-sign-compare)
 
-# For Windows CE we need to disable these
-if(WINCE)
-POCO_SOURCES_AUTO_PLAT( SRCS OFF
-	src/WindowsConsoleChannel.cpp
-	src/EventLogChannel.cpp
-	)
-else()
-POCO_SOURCES_AUTO_PLAT( SRCS WIN32
-	src/WindowsConsoleChannel.cpp
-	src/EventLogChannel.cpp
-	)
-endif()
+# Foundation
 
-# Version Resource
-if(MSVC AND NOT POCO_STATIC)
-    source_group("Resources" FILES ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-    list(APPEND SRCS ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-endif()
+set (SRCS
+    "${LIBRARY_DIR}/Foundation/src/AbstractObserver.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ActiveDispatcher.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ArchiveStrategy.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Ascii.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ASCIIEncoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/AsyncChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/AtomicCounter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Base32Decoder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Base32Encoder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Base64Decoder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Base64Encoder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/BinaryReader.cpp"
+    "${LIBRARY_DIR}/Foundation/src/BinaryWriter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Bugcheck.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ByteOrder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Channel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Checksum.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Clock.cpp"
+    "${LIBRARY_DIR}/Foundation/src/CompressedLogFile.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Condition.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Configurable.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ConsoleChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/CountingStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DateTime.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DateTimeFormat.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DateTimeFormatter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DateTimeParser.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Debugger.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DeflatingStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DigestEngine.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DigestStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DirectoryIterator.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DirectoryIteratorStrategy.cpp"
+    "${LIBRARY_DIR}/Foundation/src/DirectoryWatcher.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Environment.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Error.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ErrorHandler.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Event.cpp"
+    "${LIBRARY_DIR}/Foundation/src/EventArgs.cpp"
+    "${LIBRARY_DIR}/Foundation/src/EventChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Exception.cpp"
+    "${LIBRARY_DIR}/Foundation/src/FIFOBufferStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/File.cpp"
+    "${LIBRARY_DIR}/Foundation/src/FileChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/FileStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/FileStreamFactory.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Format.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Formatter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/FormattingChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/FPEnvironment.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Glob.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Hash.cpp"
+    "${LIBRARY_DIR}/Foundation/src/HashStatistic.cpp"
+    "${LIBRARY_DIR}/Foundation/src/HexBinaryDecoder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/HexBinaryEncoder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/InflatingStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/JSONString.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Latin1Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Latin2Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Latin9Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/LineEndingConverter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/LocalDateTime.cpp"
+    "${LIBRARY_DIR}/Foundation/src/LogFile.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Logger.cpp"
+    "${LIBRARY_DIR}/Foundation/src/LoggingFactory.cpp"
+    "${LIBRARY_DIR}/Foundation/src/LoggingRegistry.cpp"
+    "${LIBRARY_DIR}/Foundation/src/LogStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Manifest.cpp"
+    "${LIBRARY_DIR}/Foundation/src/MD4Engine.cpp"
+    "${LIBRARY_DIR}/Foundation/src/MD5Engine.cpp"
+    "${LIBRARY_DIR}/Foundation/src/MemoryPool.cpp"
+    "${LIBRARY_DIR}/Foundation/src/MemoryStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Message.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Mutex.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NamedEvent.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NamedMutex.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NestedDiagnosticContext.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Notification.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NotificationCenter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NotificationQueue.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NullChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NullStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NumberFormatter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NumberParser.cpp"
+    "${LIBRARY_DIR}/Foundation/src/NumericString.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Path.cpp"
+    "${LIBRARY_DIR}/Foundation/src/PatternFormatter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Pipe.cpp"
+    "${LIBRARY_DIR}/Foundation/src/PipeImpl.cpp"
+    "${LIBRARY_DIR}/Foundation/src/PipeStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/PriorityNotificationQueue.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Process.cpp"
+    "${LIBRARY_DIR}/Foundation/src/PurgeStrategy.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Random.cpp"
+    "${LIBRARY_DIR}/Foundation/src/RandomStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/RefCountedObject.cpp"
+    "${LIBRARY_DIR}/Foundation/src/RegularExpression.cpp"
+    "${LIBRARY_DIR}/Foundation/src/RotateStrategy.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Runnable.cpp"
+    "${LIBRARY_DIR}/Foundation/src/RWLock.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Semaphore.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SHA1Engine.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SharedLibrary.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SharedMemory.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SignalHandler.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SimpleFileChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SortedDirectoryIterator.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SplitterChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Stopwatch.cpp"
+    "${LIBRARY_DIR}/Foundation/src/StreamChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/StreamConverter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/StreamCopier.cpp"
+    "${LIBRARY_DIR}/Foundation/src/StreamTokenizer.cpp"
+    "${LIBRARY_DIR}/Foundation/src/String.cpp"
+    "${LIBRARY_DIR}/Foundation/src/StringTokenizer.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SynchronizedObject.cpp"
+    "${LIBRARY_DIR}/Foundation/src/SyslogChannel.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Task.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TaskManager.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TaskNotification.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TeeStream.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TemporaryFile.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TextBufferIterator.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TextConverter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TextEncoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TextIterator.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Thread.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ThreadLocal.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ThreadPool.cpp"
+    "${LIBRARY_DIR}/Foundation/src/ThreadTarget.cpp"
+    "${LIBRARY_DIR}/Foundation/src/TimedNotificationQueue.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Timer.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Timespan.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Timestamp.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Timezone.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Token.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Unicode.cpp"
+    "${LIBRARY_DIR}/Foundation/src/UnicodeConverter.cpp"
+    "${LIBRARY_DIR}/Foundation/src/URI.cpp"
+    "${LIBRARY_DIR}/Foundation/src/URIStreamFactory.cpp"
+    "${LIBRARY_DIR}/Foundation/src/URIStreamOpener.cpp"
+    "${LIBRARY_DIR}/Foundation/src/UTF16Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/UTF32Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/UTF8Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/UTF8String.cpp"
+    "${LIBRARY_DIR}/Foundation/src/UUID.cpp"
+    "${LIBRARY_DIR}/Foundation/src/UUIDGenerator.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Var.cpp"
+    "${LIBRARY_DIR}/Foundation/src/VarHolder.cpp"
+    "${LIBRARY_DIR}/Foundation/src/VarIterator.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Void.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Windows1250Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Windows1251Encoding.cpp"
+    "${LIBRARY_DIR}/Foundation/src/Windows1252Encoding.cpp"
+)
 
-# Messages
-POCO_MESSAGES( SRCS Logging src/pocomsg.mc)
+add_library (_poco_foundation ${SRCS})
+add_library (Poco::Foundation ALIAS _poco_foundation)
 
-# If POCO_UNBUNDLED is enabled we try to find the required packages
-# The configuration will fail if the packages are not found
-option(POCO_UNBUNDLED_PCRE
-  "Set to OFF|ON (default is OFF) to control linking pcre as external" ${POCO_UNBUNDLED})
-
-find_library(LZ4_LIBRARY NAMES lz4)
-set(SYSLIBS ${SYSLIBS} ${LZ4_LIBRARY})
-
-if (POCO_UNBUNDLED_PCRE)
-	find_package(PCRE REQUIRED)
-	set(SYSLIBS ${SYSLIBS} ${PCRE_LIBRARIES})
-	include_directories(${PCRE_INCLUDE_DIRS})
-
-	add_definitions(-DPOCO_UNBUNDLED_PCRE)
-
-	#HACK: Unicode.cpp requires functions from these files. The can't be taken from the library
-	POCO_SOURCES( SRCS RegExp
-		src/pcre_ucd.c
-		src/pcre_tables.c
-	)
-
-else()
-	# pcre
-	POCO_SOURCES( SRCS pcre
-		src/pcre_config.c
-		src/pcre_byte_order.c
-		src/pcre_chartables.c
-		src/pcre_compile.c
-		src/pcre_exec.c
-		src/pcre_fullinfo.c
-		src/pcre_globals.c
-		src/pcre_maketables.c
-		src/pcre_newline.c
-		src/pcre_ord2utf8.c
-		src/pcre_study.c
-		src/pcre_tables.c
-		src/pcre_dfa_exec.c
-		src/pcre_get.c
-		src/pcre_jit_compile.c
-		src/pcre_refcount.c
-		src/pcre_string_utils.c
-		src/pcre_version.c
-		src/pcre_ucd.c
-		src/pcre_valid_utf8.c
-		src/pcre_xclass.c
-	)
-endif (POCO_UNBUNDLED_PCRE)
-
-option(POCO_UNBUNDLED_ZLIB
-  "Set to OFF|ON (default is OFF) to control linking zlib as external" ${POCO_UNBUNDLED})
-
-if (POCO_UNBUNDLED_ZLIB)
-	find_package(ZLIB)
-	set(SYSLIBS ${SYSLIBS} ${ZLIB_LIBRARIES})
-else()
-
-	# zlib
-	POCO_HEADERS( SRCS zlib
-		include/Poco/zconf.h
-		include/Poco/zlib.h
-		)
-
-	POCO_SOURCES( SRCS zlib
-		src/adler32.c
-		src/compress.c
-		src/crc32.c
-		src/deflate.c
-		src/infback.c
-		src/inffast.c
-		src/inflate.c
-		src/inftrees.c
-		src/trees.c
-		src/zutil.c
-	)
-endif (POCO_UNBUNDLED_ZLIB)
-
-if(WIN32)
-	set(SYSLIBS ${SYSLIBS} iphlpapi)
-endif(WIN32)
-if (${CMAKE_CXX_COMPILER_ID} MATCHES "SunPro")
-	set_target_properties( "${LIBNAME}" PROPERTIES LINK_FLAGS "-library=stlport4")
-endif (${CMAKE_CXX_COMPILER_ID} MATCHES "SunPro")
-
-if(ANDROID)
-	set(SYSLIBS ${SYSLIBS} log)
-endif(ANDROID)
-
-# TODO: Why is this here?
-add_definitions( -DPCRE_STATIC)
-
-# For SetAffinity
-if(UNIX AND NOT APPLE)
-	INCLUDE (CheckFunctionExists)
-	INCLUDE (CheckCXXSourceCompiles)
-	INCLUDE (CheckLibraryExists)
-	CHECK_LIBRARY_EXISTS(pthread pthread_setaffinity_np "pthread.h" HAVE_PTHREAD_SETAFFINITY_NP)
-	#set(CMAKE_EXTRA_INCLUDE_FILES pthread.h)
-	#CHECK_FUNCTION_EXISTS(pthread_setaffinity_np HAVE_PTHREAD_SETAFFINITY_NP)
-	if(NOT HAVE_PTHREAD_SETAFFINITY_NP)
-		message(STATUS "Platform has not PTHREAD_SETAFFINITY_NP")
-	else(HAVE_PTHREAD_SETAFFINITY_NP)
-		add_definitions(-DHAVE_PTHREAD_SETAFFINITY_NP)
-		CHECK_CXX_SOURCE_COMPILES("
-		#include <sched.h>
-		int main() {
-			cpu_set_t cpumask;
-			sched_setaffinity( 0, sizeof(cpumask), &cpumask );
-			return 0;
-		}" HAVE_THREE_PARAM_SCHED_SETAFFINITY)
-
-		if(HAVE_THREE_PARAM_SCHED_SETAFFINITY)
-			message(STATUS "Platform has THREE PARAM at PTHREAD_SETAFFINITY_NP")
-			add_definitions(-DHAVE_THREE_PARAM_SCHED_SETAFFINITY)
-		else(HAVE_THREE_PARAM_SCHED_SETAFFINITY)
-			CHECK_CXX_SOURCE_COMPILES("
-			#include <sched.h>
-			int main() {
-				cpu_set_t cpumask;
-				sched_setaffinity( 0, &cpumask );
-				return 0;
-			}" HAVE_TWO_PARAM_SCHED_SETAFFINITY)
-
-			if(HAVE_TWO_PARAM_SCHED_SETAFFINITY)
-				message(STATUS "Platform has TWO PARAM at PTHREAD_SETAFFINITY_NP")
-				add_definitions(-DHAVE_TWO_PARAM_SCHED_SETAFFINITY)
-			endif(HAVE_TWO_PARAM_SCHED_SETAFFINITY)
-
-		endif(HAVE_THREE_PARAM_SCHED_SETAFFINITY)
-	endif(NOT HAVE_PTHREAD_SETAFFINITY_NP)
-endif(UNIX AND NOT APPLE)
-
-add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS})
-add_library( "${POCO_LIBNAME}" ALIAS "${LIBNAME}")
-set_target_properties( "${LIBNAME}"
-	PROPERTIES
-	VERSION ${SHARED_LIBRARY_VERSION} SOVERSION ${SHARED_LIBRARY_VERSION}
-	OUTPUT_NAME ${POCO_LIBNAME}
-	DEFINE_SYMBOL Foundation_EXPORTS
-	)
-
-target_link_libraries( "${LIBNAME}" ${SYSLIBS})
-
-# Add -lrt because it is required to use clock_getres on glibc before 2.17.
-# (we have a "Compatibility check" in CI that checks older glibc.)
-if(NOT APPLE)
-    target_link_libraries( "${LIBNAME}" "-lrt")
-endif()
-
-target_include_directories( "${LIBNAME}"
-	SYSTEM PUBLIC
-		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-		$<INSTALL_INTERFACE:include>
-	PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-	)
-target_compile_definitions("${LIBNAME}" PUBLIC ${LIB_MODE_DEFINITIONS})
-
-if (POCO_UNBUNDLED_ZLIB)
-    target_include_directories("${LIBNAME}" PUBLIC ${ZLIB_INCLUDE_DIRS})
-    target_compile_definitions("${LIBNAME}" PUBLIC POCO_UNBUNDLED_ZLIB)
+if (COMPILER_GCC)
+    target_compile_options (_poco_foundation
+        PRIVATE
+            -Wno-suggest-override
+    )
+elseif (COMPILER_CLANG)
+    target_compile_options (_poco_foundation
+        PRIVATE
+            -Wno-atomic-implicit-seq-cst
+            -Wno-deprecated
+            -Wno-extra-semi-stmt
+            -Wno-zero-as-null-pointer-constant
+            -Wno-implicit-int-float-conversion
+            -Wno-thread-safety-analysis
+            -Wno-thread-safety-negative
+    )
 endif ()
+target_compile_options (_poco_foundation
+    PRIVATE
+        -Wno-sign-compare
+        -Wno-unused-parameter
+)
+target_compile_definitions (_poco_foundation
+    PRIVATE
+        POCO_UNBUNDLED
+        POCO_UNBUNDLED_ZLIB
+    PUBLIC
+        POCO_ENABLE_CPP11
+        POCO_OS_FAMILY_UNIX
+)
+target_include_directories (_poco_foundation SYSTEM PUBLIC "${LIBRARY_DIR}/Foundation/include")
+target_link_libraries (_poco_foundation
+    PRIVATE
+        Poco::Foundation::PCRE
+        ch_contrib::zlib
+        ch_contrib::lz4)
 
-POCO_INSTALL("${LIBNAME}")
-POCO_GENERATE_PACKAGE("${LIBNAME}")
-
-if (ENABLE_TESTS)
-	add_subdirectory( samples )
-	add_subdirectory( testsuite )
-endif ()
-
+if(OS_DARWIN AND ARCH_AARCH64)
+    target_compile_definitions (_poco_foundation
+        PRIVATE
+            POCO_NO_STAT64
+    )
+endif()

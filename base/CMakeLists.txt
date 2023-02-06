@@ -4,5 +4,6 @@ endif ()
 
 add_subdirectory (base)
 add_subdirectory (pcg-random)
+add_subdirectory (poco)
 add_subdirectory (widechar_width)
 add_subdirectory (readpassphrase)

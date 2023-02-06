@@ -1,43 +1,29 @@
-set(LIBNAME "MongoDB")
-set(POCO_LIBNAME "Poco${LIBNAME}")
+set (SRCS
+    "${LIBRARY_DIR}/MongoDB/src/Array.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/Binary.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/Connection.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/Cursor.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/Database.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/DeleteRequest.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/Document.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/Element.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/GetMoreRequest.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/InsertRequest.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/JavaScriptCode.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/KillCursorsRequest.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/Message.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/MessageHeader.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/ObjectId.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/QueryRequest.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/RegularExpression.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/ReplicaSet.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/RequestMessage.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/ResponseMessage.cpp"
+    "${LIBRARY_DIR}/MongoDB/src/UpdateRequest.cpp"
+)
 
-# Sources
-file(GLOB SRCS_G "src/*.cpp")
-POCO_SOURCES_AUTO( SRCS ${SRCS_G})
+add_library (_poco_mongodb ${SRCS})
+add_library (Poco::MongoDB ALIAS _poco_mongodb)
 
-# Headers
-file(GLOB_RECURSE HDRS_G "include/*.h" )
-POCO_HEADERS_AUTO( SRCS ${HDRS_G})
-
-# Version Resource
-if(MSVC AND NOT POCO_STATIC)
-    source_group("Resources" FILES ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-    list(APPEND SRCS ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-endif()
-
-add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
-add_library( "${POCO_LIBNAME}" ALIAS "${LIBNAME}")
-set_target_properties( "${LIBNAME}"
-    PROPERTIES
-    VERSION ${SHARED_LIBRARY_VERSION} SOVERSION ${SHARED_LIBRARY_VERSION}
-    OUTPUT_NAME ${POCO_LIBNAME}
-    DEFINE_SYMBOL MongoDB_EXPORTS
-    )
-
-target_link_libraries( "${LIBNAME}" Net Foundation)
-target_include_directories( "${LIBNAME}"
-    SYSTEM PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-target_compile_definitions("${LIBNAME}" PUBLIC ${LIB_MODE_DEFINITIONS})
-
-POCO_INSTALL("${LIBNAME}")
-POCO_GENERATE_PACKAGE("${LIBNAME}")
-
-if (ENABLE_TESTS)
-    add_subdirectory(samples)
-    add_subdirectory(testsuite)
-endif ()
-
+target_include_directories (_poco_mongodb SYSTEM PUBLIC "${LIBRARY_DIR}/MongoDB/include")
+target_link_libraries (_poco_mongodb PUBLIC Poco::Net)

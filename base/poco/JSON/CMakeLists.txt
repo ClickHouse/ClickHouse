@@ -1,51 +1,31 @@
-set(LIBNAME "JSON")
-set(POCO_LIBNAME "Poco${LIBNAME}")
+# Poco::JSON (pdjson)
 
-# Sources
-if (WIN32)
-    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-endif (WIN32)
+set (SRCS_PDJSON
+    "${LIBRARY_DIR}/JSON/src/pdjson.c"
+)
 
-file(GLOB SRCS_G "src/*.cpp")
-POCO_SOURCES_AUTO( SRCS ${SRCS_G})
+add_library (_poco_json_pdjson ${SRCS_PDJSON})
+add_library (Poco::JSON::Pdjson ALIAS _poco_json_pdjson)
 
-# Headers
-file(GLOB_RECURSE HDRS_G "include/*.h" )
-POCO_HEADERS_AUTO( SRCS ${HDRS_G})
-POCO_SOURCES(SRCS pdjson src/pdjson.c)
-if(WIN32)
-    SET_SOURCE_FILES_PROPERTIES(src/pdjson.c PROPERTIES LANGUAGE CXX)
-endif()
+# Poco::JSON
 
-# Version Resource
-if(MSVC AND NOT POCO_STATIC)
-    source_group("Resources" FILES ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-    list(APPEND SRCS ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-endif()
+set (SRCS
+    "${LIBRARY_DIR}/JSON/src/Array.cpp"
+    "${LIBRARY_DIR}/JSON/src/Handler.cpp"
+    "${LIBRARY_DIR}/JSON/src/JSONException.cpp"
+    "${LIBRARY_DIR}/JSON/src/Object.cpp"
+    "${LIBRARY_DIR}/JSON/src/ParseHandler.cpp"
+    "${LIBRARY_DIR}/JSON/src/Parser.cpp"
+    "${LIBRARY_DIR}/JSON/src/ParserImpl.cpp"
+    "${LIBRARY_DIR}/JSON/src/PrintHandler.cpp"
+    "${LIBRARY_DIR}/JSON/src/Query.cpp"
+    "${LIBRARY_DIR}/JSON/src/Stringifier.cpp"
+    "${LIBRARY_DIR}/JSON/src/Template.cpp"
+    "${LIBRARY_DIR}/JSON/src/TemplateCache.cpp"
+)
 
-add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
-add_library( "${POCO_LIBNAME}" ALIAS "${LIBNAME}")
-set_target_properties( "${LIBNAME}"
-    PROPERTIES
-    VERSION ${SHARED_LIBRARY_VERSION} SOVERSION ${SHARED_LIBRARY_VERSION}
-    OUTPUT_NAME ${POCO_LIBNAME}
-    DEFINE_SYMBOL JSON_EXPORTS
-    )
+add_library (_poco_json ${SRCS})
+add_library (Poco::JSON ALIAS _poco_json)
 
-target_link_libraries( "${LIBNAME}" Foundation)
-target_include_directories( "${LIBNAME}"
-    SYSTEM PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-target_compile_definitions("${LIBNAME}" PUBLIC ${LIB_MODE_DEFINITIONS})
-
-POCO_INSTALL("${LIBNAME}")
-POCO_GENERATE_PACKAGE("${LIBNAME}")
-
-if (ENABLE_TESTS)
-    add_subdirectory(samples)
-    add_subdirectory(testsuite)
-endif ()
-
+target_include_directories (_poco_json SYSTEM PUBLIC "${LIBRARY_DIR}/JSON/include")
+target_link_libraries (_poco_json PUBLIC Poco::Foundation Poco::JSON::Pdjson)

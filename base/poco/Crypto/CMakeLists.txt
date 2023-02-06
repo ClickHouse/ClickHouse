@@ -1,42 +1,40 @@
-set(LIBNAME "Crypto")
-set(POCO_LIBNAME "Poco${LIBNAME}")
-
-# Sources
-file(GLOB SRCS_G "src/*.cpp")
-POCO_SOURCES_AUTO( SRCS ${SRCS_G})
-
-# Headers
-file(GLOB_RECURSE HDRS_G "include/*.h" )
-POCO_HEADERS_AUTO( SRCS ${HDRS_G})
-
-# Version Resource
-if(MSVC AND NOT POCO_STATIC)
-    source_group("Resources" FILES ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-    list(APPEND SRCS ${CMAKE_SOURCE_DIR}/DLLVersion.rc)
-endif()
-
-add_library( "${LIBNAME}" ${LIB_MODE} ${SRCS} )
-add_library( "${POCO_LIBNAME}" ALIAS "${LIBNAME}")
-set_target_properties( "${LIBNAME}"
-    PROPERTIES
-    VERSION ${SHARED_LIBRARY_VERSION} SOVERSION ${SHARED_LIBRARY_VERSION}
-    OUTPUT_NAME ${POCO_LIBNAME}
-    DEFINE_SYMBOL Crypto_EXPORTS
+if (ENABLE_SSL)
+    set (SRCS
+        "${LIBRARY_DIR}/Crypto/src/Cipher.cpp"
+        "${LIBRARY_DIR}/Crypto/src/CipherFactory.cpp"
+        "${LIBRARY_DIR}/Crypto/src/CipherImpl.cpp"
+        "${LIBRARY_DIR}/Crypto/src/CipherKey.cpp"
+        "${LIBRARY_DIR}/Crypto/src/CipherKeyImpl.cpp"
+        "${LIBRARY_DIR}/Crypto/src/CryptoException.cpp"
+        "${LIBRARY_DIR}/Crypto/src/CryptoStream.cpp"
+        "${LIBRARY_DIR}/Crypto/src/CryptoTransform.cpp"
+        "${LIBRARY_DIR}/Crypto/src/DigestEngine.cpp"
+        "${LIBRARY_DIR}/Crypto/src/ECDSADigestEngine.cpp"
+        "${LIBRARY_DIR}/Crypto/src/ECKey.cpp"
+        "${LIBRARY_DIR}/Crypto/src/ECKeyImpl.cpp"
+        "${LIBRARY_DIR}/Crypto/src/EVPPKey.cpp"
+        "${LIBRARY_DIR}/Crypto/src/KeyPair.cpp"
+        "${LIBRARY_DIR}/Crypto/src/KeyPairImpl.cpp"
+        "${LIBRARY_DIR}/Crypto/src/OpenSSLInitializer.cpp"
+        "${LIBRARY_DIR}/Crypto/src/PKCS12Container.cpp"
+        "${LIBRARY_DIR}/Crypto/src/RSACipherImpl.cpp"
+        "${LIBRARY_DIR}/Crypto/src/RSADigestEngine.cpp"
+        "${LIBRARY_DIR}/Crypto/src/RSAKey.cpp"
+        "${LIBRARY_DIR}/Crypto/src/RSAKeyImpl.cpp"
+        "${LIBRARY_DIR}/Crypto/src/X509Certificate.cpp"
     )
 
-target_link_libraries( "${LIBNAME}" Foundation ${OPENSSL_LIBRARIES} )
-target_include_directories( "${LIBNAME}"
-    SYSTEM PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-target_compile_definitions("${LIBNAME}" PUBLIC ${LIB_MODE_DEFINITIONS})
+    add_library (_poco_crypto ${SRCS})
+    add_library (Poco::Crypto ALIAS _poco_crypto)
 
-POCO_INSTALL("${LIBNAME}")
-POCO_GENERATE_PACKAGE("${LIBNAME}")
+    target_compile_options (_poco_crypto PRIVATE -Wno-newline-eof)
+    target_include_directories (_poco_crypto SYSTEM PUBLIC "${LIBRARY_DIR}/Crypto/include")
+    target_link_libraries (_poco_crypto PUBLIC Poco::Foundation OpenSSL::SSL OpenSSL::Crypto)
 
-if (ENABLE_TESTS)
-    add_subdirectory(samples)
-    add_subdirectory(testsuite)
+    message (STATUS "Using Poco::Crypto")
+else ()
+    add_library (_poco_crypto INTERFACE)
+    add_library (Poco::Crypto ALIAS _poco_crypto)
+
+    message (STATUS "Not using Poco::Crypto")
 endif ()
