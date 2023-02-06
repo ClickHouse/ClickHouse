@@ -7541,11 +7541,11 @@ MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
     if (!write_ahead_log)
     {
         auto reservation = reserveSpace(getSettings()->write_ahead_log_max_bytes);
-        for (auto disk: reservation->getDisks())
+        for (const auto & disk: reservation->getDisks())
         {
             if (!disk->isRemote())
             {
-                write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
+                write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk);
                 break;
             }
         }
