@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "Core/ProtocolDefines.h"
 
 namespace DB
 {
@@ -10,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
     extern const int INVALID_PARTITION_VALUE;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 
@@ -251,6 +253,43 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     }
 
     return wb.str();
+}
+
+void MergeTreePartInfo::serialize(WriteBuffer & out) const
+{
+    UInt64 version = DBMS_MERGE_TREE_PART_INFO_VERSION;
+    /// Must be the first
+    writeIntBinary(version, out);
+
+    writeStringBinary(partition_id, out);
+    writeIntBinary(min_block, out);
+    writeIntBinary(max_block, out);
+    writeIntBinary(level, out);
+    writeIntBinary(mutation, out);
+    writeBoolText(use_leagcy_max_level, out);
+}
+
+
+String MergeTreePartInfo::describe() const
+{
+    return getPartNameV1();
+}
+
+
+void MergeTreePartInfo::deserialize(ReadBuffer & in)
+{
+    UInt64 version;
+    readIntBinary(version, in);
+    if (version != DBMS_MERGE_TREE_PART_INFO_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Version for MergeTreePart info mismatched. Got: {}, supported version: {}",
+            version, DBMS_MERGE_TREE_PART_INFO_VERSION);
+
+    readStringBinary(partition_id, in);
+    readIntBinary(min_block, in);
+    readIntBinary(max_block, in);
+    readIntBinary(level, in);
+    readIntBinary(mutation, in);
+    readBoolText(use_leagcy_max_level, in);
 }
 
 DetachedPartInfo DetachedPartInfo::parseDetachedPartName(

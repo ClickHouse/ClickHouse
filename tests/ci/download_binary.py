@@ -6,6 +6,7 @@ This file is needed to avoid cicle import build_download_helper.py <=> env_helpe
 import argparse
 import logging
 import os
+from pathlib import Path
 
 from build_download_helper import download_build_with_progress
 from ci_config import CI_CONFIG, BuildConfig
@@ -57,14 +58,15 @@ def parse_args() -> argparse.Namespace:
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
-    os.makedirs(TEMP_PATH, exist_ok=True)
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
     for build in args.build_names:
         # check if it's in CI_CONFIG
         config = CI_CONFIG["build_config"][build]  # type: BuildConfig
         if args.rename:
-            path = os.path.join(TEMP_PATH, f"clickhouse-{config['static_binary_name']}")
+            path = temp_path / f"clickhouse-{config['static_binary_name']}"
         else:
-            path = os.path.join(TEMP_PATH, "clickhouse")
+            path = temp_path / "clickhouse"
 
         url = S3_ARTIFACT_DOWNLOAD_TEMPLATE.format(
             pr_or_release=f"{args.version.major}.{args.version.minor}",

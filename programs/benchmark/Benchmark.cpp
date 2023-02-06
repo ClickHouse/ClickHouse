@@ -474,7 +474,7 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.read())
+        while (Block block = executor.readBlock())
             info.update(block);
 
         executor.finish();
