@@ -1,5 +1,6 @@
 #include <Backups/BackupCoordinationRemote.h>
 #include <Access/Common/AccessEntityType.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -231,6 +232,7 @@ void BackupCoordinationRemote::createRootNodes()
     zk->createIfNotExists(zookeeper_path + "/repl_mutations", "");
     zk->createIfNotExists(zookeeper_path + "/repl_data_paths", "");
     zk->createIfNotExists(zookeeper_path + "/repl_access", "");
+    zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
     zk->createIfNotExists(zookeeper_path + "/file_names", "");
     zk->createIfNotExists(zookeeper_path + "/file_infos", "");
     zk->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
@@ -446,6 +448,65 @@ void BackupCoordinationRemote::prepareReplicatedAccess() const
             {
                 String file_path = zk->get(path3 + "/" + host_id);
                 replicated_access->addFilePath(access_zk_path, type, host_id, file_path);
+            }
+        }
+    }
+}
+
+void BackupCoordinationRemote::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path)
+{
+    {
+        std::lock_guard lock{mutex};
+        if (replicated_sql_objects)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedSQLObjectsDir() must not be called after preparing");
+    }
+
+    auto zk = getZooKeeper();
+    String path = zookeeper_path + "/repl_sql_objects/" + escapeForFileName(loader_zk_path);
+    zk->createIfNotExists(path, "");
+
+    path += "/";
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            path += "functions";
+            break;
+    }
+
+    zk->createIfNotExists(path, "");
+    path += "/" + host_id;
+    zk->createIfNotExists(path, dir_path);
+}
+
+Strings BackupCoordinationRemote::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const
+{
+    std::lock_guard lock{mutex};
+    prepareReplicatedSQLObjects();
+    return replicated_sql_objects->getDirectories(loader_zk_path, object_type, host_id);
+}
+
+void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
+{
+    if (replicated_sql_objects)
+        return;
+
+    replicated_sql_objects.emplace();
+    auto zk = getZooKeeperNoLock();
+
+    String path = zookeeper_path + "/repl_sql_objects";
+    for (const String & escaped_loader_zk_path : zk->getChildren(path))
+    {
+        String loader_zk_path = unescapeForFileName(escaped_loader_zk_path);
+        String path2 = path + "/" + escaped_loader_zk_path;
+
+        if (zk->exists(path2 + "/functions"))
+        {
+            String path3 = path2 + "/functions";
+            UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::Function;
+            for (const String & host_id : zk->getChildren(path3))
+            {
+                String dir = zk->get(path3 + "/" + host_id);
+                replicated_sql_objects->addDirectory(loader_zk_path, object_type, host_id, dir);
             }
         }
     }

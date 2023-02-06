@@ -31,6 +31,10 @@ public:
     /// The function returns false if this access storage is being already restored by another replica.
     bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) override;
 
+    /// Sets that this replica is going to restore replicated user-defined functions.
+    /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
+    bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) override;
+
     bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
 
 private:
