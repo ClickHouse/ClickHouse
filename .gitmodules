@@ -58,8 +58,7 @@
 	url = https://github.com/apache/thrift
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
-	url = https://github.com/ClibMouse/libhdfs3.git
-        branch = HDFS_PowerPC
+        url = https://github.com/ClickHouse/libhdfs3
 [submodule "contrib/libxml2"]
 	path = contrib/libxml2
 	url = https://github.com/GNOME/libxml2
