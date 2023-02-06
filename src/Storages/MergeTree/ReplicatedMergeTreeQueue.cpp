@@ -1764,21 +1764,21 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
 
     Int64 part_metadata_version = part->getMetadataVersion();
     std::map<int64_t, MutationCommands> result;
-    /// Here we return mutation commands for part which has bigger mutation version than part mutation version.
+    /// Here we return mutation commands for part which has bigger alter version than part metadata version.
     /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
-    /// of part's metadata. It mean that even if we have mutation with version X and part with data version X+10, but
-    /// without mutation version part can still have wrong metadata and we have to apply this change on-fly if needed.
-
+    /// of part's metadata.
     for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
     {
         if (mutation_status->entry->alter_version != -1)
         {
+            /// we take commands with bigger metadata version
             if (mutation_status->entry->alter_version > part_metadata_version)
             {
                 result[mutation_version] = mutation_status->entry->commands;
             }
             else
             {
+                /// entries are ordered, we processing them in reverse order so we can break
                 break;
             }
         }

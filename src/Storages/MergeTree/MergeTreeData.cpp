@@ -4374,6 +4374,11 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExistsUnlocked(const MergeTre
 
 static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 {
+    /// Remove metadata version file and take it from table.
+    /// Currently we cannot attach parts with different schema, so
+    /// we can assume that it's equal to table's current schema.
+    part->removeMetadataVersion();
+
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
@@ -7565,9 +7570,9 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
 {
     std::map<int64_t, MutationCommands> commands_map = getAlterMutationCommandsForPart(part);
 
-    auto part_columns = part->getColumnsDescription();
     AlterConversions result{};
     auto & rename_map = result.rename_map;
+    /// Squash "log of renames" into single map
     for (const auto & [version, commands] : commands_map)
     {
         for (const auto & command : commands)
@@ -7577,15 +7582,7 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
             /// and columns in storage.
             if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (auto it = rename_map.find(command.column_name); it != rename_map.end())
-                {
-                    auto rename_source = it->second;
-                    rename_map.erase(it);
-
-                    rename_map[command.rename_to] = rename_source;
-                }
-                else
-                    rename_map[command.rename_to] = command.column_name;
+                rename_map[command.rename_to] = command.column_name;
             }
         }
     }
@@ -7596,6 +7593,7 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
             it = rename_map.erase(it);
         else
             ++it;
+
     }
 
     return result;
