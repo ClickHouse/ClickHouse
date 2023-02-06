@@ -64,6 +64,15 @@ private:
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
+    enum class FilesystemPrefetchState
+    {
+        USED,
+        CANCELLED_WITH_SEEK,
+        CANCELLED_WITH_RANGE_CHANGE,
+        UNNEEDED,
+    };
+    void resetPrefetch(FilesystemPrefetchState state);
+
     ReadSettings read_settings;
 
     IAsynchronousReader & reader;

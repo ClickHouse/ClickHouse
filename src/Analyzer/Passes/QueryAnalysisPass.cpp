@@ -1,6 +1,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Common/NamePrompter.h>
+#include <Common/ProfileEvents.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -66,6 +67,14 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/HashUtils.h>
+
+namespace ProfileEvents
+{
+    extern const Event ScalarSubqueriesGlobalCacheHit;
+    extern const Event ScalarSubqueriesCacheMiss;
+}
 
 #include <Common/checkStackSize.h>
 
@@ -1033,9 +1042,10 @@ public:
             default:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Node {} with type {} is not supported by query analyzer. Supported nodes are query, union, identifier, constant, column, function, list.",
-                    node->formatASTForErrorMessage(),
-                    node->getNodeTypeName());
+                                "Node {} with type {} is not supported by query analyzer. "
+                                "Supported nodes are query, union, identifier, constant, column, function, list.",
+                                node->formatASTForErrorMessage(),
+                                node->getNodeTypeName());
             }
         }
     }
@@ -1048,6 +1058,8 @@ private:
     static bool isFunctionExpressionNodeType(QueryTreeNodeType node_type);
 
     static bool isTableExpressionNodeType(QueryTreeNodeType node_type);
+
+    static DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
 
     static ProjectionName calculateFunctionProjectionName(const QueryTreeNodePtr & function_node,
         const ProjectionNames & parameters_projection_names,
@@ -1097,7 +1109,7 @@ private:
 
     static QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
 
-    static void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
+    void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, size_t subquery_depth, ContextPtr context);
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
@@ -1207,6 +1219,9 @@ private:
     /// Global resolve expression node to projection names map
     std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
 
+    /// Results of scalar sub queries
+    std::unordered_map<QueryTreeNodeConstRawPtrWithHash, std::shared_ptr<ConstantValue>> scalars;
+
 };
 
 /// Utility functions implementation
@@ -1227,6 +1242,34 @@ bool QueryAnalyzer::isTableExpressionNodeType(QueryTreeNodeType node_type)
 {
     return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+DataTypePtr QueryAnalyzer::getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
+{
+    auto node_type = query_tree_node->getNodeType();
+
+    switch (node_type)
+    {
+        case QueryTreeNodeType::CONSTANT:
+            [[fallthrough]];
+        case QueryTreeNodeType::COLUMN:
+        {
+            return query_tree_node->getResultType();
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            auto & function_node = query_tree_node->as<FunctionNode &>();
+            if (function_node.isResolved())
+                return function_node.getResultType();
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    return nullptr;
 }
 
 ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNodePtr & function_node, const ProjectionNames & parameters_projection_names,
@@ -1534,12 +1577,12 @@ void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
 
-            auto expression_node_type = expression->getNodeType();
+            auto result_type = getExpressionNodeResultTypeOrNull(expression);
 
-            if (identifier_is_compound && isExpressionNodeType(expression_node_type))
+            if (identifier_is_compound && result_type)
             {
                 collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    expression->getResultType(),
+                    result_type,
                     expression_identifier,
                     valid_identifiers_result);
             }
@@ -1571,21 +1614,23 @@ void QueryAnalyzer::collectScopeValidIdentifiersForTypoCorrection(
 
     for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
     {
+        assert(expression);
         auto expression_node_type = expression->getNodeType();
 
         if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
         {
             auto expression_identifier = Identifier(argument_name);
+            valid_identifiers_result.insert(expression_identifier);
 
-            if (identifier_is_compound)
+            auto result_type = getExpressionNodeResultTypeOrNull(expression);
+
+            if (identifier_is_compound && result_type)
             {
                 collectCompoundExpressionValidIdentifiersForTypoCorrection(unresolved_identifier,
-                    expression->getResultType(),
+                    result_type,
                     expression_identifier,
                     valid_identifiers_result);
             }
-
-            valid_identifiers_result.insert(expression_identifier);
         }
         else if (identifier_is_short && allow_function_identifiers && isFunctionExpressionNodeType(expression_node_type))
         {
@@ -1687,6 +1732,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
             node->getNodeTypeName(),
             node->formatASTForErrorMessage());
 
+    auto scalars_iterator = scalars.find(node.get());
+    if (scalars_iterator != scalars.end())
+    {
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+        node = std::make_shared<ConstantNode>(scalars_iterator->second, node);
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
+
     auto subquery_context = Context::createCopy(context);
 
     Settings subquery_settings = context->getSettings();
@@ -1699,9 +1754,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
 
     auto io = interpreter->execute();
 
-    Block block;
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setProgressCallback(context->getProgressCallback());
+
+    Block block;
 
     while (block.rows() == 0 && executor.pull(block))
     {
@@ -1743,7 +1799,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     block = materializeBlock(block);
     size_t columns = block.columns();
 
-    // Block scalar;
     Field scalar_value;
     DataTypePtr scalar_type;
 
@@ -1770,6 +1825,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, size
     }
 
     auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), std::move(scalar_type));
+    scalars[node.get()] = constant_value;
     node = std::make_shared<ConstantNode>(std::move(constant_value), node);
 }
 
@@ -1887,7 +1943,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
     if (!table_node && !table_function_node && !query_node && !union_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Unexpected table expression. Expected table, table function, query or union node. Actual {}",
+        "Unexpected table expression. Expected table, table function, query or union node. Table node: {}, scope node: {}",
         table_expression_node->formatASTForErrorMessage(),
         scope.scope_node->formatASTForErrorMessage());
 
@@ -1925,10 +1981,11 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
         table_expression_node_type == QueryTreeNodeType::QUERY ||
         table_expression_node_type == QueryTreeNodeType::UNION)
         throw Exception(ErrorCodes::ALIAS_REQUIRED,
-            "JOIN {} no alias for subquery or table function {}. In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
-            join_node->formatASTForErrorMessage(),
-            table_expression_node->formatASTForErrorMessage(),
-            scope.scope_node->formatASTForErrorMessage());
+                        "JOIN {} no alias for subquery or table function {}. "
+                        "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
+                        join_node->formatASTForErrorMessage(),
+                        table_expression_node->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
 }
 
 std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
@@ -4297,7 +4354,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             bool force_grouping_standard_compatibility = scope.context->getSettingsRef().force_grouping_standard_compatibility;
             auto grouping_function = std::make_shared<FunctionGrouping>(force_grouping_standard_compatibility);
             auto grouping_function_adaptor = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(grouping_function));
-            function_node.resolveAsFunction(grouping_function_adaptor->build({}));
+            function_node.resolveAsFunction(grouping_function_adaptor->build(argument_columns));
+
             return result_projection_names;
         }
     }
@@ -4308,12 +4366,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            std::string error_message = fmt::format("Aggregate function with name '{}' does not exists. In scope {}",
-               function_name,
-               scope.scope_node->formatASTForErrorMessage());
-
-            AggregateFunctionFactory::instance().appendHintsMessage(error_message, function_name);
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, error_message);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exists. In scope {}{}",
+                            function_name, scope.scope_node->formatASTForErrorMessage(),
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -4429,12 +4484,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             size_t function_data_type_arguments_size = function_data_type_argument_types.size();
             if (function_data_type_arguments_size != lambda_arguments_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function '{}' function data type for lambda argument with index {} arguments size mismatch. Actual {}. Expected {}. In scope {}",
-                    function_name,
-                    function_data_type_arguments_size,
-                    lambda_arguments_size,
-                    argument_types[function_lambda_argument_index]->getName(),
-                    scope.scope_node->formatASTForErrorMessage());
+                                "Function '{}"
+                                "' function data type for lambda argument with index {} arguments size mismatch. "
+                                "Actual {}. Expected {}. In scope {}",
+                                function_name,
+                                function_data_type_arguments_size,
+                                lambda_arguments_size,
+                                argument_types[function_lambda_argument_index]->getName(),
+                                scope.scope_node->formatASTForErrorMessage());
 
             QueryTreeNodes lambda_arguments;
             lambda_arguments.reserve(lambda_arguments_size);
@@ -5628,10 +5685,12 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     auto result_right_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node.getRightTableExpression(), scope);
                     if (!result_right_table_expression)
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "JOIN {} using identifier '{}' cannot be resolved from right table expression. In scope {}",
-                            join_node.formatASTForErrorMessage(),
-                            identifier_full_name,
-                            scope.scope_node->formatASTForErrorMessage());
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                                        "JOIN {} using identifier '{}' cannot "
+                                        "be resolved from right table expression. In scope {}",
+                                        join_node.formatASTForErrorMessage(),
+                                        identifier_full_name,
+                                        scope.scope_node->formatASTForErrorMessage());
 
                     DataTypePtr common_type = tryGetLeastSupertype(DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()});
 
@@ -5664,7 +5723,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::IDENTIFIER:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Identifiers in FROM section must be already resolved. In scope {}",
+                "Identifiers in FROM section must be already resolved. Node {}, scope {}",
                 join_tree_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }

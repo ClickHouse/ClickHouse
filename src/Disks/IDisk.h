@@ -28,6 +28,7 @@ namespace Poco
 {
     namespace Util
     {
+        /// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
         class AbstractConfiguration;
     }
 }
@@ -243,7 +244,9 @@ public:
 
     virtual NameSet getCacheLayersNames() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method `getCacheLayersNames()` is not implemented for disk: {}",
+                        getDataSourceDescription().type);
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -268,7 +271,9 @@ public:
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getDataSourceDescription().type);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Method `getRemotePathsRecursive() not implemented for disk: {}`",
+                        getDataSourceDescription().type);
     }
 
     /// Batch request to remove multiple files.
@@ -483,3 +488,13 @@ inline String directoryPath(const String & path)
 }
 
 }
+
+template <>
+struct fmt::formatter<fs::path> : fmt::formatter<std::string>
+{
+    template <typename FormatCtx>
+    auto format(const fs::path & path, FormatCtx & ctx) const
+    {
+        return fmt::formatter<std::string>::format(path.string(), ctx);
+    }
+};

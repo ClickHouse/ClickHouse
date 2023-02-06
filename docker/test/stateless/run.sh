@@ -130,11 +130,13 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
+    ADDITIONAL_OPTIONS+=('--report-logs-stats')
+
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-            --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-        | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a test_output/test_result.txt
+        --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+    | ts '%Y-%m-%d %H:%M:%S' \
+    | tee -a test_output/test_result.txt
     set -e
 }
 

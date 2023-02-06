@@ -344,13 +344,13 @@ private:
 
         static size_t mysqlDayOfWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            *dest = '0' + ToDayOfWeekImpl::execute(source, timezone);
+            *dest = '0' + ToDayOfWeekImpl::execute(source, 0, timezone);
             return 1;
         }
 
         static size_t mysqlDayOfWeek0To6(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto day = ToDayOfWeekImpl::execute(source, timezone);
+            auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
             *dest = '0' + (day == 7 ? 0 : day);
             return 1;
         }
@@ -478,7 +478,7 @@ private:
             return res.size();
         }
 
-        static size_t jodaCentryOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        static size_t jodaCenturyOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             year = (year < 0 ? -year : year);
@@ -499,13 +499,13 @@ private:
 
         static size_t jodaDayOfWeek1Based(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
             return writeNumberWithPadding(dest, week_day, min_represent_digits);
         }
 
         static size_t jodaDayOfWeekText(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
             if (week_day == 7)
                 week_day = 0;
 
@@ -673,8 +673,9 @@ public:
                     arguments[0].type->getName(), getName());
             if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
-                    arguments[0].type->getName(), getName());
+                                "Illegal type {} of first argument of function {} when arguments size is 2 or 3. "
+                                "Should be a integer or a date with time",
+                                arguments[0].type->getName(), getName());
         }
         else
         {
@@ -718,8 +719,9 @@ public:
                     }))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64 when arguments size is 1.",
-                        arguments[0].column->getName(), getName());
+                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
+                                    "or DateTime64 when arguments size is 1.",
+                                    arguments[0].column->getName(), getName());
                 }
             }
             else
@@ -899,7 +901,7 @@ public:
 
                 pos = percent_pos + 1;
                 if (pos >= end)
-                    throw Exception("Sign '%' is the last in format, if you need it, use '%%'", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign '%' is the last in format, if you need it, use '%%'");
 
                 switch (*pos)
                 {
@@ -1135,7 +1137,7 @@ public:
                     // Case 2: find closing single quote
                     Int64 count = numLiteralChars(cur_token + 1, end);
                     if (count == -1)
-                        throw Exception("No closing single quote for literal", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No closing single quote for literal");
                     else
                     {
                         for (Int64 i = 1; i <= count; i++)
@@ -1167,7 +1169,7 @@ public:
                         reserve_size += repetitions <= 3 ? 2 : 13;
                         break;
                     case 'C':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCentryOfEra, repetitions));
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCenturyOfEra, repetitions));
                         /// Year range [1900, 2299]
                         reserve_size += std::max(repetitions, 2);
                         break;
@@ -1284,7 +1286,7 @@ public:
                         reserve_size += 32;
                         break;
                     case 'Z':
-                        throw Exception("format is not supported for TIMEZONE_OFFSET_ID", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for TIMEZONE_OFFSET_ID");
                     default:
                         if (isalpha(*cur_token))
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for {}", String(cur_token, repetitions));

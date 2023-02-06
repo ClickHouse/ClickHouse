@@ -48,8 +48,7 @@ void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const 
     else if (isRightIdentifier(table_pos.first) && isLeftIdentifier(table_pos.second))
         analyzed_join.addOnKeys(right, left);
     else
-        throw Exception("Cannot detect left and right JOIN keys. JOIN ON section is ambiguous.",
-                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot detect left and right JOIN keys. JOIN ON section is ambiguous.");
 }
 
 void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast,
@@ -78,7 +77,7 @@ void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, co
 void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
 {
     if (!asof_left_key || !asof_right_key)
-        throw Exception("No inequality in ASOF JOIN ON section.", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "No inequality in ASOF JOIN ON section.");
     addJoinKeys(asof_left_key, asof_right_key, {JoinIdentifierPos::Left, JoinIdentifierPos::Right});
 }
 
@@ -87,8 +86,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr &
     if (auto expr_from_table = getTableForIdentifiers(ast, false, data); isDeterminedIdentifier(expr_from_table))
         data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
     else
-        throw Exception("Unexpected identifier '" + ident.name() + "' in JOIN ON section",
-                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unexpected identifier '{}' in JOIN ON section", ident.name());
 }
 
 void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & ast, Data & data)
@@ -101,8 +99,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     if (func.name == "equals" || inequality != ASOFJoinInequality::None)
     {
         if (func.arguments->children.size() != 2)
-            throw Exception("Function " + func.name + " takes two arguments, got '" + func.formatForErrorMessage() + "' instead",
-                            ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Function {} takes two arguments, got '{}' instead",
+                            func.name, func.formatForErrorMessage());
     }
 
     if (func.name == "equals")
@@ -138,8 +136,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     if (data.is_asof && inequality != ASOFJoinInequality::None)
     {
         if (data.asof_left_key || data.asof_right_key)
-            throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF JOIN expects exactly one inequality in ON section. "
+                            "Unexpected '{}'", queryToString(ast));
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
@@ -149,8 +147,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         return;
     }
 
-    throw Exception("Unsupported JOIN ON conditions. Unexpected '" + queryToString(ast) + "'",
-                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unsupported JOIN ON conditions. Unexpected '{}'",
+                    queryToString(ast));
 }
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
@@ -158,8 +156,8 @@ void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<co
     if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->name == "arrayJoin")
-            throw Exception("Not allowed function in JOIN ON. Unexpected '" + queryToString(ast) + "'",
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Not allowed function in JOIN ON. Unexpected '{}'",
+                            queryToString(ast));
     }
     else if (const auto * ident = ast->as<ASTIdentifier>())
     {
@@ -199,7 +197,7 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
 
         it = aliases.find(identifier->name());
         if (!max_attempts--)
-            throw Exception("Cannot unroll aliases for '" + identifier->name() + "'", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unroll aliases for '{}'", identifier->name());
     }
 
     return identifier;
@@ -254,7 +252,7 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
                     in_left_table = !in_right_table;
                 }
                 else
-                    throw Exception("Column '" + name + "' is ambiguous", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                    throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column '{}' is ambiguous", name);
             }
 
             if (in_left_table)
@@ -272,9 +270,9 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
         if (membership != JoinIdentifierPos::Unknown && membership != table_number)
         {
             if (throw_on_table_mix)
-                throw Exception("Invalid columns in JOIN ON section. Columns "
-                            + identifiers[0]->getAliasOrColumnName() + " and " + ident->getAliasOrColumnName()
-                            + " are from different tables.", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Invalid columns in JOIN ON section. "
+                            "Columns {} and {} are from different tables.",
+                            identifiers[0]->getAliasOrColumnName(), ident->getAliasOrColumnName());
             return JoinIdentifierPos::Unknown;
         }
     }

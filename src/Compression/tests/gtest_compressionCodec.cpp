@@ -534,7 +534,7 @@ TEST_P(CodecTest, TranscodingWithDataType)
     WhichDataType which(std::get<1>(GetParam()).data_type.get());
     bool data_is_float = which.isFloat();
     if (codec_is_gorilla && !data_is_float)
-        GTEST_SKIP() << "Skipping Gorilla-compressed integer column";
+        GTEST_SKIP() << "Skipping Gorilla-compressed non-float column";
 
     const auto codec = makeCodec(CODEC_WITH_DATA_TYPE);
     testTranscoding(*codec);
