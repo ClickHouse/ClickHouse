@@ -1,14 +1,19 @@
 #pragma once
 
+#include <array>
+#include <string_view>
 #include <DataTypes/DataTypeString.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <base/range.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
+#include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
+#include <Columns/IColumn.h>
+
 
 namespace DB
 {
@@ -105,24 +110,12 @@ private:
     bool specified_min_max_x;
 
     template <class T>
-    String getBar(const T value) const
+    size_t updateFrame(ColumnString::Chars & frame, const T value) const
     {
-        if (isNaN(value) || value > 8 || value < 1)
-            return " ";
-
-        // ▁▂▃▄▅▆▇█
-        switch (static_cast<UInt8>(value))
-        {
-            case 1: return "▁";
-            case 2: return "▂";
-            case 3: return "▃";
-            case 4: return "▄";
-            case 5: return "▅";
-            case 6: return "▆";
-            case 7: return "▇";
-            case 8: return "█";
-        }
-        return " ";
+        static constexpr std::array<std::string_view, 9> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+        const auto & bar = (isNaN(value) || value > 8 || value < 1) ? bars[0] : bars[static_cast<UInt8>(value)];
+        frame.insert(bar.begin(), bar.end());
+        return bar.size();
     }
 
     /**
@@ -136,11 +129,19 @@ private:
      *  the actual y value of the first position + the actual second position y*0.1, and the remaining y*0.9 is reserved for the next bucket.
      *  The next bucket will use the last y*0.9 + the actual third position y*0.2, and the remaining y*0.8 will be reserved for the next bucket. And so on.
      */
-    String render(const AggregateFunctionSparkbarData<X, Y> & data) const
+    void render(ColumnString & to_column, const AggregateFunctionSparkbarData<X, Y> & data) const
     {
-        String value;
+        size_t sz = 0;
+        auto & values = to_column.getChars();
+        auto & offsets = to_column.getOffsets();
+        auto update_column = [&] ()
+        {
+            values.push_back('\0');
+            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+        };
+
         if (data.points.empty() || !width)
-            return value;
+            return update_column();
 
         size_t diff_x;
         X min_x_local;
@@ -167,13 +168,13 @@ private:
                 {
                     auto it = data.points.find(static_cast<X>(min_x_local + i));
                     bool found = it != data.points.end();
-                    value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
+                    sz += updateFrame(values, found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
                 }
             }
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
+                    sz += updateFrame(values, data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
             }
         }
         else
@@ -236,25 +237,25 @@ private:
             }
 
             if (!min_y || !max_y) // No value is set
-                return {};
+                return update_column();
 
             Float64 diff_y = max_y.value() - min_y.value();
 
-            auto get_bars = [&] (const std::optional<Float64> & point_y)
+            auto update_frame = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+                sz += updateFrame(values, point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
             };
-            auto get_bars_for_constant = [&] (const std::optional<Float64> & point_y)
+            auto update_frame_for_constant = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point_y ? 1 : 0);
+                sz += updateFrame(values, point_y ? 1 : 0);
             };
 
             if (diff_y != 0.0)
-                std::for_each(new_points.begin(), new_points.end(), get_bars);
+                std::for_each(new_points.begin(), new_points.end(), update_frame);
             else
-                std::for_each(new_points.begin(), new_points.end(), get_bars_for_constant);
+                std::for_each(new_points.begin(), new_points.end(), update_frame_for_constant);
         }
-        return value;
+        update_column();
     }
 
 
@@ -314,8 +315,7 @@ public:
     {
         auto & to_column = assert_cast<ColumnString &>(to);
         const auto & data = this->data(place);
-        const String & value = render(data);
-        to_column.insertData(value.data(), value.size());
+        render(to_column, data);
     }
 };
 
