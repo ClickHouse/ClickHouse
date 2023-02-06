@@ -137,6 +137,7 @@ namespace CurrentMetrics
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric BackgroundMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
 }
@@ -1221,6 +1222,22 @@ try
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+            size_t background_memory_usage_soft_limit = config->getUInt64("background_memory_usage_soft_limit", 0);
+            double background_memory_usage_to_ram_ratio = config->getDouble("background_memory_usage_to_ram_ratio", 0.5);
+
+            size_t default_background_server_memory_usage = static_cast<size_t>(memory_amount * background_memory_usage_to_ram_ratio);
+            if (background_memory_usage_soft_limit == 0 || background_memory_usage_soft_limit > default_background_server_memory_usage)
+                background_memory_usage_soft_limit = default_background_server_memory_usage;
+
+            LOG_INFO(log, "Setting background_memory_usage_soft_limit was set to {}"
+                " ({} available * {:.2f} background_memory_usage_to_ram_ratio)",
+                formatReadableSizeWithBinarySuffix(background_memory_usage_soft_limit),
+                formatReadableSizeWithBinarySuffix(memory_amount),
+                background_memory_usage_to_ram_ratio);
+            background_memory_tracker.setSoftLimit(background_memory_usage_soft_limit);
+            background_memory_tracker.setDescription("(background)");
+            background_memory_tracker.setMetric(CurrentMetrics::BackgroundMemoryTracking);
 
             bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
             total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);

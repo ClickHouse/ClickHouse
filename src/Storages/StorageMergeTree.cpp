@@ -7,6 +7,7 @@
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
+#include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool.h>
@@ -892,7 +893,12 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
 
-    if (partition_id.empty())
+    if (!canEnqueueBackgroundTask())
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "Current background tasks memory usage is more than the limit";
+    }
+    else if (partition_id.empty())
     {
         UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSizeForMerge();
         bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < data_settings->max_number_of_merges_with_ttl_in_pool;

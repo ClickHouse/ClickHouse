@@ -128,7 +128,7 @@ struct MergeListElement : boost::noncopyable
     /// Description used for logging
     /// Needs to outlive memory_tracker since it's used in its destructor
     const String description{"Mutate/Merge"};
-    MemoryTracker memory_tracker{VariableContext::Process};
+    MemoryTracker memory_tracker{&background_memory_tracker, VariableContext::Process};
 
     MergeListElement(
         const StorageID & table_id_,
