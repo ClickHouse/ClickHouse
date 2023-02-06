@@ -52,7 +52,7 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
-                write_part_log(ExecutionStatus::fromCurrentException());
+                write_part_log(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
         }

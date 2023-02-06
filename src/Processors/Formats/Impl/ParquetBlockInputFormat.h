@@ -8,7 +8,7 @@
 
 namespace parquet::arrow { class FileReader; }
 
-namespace arrow { class Buffer; }
+namespace arrow { class Buffer; class RecordBatchReader;}
 
 namespace DB
 {
@@ -46,6 +46,7 @@ private:
     BlockMissingValues block_missing_values;
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
+    std::shared_ptr<arrow::RecordBatchReader> current_record_batch_reader;
 
     std::atomic<int> is_stopped{0};
 };

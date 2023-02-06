@@ -186,7 +186,10 @@ QueryCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_
     , min_query_runtime(min_query_runtime_)
 {
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
+    {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+    }
 }
 
 void QueryCache::Writer::buffer(Chunk && partial_query_result)
@@ -205,6 +208,7 @@ void QueryCache::Writer::buffer(Chunk && partial_query_result)
     {
         chunks->clear(); /// eagerly free some space
         skip_insert = true;
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
     }
 }
 
@@ -214,12 +218,19 @@ void QueryCache::Writer::finalizeWrite()
         return;
 
     if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
+    {
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (query not expensive enough), query: {}", key.queryStringFromAst());
         return;
+    }
 
     std::lock_guard lock(mutex);
 
     if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
-        return; /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+    {
+        /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        return;
+    }
 
     auto sufficient_space_in_cache = [this]() TSA_REQUIRES(mutex)
     {
@@ -242,9 +253,11 @@ void QueryCache::Writer::finalizeWrite()
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Removed {} stale entries", removed_items);
     }
 
-    /// Insert or replace if enough space
-    if (sufficient_space_in_cache())
+    if (!sufficient_space_in_cache())
+        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (cache has insufficient space), query: {}", key.queryStringFromAst());
+    else
     {
+        //// Insert or replace key
         cache_size_in_bytes += query_result.sizeInBytes();
         if (auto it = cache.find(key); it != cache.end())
             cache_size_in_bytes -= it->second.sizeInBytes(); // key replacement
@@ -300,14 +313,6 @@ Pipe && QueryCache::Reader::getPipe()
     return std::move(pipe);
 }
 
-QueryCache::QueryCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_)
-    : max_cache_size_in_bytes(max_cache_size_in_bytes_)
-    , max_cache_entries(max_cache_entries_)
-    , max_cache_entry_size_in_bytes(max_cache_entry_size_in_bytes_)
-    , max_cache_entry_size_in_rows(max_cache_entry_size_in_rows_)
-{
-}
-
 QueryCache::Reader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
@@ -330,14 +335,22 @@ void QueryCache::reset()
 
 size_t QueryCache::recordQueryRun(const Key & key)
 {
-    static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
-
-    std::lock_guard times_executed_lock(mutex);
+    std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
     // Regularly drop times_executed to avoid DOS-by-unlimited-growth.
+    static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
         times_executed.clear();
     return times;
+}
+
+void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(mutex);
+    max_cache_size_in_bytes = config.getUInt64("query_cache.size", 1_GiB);
+    max_cache_entries = config.getUInt64("query_cache.max_entries", 1024);
+    max_cache_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size", 1_MiB);
+    max_cache_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows", 30'000'000);
 }
 
 }
