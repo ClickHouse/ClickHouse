@@ -67,11 +67,14 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
-void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
+std::unique_lock<std::mutex> ReplicatedMergeTreePartCheckThread::pausePartsCheck()
 {
     /// Wait for running tasks to finish and temporarily stop checking
-    auto pause_checking_parts = task->getExecLock();
+    return task->getExecLock();
+}
 
+void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
+{
     std::lock_guard lock(parts_mutex);
     for (auto it = parts_queue.begin(); it != parts_queue.end();)
     {
