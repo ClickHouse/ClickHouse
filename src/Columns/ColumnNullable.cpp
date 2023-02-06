@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnsCommon.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -25,12 +26,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
     extern const int NOT_IMPLEMENTED;
-}
-
-template <typename T>
-inline bool contain_byte(const T* __restrict data, const size_t length, const signed char byte)
-{
-    return nullptr != std::memchr(reinterpret_cast<const void*>(data), byte, length);
 }
 
 ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_)
@@ -189,8 +184,7 @@ void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t l
     getNullMapColumn().insertRangeFrom(*nullable_col.null_map, start, length);
     getNestedColumn().insertRangeFrom(*nullable_col.nested_column, start, length);
     const auto& src_null_map_data = nullable_col.getNullMapData();
-    has_null = hasNull();
-    has_null |= contain_byte(src_null_map_data.data() + start, length, 1);
+    has_null = has_null ? has_null : memoryIsZero(src_null_map_data.data() ,start, length);
 }
 
 void ColumnNullable::insert(const Field & x)
