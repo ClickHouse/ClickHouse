@@ -54,6 +54,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
+#include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
 
 #include "config_version.h"
@@ -363,7 +364,17 @@ void TCPHandler::runImpl()
                 return receiveReadTaskResponseAssumeLocked();
             });
 
-            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            query_context->setMergeTreeAllRangesCallback([this](InitialAllRangesAnnouncement announcement)
+            {
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return;
+
+                sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
+            });
+
+            query_context->setMergeTreeReadTaskCallback([this](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
             {
                 std::lock_guard lock(task_callback_mutex);
 
@@ -920,7 +931,15 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request)
+void TCPHandler::sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement)
+{
+    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnounecement, *out);
+    announcement.serialize(*out);
+    out->next();
+}
+
+
+void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);
@@ -1348,7 +1367,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
-std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1371,7 +1390,7 @@ std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTa
                     Protocol::Client::toString(packet_type));
         }
     }
-    PartitionReadResponse response;
+    ParallelReadResponse response;
     response.deserialize(*in);
     return response;
 }

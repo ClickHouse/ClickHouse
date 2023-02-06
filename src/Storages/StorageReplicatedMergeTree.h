@@ -857,7 +857,7 @@ private:
     // Create table id if needed
     void createTableSharedID() const;
 
-    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
+    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
 
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 
