@@ -71,6 +71,7 @@ def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
+# First and last lines of the log
 def trim_for_log(s):
     if not s:
         return s
