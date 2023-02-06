@@ -102,6 +102,10 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
 
+    // Current thread is considered as cancelable part of thread group
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->cancel_tokens.enterGroup();
+
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
 
@@ -351,6 +355,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         std::lock_guard guard(thread_group->mutex);
         move_to_temp = std::move(thread_group->finished_threads_counters_memory);
     }
+
+    // Current thread is not considered as cancelable part of this thread group any longer
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->cancel_tokens.exitGroup();
 
     thread_group.reset();
 

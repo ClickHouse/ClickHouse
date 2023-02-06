@@ -51,6 +51,29 @@ public:
         return token;
     }
 
+    // Restores initial state for token to be reused. See `Cancelable` struct.
+    // Intended to be called only by thread associated with this token.
+    void reset()
+    {
+        state.store(0);
+    }
+
+    // Enable thread cancellation. See `NonCancelable` struct.
+    // Intended to be called only by thread associated with this token.
+    void enable()
+    {
+        chassert((state.load() & disabled) == disabled);
+        state.fetch_and(~disabled);
+    }
+
+    // Disable thread cancellation. See `NonCancelable` struct.
+    // Intended to be called only by thread associated with this token.
+    void disable()
+    {
+        chassert((state.load() & disabled) == 0);
+        state.fetch_or(disabled);
+    }
+
     // Cancelable wait on memory address (futex word).
     //   Thread will do atomic compare-and-sleep `*address == value`. Waiting will continue until `notify_one()`
     //   or `notify_all()` will be called with the same `address` or calling thread will be canceled using `signal()`.
@@ -84,33 +107,10 @@ public:
     // Note that most significant bit at `addresses` to be used with `wait()` is reserved.
     static constexpr UInt32 signaled = 1u << 31u;
 
+    // Token is permanently attached to a single thread. There is one-to-one mapping between threads and tokens.
+    const UInt64 thread_id;
+
 private:
-    friend struct Cancelable;
-    friend struct NonCancelable;
-
-    // Restores initial state for token to be reused. See `Cancelable` struct.
-    // Intended to be called only by thread associated with this token.
-    void reset()
-    {
-        state.store(0);
-    }
-
-    // Enable thread cancellation. See `NonCancelable` struct.
-    // Intended to be called only by thread associated with this token.
-    void enable()
-    {
-        chassert((state.load() & disabled) == disabled);
-        state.fetch_and(~disabled);
-    }
-
-    // Disable thread cancellation. See `NonCancelable` struct.
-    // Intended to be called only by thread associated with this token.
-    void disable()
-    {
-        chassert((state.load() & disabled) == 0);
-        state.fetch_or(disabled);
-    }
-
     // Singleton. Maps thread IDs to tokens.
     struct Registry
     {
@@ -150,9 +150,6 @@ private:
     // Cancellation exception
     int exception_code;
     String exception_message;
-
-    // Token is permanently attached to a single thread. There is one-to-one mapping between threads and tokens.
-    const UInt64 thread_id;
 
     // To avoid `Registry` destruction before last `Token` destruction
     const std::shared_ptr<Registry> registry;

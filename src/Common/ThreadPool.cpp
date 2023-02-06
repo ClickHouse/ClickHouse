@@ -290,10 +290,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             try
             {
-                // Enable thread cancellation
-                DB::Cancelable cancelable;
-                UNUSED(cancelable);
-
                 CurrentMetrics::Increment metric_active_threads(
                     std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThreadActive : CurrentMetrics::LocalThreadActive);
 

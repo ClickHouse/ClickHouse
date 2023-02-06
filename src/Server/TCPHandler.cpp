@@ -12,7 +12,6 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
-#include <Common/CancelToken.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
@@ -1942,10 +1941,6 @@ void TCPHandler::run()
 {
     try
     {
-        // Enable thread cancellation
-        Cancelable cancelable;
-        UNUSED(cancelable);
-
         runImpl();
 
         LOG_DEBUG(log, "Done processing connection.");

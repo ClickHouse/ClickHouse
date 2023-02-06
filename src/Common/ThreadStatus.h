@@ -5,6 +5,7 @@
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CancelTokenGroup.h>
 #include <base/StringRef.h>
 
 #include <boost/noncopyable.hpp>
@@ -81,6 +82,7 @@ public:
 
     std::unordered_set<UInt64> thread_ids;
     std::unordered_set<ThreadStatusPtr> threads;
+    CancelTokenGroup cancel_tokens;
 
     /// The first thread created this thread group
     UInt64 master_thread_id = 0;

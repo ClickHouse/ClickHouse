@@ -66,8 +66,8 @@ const std::shared_ptr<CancelToken::Registry> & CancelToken::Registry::instance()
 }
 
 CancelToken::CancelToken()
-    : state(disabled)
-    , thread_id(getThreadId())
+    : thread_id(getThreadId())
+    , state(disabled)
     , registry(Registry::instance())
 {
     registry->insert(this);
