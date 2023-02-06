@@ -1,0 +1,21 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ApacheConnector", "ApacheConnector_vs110.vcxproj", "{9866EE28-0612-4746-BD35-3B15B0AF7267}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|Win32 = debug_shared|Win32
+		release_shared|Win32 = release_shared|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9866EE28-0612-4746-BD35-3B15B0AF7267}.debug_shared|Win32.ActiveCfg = debug_shared|Win32
+		{9866EE28-0612-4746-BD35-3B15B0AF7267}.debug_shared|Win32.Build.0 = debug_shared|Win32
+		{9866EE28-0612-4746-BD35-3B15B0AF7267}.debug_shared|Win32.Deploy.0 = debug_shared|Win32
+		{9866EE28-0612-4746-BD35-3B15B0AF7267}.release_shared|Win32.ActiveCfg = release_shared|Win32
+		{9866EE28-0612-4746-BD35-3B15B0AF7267}.release_shared|Win32.Build.0 = release_shared|Win32
+		{9866EE28-0612-4746-BD35-3B15B0AF7267}.release_shared|Win32.Deploy.0 = release_shared|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

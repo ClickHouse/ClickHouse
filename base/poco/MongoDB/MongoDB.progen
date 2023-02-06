@@ -1,0 +1,16 @@
+vc.project.guid = ${vc.project.guidFromName}
+vc.project.name = MongoDB
+vc.project.target = Poco${vc.project.name}
+vc.project.type = library
+vc.project.pocobase = ..
+vc.project.outdir = ${vc.project.pocobase}
+vc.project.platforms = Win32, x64
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = ${vc.project.name}_vs90.vcproj
+vc.project.compiler.include = ..\\Foundation\\include;..\\Net\\include
+vc.project.compiler.defines = 
+vc.project.compiler.defines.shared = ${vc.project.name}_EXPORTS
+vc.project.compiler.defines.debug_shared = ${vc.project.compiler.defines.shared}
+vc.project.compiler.defines.release_shared = ${vc.project.compiler.defines.shared}
+vc.solution.create = true
+vc.solution.include = testsuite\\TestSuite

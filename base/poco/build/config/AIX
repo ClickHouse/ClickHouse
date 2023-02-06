@@ -1,0 +1,72 @@
+#
+# AIX
+#
+# Make settings for AIX 5.x/xlC 8.0
+#
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+#
+# Define Tools
+#
+CC      = xlc_r
+CXX     = xlC_r
+LINK    = $(CXX)
+LIB     = ar -cr -X32_64
+RANLIB  = ranlib
+SHLIB   = $(CXX) -qmkshrobj -o $@
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = strip -X32_64
+DEP     = $(POCO_BASE)/build/script/makedepend.xlC
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -qobjmodel=compat -qfuncsect
+CFLAGS32        = -q32
+CFLAGS64        = -q64
+CXXFLAGS        = -qrtti=all -qobjmodel=compat -qnamemangling=v5 -qfuncsect
+CXXFLAGS32      = -q32
+CXXFLAGS64      = -q64
+SHLIBFLAGS      = -qtwolink -bh:5 -bnoipath -blibpath:/usr/lib:/lib -blibsuff:so -bautoexp -bnoentry -bM:SRE
+SHLIBFLAGS32    = -q32
+SHLIBFLAGS64    = -q64
+LINKFLAGS       = -qtwolink -bh:5 -bnoipath -blibpath:/usr/lib:/lib -blibsuff:so -brtl
+LINKFLAGS32     = -q32
+LINKFLAGS64     = -q64
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = 
+SHAREDOPT_CC    = -qpic
+SHAREDOPT_CXX   = -qpic
+SHAREDOPT_LINK  = 
+DEBUGOPT_CC     = -g -D_DEBUG -qfullpath
+DEBUGOPT_CXX    = -g -D_DEBUG -qfullpath -qnoinline
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O2 -DNDEBUG
+RELEASEOPT_CXX  = -O2 -DNDEBUG -qmaxmem=16384
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_REENTRANT -D_THREAD_SAFE
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -ldl -lC_r -lc_r

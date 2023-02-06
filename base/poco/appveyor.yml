@@ -1,0 +1,11 @@
+version: poco-{branch}-{build}
+
+install:
+  - cinst cmake
+
+build_script:
+  - set PATH=C:\Program Files\CMake\bin;C:\ProgramData\chocolatey\bin;%PATH%
+  - mkdir cmake-build
+  - cd cmake-build
+  - cmake ..
+  - cmake --build .

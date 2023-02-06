@@ -1,0 +1,75 @@
+#
+# CYGWIN
+#
+# Make settings for Cygwin on WinXP/gcc 3.4 
+# for cross compiling to WinCE ARM with CEGCC
+#
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+POCO_TARGET_OSNAME = WinCE
+POCO_TARGET_OSARCH = ARM
+TOOLPATH = /opt/cegcc
+TOOL = /opt/cegcc/bin/arm-wince-cegcc-
+
+#
+# Define Tools
+#
+CC      = $(TOOL)gcc
+CXX     = $(TOOL)g++
+LINK    = $(CXX)
+LIB     = $(TOOL)ar -cr
+RANLIB  = $(TOOL)ranlib
+SHLIB   = $(CXX) -shared -o $@ -Wl,--out-implib=$(dir $@)$(subst ce,lib,$(notdir $@)).a -Wl,--export-all-symbols -Wl,--enable-auto-import
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = $(TOOL)strip
+DEP     = $(POCO_BASE)/build/script/makedepend.gcc
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+LIBPREFIX        = ce
+SHAREDLIBEXT     = .$(target_version).dll
+SHAREDLIBLINKEXT = .dll
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = 
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        =
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       =
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -static
+SHAREDOPT_CC    = 
+SHAREDOPT_CXX   = 
+SHAREDOPT_LINK  = 
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O2 -DNDEBUG
+RELEASEOPT_CXX  = -O2 -DNDEBUG
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_XOPEN_SOURCE=500 -DPOCO_NO_FPENVIRONMENT -DPOCO_OS_FAMILY_WINDOWS -DNOMINMAX -D_WIN32 -D_WIN32_WCE=0x0420 -D_WIN32_IE=0x0420 -DNO_GZCOMPRESS -DPOCO_WIN32_UTF8 -DUNICODE -DPOCO_DLL -DFoundation_EXPORTS
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -L$(TOOLPATH)/lib -L$(TOOLPATH)/arm-wince-cegcc/lib

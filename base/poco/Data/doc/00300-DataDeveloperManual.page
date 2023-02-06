@@ -1,0 +1,429 @@
+POCO Data Connectors Developer Guide
+POCO Data Library
+
+!!!Overview
+Developing one's own <*Data Connector*> implementation is rather straight-forward.
+Just implement the following interfaces:
+  * Poco::Data::AbstractBinder
+  * Poco::Data::AbstractExtractor
+  * Poco::Data::StatementImpl
+  * Poco::Data::SessionImpl
+  * Poco::Data::Connector
+  * optional: Poco::Data::AbstractPreparation
+
+It is recommended to implement the classes from top to down (ie. start with Binder and Extractor) and to use a 
+namespace that has <[ Poco::Data ]> as parent, e.g.<[ Poco::Data::SQLite ]>.
+
+!!!AbstractBinder
+An <[AbstractBinder]> is a class that maps values to placeholders. It is also responsible to bind primitive C++ data types to database 
+data types. The constructor of the subclass should receive everything needed to bind variables to 
+placeholders by position. An example taken from the SQLite implementation would be:
+
+    Binder::Binder(sqlite3_stmt* pStmt):
+        _pStmt(pStmt)
+    {
+    }
+    
+    void Binder::bind(std::size_t pos, const Poco::Int32& val)
+    {
+        int rc = sqlite3_bind_int(_pStmt, (int)pos, val);
+        checkReturn(rc);
+    }
+    
+    void Binder::bind(std::size_t pos, const Poco::Int16& val)
+    {
+        Poco::Int32 tmp = val;
+        bind(pos, tmp);
+    }
+----
+SQLite only needs an <*sqlite3_stmt*> as internal state, Int32 is bound via <*sqlite3_bind_int*> and Int16 values are mapped to Int32 values.
+
+!!Complete Interface
+All methods are public.
+
+    AbstractBinder();
+        /// Creates the AbstractBinder.
+    
+    virtual ~AbstractBinder();
+        /// Destroys the AbstractBinder.
+    
+    virtual void bind(std::size_t pos, const Poco::Int8 &val) = 0;
+        /// Binds an Int8.
+    
+    virtual void bind(std::size_t pos, const Poco::UInt8 &val) = 0;
+        /// Binds an UInt8.
+    
+    virtual void bind(std::size_t pos, const Poco::Int16 &val) = 0;
+        /// Binds an Int16.
+    
+    virtual void bind(std::size_t pos, const Poco::UInt16 &val) = 0;
+        /// Binds an UInt16.
+    
+    virtual void bind(std::size_t pos, const Poco::Int32 &val) = 0;
+        /// Binds an Int32.
+    
+    virtual void bind(std::size_t pos, const Poco::UInt32 &val) = 0;
+        /// Binds an UInt32.
+    
+    virtual void bind(std::size_t pos, const Poco::Int64 &val) = 0;
+        /// Binds an Int64.
+    
+    virtual void bind(std::size_t pos, const Poco::UInt64 &val) = 0;
+        /// Binds an UInt64.
+    
+    virtual void bind(std::size_t pos, const bool &val) = 0;
+        /// Binds a boolean.
+    
+    virtual void bind(std::size_t pos, const float &val) = 0;
+        /// Binds a float.
+    
+    virtual void bind(std::size_t pos, const double &val) = 0;
+        /// Binds a double.
+    
+    virtual void bind(std::size_t pos, const char &val) = 0;
+        /// Binds a single character.
+    
+    virtual void bind(std::size_t pos, const char* const &pVal) = 0;
+        /// Binds a const char ptr.
+    
+    virtual void bind(std::size_t pos, const std::string& val) = 0;
+        /// Binds a string.
+    
+    virtual void bind(std::size_t pos, const BLOB& val) = 0;
+        /// Binds a BLOB.
+    
+    virtual void reset() = 0;
+        /// Resets the internal state, called before a rebind
+----
+
+!!!AbstractExtractor
+An <[AbstractExtractor]> takes a result row and extracts from a given position one single value. It performs the reverse operation to the <[AbstractBinder]>,
+ie. it maps database types to primitive C++ types. An <[AbstractExtractor]> also has to handle null values. If it detects a null value, it is not allowed to modify
+the incoming value but will simply return false. An example taken from the SQLite implementation:
+
+    Extractor::Extractor(sqlite3_stmt* pStmt):
+        _pStmt(pStmt)
+    {
+    }
+    
+    bool Extractor::extract(std::size_t pos, Poco::Int32& val)
+    {
+        if (isNull(pos<[
+            return false;
+        val = sqlite3_column_int(_pStmt, (int)pos);
+        return true;
+    }
+    
+    bool Extractor::extract(std::size_t pos, Poco::Int16& val)
+    {
+        if (isNull(pos<[
+            return false;
+        val = sqlite3_column_int(_pStmt, (int)pos);
+        return true;
+    }
+----
+
+!!Complete Interface
+All methods are public.
+
+    AbstractExtractor();
+        /// Creates the AbstractExtractor.
+    
+    virtual ~AbstractExtractor();
+        /// Destroys the AbstractExtractor.
+    
+    virtual bool extract(std::size_t pos, Poco::Int8& val) = 0;
+        /// Extracts an Int8. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, Poco::UInt8& val) = 0;
+        /// Extracts an UInt8. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, Poco::Int16& val) = 0;
+        /// Extracts an Int16. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, Poco::UInt16& val) = 0;
+        /// Extracts an UInt16. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, Poco::Int32& val) = 0;
+        /// Extracts an Int32. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, Poco::UInt32& val) = 0;
+        /// Extracts an UInt32. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, Poco::Int64& val) = 0;
+        /// Extracts an Int64. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, Poco::UInt64& val) = 0;
+        /// Extracts an UInt64. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, bool& val) = 0;
+        /// Extracts a boolean. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, float& val) = 0;
+        /// Extracts a float. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, double& val) = 0;
+        /// Extracts a double. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, char& val) = 0;
+        /// Extracts a single character. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, std::string& val) = 0;
+        /// Extracts a string. Returns false if null was received.
+    
+    virtual bool extract(std::size_t pos, BLOB& val) = 0;
+        /// Extracts a BLOB. Returns false if null was received.
+----
+
+!!!AbstractPreparation
+<[AbstractPreparation]> is an optional interface responsible for preparing an extract. If you need it depends on the <[DataConnector]> you implement. For example, SQLite can do perfectly without it, ODBC instead requires it.
+SQLite doesn't need it because it works as follows:
+  * sendQuery
+  * getNextResult
+  * extract single row values from result set
+
+This works because SQLites <*getNextResult*> provides the data as string, i.e. it doesn't need any type information.
+
+The ODBC implementation is different:
+  * register/prepare for each column an output location
+  * getNextResult
+  * extract for each row the value by copying the content of the previously registered output location
+
+<[AbstractPreparation]> is responsible for the first step. A typical prepare implementation will look like that:
+
+    void prepare(std::size_t pos, Poco::Int32 val)
+    {
+       _myVec[pos] =  Poco::Any a(val);
+       int* i = AnyCast<int>(&_myVec[pos]);
+       //register int* i for output, Db specific
+    } 
+----
+Extract now changes to:
+
+    bool Extractor::extract(std::size_t pos, Poco::Int16& val)
+    {
+        if (isNull(pos))
+            return false;
+        val = AnyCast<int>(_myVec[pos]);
+        return true;
+    }
+----
+
+!!Complete Interface
+
+    AbstractPreparation();
+        /// Creates the AbstractPreparation.
+    
+    virtual ~AbstractPreparation();
+        /// Destroys the AbstractPreparation.
+    
+    virtual void prepare(std::size_t pos, Poco::Int8) = 0;
+        /// Prepares an Int8.
+    
+    virtual void prepare(std::size_t pos, Poco::UInt8) = 0;
+        /// Prepares an UInt8.
+    
+    virtual void prepare(std::size_t pos, Poco::Int16) = 0;
+        /// Prepares an Int16.
+    
+    virtual void prepare(std::size_t pos, Poco::UInt16) = 0;
+        /// Prepares an UInt16.
+    
+    virtual void prepare(std::size_t pos, Poco::Int32) = 0;
+        /// Prepares an Int32.
+    
+    virtual void prepare(std::size_t pos, Poco::UInt32) = 0;
+        /// Prepares an UInt32.
+    
+    virtual void prepare(std::size_t pos, Poco::Int64) = 0;
+        /// Prepares an Int64.
+    
+    virtual void prepare(std::size_t pos, Poco::UInt64) = 0;
+        /// Prepares an UInt64.
+    
+    virtual void prepare(std::size_t pos, bool) = 0;
+        /// Prepares a boolean.
+    
+    virtual void prepare(std::size_t pos, float) = 0;
+        /// Prepares a float.
+    
+    virtual void prepare(std::size_t pos, double) = 0;
+        /// Prepares a double.
+    
+    virtual void prepare(std::size_t pos, char) = 0;
+        /// Prepares a single character.
+    
+    virtual void prepare(std::size_t pos, const std::string& ) = 0;
+        /// Prepares a string.
+    
+    virtual void prepare(std::size_t pos, const BLOB&) = 0;
+----
+
+Note that it is recommended to prepare a statement only once in the compileImpl of <[StatementImpl]>. The AbstractPreparator objects (which make use of <[AbstractPreparation]>
+can be created by iterating over the Extractor objects of the StatementImpl:
+
+    Poco::Data::AbstractExtractingVec::iterator it = extractings().begin();
+    Poco::Data::AbstractExtractingVec::iterator itEnd = extractings().end();
+    std::size_t pos = 0; // sqlite starts with pos 0 for results! your DB maybe with 1
+    for (; it != itEnd; ++it)
+    {
+         AbstractPreparator* pPrep = (*it)->createPrepareObject(pPreparation, pos);
+        _prepareVec.push_back(pPrep);
+        (*it)->extract(pos);
+        pos += (*it)->numOfColumnsHandled();
+    }
+----
+!!!StatementImpl
+A <[StatementImpl]> stores as member a Binder and an Extractor (optional a Preparation object) and is responsible for compiling, binding, fetching single rows from the database and invoking the <*Extracting*> objects.
+The interface it has to implement is given as:
+
+    public:
+        StatementImpl();
+            /// Creates the StatementImpl.
+        
+        virtual ~StatementImpl();
+            /// Destroys the StatementImpl.
+    
+    protected:
+        virtual bool hasNext() = 0;
+            /// Returns true if a call to next() will return data. Note that the 
+            /// implementation must support several consecutive calls to hasNext 
+            /// without data getting lost, ie. hasNext(); hasNext(); next() must 
+            /// be equal to hasNext(); next();
+    
+        virtual void next() = 0;
+            /// Retrieves the next row from the resultset.
+            /// Will throw, if the resultset is empty.
+            /// Expects the statement to be compiled and bound
+    
+        virtual bool canBind() const = 0;
+            /// Returns if another bind is possible.
+    
+        virtual void compileImpl() = 0;
+            /// Compiles the statement, doesn't bind yet.
+            /// From now on AbstractBinder and AbstractExtractor 
+            /// will be used
+    
+        virtual void bindImpl() = 0;
+            /// Binds parameters.
+    
+        virtual AbstractExtractor& extractor() = 0;
+            /// Returns the concrete extractor used by the statement.
+    
+        virtual AbstractBinder& binder() = 0;
+            /// Returns the concrete binder used by the statement.  
+----
+
+The Extracting and Binding objects can be accessed via the calls to the super-class methods <*extractings()*> and <*bindings()*>.
+A high-level <*bind*> implementation will look like this:
+
+    [...]
+    Poco::Data::AbstractBindingVec& binds = bindings();
+    std::size_t pos = 1; // or 0 depending on your database
+    Poco::Data::AbstractBindingVec::iterator it = binds.begin();
+    Poco::Data::AbstractBindingVec::iterator itEnd = binds.end();
+    for (; it != itEnd && (*it)->canBind(); ++it)
+    {
+        (*it)->bind(pos);
+        pos += (*it)->numOfColumnsHandled();
+    }
+----
+
+A high-level <*next*> implementation:
+
+    if (!hasNext())
+        throw Poco::Data::DataException("No data received");
+    int nCol = countColumnsInResult...;
+    poco_assert (columnsHandled() == nCol); 
+    Poco::Data::AbstractExtractingVec::iterator it = extractings().begin();
+    Poco::Data::AbstractExtractingVec::iterator itEnd = extractings().end();
+    std::size_t pos = 0; // sqlite starts with pos 0 for results! your DB maybe with 1
+    for (; it != itEnd; ++it)
+    {
+        (*it)->extract(pos);
+        pos += (*it)->numOfColumnsHandled();
+    }
+    enableHasNext();
+----
+
+A high-level <*hasNext*> implementation:
+
+    if (enabledhasNext())
+    {
+        checkIfItHasMoreData
+        cacheResult
+        disablehasNext()
+    }
+    
+    return cachedResult;
+----
+
+A high-level <*compileImpl*>:
+
+    if (compiled)
+        return;
+    
+    std::string sqlStmt(toString());
+
+   if database expects placeholders in different format than ":name", parse and replace them
+
+    compile statement;
+    
+    create Binder;
+    create Extractor;
+----
+
+A high-level <*canBind*>:
+
+    bool ret = false;
+    if (!bindings().empty() && validCompiledStatement)
+        ret = (*bindings().begin())->canBind();
+    
+    return ret;
+----
+
+!!!SessionImpl
+The purpose of the <[SessionImpl]> is simply to open/close a connection to the database, to act as factory for <[StatementImpl]> objects, and to handle transactions.
+The connection is opened in the constructor, and closed in the destructor.
+
+    Poco::Data::StatementImpl* createStatementImpl();
+        /// Returns an SQLite StatementImpl
+    
+    void begin();
+        /// Starts a transaction
+    
+    void commit();
+        /// Commits and ends a transaction
+    
+    void rollback();
+        /// Aborts a transaction
+----
+
+!!!Connector
+Finally, one needs to implement the <[Connector]>.
+Each <[Connector]> should have a public static const string member named <*KEY*> and must have a factory method to <*create*> <[ Poco::AutoPtr ]> objects of type <[SessionImpl]>.
+It should also have a static <*addToFactory()*> and a static <*removeFromFactory()*> method:
+
+    class My_API Connector: public Poco::Data::Connector
+        /// Connector instantiates SessionImpl objects.
+    {
+    public:
+        static const std::string KEY;
+            /// Keyword for creating sessions
+    
+        Connector();
+            /// Creates the Connector.
+    
+        ~Connector();
+        /// Destroys the Connector.
+    
+        Poco::AutoPtr < Poco::Data::SessionImpl > createSession(const std::string& connectionString);
+            /// Creates a SessionImpl object and initializes it with the given connectionString.
+    
+        static void registerConnector();
+            /// Registers the Connector under the Keyword Connector::KEY at the Poco::Data::SessionFactory
+    
+        static void unregisterConnector();
+            /// Unregisters the Connector under the Keyword Connector::KEY at the Poco::Data::SessionFactory
+    };
+----

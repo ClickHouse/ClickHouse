@@ -1,0 +1,11 @@
+#
+# WatchSimulator
+#
+# Build settings for WatchOS 2.0 Simulator
+# 
+
+WATCHOS_SDK        = WatchSimulator
+POCO_TARGET_OSARCH = i386
+OSFLAGS            = -arch $(POCO_TARGET_OSARCH) -isysroot $(WATCHOS_SDK_BASE) -mwatchos-simulator-version-min=$(WATCHOS_SDK_VERSION_MIN) -fembed-bitcode
+
+include $(POCO_BASE)/build/config/WatchOS

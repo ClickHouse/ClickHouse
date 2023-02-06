@@ -1,0 +1,25 @@
+#! /bin/sh
+#
+# makeldpath
+#
+# Create a LD_LIBRARY_PATH for all project libraries.
+#
+
+if [ "$POCO_BASE" == "" ] ; then
+	echo $0": POCO_BASE is not set." 
+	exit 1
+fi
+
+projectList=`cat ${POCO_BASE}/components`
+
+OSNAME=`uname`
+OSARCH=`uname -m | tr " /" "_-"`
+
+for proj in $projectList ;
+do
+	path=${POCO_BASE}/${proj}/lib/${OSNAME}/${OSARCH}
+	echo $path
+	if [ -d $path ] ; then
+		echo -n ":"$path
+	fi
+done

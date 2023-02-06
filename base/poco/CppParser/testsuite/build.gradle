@@ -1,0 +1,52 @@
+import org.gradle.nativeplatform.test.cppunit.CppUnitTestSuiteSpec
+
+model {
+	components {
+		TestSuite(NativeLibrarySpec) {
+			sources {
+				cpp {
+					source {
+						srcDir 'src'
+						include '**/*.cpp'
+						exclude '*Driver.cpp'
+					}
+					exportedHeaders {
+						srcDir 'src'
+					}
+					lib project: ':CppUnit', library: 'CppUnit'
+					lib project: ':CppParser', library: 'CppParser'
+					lib project: ':Foundation', library: 'Foundation'
+				}
+			}
+		}
+	}
+	testSuites {
+		CppParserTestSuite(org.gradle.nativeplatform.test.cppunit.CppUnitTestSuiteSpec) {
+			testing $.components.TestSuite 
+		}
+	}
+    binaries {
+		all {
+			if (toolChain in VisualCpp) {
+				if (buildType == buildTypes.debug) {
+					cCompiler.args "/MDd"
+					cppCompiler.args "/MDd"
+				} else 
+				if (buildType == buildTypes.release) {
+					cCompiler.args "/MD"
+					cppCompiler.args "/MD"
+				} else {
+					throw new GradleException("Unknown buildType" + buildType)
+				}
+			}
+			if (toolChain in Gcc) {
+			}
+		}
+        withType(org.gradle.nativeplatform.test.cppunit.CppUnitTestSuiteBinarySpec) {
+ 			lib project: ':CppUnit', library: 'CppUnit', linkage: 'shared'
+        }
+	}
+}
+task testsuite { dependsOn "assemble" }
+
+

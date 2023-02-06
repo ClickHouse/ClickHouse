@@ -1,0 +1,12 @@
+vc.project.guid = ${vc.project.guidFromName}
+vc.project.name = ${vc.project.baseName}
+vc.project.target = ${vc.project.name}
+vc.project.type = executable
+vc.project.pocobase = ..\\..\\..
+vc.project.platforms = Win32, x64
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = ${vc.project.name}_vs90.vcproj
+vc.project.compiler.include = ..\\..\\..\\Foundation\\include;..\\..\\..\\XML\\include;..\\..\\..\\Util\\include;..\\..\\..\\Net\\include
+vc.project.linker.dependencies.Win32 = ws2_32.lib iphlpapi.lib
+vc.project.linker.dependencies.x64 = ws2_32.lib iphlpapi.lib
+vc.project.linker.dependencies.WinCE = ws2.lib iphlpapi.lib

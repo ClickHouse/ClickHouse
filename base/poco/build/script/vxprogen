@@ -1,0 +1,171 @@
+#
+# vxprogen
+#
+# Project file generator for WindRiver Tornado 2.2/VxWorks 5.5
+#
+# Usage: vxprogen <buildspec>...
+#
+# The tool must be started from a project directory
+# (e.g. $POCO_BASE/Foundation). The build specification
+# file must be located in the vx directory within
+# the project directory, named vx.build.
+# One or more build specification names can be specified.
+#
+# The environment variable POCO_BASE must be set.
+#
+
+if [ "$1" = "" ] ; then
+	echo "usage: $0 <buildspec>..."
+	exit 0
+fi
+
+if [ "$POCO_BASE" = "" ] ; then
+	echo "Fatal error: POCO_BASE not set. Exiting."
+	exit 1
+fi
+
+if [ ! -d "$POCO_BASE" ] ; then
+	echo "Fatal error: POCO_BASE does not contain a valid path to a directory. Exiting."
+	exit 1
+fi 
+
+pwd=`pwd`
+buildfile=`basename $pwd`.vxbuild
+
+if [ ! -f $buildfile ] ; then
+	echo "Fatal error: vx/vx.build not found. Exiting."
+	exit 1
+fi
+
+builds=""
+while [ "$1" != "" ] ; do
+	if [ ! -f "$POCO_BASE/build/vxconfig/$1" ] ; then
+		echo "Fatal error: no build specification file for $1 found. Exiting."
+		exit 1
+	fi
+	builds="$builds $1"
+	current=$1
+	shift
+done
+
+source $buildfile
+
+out=vx/${TARGET}.wpj
+
+mkdir -p vx
+
+echo "Document file - DO NOT EDIT" >$out
+echo "" >>$out
+
+buildvars="
+	MACRO_AR 
+	MACRO_ARCHIVE
+	MACRO_AS
+	MACRO_CC
+	MACRO_CC_ARCH_SPEC
+	MACRO_CFLAGS
+	MACRO_CFLAGS_AS
+	MACRO_CPP
+	MACRO_HEX_FLAGS
+	MACRO_LD
+	MACRO_LDFLAGS
+	MACRO_LD_PARTIAL
+	MACRO_LD_PARTIAL_FLAGS
+	MACRO_NM
+	MACRO_OPTION_DEFINE_MACRO
+	MACRO_OPTION_DEPEND
+	MACRO_OPTION_GENERATE_DEPENDENCY_FILE
+	MACRO_OPTION_INCLUDE_DIR
+	MACRO_OPTION_LANG_C
+	MACRO_OPTION_UNDEFINE_MACRO
+	MACRO_POST_BUILD_RULE
+	MACRO_PRJ_LIBS
+	MACRO_SIZE
+	MACRO_TOOL_FAMILY
+	RO_DEPEND_PATH
+	TC
+"
+
+for build in $builds ; do
+	source $POCO_BASE/build/vxconfig/$build
+	
+	echo "<BEGIN> BUILD_${BUILD}_BUILDRULE" >>$out
+	echo "${TARGET}.out" >>$out
+	echo "<END>" >>$out
+	echo "" >>$out
+
+	for buildvar in $buildvars ; do
+		echo "<BEGIN> BUILD_${BUILD}_${buildvar}" >>$out
+		eval echo \"\$$buildvar\" >>$out
+		echo "<END>" >>$out
+		echo "" >>$out
+	done
+done
+
+echo "<BEGIN> BUILD_RULE_archive" >>$out
+echo "" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> BUILD_RULE_${TARGET}.out" >>$out
+echo "" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> BUILD_RULE_${TARGET}.pl" >>$out
+echo "" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> BUILD_RULE_objects" >>$out
+echo "" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> BUILD__CURRENT" >>$out
+echo "$current" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> BUILD__LIST" >>$out
+echo $builds >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> CORE_INFO_TYPE" >>$out
+echo "::prj_vxApp" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> CORE_INFO_VERSION" >>$out
+echo "2.2" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+for src in $SOURCES ; do
+	echo "<BEGIN> FILE_\$(PRJ_DIR)/../src/${src}_objects" >>$out
+	echo "${src%.*}.o" >>$out
+	echo "<END>" >>$out
+	echo "" >>$out
+
+	echo "<BEGIN> FILE_\$(PRJ_DIR)/../src/${src}_tool" >>$out
+	echo "C/C++ compiler" >>$out
+	echo "<END>" >>$out
+	echo "" >>$out
+done
+
+echo "<BEGIN> PROJECT_FILES" >>$out
+prefix=""
+for src in $SOURCES ; do
+	echo -n "$prefix\$(PRJ_DIR)/../src/$src" >>$out
+	prefix=" \\
+	"
+done
+echo "" >>$out
+echo "<END>" >>$out
+echo "" >>$out
+
+echo "<BEGIN> userComments" >>$out
+echo "Generated on `date`" >>$out
+echo "<END>" >>$out
+echo "" >>$out

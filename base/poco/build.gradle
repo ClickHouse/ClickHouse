@@ -1,0 +1,887 @@
+buildscript {
+}
+
+/*
+dependencies {
+	testCompile group: 'org.jvnet.hudson.plugins', name: 'cppunit', version: '1.10'
+}
+*/
+/*
+dependencies {
+	classpath group: 'org.pocoproject', name: 'cppunit-test-suite', version:'1.0.0'
+	classpath group: 'org.pocoproject', name: 'windows-message-compiler', version:'1.0.0'
+}
+*/
+
+apply plugin: 'base' 
+
+def os = org.gradle.internal.os.OperatingSystem.current()
+def String version = file("VERSION").text.replaceAll("[\n\r]", "")
+
+File appendDebugSuffix(File binaryFile) {
+	String name = binaryFile.getName()
+	File parent = binaryFile.getParentFile()
+	int extensionSeparatorIndex = name.lastIndexOf('.')
+	if (extensionSeparatorIndex == -1) {
+		return new File(parent, name + "d")
+	}
+	return new File(parent, name.substring(0, extensionSeparatorIndex) + "d" + name.substring(extensionSeparatorIndex))
+}
+ 
+File appendStaticSuffix(File binaryFile) {
+    def os = org.gradle.internal.os.OperatingSystem.current()
+	if (!os.windows) {
+		return binaryFile
+    }
+    String name = binaryFile.getName()
+    File parent = binaryFile.getParentFile()
+    int extensionSeparatorIndex = name.lastIndexOf('.')
+    if (extensionSeparatorIndex == -1) {
+    	return new File(parent, name + "MT")
+    }
+    return new File(parent, name.substring(0, extensionSeparatorIndex) + "MT" + name.substring(extensionSeparatorIndex))
+}
+File appendSemiStaticSuffix(File binaryFile) {
+	String name = binaryFile.getName()
+	File parent = binaryFile.getParentFile()
+	int extensionSeparatorIndex = name.lastIndexOf('.')
+	if (extensionSeparatorIndex == -1) {
+		return new File(parent, name + "MD")
+	}
+	return new File(parent, name.substring(0, extensionSeparatorIndex) + "MD" + name.substring(extensionSeparatorIndex))
+}
+File prefixByPoco(File binaryFile) {
+	String name = binaryFile.getName()
+	String prefix = ''
+	if (name.startsWith('lib')) {
+		prefix = 'lib'
+		name = name.substring(3)
+	}
+	File parent = binaryFile.getParentFile()
+	return new File(parent, prefix + "Poco" + name);
+}
+File suffixByArch(File binaryFile, Platform platform) {
+	if (!platform.operatingSystem.windows) {
+		return binaryFile
+	}
+	String name = binaryFile.getName()
+	String suffix = ''
+	if (platform.architecture.name == 'x86') {
+		suffix = ''
+	} else
+	if (platform.architecture.name == 'x86-64') {
+		suffix = '64'
+	} else {
+		throw new GradleException("Unknown architecture: " + platform.architecture.name)
+	}
+	int extensionSeparatorIndex = name.lastIndexOf('.')
+	if (extensionSeparatorIndex == -1) {
+		return new File(parent, name + suffix)
+	}
+	File parent = binaryFile.getParentFile()
+	return new File(parent, name.substring(0, extensionSeparatorIndex) + suffix + name.substring(extensionSeparatorIndex));
+}
+File toLocalBin(File binaryFile, Platform platform) {
+	String name = binaryFile.getName()
+	String target
+	if (platform.architecture.name == 'x86') {
+		target = 'bin'
+	} else
+	if (platform.architecture.name == 'x86-64') {
+		target = 'bin64'
+	} else {
+		throw new GradleException("Unknown architecture: " + platform.architecture.name)
+	}
+	File parent = new File(target)
+	return new File(parent, name);
+}
+File toBin(File sharedFile, Platform platform) {
+	File parent = sharedFile.parentFile
+	if (parent.canonicalPath.contains("testsuite"))
+		return sharedFile;
+	if (parent.canonicalPath.contains("sample"))
+		return sharedFile;
+		
+	if (platform.operatingSystem.linux) {
+		return toLib(sharedFile, platform)
+	}
+
+	String name = sharedFile.getName()
+	String target
+	if (platform.architecture.name == 'x86') {
+		target = 'bin'
+	} else
+	if (platform.architecture.name == 'x86-64') {
+		target = 'bin64'
+	} else {
+		throw new GradleException("Unknown architecture: " + platform.architecture.name)
+	}
+	File newParent = new File(rootDir, target)
+	return new File(newParent, name);
+}
+File toLib(File linkFile, Platform platform) {
+	File parent = linkFile.parentFile
+	if (parent.canonicalPath.contains("testsuite"))
+		return linkFile;
+	if (parent.canonicalPath.contains("sample"))
+		return linkFile;
+		
+	// On macOS, it creates a dylib file which is the shared and import library
+	if (platform.operatingSystem.macOsX) {
+		return toBin(linkFile, platform)
+	}
+
+	String name = linkFile.getName()
+	String target
+	if (platform.architecture.name == 'x86') {
+		target = 'lib'
+	} else
+	if (platform.architecture.name == 'x86-64') {
+		target = 'lib64'
+	} else {
+		throw new GradleException("Unknown architecture: " + platform.architecture.name)
+	}
+	File newParent = new File(rootDir, target )
+	return new File(newParent, name);
+}
+File toStatic(File staticFile, Platform platform) {
+	String name = staticFile.getName()
+	String target
+	if (platform.architecture.name == 'x86') {
+		target = 'lib'
+	} else
+	if (platform.architecture.name == 'x86-64') {
+		target = 'lib64'
+	} else {
+		throw new GradleException("Unknown architecture: " + platform.architecture.name)
+	}
+	File parent = new File(rootDir, target)
+	return new File(parent, name);
+}
+File toPDB(File binaryFile) {
+	String name = binaryFile.getName()
+	File parent = binaryFile.getParentFile()
+	int extensionSeparatorIndex = name.lastIndexOf('.')
+	return new File(parent, name.substring(0, extensionSeparatorIndex) + ".pdb")
+}
+
+
+allprojects {
+	buildDir = new File("root")	            // DO NOT REMOVE OR CHANGE to 'build'
+	file('bin').mkdirs()
+	file('bin64').mkdirs()
+	file('lib').mkdirs()
+	file('lib64').mkdirs()
+/*
+	clean.doFirst {
+		file(projectDir, 'bin').delete()
+		file(projectDir, 'bin64').delete() 
+		file(projectDir, 'lib').delete() 
+		file(projectDir, 'lib64').delete() 
+	}
+*/
+}
+subprojects {
+	apply plugin:	'c'
+	apply plugin:	'cpp'
+	apply plugin:	'cppunit-test-suite'
+ 	apply plugin:	'windows-resources'
+	apply plugin:	'windows-messages'
+	
+	buildDir = new File("gradle")	
+	
+
+	model {
+		buildTypes {
+			release
+			debug
+		}
+
+/*
+		toolChains {
+			visualCpp(VisualCpp) {
+				// Specify the installDir if Visual Studio cannot be located
+				// installDir "C:/Apps/Microsoft Visual Studio 10.0"
+			}
+			gcc(Gcc) {
+				// Uncomment to use a GCC install that is not in the PATH
+				// path "/usr/bin/gcc"
+			}
+			clang(Clang)
+		}
+*/
+		platforms {
+			win32 {
+				operatingSystem "windows"
+				architecture 'x86'
+			}
+			win64 {
+				operatingSystem "windows"
+				architecture 'x64'
+			}
+			linux32 {
+				operatingSystem "linux"
+				architecture 'x86'
+			}
+			linux64 {
+				operatingSystem "linux"
+				architecture 'x64'
+			}
+			macos {
+				operatingSystem "macosx"
+				architecture 'x64'
+			}
+		}
+
+		flavors {
+			bundled
+//			unbundled
+		}
+		repositories {
+			libs(PrebuiltLibraries) {
+				WS2_32 {
+					headers.srcDir 'C:/Program Files (x86)/Windows Kits/10/Include/10.0.15063.0/um'
+					binaries.withType(StaticLibraryBinary) {
+						if (targetPlatform.operatingSystem.windows) {
+							staticLibraryFile = file('C:/Program Files (x86)/Windows Kits/10/Lib/10.0.15063.0/um/x86/WS2_32.lib')
+						}
+					}
+				}
+				def opensslHome = new File(rootDir, "openssl/VS_120")
+				def opensslBrewHome = new File('/usr/local/opt/openssl')
+				def opensslLinuxHome = new File('/usr/lib/x86_64-linux-gnu')
+				crypto {
+					headers.srcDir "$opensslHome/include"
+
+					binaries.withType(StaticLibraryBinary) {
+						def libName = "foobar"
+						if (buildType == buildTypes.debug) {
+							if (targetPlatform.name == 'win32') {
+								libName = 'libcrypto.lib'
+								staticLibraryFile = file("$opensslHome/win32/lib/debug/$libName")
+							} else if (targetPlatform.name == 'win64') {
+								libName = 'libcrypto.lib'
+								staticLibraryFile = file("$opensslHome/win64/lib/debug/$libName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								libName = 'libcrypto.a'
+								staticLibraryFile = file("$opensslBrewHome/lib/$libName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								libName = 'libcrypto.a'
+								staticLibraryFile = file("$opensslLinuxHome/$libName")
+							}
+						} else
+						if (buildType == buildTypes.release) {
+							if (targetPlatform.name == 'win32') {
+								libName = 'libcrypto.lib'
+								staticLibraryFile = file("$opensslHome/win32/lib/release/$libName")
+							} else if (targetPlatform.name == 'win64') {
+								libName = 'libcrypto.lib'
+								staticLibraryFile = file("$opensslHome/win64/lib/release/$libName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								libName = 'libcrypto.a'
+								staticLibraryFile = file("$opensslBrewHome/lib/$libName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								libName = 'libcrypto.a'
+								staticLibraryFile = file("$opensslLinuxHome/$libName")
+							}
+						} else {
+							throw new GradleException("Unknown buildType" + buildType)
+						}
+					}
+					binaries.withType(SharedLibraryBinary) {
+						def dllName
+						def linkName
+						if (buildType == buildTypes.debug) {
+							if (targetPlatform.name == 'win32') {
+								dllName = 'libcrypto.dll'
+								linkName = 'libcrypto.lib'
+								sharedLibraryFile	 = file("$opensslHome/win32/bin/debug/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win32/bin/debug/$linkName")
+							} else if (targetPlatform.name == 'win64') {
+								dllName = 'libcrypto.dll'
+								linkName = 'libcrypto.lib'
+								sharedLibraryFile	 = file("$opensslHome/win64/bin/debug/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win64/bin/debug/$linkName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								dllName = 'libcrypto.dylib'
+								linkName = 'libcrypto.dylib'
+								sharedLibraryFile	 = file("$opensslBrewHome/lib/$dllName")
+								sharedLibraryLinkFile = file("$opensslBrewHome/lib/$linkName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								dllName = 'libcrypto.so'
+								linkName = 'libcrypto.so'
+								sharedLibraryFile	 = file("$opensslLinuxHome/$dllName")
+								sharedLibraryLinkFile = file("$opensslLinuxHome/$linkName")
+							}
+						} else
+						if (buildType == buildTypes.release) {
+							if (targetPlatform.name == 'win32') {
+								dllName = 'libcrypto.dll'
+								linkName = 'libcrypto.lib'
+								sharedLibraryFile	 = file("$opensslHome/win32/bin/release/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win32/bin/release/$linkName")
+							} else if (targetPlatform.name == 'win64') {
+								dllName = 'libcrypto.dll'
+								linkName = 'libcrypto.lib'
+								sharedLibraryFile	 = file("$opensslHome/win64/bin/release/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win64/bin/release/$linkName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								dllName = 'libcrypto.dylib'
+								linkName = 'libcrypto.dylib'
+								sharedLibraryFile	 = file("$opensslBrewHome/lib/$dllName")
+								sharedLibraryLinkFile = file("$opensslBrewHome/lib/$linkName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								dllName = 'libcrypto.so'
+								linkName = 'libcrypto.so'
+								sharedLibraryFile	 = file("$opensslLinuxHome/$dllName")
+								sharedLibraryLinkFile = file("$opensslLinuxHome/$linkName")
+							}
+						} else {
+							throw new GradleException("Unknown buildType" + buildType)
+						}
+					}
+				}
+				ssl {
+					headers.srcDir "$opensslHome/include"
+
+					binaries.withType(StaticLibraryBinary) {
+						def libName
+						if (buildType == buildTypes.debug) {
+							if (targetPlatform.name == 'win32') {
+								libName = 'libssl.lib'
+								staticLibraryFile = file("$opensslHome/win32/lib/debug/$libName")
+							} else if (targetPlatform.name == 'win64') {
+								libName = 'libssl.lib'
+								staticLibraryFile = file("$opensslHome/win64/lib/debug/$libName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								libName = 'libssl.a'
+								staticLibraryFile = file("$opensslBrewHome/lib/$libName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								libName = 'libssl.a'
+								staticLibraryFile = file("$opensslLinuxHome/$libName")
+							}
+						} else
+						if (buildType == buildTypes.release) {
+							if (targetPlatform.name == 'win32') {
+								libName = 'libssl.lib'
+								staticLibraryFile = file("$opensslHome/win32/lib/release/$libName")
+							} else if (targetPlatform.name == 'win64') {
+								libName = 'libssl.lib'
+								staticLibraryFile = file("$opensslHome/win64/lib/release/$libName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								libName = 'libssl.a'
+								staticLibraryFile = file("$opensslBrewHome/lib/$libName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								libName = 'libssl.a'
+								staticLibraryFile = file("$opensslLinuxHome/$libName")
+							}
+						} else {
+							throw new GradleException("Unknown buildType" + buildType)
+						}
+					}
+					binaries.withType(SharedLibraryBinary) {
+						def dllName
+						def linkName
+						if (buildType == buildTypes.debug) {
+							if (targetPlatform.name == 'win32') {
+								dllName = 'libssl.dll'
+								linkName = 'libssl.lib'
+								sharedLibraryFile	 = file("$opensslHome/win32/bin/debug/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win32/bin/debug/$linkName")
+							} else if (targetPlatform.name == 'win64') {
+								dllName = 'libssl.dll'
+								linkName = 'libssl.lib'
+								sharedLibraryFile	 = file("$opensslHome/win64/bin/debug/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win64/bin/debug/$linkName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								dllName = 'libssl.dylib'
+								linkName = 'libssl.dylib'
+								sharedLibraryFile	 = file("$opensslBrewHome/lib/$dllName")
+								sharedLibraryLinkFile = file("$opensslBrewHome/lib/$linkName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								dllName = 'libssl.so'
+								linkName = 'libssl.so'
+								sharedLibraryFile	 = file("$opensslLinuxHome/$dllName")
+								sharedLibraryLinkFile = file("$opensslLinuxHome/$linkName")
+							}
+						} else if (buildType == buildTypes.release) {
+							if (targetPlatform.name == 'win32') {
+								dllName = 'libssl.dll'
+								linkName = 'libssl.lib'
+								sharedLibraryFile	 = file("$opensslHome/win32/bin/release/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win32/bin/release/$linkName")
+							} else if (targetPlatform.name == 'win64') {
+								dllName = 'libssl.dll'
+								linkName = 'libssl.lib'
+								sharedLibraryFile	 = file("$opensslHome/win64/bin/release/$dllName")
+								sharedLibraryLinkFile = file("$opensslHome/win64/bin/release/$linkName")
+							} else if (targetPlatform.operatingSystem.macOsX) {
+								dllName = 'libssl.dylib'
+								linkName = 'libssl.dylib'
+								sharedLibraryFile	 = file("$opensslBrewHome/lib/$dllName")
+								sharedLibraryLinkFile = file("$opensslBrewHome/lib/$linkName")
+							} else if (targetPlatform.operatingSystem.linux) {
+								dllName = 'libssl.so'
+								linkName = 'libssl.so'
+								sharedLibraryFile	 = file("$opensslLinuxHome/$dllName")
+								sharedLibraryLinkFile = file("$opensslLinuxHome/$linkName")
+							}
+						} else {
+							throw new GradleException("Unknown buildType" + buildType)
+						}
+					}
+				}
+			}
+		}
+		components {
+			withType(NativeComponentSpec) {
+				targetPlatform "win32"
+				targetPlatform "win64"
+				targetPlatform "linux32"
+				targetPlatform "linux64"
+				targetPlatform "macos"
+
+				binaries.withType(NativeTestSuiteBinarySpec) {
+					if (buildType == buildTypes.debug) {
+						if (it instanceof NativeExecutableBinarySpec) {
+							executable.file = toLocalBin(appendDebugSuffix(executable.file), targetPlatform)
+						}
+					} else
+					if (buildType == buildTypes.release) {
+						if (it instanceof NativeExecutableBinarySpec) {
+							executable.file = toLocalBin(executable.file, targetPlatform)
+						} 
+					}
+				}
+				binaries.withType(NativeBinarySpec) {
+
+					if (toolChain in Clang) {
+						cppCompiler.args "-std=c++11"
+					}
+					if (buildType == buildTypes.debug) {
+						if (it instanceof SharedLibraryBinarySpec) {
+							sharedLibraryFile	 = toBin(prefixByPoco(appendDebugSuffix(suffixByArch(sharedLibraryFile, targetPlatform))), targetPlatform)
+							sharedLibraryLinkFile = toLib(prefixByPoco(appendDebugSuffix(sharedLibraryLinkFile)), targetPlatform)
+
+							if (targetPlatform.operatingSystem.windows) {
+								// WINDOWS ONLY
+								linker.args "/implib:${sharedLibraryLinkFile}"  // For MSVC only
+								// use the following for MinGW
+								// linker.args "-Wl,--out-implib,${sharedLibraryLinkFile}"
+								// This next part is simply to ensure the directory is created as the compiler (tested on MSVC only) won't create it
+								def binary = it  // Simply to expose the binary in the `doFirst`
+								tasks.withType(LinkSharedLibrary) {
+									doFirst {
+										binary.sharedLibraryLinkFile.parentFile.mkdirs()
+									}
+								}
+							}
+						} else
+						if (it instanceof StaticLibraryBinarySpec) {
+							staticLibraryFile = toStatic(prefixByPoco(appendDebugSuffix(appendStaticSuffix(staticLibraryFile))), targetPlatform)
+							def binary = it
+							tasks.withType(CreateStaticLibrary) {
+								doFirst {
+									binary.staticLibraryFile.parentFile.mkdirs()
+								}
+							}
+						} else
+						if (it instanceof SemiStaticLibraryBinarySpec) {
+							semiStaticLibraryFile = toStatic(prefixByPoco(appendDebugSuffix(appendSemiStaticSuffix(semiStaticLibraryFile))), targetPlatform)
+						} else
+						if (it instanceof NativeExecutableBinarySpec) {
+							executable.file = toBin(appendDebugSuffix(executable.file), targetPlatform)
+						} else {
+							throw new GradleException("Unknown native library binary")
+						}
+					} else
+					if (buildType == buildTypes.release) {
+						if (it instanceof SharedLibraryBinarySpec) {
+							sharedLibraryFile = toBin(prefixByPoco(suffixByArch(sharedLibraryFile, targetPlatform)), targetPlatform)
+							sharedLibraryLinkFile = toLib(prefixByPoco(sharedLibraryLinkFile), targetPlatform)
+
+							if (targetPlatform.operatingSystem.windows) {
+								// WINDOWS ONLY
+								linker.args "/implib:${sharedLibraryLinkFile}"  // For MSVC only
+								// use the following for MinGW
+								// linker.args "-Wl,--out-implib,${sharedLibraryLinkFile}"
+								// This next part is simply to ensure the directory is created as the compiler (tested on MSVC only) won't create it
+								def binary = it  // Simply to expose the binary in the `doFirst`
+								tasks.withType(LinkSharedLibrary) {
+									doFirst {
+										binary.sharedLibraryLinkFile.parentFile.mkdirs()
+									}
+								}
+							}
+						} else
+						if (it instanceof StaticLibraryBinarySpec) {
+							staticLibraryFile = toStatic(prefixByPoco(appendStaticSuffix(staticLibraryFile)), targetPlatform)
+							def binary = it
+							tasks.withType(CreateStaticLibrary) {
+								doFirst {
+									binary.staticLibraryFile.parentFile.mkdirs()
+								}
+							}
+						} else
+						if (it instanceof SemiStaticLibraryBinarySpec) {
+							semiStaticLibraryFile = toStatic(prefixByPoco(appendSemiStaticSuffix(semiStaticLibraryFile)), targetPlatform)
+							def binary = it
+							tasks.withType(CreateSemiStaticLibrary) {
+								doFirst {
+									binary.semiStaticLibraryFile.parentFile.mkdirs()
+								}
+							}
+						} else
+						if (it instanceof NativeExecutableBinarySpec) {
+							executable.file = toBin(executable.file, targetPlatform)
+						} else {
+							throw new GradleException("Unknown native library binary")
+						} 
+					} else {
+						throw new GradleException("Unknown buildType" + buildType)
+					}
+				}
+			}
+		}
+
+
+		binaries {
+			all {
+				if (flavor != flavors.bundled) {
+					cCompiler.define 'POCO_UNBUNDLED'
+					cppCompiler.define 'POCO_UNBUNDLED'
+				}
+				if (buildType == buildTypes.debug) {
+					cCompiler.define '_DEBUG'
+					cppCompiler.define '_DEBUG'
+				} else 
+				if (buildType == buildTypes.release) {
+					cCompiler.define 'NDEBUG'
+					cppCompiler.define 'NDEBUG'
+				} else {
+					throw new GradleException("Unknown buildType" + buildType)
+				}
+			
+				if (toolChain in Gcc) {
+					cppCompiler.define "_XOPEN_SOURCE=600"
+					cppCompiler.define "_REENTRANT"
+					cppCompiler.define "_THREAD_SAFE"
+					cppCompiler.define "_FILE_OFFSET_BITS=64"
+					cppCompiler.define "_LARGEFILE64_SOURCE"
+					cppCompiler.define "POCO_HAVE_FD_EPOLL"
+					cppCompiler.define "POCO_HAVE_ADDRINFO"
+					cppCompiler.define "POCO_HAVE_LIBRESOLV"
+					cppCompiler.args "-std=c++11"
+					cppCompiler.args "-fPIC"
+
+					linker.args "-lrt"
+					linker.args "-ldl"
+					linker.args "-lpthread"
+				}
+				if (toolChain in VisualCpp) {
+					if (targetPlatform == platforms.win64) {
+						linker.args '/MACHINE:X64'
+					} else {
+						linker.args '/MACHINE:X86'
+					}
+					if (buildType == buildTypes.debug) {
+						cCompiler.args '/Zi'
+						cppCompiler.args '/Zi'
+						linker.args '/DEBUG'
+					}
+					cCompiler.args '/RTC1'
+					cCompiler.args '/FS'
+					cCompiler.args '/Zc:wchar_t'
+					cCompiler.args '/Zc:inline'
+					cCompiler.args '/Zc:forScope'
+					cCompiler.args '/GR'
+					cCompiler.args '/GF'
+					cCompiler.args '/EHsc'
+					cCompiler.args '/bigobj'
+					cCompiler.define 'WIN32'
+					cCompiler.define '_WIN32'
+					cCompiler.define '_WINDOWS'
+					cCompiler.define '_MBCS'
+
+					cppCompiler.args '/RTC1'
+					cppCompiler.args '/FS'
+					cppCompiler.args '/Zc:wchar_t'
+					cppCompiler.args '/Zc:inline'
+					cppCompiler.args '/Zc:forScope'
+					cppCompiler.args '/GR'
+					cppCompiler.args '/GF'
+					cppCompiler.args '/EHsc'
+					cppCompiler.args '/bigobj'
+					cppCompiler.define 'WIN32'
+					cppCompiler.define '_WIN32'
+					cppCompiler.define '_WINDOWS'
+					cppCompiler.define '_MBCS'
+					
+					linker.args 'kernel32.lib'
+					linker.args 'user32.lib'
+					linker.args 'gdi32.lib'
+					linker.args 'winspool.lib'
+					linker.args 'comdlg32.lib'
+					linker.args 'advapi32.lib'
+					linker.args 'shell32.lib'
+					linker.args 'ole32.lib'
+					linker.args 'oleaut32.lib'
+					linker.args 'uuid.lib'
+					
+					linker.args '/NXCOMPAT' 
+					linker.args '/OPT:REF' 
+					linker.args '/INCREMENTAL:NO' 
+//					linker.args '/MANIFEST' 
+//					linker.args '/MANIFESTUAC:"level='asInvoker' uiAccess='false'"' 
+					linker.args '/OPT:ICF' 
+					linker.args '/NOLOGO' 
+					linker.args '/SUBSYSTEM:CONSOLE'
+				}
+			}
+			withType(SharedLibraryBinarySpec) {
+				if (toolChain in VisualCpp) {
+					cCompiler.define   '_USRDLL'
+					cCompiler.define   '_WINDLL'
+					cppCompiler.define '_USRDLL'
+					cppCompiler.define '_WINDLL'
+					if (buildType == buildTypes.debug) {
+						cCompiler.args "/MDd"
+						cppCompiler.args "/MDd"
+					} else 
+					if (buildType == buildTypes.release) {
+						cCompiler.args "/MD"
+						cppCompiler.args "/MD"
+					} else {
+						throw new GradleException("Unknown buildType" + buildType)
+					}
+				}
+				if (toolChain in Gcc) {
+					linker.args "-Wl,-rpath,$rootDir/lib64"   //FIXME
+				}
+			}
+			withType(StaticLibraryBinarySpec) {
+				if (toolChain in VisualCpp) {
+					cCompiler.define   '_LIB'
+					cCompiler.define   'POCO_STATIC'
+					cppCompiler.define '_LIB'
+					cppCompiler.define 'POCO_STATIC'
+					if (buildType == buildTypes.debug) {
+						cCompiler.args "/MTd"
+						cCompiler.args "/Fd" + toStatic(toPDB(staticLibraryFile), targetPlatform)
+						cppCompiler.args "/MTd"
+						cppCompiler.args "/Fd" + toStatic(toPDB(staticLibraryFile), targetPlatform)
+					} else 
+					if (buildType == buildTypes.release) {
+						cCompiler.args "/MT"
+						cppCompiler.args "/MT"
+					} else {
+						throw new GradleException("Unknown buildType" + buildType)
+					}
+				}
+				if (toolChain in Gcc) {
+				}
+			}
+			withType(SemiStaticLibraryBinarySpec) {
+				if (toolChain in VisualCpp) {
+					cCompiler.define   '_LIB'
+					cCompiler.define   'POCO_STATIC'
+					cppCompiler.define '_LIB'
+					cppCompiler.define 'POCO_STATIC'
+					if (buildType == buildTypes.debug) {
+						cCompiler.args "/MDd"
+						cCompiler.args "/Fd" + toStatic(toPDB(semiStaticLibraryFile), targetPlatform)
+						cppCompiler.args "/MDd"
+						cppCompiler.args "/Fd" + toStatic(toPDB(semiStaticLibraryFile), targetPlatform)
+					} else 
+					if (buildType == buildTypes.release) {
+						cCompiler.args "/MD"
+						cppCompiler.args "/MD"
+					} else {
+						throw new GradleException("Unknown buildType" + buildType)
+					}
+				}
+				if (toolChain in Gcc) {
+				}
+			}
+			withType(NativeExecutableBinarySpec) {
+				if (toolChain in VisualCpp) {
+					if (buildType == buildTypes.debug) {
+						cCompiler.args "/MDd"
+						cppCompiler.args "/MDd"
+					} else 
+					if (buildType == buildTypes.release) {
+						cCompiler.args "/MD"
+						cppCompiler.args "/MD"
+					} else {
+						throw new GradleException("Unknown buildType" + buildType)
+					}
+				}
+				if (toolChain in Gcc) {
+				}
+			}
+		}
+	}
+	tasks.withType(RunTestExecutable) {
+		args test
+	}
+}
+tasks.withType(CppCompile) {
+	maxParallelForks = 2
+}
+task pocos() {
+		def Set<Task> tts = project.getTasksByName('poco', true)
+		setDependsOn(tts)
+}
+task PocoDocIni {
+    def file = new File("$rootDir/PocoDoc/PocoDoc.ini")
+    file.createNewFile()
+    file.text = """
+PocoBuild=$rootDir
+PocoBase=$rootDir
+PocoDoc.output=releases/poco-${version}-all-doc
+PocoDoc.version=${version}-all
+"""
+	if (os.windows) {
+		file.text += """
+Includes=-I${postgres32Home}/include,-I${mysql32Home}/include,-ICppParser/include,-ICppUnit/include,-ICrypto/include,-IData/include,-IData/MySQL/include,-IData/ODBC/include,-IData/PostgreSQL/include,-IData/SQLite/include, -IData/SQLite/src,-IFoundation/include,-IJSON/include,-IMongoDB/include,-INet/include,-INetSSL_OpenSSL/include,-INetSSL_Win/include,-IRedis/include,-IUtil/include,-IXML/include,-IZip/include,-ISevenZip/include,-IPDF/include
+VC=${VCHome}
+WDK=${WDKHome}
+"""
+	} else {
+	}
+}
+task pocoDoc(type: Exec) {
+	dependsOn ':PocoDoc::assemble'
+	dependsOn PocoDocIni
+	if (os.windows) {
+		environment "Path", "$rootDir\\bin;$Path"
+		executable "PocoDoc/bin/PocoDoc.exe"
+		args "/config=$rootDir/PocoDoc/cfg/mkdoc-gradle.xml"
+		args "/config=$rootDir/PocoDoc/PocoDoc.ini"
+	} 
+	if (os.linux) {
+		environment "LD_LIBRARY_PATH", "$rootDir/lib64:$LD_LIBRARY_PATH"
+		executable "PocoDoc/bin64/PocoDoc"
+		args "-config=$rootDir/PocoDoc/cfg/mkdoc-gradle.xml"
+		args "-config=$rootDir/PocoDoc/PocoDoc.ini"
+	}
+	if (os.macOsX) {
+		//FIXME environment "LD_LIBRARY_PATH", "$rootDir/bin:$LD_LIBRARY_PATH"
+		args "-config=$rootDir/PocoDoc/cfg/mkdoc-gradle.xml"
+		args "-config=$rootDir/PocoDoc/PocoDoc.ini"
+	}
+//	inputs.files(tasks.getByPath(':production').outputs.files)
+	inputs.files(executable)
+	inputs.files(fileTree("doc").filter { it.isFile() })
+	inputs.files(new File("$rootDir/PocoDoc/cfg/mkdoc-gradle.xml"))
+	outputs.files(new File("releases/$version-all-doc/index.html"))
+}
+task zipDoc(type: Zip) {
+	from "releases/poco-${version}-all-doc/"
+	include '*'
+	include '*/*'
+	archiveName "poco-${version}-all-doc.zip"
+	destinationDir(file('releases'))
+	inputs.files(new File("releases/$version-all-doc/index.html"))
+	outputs.files(new File("releases/poco-${version}-all-doc.zip"))
+//	dependsOn pocoDoc
+}
+
+def candle(VSYEAR, VERSION, target, os) {
+	return tasks.create("Candle-${VSYEAR}-${VERSION}-${target}", Exec) {
+		dependsOn ':pocos'
+		dependsOn ':pocoDoc'
+		executable "${WiXHome}/bin/Candle.exe"
+		workingDir "packaging/Windows/WiX"
+		args "-arch", "${target}"
+		args "-dVSYEAR=${VSYEAR}"
+		args "-dVERSION=${VERSION}"
+		args "-dPOCO=${rootDir}"
+		args "-dPlatform=${target}"
+		args "-ext", "${WiXHome}/bin/WixUIExtension.dll"
+		args "-out", "${VSYEAR}/${VSYEAR}-Poco-$VERSION-${target}.wixobj"
+		args "Poco.wxs"
+		inputs.files(new File(workingDir, "Poco.wxs"))
+//			inputs.files(tasks.getByPath(':poco').outputs.files)
+		outputs.files(new File(workingDir,"${VSYEAR}/${VSYEAR}-Poco-$VERSION-${target}.wixobj"))
+		onlyIf(new Spec<Exec>() {
+			boolean isSatisfiedBy(Exec task) {
+				   return os.windows;
+			}
+		});
+	}
+}
+def light(VSYEAR, VERSION, target, os) {
+	return tasks.create("Light-${VSYEAR}-${VERSION}-${target}", Exec) {
+		dependsOn candle(VSYEAR, VERSION, target, os)
+		executable "${WiXHome}/bin/Light.exe"
+		workingDir "packaging/Windows/WiX"
+		args "-cultures:null"
+		args "-ext", "${WiXHome}/bin/WixUIExtension.dll"
+		args "-out"
+		args "${VSYEAR}/${VSYEAR}-Poco-$VERSION-${target}.msi"
+		args "${VSYEAR}/${VSYEAR}-Poco-$VERSION-${target}.wixobj"
+		inputs.files(new File(workingDir, "${VSYEAR}/${VSYEAR}-Poco-$VERSION-${target}.wixobj"))
+		outputs.files(new File(workingDir, "${VSYEAR}/${VSYEAR}-Poco-$VERSION-${target}.msi"))
+		onlyIf(new Spec<Exec>() {
+			boolean isSatisfiedBy(Exec task) {
+				   return os.windows;
+			}
+		});
+	}
+}
+task wix() {
+	dependsOn 		light('VS2017', version, 'x86', os)
+	dependsOn 		light('VS2017', version, 'x64', os)
+	onlyIf(new Spec<Task>() {
+		boolean isSatisfiedBy(Task task) {
+			   return os.windows;
+		}
+	});
+}
+task nuget(type: Exec) {
+	dependsOn ':pocos'
+	executable "${NuGetHome}/NuGet.exe"
+	workingDir "packaging/Windows/NuGet"
+	args "pack"
+	args "-BasePath", "$rootDir"
+	args "-Version", version
+	args "-Symbols"
+	args "-NonInteractive"
+	args "Pocoproject.Poco.vs140.nuspec"
+	inputs.files(new File(workingDir, "Pocoproject.Poco.vs140.nuspec"))
+//	inputs.files(tasks.getByPath(':poco').outputs.files)
+	outputs.files(new File(workingDir,"Pocoproject.Poco.vs140.${version}.nupkg"))
+	onlyIf(new Spec<Exec>() {
+		boolean isSatisfiedBy(Exec task) {
+			   return os.windows;
+		}
+	});
+}
+
+task packaging() {
+	if (os.windows) {
+		dependsOn nuget
+		dependsOn wix
+	}
+}
+/*
+    tasks { t ->
+        $.components.main.binaries.each { binary ->
+            def stripTask = binary.tasks.taskName("strip")
+            t.create(stripTask) {
+                dependsOn binary.tasks.link
+                doFirst {
+                    if (binary.toolChain in Gcc) {
+                        ["strip", binary.tasks.link.outputFile].execute().waitForOrKill(1000)
+                    }
+                }
+            }
+            binary.tasks.build.dependsOn stripTask
+        }
+    }
+*/
+
+
+
+

@@ -1,0 +1,17 @@
+vc.project.guid = 9866EE28-0612-4746-BD35-3B15B0AF7267
+vc.project.name = ApacheConnector
+vc.project.target = mod_poco
+vc.project.type = library
+vc.project.pocobase = ..
+vc.project.outdir = ${vc.project.pocobase}
+vc.project.platforms = Win32, x64
+vc.project.configurations = debug_shared, release_shared
+vc.project.prototype = ApacheConnector_vs90.vcproj
+vc.project.compiler.include = ..\\Foundation\\include;..\\Net\\include;..\\Util\\include
+vc.project.compiler.defines = 
+vc.project.compiler.defines.shared = ApacheHandlers_EXPORTS
+vc.project.compiler.defines.debug_shared = ${vc.project.compiler.defines.shared}
+vc.project.compiler.defines.release_shared = ${vc.project.compiler.defines.shared}
+vc.project.linker.dependencies.Win32 = libapr-1.lib libaprutil-1.lib libhttpd.lib
+vc.project.linker.dependencies.x64 = libapr-1.lib libaprutil-1.lib libhttpd.lib
+vc.solution.create = true

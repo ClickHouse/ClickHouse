@@ -1,0 +1,26 @@
+#! /bin/sh
+#
+# shlibln
+#
+# Create a symbolic link for a shared library
+#
+
+if [ $# -ne 2 ] ; then
+	echo "usage: $0:t file link"
+	exit 1
+fi
+
+source="$1"
+target="$2"
+
+sourcedir=`dirname "$source"`
+targetdir=`dirname "$target"`
+
+if [ "$sourcedir" = "$targetdir" ] ; then
+	source=`basename $source`
+fi
+
+
+if [ "$1" != "$2" ] ; then
+	ln -sf "$source" "$target"
+fi

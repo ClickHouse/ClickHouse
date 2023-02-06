@@ -1,0 +1,73 @@
+#
+# Yocto
+#
+# Make settings for Linux/GCC ARM
+#
+#
+
+#
+# General Settings
+#
+LINKMODE           ?= SHARED
+TOOL               ?= arm-linux
+POCO_TARGET_OSNAME  = Linux
+POCO_TARGET_OSARCH ?= armv7l
+
+#
+# Define Tools
+#
+CC      = $(TOOL)-gcc
+CXX     = $(TOOL)-g++
+LINK    = $(CXX)
+LIB     = $(TOOL)-ar -cr
+RANLIB  = $(TOOL)-ranlib
+SHLIB   = $(CXX) -shared -Wl,-soname,$(notdir $@) -o $@
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = $(TOOL)-strip
+DEP     = $(POCO_BASE)/build/script/makedepend.gcc
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -std=c99
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        = -Wall -Wno-sign-compare
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       =
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -static
+SHAREDOPT_CC    = -fPIC
+SHAREDOPT_CXX   = -fPIC
+SHAREDOPT_LINK  = -Wl,-rpath,$(LIBPATH)
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O2 -DNDEBUG
+RELEASEOPT_CXX  = -O2 -DNDEBUG
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_XOPEN_SOURCE=600 -D_REENTRANT -D_THREAD_SAFE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -DPOCO_HAVE_FD_EPOLL \
+	-DPOCO_HAVE_ADDRINFO -DPOCO_HAVE_LIBRESOLV
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -ldl -lrt

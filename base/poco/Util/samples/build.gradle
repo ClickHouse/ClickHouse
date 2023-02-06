@@ -1,0 +1,48 @@
+model {
+	components {
+		pkill(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'pkill/src' include '**/*.cpp' }
+				cpp.lib project: ':Util', library: 'Util'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		SampleApp(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'SampleApp/src' include '**/*.cpp' }
+				cpp.lib project: ':Util', library: 'Util'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		SampleServer(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'SampleServer/src' include '**/*.cpp' }
+				cpp.lib project: ':Util', library: 'Util'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		Units(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'Units/src' include '**/*.cpp' }
+				cpp.lib project: ':Util', library: 'Util'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+	}
+	binaries {
+		all {
+		}
+		withType(SharedLibraryBinarySpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'shared'
+		}
+		withType(StaticLibraryBinarySpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+		withType(NativeExecutableSpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+	}
+}
+task samples { dependsOn "assemble" }
+
+

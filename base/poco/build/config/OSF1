@@ -1,0 +1,69 @@
+#
+# OSF1
+#
+# Make settings for HP Tru64 5.1/Compaq C++ 6.5
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+#
+# Define Tools
+#
+CC      = cc
+CXX     = cxx
+LINK    = $(CXX) 
+LIB     = ar -cr
+RANLIB  = ranlib
+SHLIB   = $(CXX) $(LINKFLAGS) -shared -o $@ -soname $(notdir $@)
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = 
+DEP     = $(POCO_BASE)/build/script/makedepend.cxx 
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -pthread
+CFLAGS32        = 
+CFLAGS64        = 
+CXXFLAGS        =  -model ansi -pthread -ansi_alias -std ansi -D__USE_STD_IOSTREAM -nousing_std -nopure_cname -ieee
+CXXFLAGS32      = 
+CXXFLAGS64      = 
+LINKFLAGS       = -pthread -model ansi -std ansi
+LINKFLAGS32     = 
+LINKFLAGS64     = 
+STATICOPT_CC    = -non_shared
+STATICOPT_CXX   = -non_shared
+STATICOPT_LINK  = -non_shared
+SHAREDOPT_CC    = -shared
+SHAREDOPT_CXX   = -shared
+SHAREDOPT_LINK  = -call_shared
+DEBUGOPT_CC     = -g2 -D_DEBUG
+DEBUGOPT_CXX    = -gall -D_DEBUG
+DEBUGOPT_LINK   = -gall
+RELEASEOPT_CC   = +O2 -DNDEBUG
+RELEASEOPT_CXX  = +O2 -DNDEBUG
+RELEASEOPT_LINK =  
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_REENTRANT -D_THREAD_SAFE -D_RWSTD_MULTI_THREAD -D_XOPEN_SOURCE=500 -D_OSF_SOURCE -D_SOCKADDR_LEN
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lm -lrt
+

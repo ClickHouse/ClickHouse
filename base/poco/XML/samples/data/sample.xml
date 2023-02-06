@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<!--
+	This is a comment.
+-->
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+	<head>
+		<link rel="stylesheet" href="styles.css" type="text/css"/>
+		<?xml-stylesheet href="styles.css" type="text/css"?>
+		<title>A XHTML Example</title>
+	</head>
+	<body>
+		<h1>XHTML Example</h1>
+		<p>This is a XHTML example page.</p>
+		<img src="example.gif" width="256" height="192" alt="Example Picture" border="0"/>
+		<![CDATA[
+		The following <tag attr="value">is inside a CDATA section</tag>.
+		]]>
+	</body>
+</html>

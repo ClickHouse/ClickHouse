@@ -1,0 +1,69 @@
+#
+# Linux
+#
+# Make settings for Linux/SolarisStudio/
+#
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+#
+# Define Tools
+#
+CC      = cc
+CXX     = CC
+LINK    = $(CXX)
+LIB     = $(CXX) -xar -o 
+RANLIB  = ranlib
+SHLIB   = $(CXX) $(LINKFLAGS) -G -o $@ -h$(notdir $@)
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = ${CROSS_COMPILE}strip
+DEP     = $(POCO_BASE)/build/script/makedepend.SunCC 
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -mt
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        = -mt -std=c++03 -erroff=hidevf
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       = -mt -std=c++03
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -Bstatic
+SHAREDOPT_CC    = -KPIC
+SHAREDOPT_CXX   = -KPIC
+SHAREDOPT_LINK  = -Bdynamic
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -xO3 -DNDEBUG
+RELEASEOPT_CXX  = -xO3 -DNDEBUG
+RELEASEOPT_LINK = -xO3
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -DPOCO_NO_GCC_API_ATTRIBUTE -DPOCO_NO_FPENVIRONMENT -D_XOPEN_SOURCE=500 -D_REENTRANT -D_THREAD_SAFE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -DPOCO_NO_GCC_DIAG
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -ldl -lrt

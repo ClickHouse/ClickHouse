@@ -1,0 +1,7 @@
+#
+# SunOS
+#
+# Build settings for SunOS/Sun Studio C++
+#
+
+include $(POCO_BASE)/build/config/SunOS-SunStudio

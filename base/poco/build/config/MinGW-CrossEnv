@@ -1,0 +1,75 @@
+#
+# MinGW32
+#
+# Make settings for MinGW cross build on Linux
+# (see <http://mxe.cc/>)
+#
+
+#
+# General Settings
+#
+LINKMODE ?= STATIC
+POCO_TARGET_OSNAME = MinGW
+POCO_TARGET_OSARCH = i686
+CROSSENV = i686-pc-mingw32
+
+#
+# Define Tools
+#
+CC      = $(CROSSENV)-gcc
+CXX     = $(CROSSENV)-g++
+LINK    = $(CXX)
+LIB     = $(CROSSENV)-ar -cr
+RANLIB  = $(CROSSENV)-ranlib
+SHLIB   = $(CXX) -shared -o $@ -Wl,--out-implib=$(dir $@)$(subst cyg,lib,$(basename $(notdir $@))).a
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = $(CROSSENV)-strip
+DEP     = $(POCO_BASE)/build/script/makedepend.gcc 
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+WINDMC  = $(CROSSENV)-windmc
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .dll
+SHAREDLIBLINKEXT = .dll
+
+BINEXT          = .exe
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          =
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        =
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       = -Wl,--allow-multiple-definition
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -static
+SHAREDOPT_CC    =
+SHAREDOPT_CXX   =
+SHAREDOPT_LINK  = -shared
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O2 -DNDEBUG
+RELEASEOPT_CXX  = -O2 -DNDEBUG
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_WIN32 -DMINGW32 -DWINVER=0x501 -DPOCO_NO_FPENVIRONMENT -DPCRE_STATIC -DPOCO_THREAD_STACK_SIZE
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -liphlpapi -lssl -lcrypto -lws2_32

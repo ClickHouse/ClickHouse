@@ -1,0 +1,68 @@
+#
+# SunStudio
+#
+# Build settings for SunOS/Sun Studio C++
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+#
+# Tools
+#
+CC      = cc
+CXX     = CC
+LINK    = $(CXX)
+LIB     = $(CXX) -xar -o $@
+RANLIB  = ranlib
+SHLIB   = $(CXX) $(LINKFLAGS) -G -o $@ -h$(notdir $@)
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = 
+DEP     = $(POCO_BASE)/build/script/makedepend.SunCC
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -mt -Isrc
+CFLAGS32        =
+CFLAGS64        = -m64
+CXXFLAGS        = -mt -library=stlport4 -erroff=hidevf
+CXXFLAGS32      =
+CXXFLAGS64      = -m64
+LINKFLAGS       = -mt -library=stlport4
+LINKFLAGS32     =
+LINKFLAGS64     = -m64
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -Bstatic
+SHAREDOPT_CC    = -KPIC
+SHAREDOPT_CXX   = -KPIC
+SHAREDOPT_LINK  = -Bdynamic
+DEBUGOPT_CC     = -g -xs -D_DEBUG=$(DEBUGLEVEL)
+DEBUGOPT_CXX    = -g -xs -D_DEBUG=$(DEBUGLEVEL)
+DEBUGOPT_LINK   = -g -xs
+RELEASEOPT_CC   = -O -DNDEBUG
+RELEASEOPT_CXX  = -O -DNDEBUG
+RELEASEOPT_LINK =
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_REENTRANT -D_THREAD_SAFE -D_POSIX_PTHREAD_SEMANTICS -D_POSIX_C_SOURCE=199506L -D__EXTENSIONS__
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -lrt -lxnet -lsocket -lnsl -lresolv -ldl

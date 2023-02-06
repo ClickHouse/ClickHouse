@@ -1,0 +1,31 @@
+#! /bin/sh
+#
+#
+# makedepend.xlC
+#
+# Create dependency file, xlC version
+# Usage: makedepend.xlC source target dir1 dir2 dir3 dir4 flags...
+#
+
+source=$1
+shift
+target=$1
+shift
+dir1=$1
+shift
+dir2=$1
+shift
+dir3=$1
+shift
+dir4=$1
+shift
+
+cwd=`pwd`
+
+cd `dirname $target`
+$CXX -qmakedep -E -w $@ $cwd/$source >/dev/null
+
+ufile=`basename $source`
+ufile=`echo $ufile | sed "s#\.cpp#\.u#"`
+cat $ufile | sort | uniq | grep -v '/usr/include' | grep -v '/usr/vacpp' | sed "s#\(.*\.o$\)#$dir1/\1 $dir2/\1 $dir3/\1 $dir4/\1#" >$target
+

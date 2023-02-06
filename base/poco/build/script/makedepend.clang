@@ -1,0 +1,29 @@
+#! /bin/bash
+#
+# makedepend.clang
+#
+# Create dependency file, Clang version
+# Usage: makedepend.clang source target dir1 dir2 dir3 dir4 flags...
+#
+
+source=$1
+shift
+target=$1
+shift
+dir1=$1
+shift
+dir2=$1
+shift
+dir3=$1
+shift
+dir4=$1
+shift
+
+ext=${source##*.}
+if [ "$ext" = "c" ] ; then
+	CLANG=clang
+else
+	CLANG=clang++
+fi
+
+$CLANG -MM $@ $source | sed "s#\(.*\.o\):#$dir1/\1 $dir2/\1 $dir3/\1 $dir4/\1:#" >$target

@@ -1,0 +1,57 @@
+model {
+	components {
+		XML(NativeLibrarySpec) {
+			sources {
+				rc {
+					source {
+						srcDir '..'
+						include 'DLLVersion.rc'
+					}
+				}
+				c {
+					source {
+						srcDir 'src'
+						include '**/*.c'
+					}
+					exportedHeaders {
+						srcDir 'include'
+					}
+					lib project: ':Foundation', library: 'Foundation'
+				}
+				cpp {
+					source {
+						srcDir 'src'
+						include '**/*.cpp'
+					}
+					exportedHeaders {
+						srcDir 'include'
+					}
+					lib project: ':Foundation', library: 'Foundation'
+				}
+			}
+		}
+	}
+	binaries {
+		all {
+			cCompiler.define "XML_STATIC"
+			cCompiler.define "XML_NS"
+			cCompiler.define "XML_DTD"
+			cCompiler.define "HAVE_EXPAT_CONFIG_H"
+
+			cppCompiler.define "XML_STATIC"
+			cppCompiler.define "XML_NS"
+			cppCompiler.define "XML_DTD"
+			cppCompiler.define "HAVE_EXPAT_CONFIG_H"
+		}
+		withType(SharedLibraryBinarySpec) {
+			if (toolChain in VisualCpp) {
+				 cCompiler.define "XML_EXPORTS"
+				 cppCompiler.define "XML_EXPORTS"
+			}
+		}
+		withType(StaticLibraryBinarySpec) {
+		}
+	}
+}
+task poco { dependsOn "assemble" }
+

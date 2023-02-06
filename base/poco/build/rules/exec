@@ -1,0 +1,66 @@
+#
+# exec
+#
+# Rule definitions for building executables
+#
+
+#
+# Target names
+#
+EXEC_RELEASE_STATIC = $(BINPATH)/static/$(target)$(OSARCH_POSTFIX)$(BINEXT)
+EXEC_DEBUG_STATIC   = $(BINPATH)/static/$(target)d$(OSARCH_POSTFIX)$(BINEXT)
+EXEC_RELEASE_SHARED = $(BINPATH)/$(target)$(OSARCH_POSTFIX)$(BINEXT)
+EXEC_DEBUG_SHARED   = $(BINPATH)/$(target)d$(OSARCH_POSTFIX)$(BINEXT)
+
+TARGET_LIBS_DEBUG   = $(foreach l,$(target_libs),-l$(l)d$(OSARCH_POSTFIX))
+TARGET_LIBS_RELEASE = $(foreach l,$(target_libs),-l$(l)$(OSARCH_POSTFIX))
+TARGET_LIBS_EXT     = $(foreach l,$(target_extlibs),-l$(l)$(OSARCH_POSTFIX))
+
+#
+# Include the compile rules
+#
+include $(POCO_BASE)/build/rules/compile
+
+#
+# Rules for creating an executable
+#
+clean:
+	$(RM) $(OBJPATH)
+	$(RM) $(EXEC_RELEASE_STATIC) $(EXEC_DEBUG_STATIC) $(EXEC_RELEASE_SHARED) $(EXEC_DEBUG_SHARED)
+
+distclean: clean
+	$(RM) bin
+	$(RM) obj
+	$(RM) .dep
+
+static_debug:   static_bindirs $(EXEC_DEBUG_STATIC)
+static_release: static_bindirs $(EXEC_RELEASE_STATIC)
+shared_debug:   bindirs $(EXEC_DEBUG_SHARED)
+shared_release: bindirs $(EXEC_RELEASE_SHARED)
+
+$(EXEC_DEBUG_STATIC): $(foreach o,$(objects),$(OBJPATH_DEBUG_STATIC)/$(o).o)
+	@echo "** Building executable (debug)" $@
+	$(LINK) $(LINKFLAGS) $(DEBUGOPT_LINK) $(STATICOPT_LINK) -o $@ $^ $(LIBRARY) $(TARGET_LIBS_DEBUG) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(postbuild)
+
+$(EXEC_RELEASE_STATIC): $(foreach o,$(objects),$(OBJPATH_RELEASE_STATIC)/$(o).o)
+	@echo "** Building executable (release)" $@
+	$(LINK) $(LINKFLAGS) $(RELEASEOPT_LINK) $(STATICOPT_LINK) -o $@ $^ $(LIBRARY) $(TARGET_LIBS_RELEASE) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(STRIPCMD)
+	$(postbuild)
+
+$(EXEC_DEBUG_SHARED): $(foreach o,$(objects),$(OBJPATH_DEBUG_SHARED)/$(o).o)
+	@echo "** Building shared executable (debug)" $@
+	$(LINK) $(LINKFLAGS) $(DEBUGOPT_LINK) $(SHAREDOPT_LINK) -o $@ $^ $(LIBRARY) $(TARGET_LIBS_DEBUG) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(postbuild)
+
+$(EXEC_RELEASE_SHARED): $(foreach o,$(objects),$(OBJPATH_RELEASE_SHARED)/$(o).o)
+	@echo "** Building shared executable (release)" $@
+	$(LINK) $(LINKFLAGS) $(RELEASEOPT_LINK) $(SHAREDOPT_LINK) -o $@ $^ $(LIBRARY) $(TARGET_LIBS_RELEASE) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(STRIPCMD)
+	$(postbuild)
+
+#
+# Include the automatically generated dependency files
+#
+sinclude $(addprefix $(DEPPATH)/,$(addsuffix .d,$(objects)))

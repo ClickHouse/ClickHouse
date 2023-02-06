@@ -1,0 +1,68 @@
+#
+# HP-UX
+#
+# Make settings for HP-UX 11.11/aCC 03.30 (and later)
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+#
+# Define Tools
+#
+CC      = cc
+CXX     = aCC
+LINK    = $(CXX)
+LIB     = ar -cr
+RANLIB  = ranlib
+SHLIB   = $(CXX) $(LINKFLAGS) -b -Wl,+h$(notdir $@) -o $@ -Wl,+s
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+DEP     = $(POCO_BASE)/build/script/makedepend.aCC 
+STRIP   = 
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .$(target_version)
+SHAREDLIBLINKEXT = .sl
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -Isrc
+CFLAGS32        = +DD32
+CFLAGS64        = +DD64
+CXXFLAGS        = -AA +W361 +W307 +W749 +W849
+CXXFLAGS32      = +DD32
+CXXFLAGS64      = +DD64
+LINKFLAGS       = -AA
+LINKFLAGS32     = +DD32
+LINKFLAGS64     = +DD64
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -Wl,-aarchive_shared
+SHAREDOPT_CC    = +Z
+SHAREDOPT_CXX   = +Z
+SHAREDOPT_LINK  = -Wl,+b$(LIBPATH) -Wl,+s -Wl,-ashared_archive
+DEBUGOPT_CC     = -g -D_DEBUG=$(DEBUGLEVEL)
+DEBUGOPT_CXX    = -g0 +d -D_DEBUG=$(DEBUGLEVEL)
+DEBUGOPT_LINK   = -g0
+RELEASEOPT_CC   = +O2 -DNDEBUG
+RELEASEOPT_CXX  = +O2 +Onolimit -DNDEBUG
+RELEASEOPT_LINK = +O2 +Onolimit
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -Dhpux -D_REENTRANT -D_THREAD_SAFE -D_RWSTD_MULTI_THREAD -D_HPUX_SOURCE -D_XOPEN_SOURCE_EXTENDED -D_POSIX_C_SOURCE=199506L
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -lxnet

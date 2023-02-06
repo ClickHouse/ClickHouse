@@ -1,0 +1,69 @@
+model {
+	components {
+		Binding(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'Binding/src' include '**/*.cpp' }
+				cpp.lib project: ':Data', library: 'Data'				
+				cpp.lib project: ':Data:SQLite', library: 'DataSQLite'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		RecordSet(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'RecordSet/src' include '**/*.cpp' }
+				cpp.lib project: ':Data', library: 'Data'				
+				cpp.lib project: ':Data:SQLite', library: 'DataSQLite'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		RowFormatter(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'RowFormatter/src' include '**/*.cpp' }
+				cpp.lib project: ':Data', library: 'Data'				
+				cpp.lib project: ':Data:SQLite', library: 'DataSQLite'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		Tuple(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'Tuple/src' include '**/*.cpp' }
+				cpp.lib project: ':Data', library: 'Data'				
+				cpp.lib project: ':Data:SQLite', library: 'DataSQLite'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		TypeHandler(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'TypeHandler/src' include '**/*.cpp' }
+				cpp.lib project: ':Data', library: 'Data'				
+				cpp.lib project: ':Data:SQLite', library: 'DataSQLite'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		WebNotifier(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'WebNotifier/src' include '**/*.cpp' }
+				cpp.lib project: ':Data', library: 'Data'				
+				cpp.lib project: ':Data:SQLite', library: 'DataSQLite'				
+				cpp.lib project: ':Net', library: 'Net'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+	}
+	binaries {
+		all {
+		}
+		withType(SharedLibraryBinarySpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'shared'
+		}
+		withType(StaticLibraryBinarySpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+		withType(NativeExecutableSpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+	}
+}
+task samples { dependsOn "assemble" }
+
+

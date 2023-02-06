@@ -1,0 +1,108 @@
+#! /bin/sh
+#
+# mkdoc
+#
+# Create reference documentation for a POCO release.
+# This is a wrapper for mkdocumentation that syncs to the
+# Perforce head revision, reads the current
+# version from $POCO_BASE/VERSION and requires a release
+# specification (loaded from $POCO_BASE/release/spec/*.release)
+# as argument.
+#
+# usage: mkdoc [-l <perforce-label>] [<specfile>]
+#
+
+if [ "$POCO_BASE" = "" ] ; then
+  echo "Error: POCO_BASE not set."
+  exit 1
+fi
+
+osname=`uname -s | tr ' ' '_'`
+osarch=`uname -m | tr ' ' '_'`
+
+case `uname` in
+  CYGWIN*) osname="CYGWIN"
+            ;;
+esac
+
+spec=""
+docConfig=$POCO_BASE/PocoDoc/cfg/mkdoc-poco.xml
+while [ "$1" != "" ] ;
+do
+	if [ "$1" = "-C" ] ; then
+		shift
+		docConfig=$1
+		shift
+	elif [ "$1" = "-v" ] ; then
+		shift
+		version=$1
+		shift
+	else
+		spec=$1
+		shift
+	fi
+done
+
+if [ "$spec" != "" ] ; then
+  relspec="-f release/spec/${spec}.release"
+  tag="-$spec"
+  reltag="-t $spec"
+else
+  relspec=""
+  reltag=""
+  tag=""
+fi
+
+cd $POCO_BASE
+
+if [ ! -f VERSION ] ; then
+  echo "Error: No VERSION file found."
+  exit 2
+fi
+
+if [ "$version" = "" ] ; then
+	read version <$POCO_BASE/VERSION
+fi
+release=$version$tag
+
+if [ ! -f libversion ] ; then
+  echo "Error: No libversion file found."
+  exit 2
+fi
+if [ "$libversion" = "" ] ; then
+	read libversion <$POCO_BASE/libversion
+fi
+
+#
+# Build release
+#
+
+echo "Building tools"
+
+tools=$POCO_BASE/stage/tools
+rm -rf $tools
+mkdir -p $tools
+mkrelease -o $tools $version CppParser PocoDoc
+
+cd $tools
+./configure --no-tests --no-samples --no-prefix
+make -s -j8
+
+if [ $osname = "CYGWIN" ] ; then
+    find $tools -type f -name "cyg*$libversion.dll" > $TMP/dlls
+    rebase -O -T $TMP/dlls
+    rm $TMP/dlls
+fi
+
+cd $POCO_BASE
+
+if [ $osname = "CYGWIN" ] ; then
+#   Poco dlls must be on PATH for Cygwin
+    export PATH=$tools/lib/$osname/$osarch:$PATH
+fi
+
+export PATH=$tools/PocoDoc/bin/$osname/$osarch:$PATH
+echo PATH=$PATH
+
+echo "Building documentation $release (using $docConfig)"
+mkdocumentation $reltag $relspec -C $docConfig -v $version

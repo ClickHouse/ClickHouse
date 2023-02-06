@@ -1,0 +1,68 @@
+#
+# SunOS
+#
+# Build settings for SunOS 5.10/Sun Studio 12 C++ 5.9/Apache stdcxx/AMD Opteron 64 bit
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+#
+# Tools
+#
+CC      = cc -xtarget=opteron -m64
+CXX     = CC -xtarget=opteron -m64 -library=no%Cstd
+LINK    = $(CXX)
+LIB     = $(CXX) -xar -o $@
+RANLIB  = ranlib
+SHLIB   = $(CXX) $(LINKFLAGS) -G -o $@ -h$(notdir $@)
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = 
+DEP     = $(POCO_BASE)/build/script/makedepend.SunCC
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -mt -Isrc
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        = -mt -features=tmplife
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       = -mt -L$(STDCXX_BASE)/lib -R$(STDCXX_BASE)/lib
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -Bstatic
+SHAREDOPT_CC    = -KPIC
+SHAREDOPT_CXX   = -KPIC
+SHAREDOPT_LINK  = -Bdynamic
+DEBUGOPT_CC     = -g -xdebugformat=stabs -xs -D_DEBUG=$(DEBUGLEVEL) -I$(STDCXX_BASE)/include
+DEBUGOPT_CXX    = -g -xdebugformat=stabs -xs -D_DEBUG=$(DEBUGLEVEL) -I$(STDCXX_BASE)/include
+DEBUGOPT_LINK   = -g -xdebugformat=stabs -xs
+RELEASEOPT_CC   = -xO3 -g0 -xregs=no%frameptr -xdebugformat=stabs -xs -DNDEBUG -library=no%Cstd -I$(STDCXX_BASE)/include
+RELEASEOPT_CXX  = -xO3 -g0 -xregs=no%frameptr -xdebugformat=stabs -xs -DNDEBUG -library=no%Cstd -I$(STDCXX_BASE)/include
+RELEASEOPT_LINK =
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_REENTRANT -D_THREAD_SAFE -D_POSIX_PTHREAD_SEMANTICS -D_RWSTDDEBUG -D_RWSTD_NO_DEBUG_ITER
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lstd15D -lpthread -lrt -lxnet -lsocket -lnsl -lresolv -ldl

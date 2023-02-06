@@ -1,0 +1,30 @@
+model {
+	components {
+		TextConverter(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'TextConverter/src' include '**/*.cpp' }
+				cpp.lib project: ':Encodings', library: 'Encodings'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+	}
+	binaries {
+		all {
+		}
+		withType(SharedLibraryBinarySpec) {
+			lib project: ':Encodings', library: 'Encodings', linkage: 'shared'
+			lib project: ':Foundation', library: 'Foundation', linkage: 'shared'
+		}
+		withType(StaticLibraryBinarySpec) {
+			lib project: ':Encodings', library: 'Encodings', linkage: 'static'
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+		withType(NativeExecutableSpec) {
+			lib project: ':Encodings', library: 'Encodings', linkage: 'static'
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+	}
+}
+task samples { dependsOn "assemble" }
+
+

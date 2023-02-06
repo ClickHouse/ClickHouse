@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>${PocoDoc.software} - Reference Library</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+<meta name="author" content="Applied Informatics Software Engineering GmbH and Contributors"/>
+<meta name="generator" content="PocoDoc"/>
+<link rel="stylesheet" href="css/styles.css" type="text/css"/>
+<script type="text/javascript" src="js/iframeResizer.min.js"></script>
+</head>
+<body>
+<div class="header">
+<h1 class="category">POCO C++ Libraries</h1>
+<h1 class="title">Reference Library</h1>
+</div>
+<div class="body">
+<div id="navigation">
+<iframe src="navigation.html" onload="iFrameResize(this);" scrolling="no"></iframe>
+</div>
+<div id="content">
+<h2>User Guides And Tutorials</h2>
+${PocoDoc.pageIndex}
+
+<h2>API Reference by Namespace</h2>
+${PocoDoc.nameSpaceIndex}
+
+<p class="footer">${PocoDoc.software} ${PocoDoc.version}<br />
+Copyright &copy; ${PocoDoc.year}, <a href="${PocoDoc.companyURI}" target="_top">${PocoDoc.company}</a></p>
+</div>
+</div>
+</body>
+</html>

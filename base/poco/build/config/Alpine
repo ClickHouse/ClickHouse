@@ -1,0 +1,9 @@
+#
+# Alpine
+#
+# Make settings for Alpine Linux (musl; no <linux/if_packet.h> header)
+#
+
+include $(POCO_BASE)/build/config/Linux
+
+SYSFLAGS += -DPOCO_NO_LINUX_IF_PACKET_H

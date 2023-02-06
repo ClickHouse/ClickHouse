@@ -1,0 +1,29 @@
+<AppConfig>
+	<schannel>
+		<server>
+			<certificateName>${system.nodeName}</certificateName>
+			<verificationMode>none</verificationMode>
+			<useMachineStore>false</useMachineStore>
+			<invalidCertificateHandler>
+				<name>AcceptCertificateHandler</name>
+				<options>
+				</options>
+			</invalidCertificateHandler>
+		</server>
+		<client>
+			<verificationMode>relaxed</verificationMode>
+			<useMachineStore>false</useMachineStore>
+			<invalidCertificateHandler>
+				<name>AcceptCertificateHandler</name>
+				<options>
+				</options>
+			</invalidCertificateHandler>
+		</client>
+	</schannel>
+	<testsuite>
+		<proxy>
+			<host>proxy.aon.at</host>
+			<port>8080</port>
+		</proxy>
+	</testsuite>
+</AppConfig>

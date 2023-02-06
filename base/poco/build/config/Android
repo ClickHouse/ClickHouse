@@ -1,0 +1,89 @@
+#
+# Android
+#
+# Make settings for Android NDK
+#
+
+#
+# General Settings
+#
+LINKMODE           ?= STATIC
+ANDROID_ABI        ?= armeabi
+POCO_TARGET_OSNAME  = Android
+POCO_TARGET_OSARCH  = $(ANDROID_ABI)
+
+ifeq ($(ANDROID_ABI),armeabi)
+TOOL      = arm-linux-androideabi
+ARCHFLAGS = -mthumb
+else
+ifeq ($(ANDROID_ABI),armeabi-v7a)
+TOOL      = arm-linux-androideabi
+ARCHFLAGS = -march=armv7-a -mfloat-abi=softfp
+LINKFLAGS = -Wl,--fix-cortex-a8
+else
+ifeq ($(ANDROID_ABI),x86)
+TOOL      = i686-linux-android
+ARCHFLAGS = -march=i686 -msse3 -mstackrealign -mfpmath=sse
+else
+$(error Invalid ABI specified in ANDROID_ABI)
+endif
+endif
+endif
+
+#
+# Define Tools
+#
+CC      = $(TOOL)-gcc
+CXX     = $(TOOL)-g++
+LINK    = $(CXX)
+STRIP   = $(TOOL)-strip
+LIB     = $(TOOL)-ar -cr
+RANLIB  = $(TOOL)-ranlib
+SHLIB   = $(CXX) -shared -Wl,-soname,$(notdir $@) -o $@
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+DEP     = $(POCO_BASE)/build/script/makedepend.gcc
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = $(ARCHFLAGS) -fpic -ffunction-sections -funwind-tables -fstack-protector -fno-strict-aliasing -finline-limit=64
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        = $(ARCHFLAGS) -fpic -ffunction-sections -funwind-tables -fstack-protector -fno-strict-aliasing -finline-limit=64 -frtti -fexceptions
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS      += 
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    = 
+STATICOPT_CXX   = 
+STATICOPT_LINK  = -static
+SHAREDOPT_CC    = 
+SHAREDOPT_CXX   = 
+SHAREDOPT_LINK  = -Wl,-rpath,$(LIBPATH)
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O3 -DNDEBUG -fomit-frame-pointer
+RELEASEOPT_CXX  = -O2 -DNDEBUG -fomit-frame-pointer
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -DPOCO_ANDROID -DPOCO_NO_FPENVIRONMENT -DPOCO_NO_WSTRING -DPOCO_NO_SHAREDMEMORY
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lstdc++ -lsupc++

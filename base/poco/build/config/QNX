@@ -1,0 +1,88 @@
+#
+# QNX
+#
+# Make settings for QNX Neutrino 6.3.2 or later.
+# For cross-builds, or if the default compiler version
+# selected by the script is wrong, the make variable
+# CCVER can be overridden:
+# make CCVER=4.2.4,gcc_ntox86
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+#
+# Define Tools
+#
+ifndef CCVER
+QNXREL = $(shell uname -r)
+ifeq ($(QNXREL),6.3.2)
+CCVER   = 3.3.5,gcc_ntox86
+else
+ifeq ($(QNXREL),6.4.0)
+CCVER   = 4.2.4,gcc_ntox86
+else
+ifeq ($(QNXREL),6.4.1)
+CCVER   = 4.3.3,gcc_ntox86
+else
+CCVER   = 4.4.2,gcc_ntox86
+endif
+endif
+endif
+endif
+CC      = qcc -V$(CCVER)
+CXX     = QCC -V$(CCVER)
+LINK    = $(CXX) -V$(CCVER)
+LIB     = ar -cr
+RANLIB  = ranlib
+SHLIB   = $(CXX) -shared -Wl,-soname,$(notdir $@) -o $@
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = 
+DEP     = $(POCO_BASE)/build/script/makedepend.qcc 
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = 
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        =
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       =
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -static
+SHAREDOPT_CC    = -fpic
+SHAREDOPT_CXX   = -fpic
+SHAREDOPT_LINK  = -Wl,-rpath,$(LIBPATH)
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O2 -DNDEBUG
+RELEASEOPT_CXX  = -O2 -DNDEBUG
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_QNX_SOURCE
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lm -lsocket

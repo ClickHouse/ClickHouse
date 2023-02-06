@@ -1,0 +1,114 @@
+model {
+	components {
+		Foundation(NativeLibrarySpec) { m ->
+			sources {
+//
+//				mc {
+//					source {
+//						srcDir 'src'
+//						include '**/*.mc'
+//					}
+//				}
+				rc {
+					source {
+						srcDir '..'
+						include 'DLLVersion.rc'
+					}
+				}
+				c {
+					source {
+						srcDir 'src'
+						include '**/*.c'
+					}
+					exportedHeaders {
+						srcDir 'include'
+					}
+				}
+				cpp {
+					source {
+						srcDir 'src'
+						include '**/*.cpp'
+						exclude 'ByteOrder.cpp'
+						exclude 'String.cpp'
+						exclude 'SignalHandler.cpp'
+						exclude 'Environment_*.cpp'
+						exclude 'FPEnvironment_*.cpp'
+						exclude 'Timezone_*.cpp'
+						exclude 'DirectoryIterator_*.cpp'
+						exclude 'File_*.cpp'
+						exclude 'FileStream_*.cpp'
+						exclude 'Path_*.cpp'
+						exclude 'LogFile_*.cpp'
+						exclude 'NamedEvent_*.cpp'
+						exclude 'NamedMutex_*.cpp'
+						exclude 'PipeImpl_*.cpp'
+						exclude 'Process_*.cpp'
+						exclude 'SharedMemory_*.cpp'
+						exclude 'SharedLibrary_*.cpp'
+						exclude 'Event_*.cpp'
+						exclude 'Mutex_*.cpp'
+						exclude 'RWLock_*.cpp'
+						exclude 'Semaphore_*.cpp'
+						exclude 'Thread_*.cpp'
+
+						exclude 'EventLogChannel.cpp'
+						exclude 'UnWindows.cpp'
+						exclude 'WindowsConsoleChannel.cpp'
+						exclude 'AndroidLogChannel.cpp'
+						exclude 'SyslogChannel.cpp'
+
+					}
+					exportedHeaders {
+						srcDir 'include'
+					}
+				}
+			}
+			binaries.all {
+				sources {
+					if (targetPlatform.operatingSystem.windows) {
+						platformWindows(CppSourceSet) {
+							lib m.sources.cpp
+							source {
+								srcDir 'src'
+								include 'EventLogChannel.cpp'
+								include 'UnWindows.cpp'
+								include 'WindowsConsoleChannel.cpp'
+							}
+						}
+					} else
+                     if (targetPlatform.operatingSystem.macOsX || targetPlatform.operatingSystem.linux) {
+						platformNix(CppSourceSet) {
+							lib m.sources.cpp
+							source {
+								srcDir 'src'
+								include 'SignalHandler.cpp'
+								include 'SyslogChannel.cpp'
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	binaries {
+		all {
+			if (toolChain in VisualCpp) {
+				linker.args "ws2_32.lib"
+				linker.args "iphlpapi.lib"
+			}
+		}
+		withType(NativeExecutableSpec) {
+		}
+		withType(StaticLibraryBinarySpec) {
+		}
+		withType(SharedLibraryBinarySpec) {
+			if (toolChain in VisualCpp) {
+//					addCompilerDefine "Foundation_EXPORTS" ""
+				cCompiler.define "Foundation_EXPORTS"
+				cppCompiler.define "Foundation_EXPORTS"
+			}
+		}
+	}
+}
+task poco { dependsOn "assemble" }
+

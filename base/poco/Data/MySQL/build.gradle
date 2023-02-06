@@ -1,0 +1,104 @@
+model {
+	repositories {
+		libs(PrebuiltLibraries) {
+			mysql {
+				headers.srcDir "$mysql32Home/include"
+				binaries.withType(StaticLibraryBinary) {
+					def libName = "foobar"
+					if (buildType == buildTypes.debug) {
+						libName = 'libmysqld.lib'
+						if (targetPlatform.name == 'win32') {
+							staticLibraryFile = file("$mysql32Home/lib/$libName")
+						} else
+						if (targetPlatform.name == 'win64') {
+							headers.srcDir "$mysql64Home/include"
+							staticLibraryFile = file("$mysql64Home/lib/$libName")
+						}
+					} else
+					if (buildType == buildTypes.release) {
+						libName = 'libmysql.lib'
+						if (targetPlatform.name == 'win32') {
+							headers.srcDir "$mysql32Home/include"
+							staticLibraryFile = file("$mysql32Home/lib/$libName")
+						} else
+						if (targetPlatform.name == 'win64') {
+							headers.srcDir "$mysql64Home/include"
+							staticLibraryFile = file("$mysql64Home/lib/$libName")
+						}
+					} else {
+						throw new GradleException("Unknown buildType" + buildType)
+					}
+				}
+				binaries.withType(SharedLibraryBinary) {
+					def dllName
+					def linkName
+					if (buildType == buildTypes.debug) {
+						dllName = 'libmysqld.dll'
+						linkName = 'libmysqld.lib'
+						if (targetPlatform.name == 'win32') {
+							headers.srcDir "$mysql32Home/include"
+							sharedLibraryFile     = file("$mysql32Home/lib/$dllName")
+							sharedLibraryLinkFile = file("$mysql32Home/lib/$linkName")
+						} else
+						if (targetPlatform.name == 'win64') {
+							headers.srcDir "$mysql64Home/include"
+							sharedLibraryFile     = file("$mysql64Home/lib/$dllName")
+							sharedLibraryLinkFile = file("$mysql64Home/lib/$linkName")
+						}
+					} else
+					if (buildType == buildTypes.release) {
+						dllName = 'libmysql.dll'
+						linkName = 'libmysql.lib'
+						if (targetPlatform.name == 'win32') {
+							headers.srcDir "$mysql32Home/include"
+							sharedLibraryFile     = file("$mysql32Home/lib/$dllName")
+							sharedLibraryLinkFile = file("$mysql32Home/lib/$linkName")
+						} else
+						if (targetPlatform.name == 'win64') {
+							headers.srcDir "$mysql64Home/include"
+							sharedLibraryFile     = file("$mysql64Home/lib/$dllName")
+							sharedLibraryLinkFile = file("$mysql64Home/lib/$linkName")
+						}
+					} else {
+						throw new GradleException("Unknown buildType" + buildType)
+					}
+				}
+			}
+		}
+	}
+	components {
+		DataMySQL(NativeLibrarySpec) {
+			sources {
+				cpp {
+					source {
+						srcDir 'src'
+						include '**/*.cpp'
+					}
+					exportedHeaders {
+						srcDir 'include'
+					}
+					lib library: 'mysql'
+					lib project: ':Data', library: 'Data'
+					lib project: ':Foundation', library: 'Foundation'
+				}
+			}
+		}
+	}
+	binaries {
+		all {
+			cppCompiler.define	"THREADSAFE"
+			cppCompiler.define 	"__LCC__"	
+			cppCompiler.define 	"WINVER=0x0600"
+		}
+		withType(SharedLibraryBinarySpec) {
+			if (toolChain in VisualCpp) {
+				cppCompiler.define	"MySQL_EXPORTS"
+			}
+		}
+		withType(StaticLibraryBinarySpec) {
+		}
+	}
+}
+task poco { dependsOn "assemble" }
+
+

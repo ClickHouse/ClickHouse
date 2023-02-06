@@ -1,0 +1,328 @@
+#
+# global
+#
+# Global build configuration
+#
+# Environment variables:
+# POCO_BASE:   Path to POCO source tree. Must be defined.
+# POCO_BUILD:  Path to directory where build files are put.
+#              Defaults to $(POCO_BASE)
+# POCO_CONFIG: Build configuration to use.
+#              Defaults to `uname`.
+# POCO_TARGET_OSNAME: Target system operating system name (for cross builds)
+# POCO_TARGET_OSARCH: Target system architecture (forr cross builds)
+#
+
+#
+# Check for POCO_BASE
+#
+ifndef POCO_BASE
+$(error POCO_BASE is not defined.)
+endif
+
+#
+# Include some optional make configuration
+#
+sinclude $(POCO_BASE)/config.build
+
+#
+# Check for PROJECT_BASE
+#
+ifndef PROJECT_BASE
+PROJECT_BASE = $(POCO_BASE)
+endif
+export PROJECT_BASE
+ifdef POCO_VERBOSE
+$(info PROJECT_BASE        = $(PROJECT_BASE))
+endif
+
+#
+# Check for POCO_BUILD
+#
+ifndef POCO_BUILD
+POCO_BUILD = $(PROJECT_BASE)
+endif
+export POCO_BUILD
+ifdef POCO_VERBOSE
+$(info POCO_BUILD          = $(POCO_BUILD))
+endif
+
+#
+# POCO_BASE/POCO_BUILD/cwd sanity checks
+#
+# Ensure that the current working directory is either
+# under $POCO_BASE or under $PROJECT_BASE
+# Also, if we're building under $POCO_BASE, disarm
+# $PROJECT_BASE
+#
+cwd = $(shell pwd)
+inpoco = $(shell echo | awk '{print index("$(cwd)","$(POCO_BASE)")}')
+inproj = $(shell echo | awk '{print index("$(cwd)","$(PROJECT_BASE)")}')
+ifneq ($(inpoco),0)
+PROJECT_BASE = $(POCO_BASE)
+else
+ifneq ($(inproj),0)
+else
+$(error Current working directory not under $$PROJECT_BASE)
+endif
+endif
+
+#
+# Determine OS
+#
+POCO_HOST_OSNAME = $(shell uname)
+ifeq ($(findstring CYGWIN,$(POCO_HOST_OSNAME)),CYGWIN)
+POCO_HOST_OSNAME = CYGWIN
+endif
+
+ifeq ($(findstring MINGW,$(POCO_HOST_OSNAME)),MINGW)
+POCO_HOST_OSNAME = MinGW
+endif
+ifdef POCO_VERBOSE
+$(info POCO_HOST_OSNAME    = $(POCO_HOST_OSNAME))
+endif
+
+POCO_HOST_OSARCH ?= $(subst /,-,$(shell uname -m | tr ' ' _))
+ifdef POCO_VERBOSE
+$(info POCO_HOST_OSARCH    = $(POCO_HOST_OSARCH))
+endif
+
+#
+# Begin Sun platforms
+#
+# Pure Solaris or GNU (Nexenta), Sun Forte and Sun Studio compilers supported
+# (on Nexenta, the default compiler is g++)
+#
+ifndef POCO_CONFIG
+  ifeq ($(findstring SunOS,$(POCO_HOST_OSNAME)),SunOS)
+    # detect if this is Nexenta platform
+    POCO_HOST_ALL_OSNAME := $(shell uname -a)
+    ifeq ($(findstring Nexenta,$(POCO_HOST_ALL_OSNAME)),Nexenta)
+      POCO_HOST_OSNAME := Nexenta
+    else # Up to version 5.5 SunOS-SunForte config is used, 5.6 and above use SunOS-SunStudio
+      POCO_COMPILER_NAME := $(shell CC -V 2>&1)
+      POCO_COMPILER_VERSION := $(subst .,,$(filter 5.%,$(POCO_COMPILER_NAME)))
+
+      ifeq (0, $(shell test $(POCO_COMPILER_VERSION) -gt 55; echo $$?))
+        POCO_CONFIG := SunOS-SunStudio
+      else
+        POCO_CONFIG := SunOS-SunForte
+      endif
+    endif
+  endif
+endif
+#
+# End Sun Platforms
+#
+
+#
+# If POCO_CONFIG is not set, use the OS name as configuration name
+#
+ifndef POCO_CONFIG
+POCO_CONFIG = $(POCO_HOST_OSNAME)
+endif
+ifdef POCO_VERBOSE
+$(info POCO_CONFIG         = $(POCO_CONFIG))
+endif
+
+#
+# Include System Specific Settings
+#
+include $(POCO_BASE)/build/config/$(POCO_CONFIG)
+
+#
+# Determine operating system
+#
+ifndef POCO_TARGET_OSNAME
+OSNAME   := $(POCO_HOST_OSNAME)
+else
+OSNAME   := $(POCO_TARGET_OSNAME)
+endif
+ifdef POCO_VERBOSE
+$(info OSNAME              = $(OSNAME))
+endif
+
+ifndef POCO_TARGET_OSARCH
+OSARCH   := $(subst /,-,$(shell uname -m | tr ' ' _))
+else
+OSARCH   := $(POCO_TARGET_OSARCH)
+endif
+ifdef POCO_VERBOSE
+$(info OSARCH              = $(OSARCH))
+endif
+
+HOSTNAME := $(shell hostname)
+
+#
+# Check if a 64bit build is requested
+#
+ifndef OSARCH_64BITS
+OSARCH_64BITS = 0
+endif
+
+ifeq ($(OSARCH_64BITS),1)
+OSARCH_POSTFIX = 64
+else
+OSARCH_POSTFIX =
+endif
+
+#
+# Detect distro
+#
+
+# Fedora, Redhat, Centos.
+REDHATISH = $(if $(wildcard /etc/redhat-release /etc/centos-release /etc/fedora-release),1)
+# Debian, Ubuntu
+DEBIANISH = $(if $(wildcard /etc/debian_version),1)
+
+#
+# Adjust suffix for 64-bit lib directory
+#
+ifneq ($(REDHATISH),)
+LIB64SUFFIX = $(if $(filter $(OSARCH),x86_64 sparc64 ppc64),64,)
+else ifneq ($(DEBIANISH),)
+LIB64SUFFIX = $(if $(filter $(OSARCH),x86_64 sparc64 ppc64),/x86_64-linux-gnu,)
+endif
+
+# Default static lib extension
+STATICLIBLINKEXT = .a
+
+#
+# Find out current component
+#
+COMPONENT := $(shell $(POCO_BASE)/build/script/projname "$(PROJECT_BASE)")
+
+#
+# Define standard directories
+#
+SRCDIR   = src
+INCDIR   = include
+LIBDIR   = lib/$(OSNAME)/$(OSARCH)
+BINDIR   = bin/$(OSNAME)/$(OSARCH)
+OBJDIR   = obj/$(OSNAME)/$(OSARCH)
+DEPDIR   = .dep/$(OSNAME)/$(OSARCH)
+LIBPATH  = $(POCO_BUILD)/$(LIBDIR)
+BINPATH  = $(POCO_BUILD)/$(COMPONENT)/$(BINDIR)
+OBJPATH  = $(POCO_BUILD)/$(COMPONENT)/$(OBJDIR)
+DEPPATH  = $(POCO_BUILD)/$(COMPONENT)/$(DEPDIR)
+
+POCO_HOST_BINDIR    = bin/$(POCO_HOST_OSNAME)/$(POCO_HOST_OSARCH)
+POCO_TARGET_BINDIR  = $(BINDIR)
+POCO_HOST_BINPATH   = $(POCO_BUILD)/$(POCO_HOST_BINDIR)
+POCO_TARGET_BINPATH = $(BINPATH)
+POCO_HOST_LIBDIR    = lib/$(POCO_HOST_OSNAME)/$(POCO_HOST_OSARCH)
+POCO_TARGET_LIBDIR  = $(LIBDIR)
+POCO_HOST_LIBPATH   = $(POCO_BUILD)/$(POCO_HOST_LIBDIR)
+POCO_TARGET_LIBPATH = $(LIBPATH)
+ifdef POCO_PREFIX
+POCO_LIB_INSTALLDIR = $(POCO_PREFIX)/lib
+else
+POCO_LIB_INSTALLDIR = $(LIBPATH)
+endif
+ifdef POCO_VERBOSE
+$(info POCO_LIB_INSTALLDIR = $(POCO_LIB_INSTALLDIR))
+endif
+
+ifeq ($(POCO_BASE),$(PROJECT_BASE))
+POCO_LIBRARY =
+else
+POCO_LIBRARY = -L$(POCO_BASE)/$(LIBDIR)
+endif
+
+ifndef LIBPREFIX
+LIBPREFIX = lib
+endif
+
+ifeq ($(LIBPATH),$(POCO_BASE)/$(LIBDIR))
+LD_LIBRARY_PATH = $(LIBPATH)
+else
+LD_LIBRARY_PATH = $(LIBPATH):$(POCO_BASE)/$(LIBDIR)
+endif
+ifeq ($(POCO_HOST_OSNAME),Darwin)
+SET_LD_LIBRARY_PATH = DYLD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
+else
+SET_LD_LIBRARY_PATH = LD_LIBRARY_PATH=$(LD_LIBRARY_PATH)
+endif
+
+#
+# Build component list
+#
+COMPONENTS := $(shell cat $(POCO_BASE)/components)
+
+#
+# Read global library version number
+#
+LIBVERSION := $(shell cat $(POCO_BASE)/libversion)
+
+#
+# Determine link mode
+#
+ifndef LINKMODE
+LINKMODE = BOTH
+endif
+
+ifeq ($(LINKMODE),SHARED)
+DEFAULT_TARGET = all_shared
+endif
+ifeq ($(LINKMODE),STATIC)
+DEFAULT_TARGET = all_static
+endif
+ifeq ($(LINKMODE),BOTH)
+DEFAULT_TARGET = all_static all_shared
+endif
+
+#
+# Compose compiler flags
+#
+COMMONFLAGS = -DPOCO_BUILD_HOST='"'$(HOSTNAME)'"' -DPOCO_TARGET_OSNAME='"'$(OSNAME)'"' -DPOCO_TARGET_OSARCH='"'$(OSARCH)'"' $(POCO_FLAGS)
+CFLAGS     += $(COMMONFLAGS) $(SYSFLAGS)
+CXXFLAGS   += $(COMMONFLAGS) $(SYSFLAGS)
+LINKFLAGS  += $(COMMONFLAGS) $(SYSFLAGS)
+
+ifeq ($(OSARCH_64BITS),1)
+CFLAGS     += $(CFLAGS64)
+CXXFLAGS   += $(CXXFLAGS64)
+SHLIBFLAGS += $(SHLIBFLAGS64)
+DYLIBFLAGS += $(DYLIBFLAGS64)
+LINKFLAGS  += $(LINKFLAGS64)
+else
+CFLAGS     += $(CFLAGS32)
+CXXFLAGS   += $(CXXFLAGS32)
+SHLIBFLAGS += $(SHLIBFLAGS32)
+DYLIBFLAGS += $(DYLIBFLAGS32)
+LINKFLAGS  += $(LINKFLAGS32)
+endif
+
+#
+# Compose object file path
+#
+OBJPATH_RELEASE_STATIC = $(OBJPATH)/release_static$(OSARCH_POSTFIX)
+OBJPATH_DEBUG_STATIC   = $(OBJPATH)/debug_static$(OSARCH_POSTFIX)
+OBJPATH_RELEASE_SHARED = $(OBJPATH)/release_shared$(OSARCH_POSTFIX)
+OBJPATH_DEBUG_SHARED   = $(OBJPATH)/debug_shared$(OSARCH_POSTFIX)
+
+#
+# Build Include directory List
+#
+INCLUDE = -Iinclude $(foreach p,$(COMPONENTS),-I$(POCO_BASE)/$(p)/$(INCDIR)) $(foreach p,$(POCO_ADD_INCLUDE),-I$(p))
+
+#
+# Build Library Directory List
+#
+LIBRARY = -L$(LIBPATH) $(POCO_LIBRARY) $(foreach p,$(POCO_ADD_LIBRARY),-L$(p))
+
+#
+# Strip Command definition
+#
+ifeq ($(strip $(STRIP)),)
+STRIPCMD = 
+else
+STRIPCMD = $(STRIP) $@$(BINEXT)
+endif
+
+#
+# Make CC and CXX environment vars
+#
+export CC
+export CXX
+export LINK

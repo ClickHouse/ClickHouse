@@ -1,0 +1,15 @@
+#
+# Makefile
+#
+# Makefile for Poco TestApp
+#
+
+include $(POCO_BASE)/build/rules/global
+
+objects = TestApp
+
+target         = TestApp
+target_version = 1
+target_libs    = PocoFoundation
+
+include $(POCO_BASE)/build/rules/exec

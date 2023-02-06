@@ -1,0 +1,79 @@
+#
+# Darwin-clang
+#
+# Build settings for Mac OS X 10.7 (clang, libstdc++, x86_64)
+# 
+# NOTE: This build configuration will build 64-bit binaries.
+# Use the Darwin32-clang build configuration to build 32-bit binaries.
+#
+
+#
+# General Settings
+#
+LINKMODE ?= SHARED
+
+POCO_TARGET_OSARCH ?= x86_64
+POCO_HOST_OSARCH   := $(POCO_TARGET_OSARCH)
+ARCHFLAGS          ?= -arch $(POCO_TARGET_OSARCH) 
+OSFLAGS            ?= -mmacosx-version-min=10.7
+
+OPENSSL_DIR        ?= /usr/local/opt/openssl
+
+ifeq ($(POCO_TARGET_OSARCH),i386)
+RORELOCS = -read_only_relocs suppress
+endif
+
+#
+# Tools
+#
+CC      = $(shell xcrun -find clang)
+CXX     = $(shell xcrun -find clang++)
+LINK    = $(CXX) -bind_at_load
+LIB     = libtool -static -o
+RANLIB  = ranlib
+SHLIB   = $(CXX) -dynamiclib -Wl,-install_name,$(POCO_LIB_INSTALLDIR)/$(notdir \$@) -o $@
+DYLIB   = $(CXX) -dynamic -bundle $(RORELOCS) -Wl,-bind_at_load -o $@ 
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = 
+DEP     = $(POCO_BASE)/build/script/makedepend.clang
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .$(target_version).dylib
+SHAREDLIBLINKEXT = .dylib
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = $(ARCHFLAGS) $(OSFLAGS) -std=c99
+CXXFLAGS        = $(ARCHFLAGS) $(OSFLAGS) -std=c++03 -stdlib=libstdc++ -Wall -Wno-sign-compare -Wno-unused-variable -Wno-unused-function -Wno-unneeded-internal-declaration
+LINKFLAGS       = $(ARCHFLAGS) $(OSFLAGS) -stdlib=libstdc++
+SHLIBFLAGS      = $(ARCHFLAGS) $(OSFLAGS) -stdlib=libstdc++
+DYLIBFLAGS      = $(ARCHFLAGS) $(OSFLAGS) -stdlib=libstdc++
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  =
+SHAREDOPT_CC    = -fPIC 
+SHAREDOPT_CXX   = -fPIC
+SHAREDOPT_LINK  = 
+DEBUGOPT_CC     = -O0 -g -gdwarf-2 -fasm-blocks -D_DEBUG=$(DEBUGLEVEL)
+DEBUGOPT_CXX    = -O0 -g -gdwarf-2 -fasm-blocks -D_DEBUG=$(DEBUGLEVEL) 
+DEBUGOPT_LINK   =
+RELEASEOPT_CC   = -DNDEBUG -Os -fasm-blocks
+RELEASEOPT_CXX  = -DNDEBUG -O2 -fasm-blocks
+RELEASEOPT_LINK =
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -DPOCO_HAVE_IPv6 -DPOCO_NO_STAT64 -I$(OPENSSL_DIR)/include
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -L$(OPENSSL_DIR)/lib -ldl 

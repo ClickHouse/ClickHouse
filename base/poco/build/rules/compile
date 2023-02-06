@@ -1,0 +1,84 @@
+#
+# compile
+#
+# Compile rule definitions for makefiles
+#
+
+#
+# Target-specific include paths
+#
+INCLUDE += $(foreach l,$(target_includes),-I$(l))
+
+#
+# Targets
+#
+.PHONY: all all_static all_shared all_debug all_release \
+        clean static_debug static_release shared_debug shared_release
+
+all: $(DEFAULT_TARGET)
+all_static: static_debug static_release
+all_shared: shared_debug shared_release
+all_debug: static_debug shared_debug
+all_release: static_release shared_release
+
+#
+# Create directories if necessary
+#
+.PHONY: objdirs libdirs bindirs static_bindirs
+objdirs: $(OBJPATH_RELEASE_STATIC) $(OBJPATH_DEBUG_STATIC) $(OBJPATH_RELEASE_SHARED) $(OBJPATH_DEBUG_SHARED)
+libdirs: objdirs $(LIBPATH)
+bindirs: objdirs $(BINPATH)
+static_bindirs: objdirs $(BINPATH)/static
+
+$(OBJPATH_RELEASE_STATIC) $(OBJPATH_DEBUG_STATIC) $(OBJPATH_RELEASE_SHARED) $(OBJPATH_DEBUG_SHARED) $(LIBPATH) $(BINPATH) $(BINPATH)/static:
+	$(MKDIR) $@
+
+#
+# Rules for compiling
+#
+$(OBJPATH_DEBUG_STATIC)/%.o: $(SRCDIR)/%.cpp $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(debug, static)"
+	$(CXX) $(INCLUDE) $(CXXFLAGS) $(DEBUGOPT_CXX) $(STATICOPT_CXX) -c $< -o $@
+
+$(OBJPATH_RELEASE_STATIC)/%.o: $(SRCDIR)/%.cpp $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(release, static)"
+	$(CXX) $(INCLUDE) $(CXXFLAGS) $(RELEASEOPT_CXX) $(STATICOPT_CXX) -c $< -o $@
+
+$(OBJPATH_DEBUG_STATIC)/%.o: $(SRCDIR)/%.c $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(debug, static)"
+	$(CC) $(INCLUDE) $(CFLAGS) $(DEBUGOPT_CC) $(STATICOPT_CC) -c $< -o $@
+
+$(OBJPATH_RELEASE_STATIC)/%.o: $(SRCDIR)/%.c $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(release, static)"
+	$(CC) $(INCLUDE) $(CFLAGS) $(RELEASEOPT_CC) $(STATICOPT_CC) -c $< -o $@
+
+$(OBJPATH_DEBUG_SHARED)/%.o: $(SRCDIR)/%.cpp $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(debug, shared)"
+	$(CXX) $(INCLUDE) $(CXXFLAGS) $(DEBUGOPT_CXX) $(SHAREDOPT_CXX) -c $< -o $@
+
+$(OBJPATH_RELEASE_SHARED)/%.o: $(SRCDIR)/%.cpp $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(release, shared)"
+	$(CXX) $(INCLUDE) $(CXXFLAGS) $(RELEASEOPT_CXX) $(SHAREDOPT_CXX) -c $< -o $@
+
+$(OBJPATH_DEBUG_SHARED)/%.o: $(SRCDIR)/%.c $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(debug, shared)"
+	$(CC) $(INCLUDE) $(CFLAGS) $(DEBUGOPT_CC) $(SHAREDOPT_CC) -c $< -o $@
+
+$(OBJPATH_RELEASE_SHARED)/%.o: $(SRCDIR)/%.c $(DEPPATH)/%.d $(POCO_BASE)/build/config/$(POCO_CONFIG)
+	@echo "** Compiling" $< "(release, shared)"
+	$(CC) $(INCLUDE) $(CFLAGS) $(RELEASEOPT_CC) $(SHAREDOPT_CC) -c $< -o $@
+
+#
+# Rules for creating dependency information
+#
+$(DEPPATH)/%.d: $(SRCDIR)/%.cpp
+	@echo "** Creating dependency info for" $^
+	$(MKDIR) $(DEPPATH)
+	$(DEP) $(SRCDIR)/$(patsubst %.d,%.cpp,$(notdir $@)) $@ $(OBJPATH_DEBUG_STATIC) $(OBJPATH_RELEASE_STATIC) $(OBJPATH_DEBUG_SHARED) $(OBJPATH_RELEASE_SHARED) $(INCLUDE) $(CXXFLAGS)
+
+$(DEPPATH)/%.d: $(SRCDIR)/%.c
+	@echo "** Creating dependency info for" $^
+	$(MKDIR) $(DEPPATH)
+	$(DEP) $(SRCDIR)/$(patsubst %.d,%.c,$(notdir $@)) $@ $(OBJPATH_DEBUG_STATIC) $(OBJPATH_RELEASE_STATIC) $(OBJPATH_DEBUG_SHARED) $(OBJPATH_RELEASE_SHARED) $(INCLUDE) $(CFLAGS)
+
+depend: $(addprefix $(DEPPATH)/,$(addsuffix .d,$(objects)))

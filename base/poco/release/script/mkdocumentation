@@ -1,0 +1,147 @@
+#! /bin/sh
+#
+# mkdocumentation
+#
+# Create reference documentation for a POCO release.
+#
+# Usage:
+#    mkdocumentation [-u] [-t <reltag>] [-f <compfile>] {<component>}
+#
+#    -u:            Upload file to release repository.
+#    -t:            Specify release tag.
+#    -f <compfile>: Component list file
+#    -c <config>:   Build using the given configuration
+#    <components>:  Additional components to include
+#
+# Environment:
+#    $POCO_BASE: POCO base directory (e.g., "/cygdrive/p/poco-1.2")
+#
+# Prerequisites:
+#    PocoDoc must be in PATH
+#
+
+
+if [ "$POCO_BASE" = "" ] ; then
+  echo "Error: POCO_BASE not set."
+  exit 1
+fi
+
+make=make
+include=`dirname $0`
+build=$POCO_BASE/stage/docbuild
+dist=$POCO_BASE/releases
+docConfig=$POCO_BASE/PocoDoc/cfg/mkdocumentation.xml
+read version <$POCO_BASE/VERSION
+
+osname=`uname -s | tr ' ' '_'`
+osarch=`uname -m | tr ' ' '_'`
+
+comps=""
+specfile=""
+tag=""
+config=""
+
+while [ "$1" != "" ] ;
+do
+	if [ "$1" = "-f" ] ; then
+		shift
+		specfile=$1
+		shift
+	elif [ "$1" = "-t" ] ; then
+		shift
+    	tag=$1
+    	shift
+	elif [ "$1" = "-c" ] ; then
+		shift
+		config=$1
+		shift
+	elif [ "$1" = "-C" ] ; then
+		shift
+		docConfig=$1
+		shift
+	elif [ "$1" = "-v" ] ; then
+		shift
+		version=$1
+		shift
+	else
+		comps="$comps $1"
+		shift
+	fi
+done
+
+if [ "$specfile" != "" ] ; then
+	while read c
+	do
+		comps="$comps $c"
+	done <$specfile
+fi
+
+allcomps="Foundation XML JSON Util Net $comps"
+
+#
+# Clean build directory
+#
+echo "Cleaning build directory: $build"
+rm -rf $build
+mkdir -p $build
+mkdir -p $dist
+
+
+#
+# Copy POCO sources into build directory
+#
+echo "Copying sources"
+mkrelease -o $build $version $comps
+
+
+#
+# Make all files writeable
+#
+chmod -R +w $build
+
+
+#
+# Generate documentation
+#
+echo "Generating documentation"
+
+# Create a PocoDoc configuration file
+docVersion=$version
+if [ $tag ] ; then
+	docVersion="$docVersion-$tag"
+fi
+docPath=$dist/poco-${docVersion}-doc
+
+includes=""
+for inc in `find $build -name include -print` ; do
+	includes="$includes,-I$inc"
+done
+
+: ${CC:=gcc}
+: ${CXX:=g++}
+: ${CXXFLAGS:=-std=c++11}
+
+echo "CC=$CC" >>$build/PocoDoc.ini
+echo "CXX=$CXX" >>$build/PocoDoc.ini
+echo "CXXFLAGS=$CXXFLAGS" >>$build/PocoDoc.ini
+echo "PocoBuild=$build" >>$build/PocoDoc.ini
+echo "PocoBase=$POCO_BASE" >>$build/PocoDoc.ini
+echo "PocoDoc.output=$docPath" >>$build/PocoDoc.ini
+echo "PocoDoc.version=$docVersion" >> $build/PocoDoc.ini
+echo "Includes=$includes" >> $build/PocoDoc.ini
+
+echo "PocoDoc --config=$docConfig --config=$build/PocoDoc.ini"
+PocoDoc --config=$docConfig --config=$build/PocoDoc.ini
+
+cd $dist
+
+chmod -R ugo+rw poco-${docVersion}-doc
+chmod -R go+r poco-${docVersion}-doc
+tar cf poco-${docVersion}-doc.tar poco-${docVersion}-doc
+gzip -f poco-${docVersion}-doc.tar
+
+if [ -x /usr/bin/zip ] ; then
+	/usr/bin/zip -r -q poco-${docVersion}-doc.zip poco-${docVersion}-doc
+fi
+
+echo "Done."

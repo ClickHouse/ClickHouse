@@ -1,0 +1,17 @@
+vc.project.guid = 73E19FDE-1570-488C-B3DB-72A60FADD408
+vc.project.name = MySQL
+vc.project.target = PocoDataMySQL
+vc.project.type = library
+vc.project.pocobase = ..\\..
+vc.project.outdir = ${vc.project.pocobase}
+vc.project.platforms = Win32, x64
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = ${vc.project.name}_vs90.vcproj
+vc.project.compiler.include = ..\\..\\Foundation\\include;..\\..\\Data\\include
+vc.project.compiler.defines = THREADSAFE;__LCC__
+vc.project.compiler.defines.shared = ${vc.project.name}_EXPORTS
+vc.project.compiler.defines.debug_shared = ${vc.project.compiler.defines.shared}
+vc.project.compiler.defines.release_shared = ${vc.project.compiler.defines.shared}
+vc.project.linker.dependencies = libmysql.lib
+vc.solution.create = true
+vc.solution.include = testsuite\\TestSuite

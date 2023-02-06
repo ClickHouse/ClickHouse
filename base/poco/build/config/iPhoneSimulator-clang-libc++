@@ -1,0 +1,11 @@
+#
+# iPhoneSimulator-clang-libc++
+#
+# Build settings for iPhone Simulator, using Apple's iPhone SDK
+# 
+
+IPHONE_SDK         = iPhoneSimulator
+POCO_TARGET_OSARCH = i686
+OSFLAGS            = -arch $(POCO_TARGET_OSARCH) -isysroot $(IPHONE_SDK_BASE) -miphoneos-version-min=$(IPHONE_SDK_VERSION_MIN)
+
+include $(POCO_BASE)/build/config/iPhone-clang-libc++

@@ -1,0 +1,41 @@
+model {
+	components {
+		cpspc(NativeExecutableSpec) {
+			sources {
+				cpp {
+					source {
+						srcDir 'src'
+						include '**/*.cpp'
+					}
+					exportedHeaders {
+						srcDir 'include'
+					}
+					lib project: ':Net', library: 'Net', linkage: 'shared'
+					lib project: ':Util', library: 'Util', linkage: 'shared'
+					lib project: ':Foundation', library: 'Foundation', linkage: 'shared'
+				}
+			}
+		}
+	}
+	binaries {
+		withType(NativeExecutableBinarySpec) {
+			if (toolChain in VisualCpp) {
+				if (buildType == buildTypes.debug) {
+					cCompiler.args "/MDd"
+					cppCompiler.args "/MDd"
+				} else 
+				if (buildType == buildTypes.release) {
+					cCompiler.args "/MD"
+					cppCompiler.args "/MD"
+				} else {
+					throw new GradleException("Unknown buildType" + buildType)
+				}
+			}
+			if (toolChain in Gcc) {
+			}
+		}
+	}
+}
+task poco { dependsOn "assemble" }
+
+

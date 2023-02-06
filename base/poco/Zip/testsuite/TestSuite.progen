@@ -1,0 +1,9 @@
+vc.project.guid = 9665FC3C-DB71-4C6C-AAEE-AAFD73CB31E7
+vc.project.name = TestSuite
+vc.project.target = TestSuite
+vc.project.type = testsuite
+vc.project.pocobase = ..\\..
+vc.project.platforms = Win32, x64, WinCE
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = TestSuite_vs90.vcproj
+vc.project.compiler.include = ..\\..\\Foundation\\include

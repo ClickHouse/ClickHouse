@@ -1,0 +1,72 @@
+#
+# Linux
+#
+# Make settings for Nios2 Linux with gcc 4.1.2
+#
+#
+
+#
+# General Settings
+#
+LINKMODE = CUSTOM
+DEFAULT_TARGET = static_release
+POCO_TARGET_OSNAME = Linux
+POCO_TARGET_OSARCH = NIOS2
+
+#
+# Define Tools
+#
+CC      = nios2-linux-gnu-gcc
+CXX     = nios2-linux-gnu-g++
+LINK    = $(CXX)
+LIB     = nios2-linux-gnu-ar -cr
+RANLIB  = nios2-linux-gnu-ranlib
+SHLIB   = $(CXX) -shared -Wl,-soname,$(notdir $@) -o $@
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = nios2-linux-gnu-strip
+DEP     = $(POCO_BASE)/build/script/makedepend.gcc 
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -mhw-mul -mhw-mulx -mhw-div
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        = -Wall -Wno-sign-compare -mhw-mul -mhw-mulx -mhw-div
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       =
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -static
+SHAREDOPT_CC    = -fPIC
+SHAREDOPT_CXX   = -fPIC
+SHAREDOPT_LINK  = -Wl,-rpath,$(LIBPATH)
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O2 -DNDEBUG
+RELEASEOPT_CXX  = -O2 -DNDEBUG
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_XOPEN_SOURCE=500 -D_REENTRANT -D_THREAD_SAFE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE64_SOURCE -DPOCO_HAVE_FD_EPOLL
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -ldl -lrt

@@ -1,0 +1,17 @@
+vc.project.platforms = Win32, x64, WinCE
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.solution.create = true
+vc.solution.include = \
+	dict\\dict;\
+	download\\download;\
+	EchoServer\\EchoServer;\
+	HTTPFormServer\\HTTPFormServer;\
+	httpget\\httpget;\
+	HTTPLoadTest\\HTTPLoadTest;\
+	HTTPTimeServer\\HTTPTimeServer;\
+	Mail\\Mail;\
+	Ping\\Ping;\
+	TimeServer\\TimeServer;\
+	WebSocketServer\\WebSocketServer;\
+	SMTPLogger\\SMTPLogger;\
+	ifconfig\\ifconfig

@@ -1,0 +1,223 @@
+#! /bin/sh
+#
+# cpproj
+#
+# Copy project files
+#
+# usage: copyproj <src> <dest>
+#
+
+src=$1
+dst=$2
+extradirs="doc templates res bundle sql"
+
+if [ "$src" = "" ] ; then
+	echo "usage: $0 <source> <destination>"
+	exit 1
+fi
+
+if [ "$dst" = "" ] ; then
+	echo "usage: $0 <source> <destination>"
+	exit 1
+fi
+
+mkdir -p ${dst}
+mkdir -p ${dst}/src
+
+if [ -d ${src}/include ] ; then
+	mkdir -p ${dst}/include
+	cp -R ${src}/include/* ${dst}/include
+fi
+cp ${src}/src/* ${dst}/src >/dev/null 2>&1
+cp ${src}/*.sln ${dst} >/dev/null 2>&1
+cp ${src}/*.vcproj ${dst} >/dev/null 2>&1
+cp ${src}/*.vcxproj ${dst} >/dev/null 2>&1
+cp ${src}/*.vcxproj.filters ${dst} >/dev/null 2>&1
+cp ${src}/Makefile* ${dst} >/dev/null 2>&1
+cp ${src}/*.make ${dst} >/dev/null 2>&1
+cp ${src}/*.progen ${dst} >/dev/null 2>&1
+cp ${src}/CMakeLists.txt ${dst} >/dev/null 2>&1
+
+if [ "`find ${src} -name '*.vxbuild'`" != "" ] ; then
+	cp ${src}/*.vxbuild ${dst} >/dev/null 2>&1
+fi
+if [ "`find ${src} -name '*.bndlspec'`" != "" ] ; then
+	cp ${src}/*.bndlspec ${dst} >/dev/null 2>&1
+fi
+
+if [ -f ${src}/.project ] ; then
+	cp ${src}/.project ${dst} >/dev/null 2>&1
+	cp ${src}/.cdtproject ${dst} >/dev/null 2>&1
+fi
+
+if [ -d ${src}/cmake ] ; then
+	mkdir -p ${dst}/cmake
+	cp -R ${src}/cmake/* ${dst}/cmake >/dev/null 2>&1
+fi
+
+if [ -d ${src}/testsuite ] ; then
+	mkdir -p ${dst}/testsuite
+	mkdir -p ${dst}/testsuite/src
+
+	if [ -d ${src}/testsuite/data ] ; then
+		mkdir -p ${dst}/testsuite/data
+		cp -R ${src}/testsuite/data/* ${dst}/testsuite/data >/dev/null 2>&1
+	fi
+
+	if [ -d ${src}/testsuite/bundles ] ; then
+		mkdir -p ${dst}/testsuite/bundles
+		cp -R ${src}/testsuite/bundles/* ${dst}/testsuite/bundles >/dev/null 2>&1
+	fi
+
+	cp ${src}/testsuite/src/* ${dst}/testsuite/src >/dev/null 2>&1
+	cp ${src}/testsuite/*.vcproj ${dst}/testsuite >/dev/null 2>&1
+	cp ${src}/testsuite/*.vcxproj ${dst}/testsuite >/dev/null 2>&1
+	cp ${src}/testsuite/*.vcxproj.filters ${dst}/testsuite >/dev/null 2>&1
+	cp ${src}/testsuite/Makefile* ${dst}/testsuite >/dev/null 2>&1
+	cp ${src}/testsuite/*.make ${dst}/testsuite >/dev/null 2>&1
+	cp ${src}/testsuite/*.progen ${dst}/testsuite >/dev/null 2>&1
+	cp ${src}/testsuite/CMakeLists.txt ${dst}/testsuite >/dev/null 2>&1
+
+	if [ -d ${src}/testsuite/cmake ] ; then
+		mkdir -p ${dst}/testsuite/cmake
+		cp -R ${src}/testsuite/cmake/* ${dst}/testsuite/cmake >/dev/null 2>&1
+	fi
+
+	if [ "`find ${src}/testsuite -name '*.opt'`" != "" ] ; then
+		cp ${src}/testsuite/*.opt ${dst}/testsuite >/dev/null 2>&1
+	fi
+	if [ "`find ${src}/testsuite -name '*.vxbuild'`" != "" ] ; then
+		cp ${src}/testsuite/*.vxbuild ${dst}/testsuite >/dev/null 2>&1
+	fi
+	if [ "`find ${src}/testsuite -name '*.properties'`" != "" ] ; then
+		cp ${src}/testsuite/*.properties ${dst}/testsuite >/dev/null 2>&1
+	fi
+	if [ "`find ${src}/testsuite -name '*.xml'`" != "" ] ; then
+		cp ${src}/testsuite/*.xml ${dst}/testsuite >/dev/null 2>&1
+	fi
+	if [ "`find ${src}/testsuite -name '*.pem'`" != "" ] ; then
+		cp ${src}/testsuite/*.pem ${dst}/testsuite >/dev/null 2>&1
+	fi
+fi
+
+if [ -f ${src}/extradirs ] ; then
+	extradirs="$extradirs `cat ${src}/extradirs`"
+fi
+
+for extradir in $extradirs ;
+do
+	if [ -d ${src}/${extradir} ] ; then
+		mkdir -p ${dst}/${extradir}
+		cp -R ${src}/${extradir}/* ${dst}/${extradir} >/dev/null 2>&1
+	fi
+done
+
+if [ -d ${src}/samples ] ; then
+	mkdir -p ${dst}/samples
+
+	cp ${src}/samples/*.sln ${dst}/samples >/dev/null 2>&1
+	cp ${src}/samples/Makefile* ${dst}/samples >/dev/null 2>&1
+	cp ${src}/samples/*.progen ${dst}/samples >/dev/null 2>&1
+	cp ${src}/samples/CMakeLists.txt ${dst}/samples >/dev/null 2>&1
+	
+	samples=`find ${src}/samples/* -type d -print -prune | sed "s:^.*/::"`
+	
+	for sample in $samples ;
+	do
+		if [ -d "${src}/samples/${sample}/src" ] ; then
+			mkdir -p ${dst}/samples/${sample}
+			if [ -d ${src}/samples/${sample}/src ] ; then
+				mkdir -p ${dst}/samples/${sample}/src
+				cp ${src}/samples/${sample}/src/* ${dst}/samples/${sample}/src >/dev/null 2>&1
+			fi
+
+			if [ -d ${src}/samples/${sample}/bundle ] ; then
+				mkdir -p ${dst}/samples/${sample}/bundle
+				cp -R ${src}/samples/${sample}/bundle/* ${dst}/samples/${sample}/bundle >/dev/null 2>&1
+			fi
+
+			if [ -d ${src}/samples/${sample}/res ] ; then
+				mkdir -p ${dst}/samples/${sample}/res
+				cp -R ${src}/samples/${sample}/res/* ${dst}/samples/${sample}/res >/dev/null 2>&1
+			fi
+
+			if [ -d ${src}/samples/${sample}/xml ] ; then
+				mkdir -p ${dst}/samples/${sample}/xml
+				cp -R ${src}/samples/${sample}/xml/* ${dst}/samples/${sample}/xml >/dev/null 2>&1
+			fi
+
+			if [ -d ${src}/samples/${sample}/media ] ; then
+				mkdir -p ${dst}/samples/${sample}/media
+				cp -R ${src}/samples/${sample}/media/* ${dst}/samples/${sample}/media >/dev/null 2>&1
+			fi
+			
+			cp ${src}/samples/${sample}/*.vcproj ${dst}/samples/${sample} >/dev/null 2>&1
+			cp ${src}/samples/${sample}/*.vcxproj ${dst}/samples/${sample} >/dev/null 2>&1
+			cp ${src}/samples/${sample}/*.vcxproj.filters ${dst}/samples/${sample} >/dev/null 2>&1
+			cp ${src}/samples/${sample}/Makefile* ${dst}/samples/${sample} >/dev/null 2>&1
+			cp ${src}/samples/${sample}/*.make ${dst}/samples/${sample} >/dev/null 2>&1
+			cp ${src}/samples/${sample}/*.progen ${dst}/samples/${sample} >/dev/null 2>&1
+			cp ${src}/samples/${sample}/CMakeLists.txt ${dst}/samples/${sample} >/dev/null 2>&1
+
+			if [ -d ${src}/samples/${sample}/cmake ] ; then
+				mkdir -p ${dst}/samples/${sample}/cmake
+				cp -R ${src}/samples/${sample}/cmake/* ${dst}/samples/${sample}/cmake >/dev/null 2>&1
+			fi
+			
+			if [ "`find ${src}/samples/${sample}/ -name '*.vmsbuild'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.vmsbuild ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.opt'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.opt ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.vxbuild'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.vxbuild ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.properties'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.properties ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.ini'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.ini ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.xml'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.xml ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.wsdl'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.wsdl ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.pem'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.pem ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			if [ "`find ${src}/samples/${sample}/ -name '*.bndlspec'`" != "" ] ; then
+				cp ${src}/samples/${sample}/*.bndlspec ${dst}/samples/${sample} >/dev/null 2>&1
+			fi
+			
+			if [ -d ${src}/samples/${sample}/include ] ; then
+				mkdir -p ${dst}/samples/${sample}/include
+				cp -R ${src}/samples/${sample}/include/* ${dst}/samples/${sample}/include >/dev/null 2>&1
+			fi	
+	
+			if [ -d ${src}/samples/${sample}/bin ] ; then
+				mkdir -p ${dst}/samples/${sample}/bin
+				if [ "`find ${src}/samples/${sample}/bin/ -name '*.properties'`" != "" ] ; then
+					cp ${src}/samples/${sample}/bin/*.properties ${dst}/samples/${sample}/bin >/dev/null 2>&1
+				fi
+				if [ "`find ${src}/samples/${sample}/bin/ -name '*.ini'`" != "" ] ; then
+					cp ${src}/samples/${sample}/bin/*.ini ${dst}/samples/${sample}/bin >/dev/null 2>&1
+				fi
+				if [ "`find ${src}/samples/${sample}/bin/ -name '*.xml'`" != "" ] ; then
+					cp ${src}/samples/${sample}/bin/*.xml ${dst}/samples/${sample}/bin >/dev/null 2>&1
+				fi
+				if [ "`find ${src}/samples/${sample}/bin/ -name '*.wsdl'`" != "" ] ; then
+					cp ${src}/samples/${sample}/bin/*.wsdl ${dst}/samples/${sample}/bin >/dev/null 2>&1
+				fi
+				if [ "`find ${src}/samples/${sample}/bin/ -name '*.pem'`" != "" ] ; then
+					cp ${src}/samples/${sample}/bin/*.pem ${dst}/samples/${sample}/bin >/dev/null 2>&1
+				fi
+			fi
+		else
+			mkdir -p ${dst}/samples/${sample}
+			cp -R ${src}/samples/${sample}/* ${dst}/samples/${sample} >/dev/null 2>&1
+		fi
+	done
+fi

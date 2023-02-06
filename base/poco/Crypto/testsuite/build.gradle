@@ -1,0 +1,65 @@
+import org.gradle.nativeplatform.test.cppunit.CppUnitTestSuiteSpec
+
+model {
+	components {
+		withType(NativeComponentSpec) {
+			binaries.withType(NativeBinarySpec) {
+				if (buildType == buildTypes.debug) {
+					if (it instanceof NativeExecutableBinarySpec) {
+						executable.file = toLocalBin(appendDebugSuffix(executable.file), targetPlatform)
+					}
+				} else
+				if (buildType == buildTypes.release) {
+					if (it instanceof NativeExecutableBinarySpec) {
+						executable.file = toLocalBin(executable.file, targetPlatform)
+					} 
+				}
+			}
+		}
+		TestSuite(NativeLibrarySpec) {
+			sources {
+				cpp {
+					source {
+						srcDir 'src'
+						include '**/*.cpp'
+						exclude '*Driver.cpp'
+					}
+					exportedHeaders {
+						srcDir 'src'
+					}
+					lib project: ':CppUnit', library: 'CppUnit'
+					lib project: ':Crypto', library: 'Crypto'
+					lib library: 'ssl'
+					lib library: 'crypto'
+					lib project: ':Foundation', library: 'Foundation'
+				}
+			}
+		}
+	}
+	testSuites {
+		CryptoTestSuite(org.gradle.nativeplatform.test.cppunit.CppUnitTestSuiteSpec) {
+			testing $.components.TestSuite 
+		}
+	}
+    binaries {                                               
+        withType(org.gradle.nativeplatform.test.cppunit.CppUnitTestSuiteBinarySpec) {
+ 			lib project: ':CppUnit', library: 'CppUnit', linkage: 'shared'
+			if (toolChain in VisualCpp) {
+				if (buildType == buildTypes.debug) {
+					cCompiler.args "/MDd"
+					cppCompiler.args "/MDd"
+				} else 
+				if (buildType == buildTypes.release) {
+					cCompiler.args "/MD"
+					cppCompiler.args "/MD"
+				} else {
+					throw new GradleException("Unknown buildType" + buildType)
+				}
+			}
+			if (toolChain in Gcc) {
+			}
+		}
+	}
+}
+task testsuite { dependsOn "assemble" }
+

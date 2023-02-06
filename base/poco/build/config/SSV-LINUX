@@ -1,0 +1,72 @@
+#
+# ARM-Linux
+#
+# Make settings for ARM Linux/gcc 2.95.3 (cross-compile, using STLport 4.6.2)
+#
+
+#
+# General Settings
+#
+LINKMODE           ?= STATIC
+POCO_TARGET_OSNAME = Linux
+POCO_TARGET_OSARCH = armv4tl
+TOOL               = /usr/local/arm-ssv1-linux/bin/arm-ssv1-linux
+
+#
+# Define Tools
+#
+CC      = $(TOOL)-gcc
+CXX     = $(TOOL)-g++
+LINK    = $(CXX)
+STRIP   = $(TOOL)-strip
+STRIPDBG = $(TOOL)-strip
+LIB     = $(TOOL)-ar -cr
+RANLIB  = $(TOOL)-ranlib
+SHLIB   = $(CXX) -shared -Wl,-soname,$(notdir $@) -o $@
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+DEP     = $(POCO_BASE)/build/script/makedepend.gcc
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -Isrc
+CFLAGS32        =
+CFLAGS64        =
+CXXFLAGS        = -DDNP_9200
+CXXFLAGS32      =
+CXXFLAGS64      =
+LINKFLAGS       =
+LINKFLAGS32     =
+LINKFLAGS64     =
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  = -static
+SHAREDOPT_CC    = -fPIC
+SHAREDOPT_CXX   = -fPIC
+SHAREDOPT_LINK  = -Wl,-rpath,$(LIBPATH)
+DEBUGOPT_CC     = -g -D_DEBUG
+DEBUGOPT_CXX    = -g -D_DEBUG
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -O2 -DNDEBUG
+RELEASEOPT_CXX  = -O2 -DNDEBUG
+RELEASEOPT_LINK = -O2
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -I$(STLPORT_INCLUDE) -I$(OPENSSL_INCLUDE) -D_XOPEN_SOURCE=500 -D_BSD_SOURCE -D_REENTRANT -D_THREAD_SAFE -DPOCO_NO_FPENVIRONMENT
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -ldl

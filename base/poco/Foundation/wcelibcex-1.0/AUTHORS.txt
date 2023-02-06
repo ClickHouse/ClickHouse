@@ -1,0 +1,13 @@
+List of WCELIBCEX authors:
+
+Active developers
+-----------------
+
+* Mateusz Loskot (mateusz@loskot.net)
+
+* Stéphane Dunand (sdunand@sirap.fr)
+
+Previously contributed
+----------------------
+
+* Piotr Wisniewski (pwisniewski@taxussi.com.pl)

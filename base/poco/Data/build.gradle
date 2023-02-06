@@ -1,0 +1,35 @@
+model {
+	components {
+		Data(NativeLibrarySpec) {
+			sources {
+				rc {
+					source {
+						srcDir '..'
+						include 'DLLVersion.rc'
+					}
+				}
+				cpp {
+					source {
+						srcDir 'src'
+						include '**/*.cpp'
+					}
+					exportedHeaders {
+						srcDir 'include'
+					}
+				lib project: ':Foundation', library: 'Foundation'
+				}
+			}
+		}
+	}
+	binaries {
+		all {
+		}
+		withType(SharedLibraryBinarySpec) {
+			if (toolChain in VisualCpp) {
+				 cppCompiler.define "Data_EXPORTS"
+			}
+		}
+	}
+}
+task poco { dependsOn "assemble" }
+

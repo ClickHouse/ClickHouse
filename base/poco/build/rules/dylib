@@ -1,0 +1,76 @@
+#
+# dylib
+#
+# Rule definitions for building dynamically loadable shared libraries
+#
+
+#
+# Target names
+#
+SHL_EXT = $(SHAREDLIBLINKEXT)
+
+# Some systems (e.g. Mac OS X) make a difference between
+# shared libraries (as used by the linker/loader) and
+# dynamic libraries, as used for dynamically loadable modules.
+# If no specific instructions for making dynamic libraries
+# are given, use the instructions for making shared libraries.
+
+ifndef DYLIB
+DYLIB      = $(SHLIB)
+DYLIBFLAGS = $(SHLIBFLAGS)
+endif
+
+DYLIB_DEBUG        = $(BINPATH)/$(target)d$(OSARCH_POSTFIX)$(SHL_EXT)
+DYLIB_RELEASE      = $(BINPATH)/$(target)$(OSARCH_POSTFIX)$(SHL_EXT)
+DYLIB_S_DEBUG      = $(BINPATH)/static/$(target)d$(OSARCH_POSTFIX)$(SHL_EXT)
+DYLIB_S_RELEASE    = $(BINPATH)/static/$(target)$(OSARCH_POSTFIX)$(SHL_EXT)
+
+TARGET_LIBS_DEBUG   = $(foreach l,$(target_libs),-l$(l)d$(OSARCH_POSTFIX))
+TARGET_LIBS_RELEASE = $(foreach l,$(target_libs),-l$(l)$(OSARCH_POSTFIX))
+TARGET_LIBS_EXT     = $(foreach l,$(target_extlibs),-l$(l)$(OSARCH_POSTFIX))
+
+#
+# Include the compile rules
+#
+include $(POCO_BASE)/build/rules/compile
+
+#
+# Rules for creating a dynamically loadable shared library
+#
+clean:
+	$(RM) $(OBJPATH)
+	$(RM) $(DYLIB_DEBUG) $(DYLIB_RELEASE) $(DYLIB_S_DEBUG) $(DYLIB_S_RELEASE)
+
+distclean: clean
+	$(RM) obj
+	$(RM) .dep
+
+static_debug:   static_bindirs $(DYLIB_S_DEBUG)
+static_release: static_bindirs $(DYLIB_S_RELEASE)
+shared_debug:   bindirs $(DYLIB_DEBUG)
+shared_release: bindirs $(DYLIB_RELEASE)
+
+$(DYLIB_DEBUG): $(foreach o,$(objects),$(OBJPATH_DEBUG_SHARED)/$(o).o)
+	@echo "** Building dynamic library (debug, shared)" $@
+	$(DYLIB) $(DYLIBFLAGS) $^ $(LIBRARY) $(TARGET_LIBS_DEBUG) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(postbuild)
+
+$(DYLIB_RELEASE): $(foreach o,$(objects),$(OBJPATH_RELEASE_SHARED)/$(o).o)
+	@echo "** Building dynamic library (release, shared)" $@
+	$(DYLIB) $(DYLIBFLAGS) $^ $(LIBRARY) $(TARGET_LIBS_RELEASE) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(postbuild)
+
+$(DYLIB_S_DEBUG): $(foreach o,$(objects),$(OBJPATH_DEBUG_SHARED)/$(o).o)
+	@echo "** Building dynamic library (debug, static)" $@
+	$(DYLIB) $(DYLIBFLAGS) $^ $(LIBRARY) $(TARGET_LIBS_DEBUG) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(postbuild)
+
+$(DYLIB_S_RELEASE): $(foreach o,$(objects),$(OBJPATH_RELEASE_SHARED)/$(o).o)
+	@echo "** Building dynamic library (release, static)" $@
+	$(DYLIB) $(DYLIBFLAGS) $^ $(LIBRARY) $(TARGET_LIBS_RELEASE) $(TARGET_LIBS_EXT) $(SYSLIBS)
+	$(postbuild)
+
+#
+# Include the automatically generated dependency files
+#
+sinclude $(addprefix $(DEPPATH)/,$(addsuffix .d,$(objects)))

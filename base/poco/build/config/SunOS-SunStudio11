@@ -1,0 +1,69 @@
+#
+# Solaris 8
+# SunStudio 11 - Sun C/C++ 5.8
+#
+# Build settings for SunOS/Sun Studio C++
+#
+
+#
+# General Settings
+#
+LINKMODE ?= BOTH
+OSARCH_64BITS=1
+#
+# Tools
+#
+CC      = cc
+CXX     = CC
+LINK    = libtool --mode=link $(CXX)
+LIB     = ar cru
+RANLIB  = ranlib
+SHLIB   = $(CXX) $(LINKFLAGS) -G -o $@ -h$(notdir $@)
+SHLIBLN = $(POCO_BASE)/build/script/shlibln
+STRIP   = 
+DEP     = $(POCO_BASE)/build/script/makedepend.SunCC
+SHELL   = sh
+RM      = rm -rf
+CP      = cp
+MKDIR   = mkdir -p
+
+#
+# Extension for Shared Libraries
+#
+SHAREDLIBEXT     = .so.$(target_version)
+SHAREDLIBLINKEXT = .so
+
+#
+# Compiler and Linker Flags
+#
+CFLAGS          = -mt
+CFLAGS32        = -xarch=v8plus
+CFLAGS64        = -xarch=v9
+CXXFLAGS        = -mt -library=stlport4 -erroff=hidevf
+CXXFLAGS32      = -xarch=v8plus
+CXXFLAGS64      = -xarch=v9
+LINKFLAGS       = -mt -library=stlport4
+LINKFLAGS32     = -xarch=v8plus
+LINKFLAGS64     = -xarch=v9
+STATICOPT_CC    =
+STATICOPT_CXX   =
+STATICOPT_LINK  =
+SHAREDOPT_CC    = -KPIC
+SHAREDOPT_CXX   = -KPIC
+SHAREDOPT_LINK  =
+DEBUGOPT_CC     = -g -D_DEBUG=$(DEBUGLEVEL)
+DEBUGOPT_CXX    = -g -D_DEBUG=$(DEBUGLEVEL)
+DEBUGOPT_LINK   = -g
+RELEASEOPT_CC   = -xO5 -DNDEBUG
+RELEASEOPT_CXX  = -xO5 -DNDEBUG
+RELEASEOPT_LINK = -xO5
+
+#
+# System Specific Flags
+#
+SYSFLAGS = -D_REENTRANT -D_THREAD_SAFE -D_POSIX_PTHREAD_SEMANTICS
+
+#
+# System Specific Libraries
+#
+SYSLIBS  = -lpthread -lrt -lxnet -lsocket -lnsl -lresolv -ldl

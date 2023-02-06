@@ -1,0 +1,34 @@
+model {
+	components {
+		Image(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'Image/src' include '**/*.cpp' }
+				cpp.lib project: ':PDF', library: 'PDF'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+		Text(NativeExecutableSpec) {
+			sources {
+				cpp.source { srcDir 'Image/src' include '**/*.cpp' }
+				cpp.lib project: ':PDF', library: 'PDF'				
+				cpp.lib project: ':Foundation', library: 'Foundation'				
+			}
+		}
+	}
+	binaries {
+		all {
+		}
+		withType(SharedLibraryBinarySpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'shared'
+		}
+		withType(StaticLibraryBinarySpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+		withType(NativeExecutableSpec) {
+			lib project: ':Foundation', library: 'Foundation', linkage: 'static'
+		}
+	}
+}
+task samples { dependsOn "assemble" }
+
+

@@ -1,0 +1,10 @@
+#
+# Darwin32-clang
+#
+# Build settings for Mac OS X 10.7 (clang, libstdc++, i386)
+# 
+
+ARCHFLAGS = -arch i386
+POCO_TARGET_OSARCH = i386
+
+include $(POCO_BASE)/build/config/Darwin-clang
