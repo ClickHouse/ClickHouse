@@ -8,11 +8,6 @@
 #    include <Storages/IStorageDataLake.h>
 #    include <Storages/StorageS3.h>
 
-namespace Aws::S3
-{
-class S3Client;
-}
-
 namespace DB
 {
 

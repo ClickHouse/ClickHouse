@@ -7,12 +7,11 @@
 
 #include <Formats/FormatFactory.h>
 #include <IO/S3Common.h>
+#include <IO/S3/Requests.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -94,7 +93,7 @@ std::vector<std::string> HudiMetaParser::getFiles() const
 
     const auto & client = configuration.client;
 
-    Aws::S3::Model::ListObjectsV2Request request;
+    S3::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
     bool is_finished{false};

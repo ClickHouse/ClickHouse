@@ -91,6 +91,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         auto & log_entry = selected_entry->log_entry;
 
         log_entry->exception = saved_exception;
+        log_entry->last_exception_time = time(nullptr);
 
         if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
         {
@@ -188,7 +189,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentException());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 
@@ -204,7 +205,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
             catch (...)
             {
                 if (part_log_writer)
-                    part_log_writer(ExecutionStatus::fromCurrentException());
+                    part_log_writer(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
 
