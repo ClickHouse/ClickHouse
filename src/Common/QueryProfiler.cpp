@@ -6,6 +6,7 @@
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <base/defines.h>
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 
@@ -186,8 +187,10 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 #if USE_UNWIND
     if (timer_id.has_value())
     {
-        if (timer_delete(*timer_id))
+        int err = timer_delete(*timer_id);
+        if (err)
             LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
+        chassert(!err && "Failed to delete query profiler timer");
         timer_id.reset();
     }
 
