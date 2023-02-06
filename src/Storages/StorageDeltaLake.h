@@ -9,11 +9,6 @@
 
 #    include <base/JSON.h>
 
-namespace Aws::S3
-{
-class S3Client;
-}
-
 namespace DB
 {
 

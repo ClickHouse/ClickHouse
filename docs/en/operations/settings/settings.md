@@ -1301,9 +1301,43 @@ Possible values:
 
 Default value: `3`.
 
-## enable_experimental_query_result_cache {#enable-experimental-query-result-cache}
+## use_query_cache {#use-query-cache}
 
-If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
+If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-reads-from-query-cache)
+and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in more detail how the cache is used.
+
+Possible values:
+
+- 0 - Yes
+- 1 - No
+
+Default value: `0`.
+
+## enable_reads_from_query_cache {#enable-reads-from-query-cache}
+
+If turned on, results of `SELECT` queries are retrieved from the [query cache](../query-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`.
+
+## enable_writes_to_query_cache {#enable-writes-to-query-cache}
+
+If turned on, results of `SELECT` queries are stored in the [query cache](../query-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`.
+
+## query_cache_store_results_of_queries_with_nondeterministic_functions {#query--store-results-of-queries-with-nondeterministic-functions}
+
+If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1312,31 +1346,9 @@ Possible values:
 
 Default value: `0`.
 
-## enable_experimental_query_result_cache_passive_usage {#enable-experimental-query-result-cache-passive-usage}
+## query_cache_min_query_runs {#query-cache-min-query-runs}
 
-If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `0`.
-
-## query_result_cache_store_results_of_queries_with_nondeterministic_functions {#query-result-cache-store-results-of-queries-with-nondeterministic-functions}
-
-If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `0`.
-
-## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
-
-Minimum number of times a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
+Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1344,9 +1356,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
+## query_cache_min_query_duration {#query-cache-min-query-duration}
 
-Minimum duration in milliseconds a query needs to run for its result to be stored in the [query result cache](../query-result-cache.md).
+Minimum duration in milliseconds a query needs to run for its result to be stored in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1354,9 +1366,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cache_ttl {#query-result-cache-ttl}
+## query_cache_ttl {#query-cache-ttl}
 
-After this time in seconds entries in the [query result cache](../query-result-cache.md) become stale.
+After this time in seconds entries in the [query cache](../query-cache.md) become stale.
 
 Possible values:
 
@@ -1364,9 +1376,9 @@ Possible values:
 
 Default value: `60`
 
-## query_result_cache_share_between_users {#query-result-cache-share-between-users}
+## query_cache_share_between_users {#query-cache-share-between-users}
 
-If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) can be read by other users.
+If turned on, the result of `SELECT` queries cached in the [query cache](../query-cache.md) can be read by other users.
 It is not recommended to enable this setting due to security reasons.
 
 Possible values:
@@ -3676,6 +3688,30 @@ Default value: `0`.
 **See Also**
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
+
+## optimize_using_constraints
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for query optimization. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_append_index
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_substitute_columns
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for column substitution. The default is `false`.
+
+Possible values:
+
+- true, false
 
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
