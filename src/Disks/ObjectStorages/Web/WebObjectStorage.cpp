@@ -3,7 +3,6 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
