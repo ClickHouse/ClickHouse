@@ -157,10 +157,10 @@ namespace
     /// hyper scan is not good at processing regex containing {0, 200}
     /// This will make re compilation slow and failed. So we select this heavy regular expressions and
     /// process it with re2.
-    struct ComplexRegexChecker
+    struct RegexChecker
     {
         re2_st::RE2 searcher;
-        ComplexRegexChecker() : searcher(R"(\{([\d]+),([\d]+)\})") {}
+        RegexChecker() : searcher(R"(\{([\d]+),([\d]+)\})") {}
 
         static bool isFigureLargerThanFifty(const String & str)
         try
@@ -174,15 +174,15 @@ namespace
         }
 
         [[maybe_unused]]
-        bool check(const String & data) const
+        bool isSimpleRegex(const String & regex) const
         {
 
-            re2_st::StringPiece haystack(data.data(), data.size());
+            re2_st::StringPiece haystack(regex.data(), regex.size());
             re2_st::StringPiece matches[10];
             size_t start_pos = 0;
-            while (start_pos < data.size())
+            while (start_pos < regex.size())
             {
-                if (searcher.Match(haystack, start_pos, data.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10))
+                if (searcher.Match(haystack, start_pos, regex.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10))
                 {
                     const auto & match = matches[0];
                     start_pos += match.length();
@@ -207,7 +207,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
     auto keys_column = block.getByName(kKeys).column;
     auto values_column = block.getByName(kValues).column;
 
-    ComplexRegexChecker checker;
+    RegexChecker checker;
 
     size_t size = block.rows();
     for (size_t i = 0; i < size; i++)
@@ -253,7 +253,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         }
         regex_nodes.emplace(id, node);
 #if USE_VECTORSCAN
-        if (use_vectorscan && !checker.check(regex))
+        if (use_vectorscan && !checker.isSimpleRegex(regex))
         {
             simple_regexps.push_back(regex);
             regexp_ids.push_back(id);
@@ -312,6 +312,9 @@ void RegExpTreeDictionary::loadData()
         if (simple_regexps.empty() && complex_regexp_nodes.empty())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "There are no available regular expression. Please check your config");
         LOG_INFO(logger, "There are {} simple regexps and {} complex regexps", simple_regexps.size(), complex_regexp_nodes.size());
+        /// If all the regexps cannot work with hyperscan, we should set this flag off to avoid exceptions.
+        if (simple_regexps.empty())
+            use_vectorscan = false;
         if (!use_vectorscan)
             return;
         #if USE_VECTORSCAN
