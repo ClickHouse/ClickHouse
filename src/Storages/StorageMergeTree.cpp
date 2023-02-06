@@ -2111,13 +2111,16 @@ std::map<int64_t, MutationCommands> StorageMergeTree::getAlterMutationCommandsFo
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    Int64 part_mutation_version = part->info.getMutationVersion();
+    Int64 part_data_version = part->info.getDataVersion();
 
     std::map<int64_t, MutationCommands> result;
-    for (const auto & current_mutation_by_version : current_mutations_by_version)
+    if (!current_mutations_by_version.empty())
     {
-        if (static_cast<int64_t>(current_mutation_by_version.first) > part_mutation_version)
-            result[current_mutation_by_version.first] = current_mutation_by_version.second.commands;
+        const auto & [latest_mutation_id, latest_commands] = *current_mutations_by_version.rbegin();
+        if (part_data_version < static_cast<int64_t>(latest_mutation_id))
+        {
+            result[latest_mutation_id] = latest_commands.commands;
+        }
     }
     return result;
 }
