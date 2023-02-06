@@ -724,7 +724,7 @@ NameSet ActionsDAG::foldActionsByProjection(
 }
 
 
-ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, std::string> & new_inputs)
+ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, std::string> & new_inputs, const NodeRawConstPtrs & required_outputs)
 {
     auto dag = std::make_unique<ActionsDAG>();
     std::unordered_map<const Node *, size_t> new_input_to_pos;
@@ -737,7 +737,7 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
     };
 
     std::vector<Frame> stack;
-    for (const auto * output : outputs)
+    for (const auto * output : required_outputs)
     {
         if (mapping.contains(output))
             continue;
@@ -754,11 +754,15 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
                 {
                     const auto & [new_input, rename] = *it;
 
-                    const auto * node = &dag->addInput(new_input->result_name, new_input->result_type);
-                    if (!rename.empty() && new_input->result_name != rename)
-                        node = &dag->addAlias(*node, rename);
+                    auto & node = mapping[frame.node];
 
-                    mapping.emplace(frame.node, node);
+                    if (!node)
+                    {
+                        node = &dag->addInput(new_input->result_name, new_input->result_type);
+                        if (!rename.empty() && new_input->result_name != rename)
+                            node = &dag->addAlias(*node, rename);
+                    }
+
                     stack.pop_back();
                     continue;
                 }
@@ -786,11 +790,12 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
             for (auto & child : node.children)
                 child = mapping[child];
 
+            mapping[frame.node] = &node;
             stack.pop_back();
         }
     }
 
-    for (const auto * output : outputs)
+    for (const auto * output : required_outputs)
         dag->outputs.push_back(mapping[output]);
 
     return dag;

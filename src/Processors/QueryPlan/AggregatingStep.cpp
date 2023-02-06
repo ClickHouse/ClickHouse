@@ -467,7 +467,8 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
 
 bool AggregatingStep::canUseProjection() const
 {
-    return grouping_sets_params.empty() && sort_description_for_merging.empty() && !memory_bound_merging_of_aggregation_results_enabled;
+    //LOG_TRACE(&Poco::Logger::get("AggregatingStep"), "canUseProjection {} {} {}", grouping_sets_params.size(), sort_description_for_merging.size(), memory_bound_merging_of_aggregation_results_enabled);
+    return grouping_sets_params.empty() && sort_description_for_merging.empty(); // && !memory_bound_merging_of_aggregation_results_enabled;
 }
 
 void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & input_stream)
