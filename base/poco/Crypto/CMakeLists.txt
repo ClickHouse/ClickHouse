@@ -1,28 +1,5 @@
 if (ENABLE_SSL)
-    set (SRCS
-        src/Cipher.cpp
-        src/CipherFactory.cpp
-        src/CipherImpl.cpp
-        src/CipherKey.cpp
-        src/CipherKeyImpl.cpp
-        src/CryptoException.cpp
-        src/CryptoStream.cpp
-        src/CryptoTransform.cpp
-        src/DigestEngine.cpp
-        src/ECDSADigestEngine.cpp
-        src/ECKey.cpp
-        src/ECKeyImpl.cpp
-        src/EVPPKey.cpp
-        src/KeyPair.cpp
-        src/KeyPairImpl.cpp
-        src/OpenSSLInitializer.cpp
-        src/PKCS12Container.cpp
-        src/RSACipherImpl.cpp
-        src/RSADigestEngine.cpp
-        src/RSAKey.cpp
-        src/RSAKeyImpl.cpp
-        src/X509Certificate.cpp
-    )
+    file (GLOB SRCS src/*.cpp)
 
     add_library (_poco_crypto ${SRCS})
     add_library (Poco::Crypto ALIAS _poco_crypto)

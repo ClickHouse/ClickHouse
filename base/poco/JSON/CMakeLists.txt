@@ -9,20 +9,7 @@ add_library (Poco::JSON::Pdjson ALIAS _poco_json_pdjson)
 
 # Poco::JSON
 
-set (SRCS
-    src/Array.cpp
-    src/Handler.cpp
-    src/JSONException.cpp
-    src/Object.cpp
-    src/ParseHandler.cpp
-    src/Parser.cpp
-    src/ParserImpl.cpp
-    src/PrintHandler.cpp
-    src/Query.cpp
-    src/Stringifier.cpp
-    src/Template.cpp
-    src/TemplateCache.cpp
-)
+file (GLOB SRCS src/*.cpp)
 
 add_library (_poco_json ${SRCS})
 add_library (Poco::JSON ALIAS _poco_json)

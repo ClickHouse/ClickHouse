@@ -1,14 +1,4 @@
-set (SRCS
-    src/Array.cpp
-    src/AsyncReader.cpp
-    src/Client.cpp
-    src/Command.cpp
-    src/Error.cpp
-    src/Exception.cpp
-    src/RedisEventArgs.cpp
-    src/RedisStream.cpp
-    src/Type.cpp
-)
+file (GLOB SRCS src/*.cpp)
 
 add_library (_poco_redis ${SRCS})
 add_library (Poco::Redis ALIAS _poco_redis)

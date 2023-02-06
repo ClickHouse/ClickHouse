@@ -1,28 +1,6 @@
 # Foundation (pcre)
 
-set (SRCS_PCRE
-    src/pcre_config.c
-    src/pcre_byte_order.c
-    src/pcre_chartables.c
-    src/pcre_compile.c
-    src/pcre_exec.c
-    src/pcre_fullinfo.c
-    src/pcre_globals.c
-    src/pcre_maketables.c
-    src/pcre_newline.c
-    src/pcre_ord2utf8.c
-    src/pcre_study.c
-    src/pcre_tables.c
-    src/pcre_dfa_exec.c
-    src/pcre_get.c
-    src/pcre_jit_compile.c
-    src/pcre_refcount.c
-    src/pcre_string_utils.c
-    src/pcre_version.c
-    src/pcre_ucd.c
-    src/pcre_valid_utf8.c
-    src/pcre_xclass.c
-)
+file (GLOB SRCS_PCRE src/pcre_*.c)
 
 add_library (_poco_foundation_pcre ${SRCS_PCRE})
 add_library (Poco::Foundation::PCRE ALIAS _poco_foundation_pcre)
@@ -191,18 +169,16 @@ set (SRCS
 add_library (_poco_foundation ${SRCS})
 add_library (Poco::Foundation ALIAS _poco_foundation)
 
-if (COMPILER_CLANG)
-    target_compile_options (_poco_foundation
-        PRIVATE
-            -Wno-atomic-implicit-seq-cst
-            -Wno-deprecated
-            -Wno-extra-semi-stmt
-            -Wno-zero-as-null-pointer-constant
-            -Wno-implicit-int-float-conversion
-            -Wno-thread-safety-analysis
-            -Wno-thread-safety-negative
-    )
-endif ()
+target_compile_options (_poco_foundation
+    PRIVATE
+        -Wno-atomic-implicit-seq-cst
+        -Wno-deprecated
+        -Wno-extra-semi-stmt
+        -Wno-zero-as-null-pointer-constant
+        -Wno-implicit-int-float-conversion
+        -Wno-thread-safety-analysis
+        -Wno-thread-safety-negative
+)
 
 target_compile_options (_poco_foundation
     PRIVATE

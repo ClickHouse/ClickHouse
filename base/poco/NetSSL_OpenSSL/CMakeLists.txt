@@ -1,33 +1,5 @@
 if (ENABLE_SSL)
-    set (SRCS
-        src/AcceptCertificateHandler.cpp
-        src/CertificateHandlerFactory.cpp
-        src/CertificateHandlerFactoryMgr.cpp
-        src/ConsoleCertificateHandler.cpp
-        src/Context.cpp
-        src/HTTPSClientSession.cpp
-        src/HTTPSSessionInstantiator.cpp
-        src/HTTPSStreamFactory.cpp
-        src/InvalidCertificateHandler.cpp
-        src/KeyConsoleHandler.cpp
-        src/KeyFileHandler.cpp
-        src/PrivateKeyFactory.cpp
-        src/PrivateKeyFactoryMgr.cpp
-        src/PrivateKeyPassphraseHandler.cpp
-        src/RejectCertificateHandler.cpp
-        src/SecureServerSocket.cpp
-        src/SecureServerSocketImpl.cpp
-        src/SecureSMTPClientSession.cpp
-        src/SecureSocketImpl.cpp
-        src/SecureStreamSocket.cpp
-        src/SecureStreamSocketImpl.cpp
-        src/Session.cpp
-        src/SSLException.cpp
-        src/SSLManager.cpp
-        src/Utility.cpp
-        src/VerificationErrorArgs.cpp
-        src/X509Certificate.cpp
-    )
+    file (GLOB SRCS src/*.cpp)
 
     add_library (_poco_net_ssl ${SRCS})
     add_library (Poco::Net::SSL ALIAS _poco_net_ssl)
