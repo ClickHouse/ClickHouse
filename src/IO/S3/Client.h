@@ -22,7 +22,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
 }
 
@@ -78,15 +77,25 @@ private:
 /// - automatically detect endpoint and regions for each bucket and cache them
 ///
 /// For this client to work correctly both Client::RetryStrategy and Requests defined in <IO/S3/Requests.h> should be used.
-class Client : public Aws::S3::S3Client
+///
+/// To add support for new type of request
+/// - ExtendedRequest should be defined inside IO/S3/Requests.h
+/// - new method accepting that request should be defined in this Client (check other requests for reference)
+/// - method handling the request from Aws::S3::S3Client should be left to private so we don't use it by accident
+class Client : private Aws::S3::S3Client
 {
 public:
-    template <typename... Args>
-    static std::unique_ptr<Client> create(Args &&... args)
-    {
-        (verifyArgument(args), ...);
-        return std::unique_ptr<Client>(new Client(std::forward<Args>(args)...));
-    }
+    /// we use a factory method to verify arguments before creating a client because
+    /// there are certain requirements on arguments for it to work correctly
+    /// e.g. Client::RetryStrategy should be used
+    static std::unique_ptr<Client> create(
+            size_t max_redirects_,
+            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+            const Aws::Client::ClientConfiguration & client_configuration,
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+            bool use_virtual_addressing);
+
+    static std::unique_ptr<Client> create(const Client & other);
 
     Client & operator=(const Client &) = delete;
 
@@ -106,7 +115,12 @@ public:
         }
     }
 
-    /// Decorator for RetryStrategy needed for this client to work correctly
+    /// Decorator for RetryStrategy needed for this client to work correctly.
+    /// We want to manually handle permanent moves (status code 301) because:
+    /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
+    ///   requests so we need to manually find the correct location
+    /// - we want to cache the new location to decrease number of roundtrips for future requests
+    /// This decorator doesn't retry if 301 is detected and fallbacks to the inner retry strategy otherwise.
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
@@ -147,35 +161,19 @@ public:
     Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
 
+    using Aws::S3::S3Client::EnableRequestProcessing;
+    using Aws::S3::S3Client::DisableRequestProcessing;
 private:
-    template <typename... Args>
-    explicit Client(size_t max_redirects_, Args &&... args)
-        : Aws::S3::S3Client(std::forward<Args>(args)...)
-        , max_redirects(max_redirects_)
-        , log(&Poco::Logger::get("S3Client"))
-    {
-        auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
-        endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
-        std::string endpoint;
-        endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
-        detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
+    Client(size_t max_redirects_,
+           const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& credentials_provider,
+           const Aws::Client::ClientConfiguration& client_configuration,
+           Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+           bool use_virtual_addressing);
 
-        cache = std::make_shared<ClientCache>();
-        ClientCacheRegistry::instance().registerClient(cache);
-    }
+    Client(const Client & other);
 
-    Client(const Client & other)
-        : Aws::S3::S3Client(other)
-        , explicit_region(other.explicit_region)
-        , detect_region(other.detect_region)
-        , max_redirects(other.max_redirects)
-        , log(&Poco::Logger::get("S3Client"))
-    {
-        cache = std::make_shared<ClientCache>(*other.cache);
-        ClientCacheRegistry::instance().registerClient(cache);
-    }
-
-    /// Make regular functions private
+    /// Leave regular functions private so we don't accidentally use them
+    /// otherwise region and endpoint redirection won't work
     using Aws::S3::S3Client::HeadObject;
     using Aws::S3::S3Client::ListObjectsV2;
     using Aws::S3::S3Client::ListObjects;
@@ -278,19 +276,6 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
-
-    template <typename T>
-    static void verifyArgument(const T & /*arg*/)
-    {}
-
-    template <std::derived_from<Aws::Client::ClientConfiguration> T>
-    static void verifyArgument(const T & client_config)
-    {
-        if (!client_config.retryStrategy)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The S3 client can only be used with Client::RetryStrategy, define it in the client configuration");
-
-        assert_cast<const RetryStrategy &>(*client_config.retryStrategy);
-    }
 
     std::string explicit_region;
     mutable bool detect_region = true;
