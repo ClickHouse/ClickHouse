@@ -9,7 +9,7 @@ sidebar_label:  Executable
 The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**). The executable script is stored in the `users_scripts` directory and can read data from any source.
 
 - `Executable` tables: the script is run on every query
-- `ExecutablePool` tables: maintains a pool of persistent processes, and takes processes from the pool for reads.
+- `ExecutablePool` tables: maintains a pool of persistent processes, and takes processes from the pool for reads
 
 You can optionally include one or more input queries that stream their results to **stdin** for the script to read.
 
@@ -20,6 +20,22 @@ The `Executable` table engine requires two parameters: the name of the script an
 ```sql
 Executable(script_name, format, [input_query...])
 ```
+
+Here are the relevant settings for an `Executable` table:
+
+- `send_chunk_header`
+    - Description: Send the number of rows in each chunk before sending a chunk to process. This setting can help to write your script in a more efficient way to preallocate some resources
+    - Default value: false
+- `command_termination_timeout`
+    - Description: Command termination timeout in seconds
+    - Default value: 10
+- `command_read_timeout`
+    - Description: Timeout for reading data from command stdout in milliseconds
+    - Default value: 10000
+- `command_write_timeout`
+    - Description: Timeout for writing data to command stdin in milliseconds
+    - Default value: 10000
+
 
 Let's look at an example. The following Python script is named `my_script.py` and is saved in the `user_scripts` folder. It reads in a number `i` and prints `i` random strings, with each string preceded by a number that is separated by a tab:
 
@@ -140,7 +156,7 @@ if __name__ == "__main__":
 Some comments about our Python script:
 
 - For this to work, you will need to run `nltk.downloader.download('vader_lexicon')`. This could have been placed in the script, but then it would have been downloaded every time a query was executed on the `sentiment` table - which is not efficient
-- Each value of `row` is gonig to be a row in the result set of `SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20`
+- Each value of `row` is going to be a row in the result set of `SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20`
 - The incoming row is tab-separated, so we parse out the `id` and `comment` using the Python `split` function
 - The result of `polarity_scores` is a JSON object with a handful of values. We decided to just grab the `compound` value of this JSON object
 - Recall that the `sentiment` table in ClickHouse uses the `TabSeparated` format and contains two columns, so our `print` function separates those columns with a tab
@@ -182,26 +198,14 @@ The response looks like:
 
 ## Creating an ExecutablePool Table
 
-The syntax for `ExecutablePool` is similar to `Executable`, but there are a lot of settings that can be incluced with an `ExecutablePool` table:
+The syntax for `ExecutablePool` is similar to `Executable`, but there are a couple of relevant settings unique to an `ExecutablePool` table:
 
-- `send_chunk_header`
-    - Description: Send number_of_rows before sending chunk to process
-    - Default value: false
 - `pool_size`
-    - Description: Processes pool size. If size is 0, then there are no size restrictions.
+    - Description: Processes pool size. If size is 0, then there are no size restrictions
     - Default value: 16
 - `max_command_execution_time`
     - Description: Max command execution time in seconds
     - Default value: 10
-- `command_termination_timeout`
-    - Description: Command termination timeout in seconds.
-    - Default value: 10
-- `command_read_timeout`
-    - Description: Timeout for reading data from command stdout in milliseconds.
-    - Default value: 10000
-- `command_write_timeout`
-    - Description: Timeout for writing data to command stdin in milliseconds.
-    - Default value: 10000
 
 We can easily convert the `sentiment` table above to use `ExecutablePool` instead of `Executable`:
 
@@ -219,4 +223,4 @@ SETTINGS
 	pool_size = 4;
 ```
 
-ClickHouse will maintain 4 threads for processing the 20,000 rows passed in to the script.
+ClickHouse will maintain 4 processes on-demand when your client queries the `sentiment_pooled` table.
