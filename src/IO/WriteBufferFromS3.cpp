@@ -9,15 +9,11 @@
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
+#include <IO/S3Common.h>
+#include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <Interpreters/Context.h>
 
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/CreateMultipartUploadRequest.h>
-#include <aws/s3/model/CompleteMultipartUploadRequest.h>
-#include <aws/s3/model/PutObjectRequest.h>
-#include <aws/s3/model/UploadPartRequest.h>
-#include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/StorageClass.h>
 
 #include <utility>
@@ -28,13 +24,11 @@ namespace ProfileEvents
     extern const Event WriteBufferFromS3Bytes;
     extern const Event S3WriteBytes;
 
-    extern const Event S3HeadObject;
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
     extern const Event S3UploadPart;
     extern const Event S3PutObject;
 
-    extern const Event DiskS3HeadObject;
     extern const Event DiskS3CreateMultipartUpload;
     extern const Event DiskS3CompleteMultipartUpload;
     extern const Event DiskS3UploadPart;
@@ -59,7 +53,7 @@ namespace ErrorCodes
 
 struct WriteBufferFromS3::UploadPartTask
 {
-    Aws::S3::Model::UploadPartRequest req;
+    S3::UploadPartRequest req;
     bool is_finished = false;
     std::string tag;
     std::exception_ptr exception;
@@ -67,13 +61,13 @@ struct WriteBufferFromS3::UploadPartTask
 
 struct WriteBufferFromS3::PutObjectTask
 {
-    Aws::S3::Model::PutObjectRequest req;
+    S3::PutObjectRequest req;
     bool is_finished = false;
     std::exception_ptr exception;
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const S3::Client> client_ptr_,
     const String & bucket_,
     const String & key_,
     const S3Settings::RequestSettings & request_settings_,
@@ -191,7 +185,7 @@ void WriteBufferFromS3::finalizeImpl()
 
 void WriteBufferFromS3::createMultipartUpload()
 {
-    Aws::S3::Model::CreateMultipartUploadRequest req;
+    DB::S3::CreateMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
 
@@ -298,7 +292,7 @@ void WriteBufferFromS3::writePart()
     }
 }
 
-void WriteBufferFromS3::fillUploadRequest(Aws::S3::Model::UploadPartRequest & req)
+void WriteBufferFromS3::fillUploadRequest(S3::UploadPartRequest & req)
 {
     /// Increase part number.
     ++part_number;
@@ -369,7 +363,7 @@ void WriteBufferFromS3::completeMultipartUpload()
     if (tags.empty())
         throw Exception(ErrorCodes::S3_ERROR, "Failed to complete multipart upload. No parts have uploaded");
 
-    Aws::S3::Model::CompleteMultipartUploadRequest req;
+    S3::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
@@ -474,7 +468,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     }
 }
 
-void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
+void WriteBufferFromS3::fillPutRequest(S3::PutObjectRequest & req)
 {
     req.SetBucket(bucket);
     req.SetKey(key);
