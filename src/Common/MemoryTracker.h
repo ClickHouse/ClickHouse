@@ -110,6 +110,11 @@ public:
         return amount.load(std::memory_order_relaxed);
     }
 
+    void adjustOnBackgroundTaskEnd(MemoryTracker * child)
+    {
+        amount.fetch_sub(child->amount.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    }
+
     Int64 getPeak() const
     {
         return peak.load(std::memory_order_relaxed);
@@ -216,3 +221,6 @@ public:
 };
 
 extern MemoryTracker total_memory_tracker;
+extern MemoryTracker background_memory_tracker;
+
+bool canEnqueueBackgroundTask();
