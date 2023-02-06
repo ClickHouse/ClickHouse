@@ -130,7 +130,7 @@
         #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
         #define UNREACHABLE() abort()
     #else
-        #define chassert(x) ((void)0)
+        #define chassert(x) (void)(x)
         #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif
