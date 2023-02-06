@@ -226,13 +226,7 @@ add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
-if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
-    add_headers_and_sources(dbms Compression)
-    list(REMOVE_ITEM dbms_headers Compression/CompressionCodecEncrypted.h)
-    list(REMOVE_ITEM dbms_sources Compression/CompressionCodecEncrypted.cpp)
-else ()
-    add_object_library(clickhouse_compression Compression)
-endif ()
+add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
@@ -343,8 +337,8 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 endif ()
 
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
-target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
+target_link_libraries(common PUBLIC ch_contrib::re2_st)
+target_link_libraries(common PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
         PUBLIC

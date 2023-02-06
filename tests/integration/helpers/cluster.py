@@ -2856,7 +2856,10 @@ class ClickHouseCluster:
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
                     sanitizer_assert_instance = instance.grep_in_log(
-                        SANITIZER_SIGN, from_host=True, filename="stderr.log"
+                        SANITIZER_SIGN,
+                        from_host=True,
+                        filename="stderr.log",
+                        after=1000,
                     )
                     logging.error(
                         "Sanitizer in instance %s log %s",
@@ -2897,8 +2900,8 @@ class ClickHouseCluster:
 
         if sanitizer_assert_instance is not None:
             raise Exception(
-                "Sanitizer assert found in {} for instance {}".format(
-                    self.docker_logs_path, sanitizer_assert_instance
+                "Sanitizer assert found for instance {}".format(
+                    sanitizer_assert_instance
                 )
             )
         if fatal_log is not None:
@@ -3652,15 +3655,21 @@ class ClickHouseInstance:
             )
         return len(result) > 0
 
-    def grep_in_log(self, substring, from_host=False, filename="clickhouse-server.log"):
+    def grep_in_log(
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None
+    ):
         logging.debug(f"grep in log called %s", substring)
+        if after is not None:
+            after_opt = "-A{}".format(after)
+        else:
+            after_opt = ""
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
                 ]
             )
         else:
@@ -3668,7 +3677,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
                 ]
             )
         logging.debug("grep result %s", result)
