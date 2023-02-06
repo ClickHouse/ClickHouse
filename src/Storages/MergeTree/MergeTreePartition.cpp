@@ -185,6 +185,7 @@ namespace
         {
             UInt8 type = Field::Types::CustomType;
             hash.update(type);
+            hash.update(x.getTypeName());
             auto result = x.toString();
             hash.update(result.size());
             hash.update(result.data(), result.size());

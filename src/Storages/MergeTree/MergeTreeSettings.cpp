@@ -50,21 +50,19 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
         try
         {
             auto changes = storage_def.settings->changes;
+            for (auto & [name, value] : changes)
             {
-                for (auto & [name, value] : changes)
+                CustomType custom;
+                if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
                 {
-                    CustomType custom;
-                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+                    auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+                    if (ast && isDiskFunction(ast))
                     {
-                        auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-                        if (ast && isDiskFunction(ast))
-                        {
-                            const auto & ast_function = assert_cast<const ASTFunction &>(*ast);
-                            auto disk_name = getOrCreateDiskFromDiskAST(ast_function, context);
-                            LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
-                            value = disk_name;
-                            break;
-                        }
+                        const auto & ast_function = assert_cast<const ASTFunction &>(*ast);
+                        auto disk_name = getOrCreateDiskFromDiskAST(ast_function, context);
+                        LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                        value = disk_name;
+                        break;
                     }
                 }
             }
