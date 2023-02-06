@@ -27,5 +27,12 @@ set -x
 touch ${TESTS_PATH}/${NEW_TEST_NO}_${FILENAME}.${FILEEXT}
 if [[ $FILEEXT == "sh" ]] ; then
     chmod +x ${TESTS_PATH}/${NEW_TEST_NO}_${FILENAME}.${FILEEXT}
+    # shellcheck disable=SC2016
+    echo '#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+' >> ${TESTS_PATH}/${NEW_TEST_NO}_${FILENAME}.${FILEEXT}
 fi
 touch ${TESTS_PATH}/${NEW_TEST_NO}_${FILENAME}.reference

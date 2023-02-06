@@ -41,6 +41,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -816,17 +817,15 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    if (fake_drop)
-    {
-        if (parsed_query->as<ASTDropQuery>())
-            return;
-    }
+    if (fake_drop && parsed_query->as<ASTDropQuery>())
+        return;
+
+    auto query = query_to_execute;
 
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
     /// For recent versions of the server query parameters will be transferred by network and applied on the server side.
-    auto query = query_to_execute;
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
@@ -836,6 +835,22 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         query = serializeAST(*parsed_query);
+    }
+
+    if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
+    {
+        /// Rewrite query if new settings were added.
+        if (addMergeTreeSettings(*parsed_query->as<ASTCreateQuery>()))
+        {
+            /// Replace query parameters because AST cannot be serialized otherwise.
+            if (!query_parameters.empty())
+            {
+                ReplaceQueryParameterVisitor visitor(query_parameters);
+                visitor.visit(parsed_query);
+            }
+
+            query = serializeAST(*parsed_query);
+        }
     }
 
     int retries_left = 10;
@@ -2065,6 +2080,41 @@ void ClientBase::initQueryIdFormats()
 }
 
 
+bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
+{
+    if (ast_create.attach
+        || !ast_create.storage
+        || !ast_create.storage->isExtendedStorageDefinition()
+        || !ast_create.storage->engine
+        || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
+        return false;
+
+    auto all_changed = cmd_merge_tree_settings.allChanged();
+    if (all_changed.begin() == all_changed.end())
+        return false;
+
+    if (!ast_create.storage->settings)
+    {
+        auto settings_ast = std::make_shared<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        ast_create.storage->set(ast_create.storage->settings, settings_ast);
+    }
+
+    auto & storage_settings = *ast_create.storage->settings;
+    bool added_new_setting = false;
+
+    for (const auto & setting : all_changed)
+    {
+        if (!storage_settings.changes.tryGet(setting.getName()))
+        {
+            storage_settings.changes.emplace_back(setting.getName(), setting.getValue());
+            added_new_setting = true;
+        }
+    }
+
+    return added_new_setting;
+}
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
@@ -2302,6 +2352,30 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
     else
         cmd_settings.addProgramOptions(options_description.main_description.value());
+
+    if (allow_merge_tree_settings)
+    {
+        /// Add merge tree settings manually, because names of some settings
+        /// may clash. Query settings have higher priority and we just
+        /// skip ambiguous merge tree settings.
+        auto & main_options = options_description.main_description.value();
+
+        NameSet main_option_names;
+        for (const auto & option : main_options.options())
+            main_option_names.insert(option->long_name());
+
+        for (const auto & setting : cmd_merge_tree_settings.all())
+        {
+            if (main_option_names.contains(setting.getName()))
+                continue;
+
+            if (allow_repeated_settings)
+                cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, setting);
+            else
+                cmd_merge_tree_settings.addProgramOption(main_options, setting);
+        }
+    }
+
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();

@@ -14,12 +14,13 @@
 #include <Common/Exception.h>
 #include <Common/Throttler_fwd.h>
 
-#include <Poco/URI.h>
+#include <IO/S3/Client.h>
+#include <IO/S3/URI.h>
+
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
 
-
-namespace Aws::S3 { class S3Client; }
+namespace Aws::S3 { class Client; }
 
 namespace DB
 {
@@ -60,7 +61,6 @@ private:
 };
 }
 
-
 namespace DB::S3
 {
 
@@ -71,7 +71,7 @@ public:
 
     static ClientFactory & instance();
 
-    std::unique_ptr<Aws::S3::S3Client> create(
+    std::unique_ptr<S3::Client> create(
         const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
@@ -96,53 +96,6 @@ private:
     Aws::SDKOptions aws_options;
     std::atomic<bool> s3_requests_logging_enabled;
 };
-
-/**
- * Represents S3 URI.
- *
- * The following patterns are allowed:
- * s3://bucket/key
- * http(s)://endpoint/bucket/key
- */
-struct URI
-{
-    Poco::URI uri;
-    // Custom endpoint if URI scheme is not S3.
-    String endpoint;
-    String bucket;
-    String key;
-    String version_id;
-    String storage_name;
-
-    bool is_virtual_hosted_style;
-
-    explicit URI(const std::string & uri_);
-
-    static void validateBucket(const String & bucket, const Poco::URI & uri);
-};
-
-/// WARNING: Don't use `HeadObjectRequest`! Use the functions below instead.
-/// For explanation see the comment about `HeadObject` request in the function tryGetObjectInfo().
-
-struct ObjectInfo
-{
-    size_t size = 0;
-    time_t last_modification_time = 0;
-};
-
-ObjectInfo getObjectInfo(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
-
-size_t getObjectSize(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
-
-bool objectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false);
-
-/// Throws an exception if a specified object doesn't exist. `description` is used as a part of the error message.
-void checkObjectExists(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, std::string_view description = {});
-
-bool isNotFoundError(Aws::S3::S3Errors error);
-
-/// Returns the object's metadata.
-std::map<String, String> getObjectMetadata(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & version_id = "", bool for_disk_s3 = false, bool throw_on_error = true);
 
 }
 #endif

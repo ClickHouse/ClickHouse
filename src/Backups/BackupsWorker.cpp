@@ -338,6 +338,8 @@ void BackupsWorker::doBackup(
         }
 
         size_t num_files = 0;
+        UInt64 total_size = 0;
+        size_t num_entries = 0;
         UInt64 uncompressed_size = 0;
         UInt64 compressed_size = 0;
 
@@ -346,6 +348,8 @@ void BackupsWorker::doBackup(
         {
             backup->finalizeWriting();
             num_files = backup->getNumFiles();
+            total_size = backup->getTotalSize();
+            num_entries = backup->getNumEntries();
             uncompressed_size = backup->getUncompressedSize();
             compressed_size = backup->getCompressedSize();
         }
@@ -355,7 +359,7 @@ void BackupsWorker::doBackup(
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
         setStatus(backup_id, BackupStatus::BACKUP_CREATED);
-        setNumFilesAndSize(backup_id, num_files, uncompressed_size, compressed_size);
+        setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
     }
     catch (...)
     {
@@ -496,8 +500,6 @@ void BackupsWorker::doRestore(
         backup_open_params.password = restore_settings.password;
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
-        setNumFilesAndSize(restore_id, backup->getNumFiles(), backup->getUncompressedSize(), backup->getCompressedSize());
-
         String current_database = context->getCurrentDatabase();
 
         /// Checks access rights if this is ON CLUSTER query.
@@ -578,6 +580,15 @@ void BackupsWorker::doRestore(
 
         LOG_INFO(log, "Restored from {} {} successfully", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging);
         setStatus(restore_id, BackupStatus::RESTORED);
+        setNumFilesAndSize(
+            restore_id,
+            backup->getNumFiles(),
+            backup->getTotalSize(),
+            backup->getNumEntries(),
+            backup->getUncompressedSize(),
+            backup->getCompressedSize(),
+            backup->getNumReadFiles(),
+            backup->getNumReadBytes());
     }
     catch (...)
     {
@@ -658,7 +669,9 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
 }
 
 
-void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size)
+void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
+                                       UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
+
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -667,8 +680,12 @@ void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, UInt
 
     auto & info = it->second;
     info.num_files = num_files;
+    info.total_size = total_size;
+    info.num_entries = num_entries;
     info.uncompressed_size = uncompressed_size;
     info.compressed_size = compressed_size;
+    info.num_read_files = num_read_files;
+    info.num_read_bytes = num_read_bytes;
 }
 
 
