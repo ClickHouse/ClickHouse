@@ -63,7 +63,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
             case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
             default:
-                throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
         }
     }
 
@@ -88,7 +88,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
-    MergeTreeDataPartType new_part_type;
+    MergeTreeDataPartFormat new_part_format;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
     UUID new_part_uuid = UUIDHelpers::Nil;
@@ -157,6 +157,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).
     std::exception_ptr exception;         /// The last exception, in the case of an unsuccessful attempt to perform the action.
+    time_t last_exception_time = 0;       /// The time at which the last exception occurred.
     time_t last_attempt_time = 0;         /// The time at which the last attempt was attempted to complete the action.
     size_t num_postponed = 0;             /// The number of times the action was postponed.
     String postpone_reason;               /// The reason why the action was postponed, if it was postponed.

@@ -36,6 +36,8 @@ public:
 
     QueryPlan && extractQueryPlan() &&;
 
+    QueryPipelineBuilder buildQueryPipeline();
+
     void addStorageLimits(const StorageLimitsList & storage_limits);
 
     bool supportsTransactions() const override { return true; }
@@ -43,8 +45,6 @@ public:
     bool ignoreLimits() const override { return select_query_options.ignore_limits; }
 
     bool ignoreQuota() const override { return select_query_options.ignore_quota; }
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
     /// Set merge tree read task callback in context and set collaborate_with_initiator in client info
     void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);

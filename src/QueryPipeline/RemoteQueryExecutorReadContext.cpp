@@ -148,7 +148,7 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
     {
         /// Socket receive timeout. Drain it in case of error, or it may be hide by timeout exception.
         timer.drain();
-        throw NetException("Timeout exceeded", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded");
     }
 
     return true;

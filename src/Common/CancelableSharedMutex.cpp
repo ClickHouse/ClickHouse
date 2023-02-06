@@ -98,9 +98,15 @@ void CancelableSharedMutex::lock_shared()
 bool CancelableSharedMutex::try_lock_shared()
 {
     UInt64 value = state.load();
-    if (!(value & writers) && state.compare_exchange_strong(value, value + 1)) // overflow is not realistic
-        return true;
-    return false;
+    while (true)
+    {
+        if (value & writers)
+            return false;
+        if (state.compare_exchange_strong(value, value + 1)) // overflow is not realistic
+            break;
+        // Concurrent try_lock_shared() should not fail, so we have to retry CAS, but avoid blocking wait
+    }
+    return true;
 }
 
 void CancelableSharedMutex::unlock_shared()

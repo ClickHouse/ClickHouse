@@ -53,10 +53,10 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     for (const auto & name : names)
     {
         if (name.empty())
-            return Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+            return Exception(ErrorCodes::BAD_ARGUMENTS, "Names of tuple elements cannot be empty");
 
         if (!names_set.insert(name).second)
-            return Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
+            return Exception(ErrorCodes::DUPLICATE_COLUMN, "Names of tuple elements must be unique");
     }
 
     return {};
@@ -67,7 +67,7 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
 {
     size_t size = elems.size();
     if (names.size() != size)
-        throw Exception("Wrong number of names passed to constructor of DataTypeTuple", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of names passed to constructor of DataTypeTuple");
 
     if (auto exception = checkTupleNames(names))
         throw std::move(*exception);
@@ -212,7 +212,7 @@ size_t DataTypeTuple::getPositionByName(const String & name) const
     for (size_t i = 0; i < size; ++i)
         if (names[i] == name)
             return i;
-    throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+    throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
 
 std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name) const
@@ -336,7 +336,7 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
-        throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Tuple cannot be empty");
 
     DataTypes nested_types;
     nested_types.reserve(arguments->children.size());
@@ -358,7 +358,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
     else if (names.size() != nested_types.size())
-        throw Exception("Names are specified not for all elements of Tuple type", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
     else
         return std::make_shared<DataTypeTuple>(nested_types, names);
 }

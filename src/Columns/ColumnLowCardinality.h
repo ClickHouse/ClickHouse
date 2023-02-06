@@ -242,7 +242,7 @@ public:
             case sizeof(UInt16): return assert_cast<const ColumnUInt16 *>(indexes)->getElement(row);
             case sizeof(UInt32): return assert_cast<const ColumnUInt32 *>(indexes)->getElement(row);
             case sizeof(UInt64): return assert_cast<const ColumnUInt64 *>(indexes)->getElement(row);
-            default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
         }
     }
 

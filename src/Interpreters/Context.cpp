@@ -40,6 +40,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -235,6 +236,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
+    mutable QueryCachePtr query_cache;         /// Cache of query results.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     GlobalOvercommitTracker global_overcommit_tracker;
@@ -622,7 +624,7 @@ ContextMutablePtr Context::createCopy(const ContextPtr & other)
 ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 {
     auto ptr = other.lock();
-    if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
+    if (!ptr) throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
     return createCopy(ptr);
 }
 
@@ -657,7 +659,7 @@ String Context::resolveDatabase(const String & database_name) const
 {
     String res = database_name.empty() ? getCurrentDatabase() : database_name;
     if (res.empty())
-        throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
     return res;
 }
 
@@ -820,7 +822,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
     VolumePtr volume = tmp_policy->getVolume(0);
 
     if (volume->getDisks().empty())
-         throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks volume for temporary files");
 
     for (const auto & disk : volume->getDisks())
     {
@@ -1164,7 +1166,7 @@ const Block & Context::getScalar(const String & name) const
     {
         // This should be a logical error, but it fails the sql_fuzz test too
         // often, so 'bad arguments' for now.
-        throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
     }
     return it->second;
 }
@@ -1211,7 +1213,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
     auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
-        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists.", backQuoteIfNeed(table_name));
     external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
@@ -1444,8 +1446,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 void Context::addViewSource(const StoragePtr & storage)
 {
     if (view_source)
-        throw Exception(
-            "Temporary view source storage " + backQuoteIfNeed(view_source->getName()) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary view source storage {} already exists.",
+            backQuoteIfNeed(view_source->getName()));
     view_source = storage;
 }
 
@@ -1595,13 +1597,13 @@ String Context::getInitialQueryId() const
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
     if (!isGlobalContext())
-        throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot set current database for non global context, this method should "
+                        "be used during server initialization");
     auto lock = getLock();
 
     if (!current_database.empty())
-        throw Exception("Default database name cannot be changed in global context without server restart",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Default database name cannot be changed in global context without server restart");
 
     current_database = name;
 }
@@ -1693,7 +1695,7 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
 ContextMutablePtr Context::getQueryContext() const
 {
     auto ptr = query_context.lock();
-    if (!ptr) throw Exception("There is no query or query context has expired", ErrorCodes::THERE_IS_NO_QUERY);
+    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
     return ptr;
 }
 
@@ -1706,20 +1708,20 @@ bool Context::isInternalSubquery() const
 ContextMutablePtr Context::getSessionContext() const
 {
     auto ptr = session_context.lock();
-    if (!ptr) throw Exception("There is no session or session context has expired", ErrorCodes::THERE_IS_NO_SESSION);
+    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_SESSION, "There is no session or session context has expired");
     return ptr;
 }
 
 ContextMutablePtr Context::getGlobalContext() const
 {
     auto ptr = global_context.lock();
-    if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
+    if (!ptr) throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no global context or global context has expired");
     return ptr;
 }
 
 ContextMutablePtr Context::getBufferContext() const
 {
-    if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
+    if (!buffer_context) throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no buffer context");
     return buffer_context;
 }
 
@@ -1888,8 +1890,11 @@ BackupsWorker & Context::getBackupsWorker() const
 {
     auto lock = getLock();
 
+    const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
+    const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
+
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads);
+        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
@@ -1929,7 +1934,7 @@ void Context::setUncompressedCache(size_t max_size_in_bytes, const String & unco
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
-        throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
     shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
 }
@@ -1955,7 +1960,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache
     auto lock = getLock();
 
     if (shared->mark_cache)
-        throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
     shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, mark_cache_policy);
 }
@@ -1975,11 +1980,13 @@ void Context::dropMarkCache() const
 
 ThreadPool & Context::getLoadMarksThreadpool() const
 {
+    const auto & config = getConfigRef();
+
     auto lock = getLock();
     if (!shared->load_marks_threadpool)
     {
-        constexpr size_t pool_size = 50;
-        constexpr size_t queue_size = 1000000;
+        auto pool_size = config.getUInt(".load_marks_threadpool_pool_size", 50);
+        auto queue_size = config.getUInt(".load_marks_threadpool_queue_size", 1000000);
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
     }
     return *shared->load_marks_threadpool;
@@ -1990,7 +1997,7 @@ void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
     auto lock = getLock();
 
     if (shared->index_uncompressed_cache)
-        throw Exception("Index uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
 
     shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
 }
@@ -2016,7 +2023,7 @@ void Context::setIndexMarkCache(size_t cache_size_in_bytes)
     auto lock = getLock();
 
     if (shared->index_mark_cache)
-        throw Exception("Index mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
 
     shared->index_mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
@@ -2034,13 +2041,43 @@ void Context::dropIndexMarkCache() const
         shared->index_mark_cache->reset();
 }
 
+void Context::setQueryCache(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+
+    if (shared->query_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
+
+    shared->query_cache = std::make_shared<QueryCache>();
+    shared->query_cache->updateConfiguration(config);
+}
+
+void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+    if (shared->query_cache)
+        shared->query_cache->updateConfiguration(config);
+}
+
+QueryCachePtr Context::getQueryCache() const
+{
+    auto lock = getLock();
+    return shared->query_cache;
+}
+
+void Context::dropQueryCache() const
+{
+    auto lock = getLock();
+    if (shared->query_cache)
+        shared->query_cache->reset();
+}
 
 void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
 {
     auto lock = getLock();
 
     if (shared->mmap_cache)
-        throw Exception("Mapped file cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache has been already created.");
 
     shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
 }
@@ -2074,6 +2111,9 @@ void Context::dropCaches() const
 
     if (shared->index_mark_cache)
         shared->index_mark_cache->reset();
+
+    if (shared->query_cache)
+        shared->query_cache->reset();
 
     if (shared->mmap_cache)
         shared->mmap_cache->reset();
@@ -2239,7 +2279,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
     if (shared->ddl_worker)
-        throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DDL background thread has already been initialized");
     ddl_worker->startup();
     shared->ddl_worker = std::move(ddl_worker);
 }
@@ -2250,12 +2290,12 @@ DDLWorker & Context::getDDLWorker() const
     if (!shared->ddl_worker)
     {
         if (!hasZooKeeper())
-            throw Exception("There is no Zookeeper configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
 
         if (!hasDistributedDDL())
-            throw Exception("There is no DistributedDDL configuration in server config", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
 
-        throw Exception("DDL background thread is not initialized", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
     }
     return *shared->ddl_worker;
 }
@@ -2557,8 +2597,9 @@ void Context::setInterserverIOAddress(const String & host, UInt16 port)
 std::pair<String, UInt16> Context::getInterserverIOAddress() const
 {
     if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
-        throw Exception("Parameter 'interserver_http(s)_port' required for replication is not specified in configuration file.",
-                        ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "Parameter 'interserver_http(s)_port' required for replication is not specified "
+                        "in configuration file.");
 
     return { shared->interserver_io_host, shared->interserver_io_port };
 }
@@ -2619,7 +2660,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
 {
     if (auto res = tryGetCluster(cluster_name))
         return res;
-    throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
+    throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);
 }
 
 
@@ -2709,7 +2750,7 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
     std::lock_guard lock(shared->clusters_mutex);
 
     if (!shared->clusters)
-        throw Exception("Clusters are not set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clusters are not set");
 
     shared->clusters->setCluster(cluster_name, cluster);
 }
@@ -3156,7 +3197,7 @@ void Context::reloadConfig() const
 {
     /// Use mutex if callback may be changed after startup.
     if (!shared->config_reload_callback)
-        throw Exception("Can't reload config because config_reload_callback is not set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't reload config because config_reload_callback is not set.");
 
     shared->config_reload_callback();
 }
@@ -3256,7 +3297,7 @@ const NameToNameMap & Context::getQueryParameters() const
 void Context::setQueryParameter(const String & name, const String & value)
 {
     if (!query_parameters.emplace(name, value).second)
-        throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
 }
 
 void Context::addQueryParameters(const NameToNameMap & parameters)
@@ -3298,7 +3339,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
 void Context::setExternalTablesInitializer(ExternalTablesInitializer && initializer)
 {
     if (external_tables_initializer_callback)
-        throw Exception("External tables initializer is already set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "External tables initializer is already set");
 
     external_tables_initializer_callback = std::move(initializer);
 }
@@ -3317,7 +3358,7 @@ void Context::initializeExternalTablesIfSet()
 void Context::setInputInitializer(InputInitializer && initializer)
 {
     if (input_initializer_callback)
-        throw Exception("Input initializer is already set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is already set");
 
     input_initializer_callback = std::move(initializer);
 }
@@ -3326,7 +3367,7 @@ void Context::setInputInitializer(InputInitializer && initializer)
 void Context::initializeInput(const StoragePtr & input_storage)
 {
     if (!input_initializer_callback)
-        throw Exception("Input initializer is not set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
 
     input_initializer_callback(shared_from_this(), input_storage);
     /// Reset callback
@@ -3337,7 +3378,7 @@ void Context::initializeInput(const StoragePtr & input_storage)
 void Context::setInputBlocksReaderCallback(InputBlocksReader && reader)
 {
     if (input_blocks_reader)
-        throw Exception("Input blocks reader is already set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input blocks reader is already set");
 
     input_blocks_reader = std::move(reader);
 }
@@ -3404,7 +3445,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id)
     {
         if (exception)
-            exception->emplace("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
         return storage_id;
     }
 
@@ -3421,8 +3462,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (in_specified_database)
             return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
         if (exception)
-            exception->emplace("External and temporary tables have no database, but " +
-                        storage_id.database_name + " is specified", ErrorCodes::UNKNOWN_TABLE);
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "External and temporary tables have no database, but {} is specified",
+                               storage_id.database_name));
         return StorageID::createEmpty();
     }
 
@@ -3465,7 +3506,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (current_database.empty())
         {
             if (exception)
-                exception->emplace("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+                exception->emplace(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
@@ -3474,7 +3515,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     }
 
     if (exception)
-        exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
+        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot resolve database name for table {}", storage_id.getNameForLogs()));
     return StorageID::createEmpty();
 }
 
@@ -3588,6 +3629,32 @@ void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback
     merge_tree_read_task_callback = callback;
 }
 
+
+MergeTreeAllRangesCallback Context::getMergeTreeAllRangesCallback() const
+{
+    if (!merge_tree_all_ranges_callback.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query with id: {}", getInitialQueryId());
+
+    return merge_tree_all_ranges_callback.value();
+}
+
+
+void Context::setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback)
+{
+    merge_tree_all_ranges_callback = callback;
+}
+
+
+void Context::setParallelReplicasGroupUUID(UUID uuid)
+{
+    parallel_replicas_group_uuid = uuid;
+}
+
+UUID Context::getParallelReplicasGroupUUID() const
+{
+    return parallel_replicas_group_uuid;
+}
+
 PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 {
     auto lock = getLock();
@@ -3607,7 +3674,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
     using namespace std::chrono;
 
     if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
-        throw Exception("Setting async_insert_busy_timeout_ms can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_busy_timeout_ms can't be zero");
 
     shared->async_insert_queue = ptr;
 }
@@ -3808,7 +3875,7 @@ ReadSettings Context::getReadSettings() const
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
     res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
-    res.max_query_cache_size = settings.max_query_cache_size;
+    res.filesystem_cache_max_download_size = settings.filesystem_cache_max_download_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
@@ -3851,6 +3918,24 @@ WriteSettings Context::getWriteSettings() const
     res.remote_throttler = getRemoteWriteThrottler();
 
     return res;
+}
+
+bool Context::canUseParallelReplicasOnInitiator() const
+{
+    const auto & settings = getSettingsRef();
+    return settings.allow_experimental_parallel_reading_from_replicas
+        && settings.max_parallel_replicas > 1
+        && !settings.use_hedged_requests
+        && !getClientInfo().collaborate_with_initiator;
+}
+
+bool Context::canUseParallelReplicasOnFollower() const
+{
+    const auto & settings = getSettingsRef();
+    return settings.allow_experimental_parallel_reading_from_replicas
+        && settings.max_parallel_replicas > 1
+        && !settings.use_hedged_requests
+        && getClientInfo().collaborate_with_initiator;
 }
 
 }

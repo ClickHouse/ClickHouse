@@ -6,6 +6,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Parsers/IAST.h>
 
 
 namespace ProfileEvents
@@ -58,7 +59,7 @@ struct QueryLogElement
     String formatted_query;
     UInt64 normalized_query_hash{};
 
-    String query_kind;
+    IAST::QueryKind query_kind{};
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
@@ -79,6 +80,7 @@ struct QueryLogElement
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
+    std::string_view exception_format_string{};
 
     ClientInfo client_info;
 

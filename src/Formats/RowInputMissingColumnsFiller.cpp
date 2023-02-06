@@ -107,7 +107,9 @@ void RowInputMissingColumnsFiller::addDefaults(MutableColumns & columns, size_t 
             {
                 const auto * column_array = typeid_cast<const ColumnArray *>(column_j.get());
                 if (!column_array)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column with Array type is not represented by ColumnArray column: {}", column_j->dumpStructure());
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Column with Array type is not represented by ColumnArray column: {}",
+                                    column_j->dumpStructure());
                 const auto & offsets = column_array->getOffsets();
                 size_of_array = offsets[row_num] - offsets[row_num - 1];
                 break;
@@ -125,7 +127,9 @@ void RowInputMissingColumnsFiller::addDefaults(MutableColumns & columns, size_t 
 
                 auto * column_array = typeid_cast<ColumnArray *>(column_j.get());
                 if (!column_array)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column with Array type is not represented by ColumnArray column: {}", column_j->dumpStructure());
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                    "Column with Array type is not represented by ColumnArray column: {}",
+                                    column_j->dumpStructure());
 
                 auto & data = column_array->getData();
                 auto & offsets = column_array->getOffsets();
