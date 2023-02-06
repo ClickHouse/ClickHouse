@@ -10,6 +10,7 @@ namespace DB
 {
 class Exception;
 enum class AccessEntityType;
+enum class UserDefinedSQLObjectType;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
 /// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
@@ -67,6 +68,10 @@ public:
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
     virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
     virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
+
+    /// Adds a path to a directory with user-defined SQL objects inside the backup.
+    virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path) = 0;
+    virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const = 0;
 
     struct FileInfo
     {
