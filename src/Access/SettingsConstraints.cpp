@@ -366,7 +366,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
 {
     auto full_name = settingFullName<MergeTreeSettings>(short_name);
-    auto it = constraints.find(resolveSettingNameWithCache(short_name));
+    auto it = constraints.find(resolveSettingNameWithCache(full_name));
     if (it == constraints.end())
         return Checker(); // Allowed
     return Checker(it->second);
