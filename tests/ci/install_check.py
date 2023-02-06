@@ -23,7 +23,6 @@ from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
 from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
@@ -81,7 +80,7 @@ exec 13>&-"""
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
 
 
-def test_install_deb(image: DockerImage) -> TestResults:
+def test_install_deb(image: DockerImage) -> list:
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb
@@ -94,7 +93,7 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install_rpm(image: DockerImage) -> TestResults:
+def test_install_rpm(image: DockerImage) -> list:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
@@ -110,7 +109,7 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install_tgz(image: DockerImage) -> TestResults:
+def test_install_tgz(image: DockerImage) -> list:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
@@ -137,8 +136,8 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
-    test_results = []  # type: TestResults
+def test_install(image: DockerImage, tests: Dict[str, str]) -> list:
+    test_results = []
     for name, command in tests.items():
         stopwatch = Stopwatch()
         container_name = name.lower().replace(" ", "_").replace("/", "_")
@@ -153,7 +152,7 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
         ).strip()
         (TEMP_PATH / "install.sh").write_text(command)
         install_command = f"docker exec {container_id} bash -ex /packages/install.sh"
-        with TeePopen(install_command, log_file) as process:
+        with TeePopen(install_command, log_file.as_posix()) as process:
             retcode = process.wait()
             if retcode == 0:
                 status = SUCCESS
@@ -162,7 +161,12 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
 
         subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
         test_results.append(
-            TestResult(name, status, stopwatch.duration_seconds, [log_file])
+            [
+                name,
+                status,
+                f"{stopwatch.duration_seconds:.2f}",
+                f"['{log_file.as_posix()}']",  # It's terrible syntax for log files
+            ]
         )
 
     return test_results
@@ -256,7 +260,7 @@ def main():
             args.check_name, REPORTS_PATH, TEMP_PATH, filter_artifacts
         )
 
-    test_results = []  # type: TestResults
+    test_results = []
     if args.deb:
         test_results.extend(test_install_deb(docker_images[DEB_IMAGE]))
     if args.rpm:
@@ -267,10 +271,10 @@ def main():
 
     state = SUCCESS
     description = "Packages installed successfully"
-    if FAILURE in (result.status for result in test_results):
+    if FAILURE in (result[1] for result in test_results):
         state = FAILURE
         description = "Failed to install packages: " + ", ".join(
-            result.name for result in test_results
+            result[0] for result in test_results
         )
 
     s3_helper = S3Helper()
@@ -282,6 +286,7 @@ def main():
         test_results,
         [],
         args.check_name,
+        with_raw_logs=False,
     )
     print(f"::notice ::Report url: {report_url}")
     if not CI:
