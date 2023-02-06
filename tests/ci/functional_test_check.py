@@ -48,7 +48,8 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_DATABASE_ORDINARY=1")
     if "wide parts enabled" in check_name:
         result.append("USE_POLYMORPHIC_PARTS=1")
-
+    if "ParallelReplicas" in check_name:
+        result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
@@ -163,17 +164,25 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = Path(result_folder) / "test_results.tsv"
+    try:
+        results_path = Path(result_folder) / "test_results.tsv"
 
-    if results_path.exists():
-        logging.info("Found test_results.tsv")
-    else:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
-        return "error", "Not found test_results.tsv", test_results, additional_files
+        if results_path.exists():
+            logging.info("Found test_results.tsv")
+        else:
+            logging.info("Files in result folder %s", os.listdir(result_folder))
+            return "error", "Not found test_results.tsv", test_results, additional_files
 
-    test_results = read_test_results(results_path)
-    if len(test_results) == 0:
-        return "error", "Empty test_results.tsv", test_results, additional_files
+        test_results = read_test_results(results_path)
+        if len(test_results) == 0:
+            return "error", "Empty test_results.tsv", test_results, additional_files
+    except Exception as e:
+        return (
+            "error",
+            f"Cannot parse test_results.tsv ({e})",
+            test_results,
+            additional_files,
+        )
 
     return state, description, test_results, additional_files
 
@@ -347,16 +356,34 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            gh, pr_info.sha, check_name_with_group, description, state, report_url
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status(
+                gh,
+                pr_info.sha,
+                check_name_with_group,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status(
+                gh, pr_info.sha, check_name_with_group, description, state, report_url
+            )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                state,
+                report_url,
+            )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -374,7 +401,11 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

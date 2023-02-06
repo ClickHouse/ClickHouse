@@ -45,7 +45,7 @@ public:
 
     /// Only delete is supported.
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
