@@ -692,7 +692,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     auto block = block_in.read();
     throttler->add(block.bytes());
 
-    //// TODO Read them from file
     new_data_part->setColumns(block.getNamesAndTypesList(), {}, metadata_snapshot->getMetadataVersion());
 
     if (!is_projection)
