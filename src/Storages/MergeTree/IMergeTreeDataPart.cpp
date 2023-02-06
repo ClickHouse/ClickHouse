@@ -1353,7 +1353,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
 }
 
 
-
 /// Project part / part with project parts / compact part doesn't support LWD.
 bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 {
