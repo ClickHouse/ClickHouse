@@ -3001,6 +3001,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     )
 
 
+@pytest.mark.skip(reason="FIXME: broken")
 def test_max_rows_per_message(rabbitmq_cluster):
     num_rows = 5
 

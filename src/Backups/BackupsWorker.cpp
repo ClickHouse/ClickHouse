@@ -338,20 +338,20 @@ void BackupsWorker::doBackup(
         }
 
         size_t num_files = 0;
-        size_t num_processed_files = 0;
+        UInt64 total_size = 0;
+        size_t num_entries = 0;
         UInt64 uncompressed_size = 0;
         UInt64 compressed_size = 0;
-        UInt64 processed_files_size = 0;
 
         /// Finalize backup (write its metadata).
         if (!backup_settings.internal)
         {
             backup->finalizeWriting();
             num_files = backup->getNumFiles();
-            num_processed_files = backup->getNumProcessedFiles();
+            total_size = backup->getTotalSize();
+            num_entries = backup->getNumEntries();
             uncompressed_size = backup->getUncompressedSize();
             compressed_size = backup->getCompressedSize();
-            processed_files_size = backup->getProcessedFilesSize();
         }
 
         /// Close the backup.
@@ -359,7 +359,7 @@ void BackupsWorker::doBackup(
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
         setStatus(backup_id, BackupStatus::BACKUP_CREATED);
-        setNumFilesAndSize(backup_id, num_files, num_processed_files, processed_files_size, uncompressed_size, compressed_size);
+        setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
     }
     catch (...)
     {
@@ -583,10 +583,12 @@ void BackupsWorker::doRestore(
         setNumFilesAndSize(
             restore_id,
             backup->getNumFiles(),
-            backup->getNumProcessedFiles(),
-            backup->getProcessedFilesSize(),
+            backup->getTotalSize(),
+            backup->getNumEntries(),
             backup->getUncompressedSize(),
-            backup->getCompressedSize());
+            backup->getCompressedSize(),
+            backup->getNumReadFiles(),
+            backup->getNumReadBytes());
     }
     catch (...)
     {
@@ -667,7 +669,9 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
 }
 
 
-void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, size_t num_processed_files, UInt64 processed_files_size, UInt64 uncompressed_size, UInt64 compressed_size)
+void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
+                                       UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes)
+
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -676,10 +680,12 @@ void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, size
 
     auto & info = it->second;
     info.num_files = num_files;
-    info.num_processed_files = num_processed_files;
-    info.processed_files_size = processed_files_size;
+    info.total_size = total_size;
+    info.num_entries = num_entries;
     info.uncompressed_size = uncompressed_size;
     info.compressed_size = compressed_size;
+    info.num_read_files = num_read_files;
+    info.num_read_bytes = num_read_bytes;
 }
 
 
