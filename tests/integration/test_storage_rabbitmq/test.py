@@ -2952,6 +2952,7 @@ def test_rabbitmq_address(rabbitmq_cluster):
     instance2.query("drop table rabbit_in sync")
     instance2.query("drop table rabbit_out sync")
 
+
 @pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     instance.query(
@@ -3073,6 +3074,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
     result = instance.query("SELECT * FROM test.view")
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
+
 @pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_row_based_formats(rabbitmq_cluster):
     num_rows = 10
@@ -3169,6 +3171,7 @@ def test_row_based_formats(rabbitmq_cluster):
         result = instance.query("SELECT * FROM test.view")
         assert result == expected
 
+
 @pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_1(rabbitmq_cluster):
     instance.query(
@@ -3229,6 +3232,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
         ["30", "300"],
         ["40", "400"],
     ]
+
 
 @pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_2(rabbitmq_cluster):
