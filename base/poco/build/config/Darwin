@@ -1,9 +1,0 @@
-#
-# Darwin
-#
-# Build settings for Mac OS X 10.9 (clang++, libc++, x86_64)
-# The build settings defined in this file are compatible
-# with XCode C++ projects.
-# 
-
-include $(POCO_BASE)/build/config/Darwin-clang-libc++

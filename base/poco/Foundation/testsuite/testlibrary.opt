@@ -1,1 +1,0 @@
-SYMBOL_VECTOR=(pocoInitializeLibrary=procedure,pocoUninitializeLibrary=procedure,pocoBuildManifest=procedure,gimmeFive=procedure)
