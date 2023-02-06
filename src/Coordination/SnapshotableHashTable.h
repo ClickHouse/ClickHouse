@@ -8,6 +8,8 @@
 #include <atomic>
 #include <iostream>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -317,6 +319,17 @@ public:
     uint64_t getApproximateDataSize() const
     {
         return approximate_data_size;
+    }
+
+    void recalculateDataSize()
+    {
+        approximate_data_size = 0;
+        for (auto & node : list)
+        {
+            node.value.recalculateSize();
+            approximate_data_size += node.key.size;
+            approximate_data_size += node.value.sizeInBytes();
+        }
     }
 
     uint64_t keyArenaSize() const
