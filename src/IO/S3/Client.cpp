@@ -76,6 +76,67 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
     return wrapped_strategy->RequestBookkeeping(httpResponseOutcome, lastError);
 }
 
+namespace
+{
+
+void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_config)
+{
+    if (!client_config.retryStrategy)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The S3 client can only be used with Client::RetryStrategy, define it in the client configuration");
+
+    assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
+}
+
+}
+
+std::unique_ptr<Client> Client::create(
+    size_t max_redirects_,
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const Aws::Client::ClientConfiguration & client_configuration,
+    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+    bool use_virtual_addressing)
+{
+    verifyClientConfiguration(client_configuration);
+    return std::unique_ptr<Client>(
+        new Client(max_redirects_, credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
+}
+
+std::unique_ptr<Client> Client::create(const Client & other)
+{
+    return std::unique_ptr<Client>(new Client(other));
+}
+
+Client::Client(
+    size_t max_redirects_,
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const Aws::Client::ClientConfiguration & client_configuration,
+    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+    bool use_virtual_addressing)
+    : Aws::S3::S3Client(credentials_provider, client_configuration, std::move(sign_payloads), use_virtual_addressing)
+    , max_redirects(max_redirects_)
+    , log(&Poco::Logger::get("S3Client"))
+{
+    auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
+    endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
+    std::string endpoint;
+    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
+    detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
+
+    cache = std::make_shared<ClientCache>();
+    ClientCacheRegistry::instance().registerClient(cache);
+}
+
+Client::Client(const Client & other)
+    : Aws::S3::S3Client(other)
+    , explicit_region(other.explicit_region)
+    , detect_region(other.detect_region)
+    , max_redirects(other.max_redirects)
+    , log(&Poco::Logger::get("S3Client"))
+{
+    cache = std::make_shared<ClientCache>(*other.cache);
+    ClientCacheRegistry::instance().registerClient(cache);
+}
+
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
 {
     if (detect_region)
