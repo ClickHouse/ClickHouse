@@ -139,3 +139,72 @@ Expression ((Project names + (Projection + (Change column names to column identi
 2	0	0
 2	1	2
 2	2	4
+-- ARRAY JOIN: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs
+-- query
+SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT *
+    FROM VALUES('Hello', 'World', 'Goodbye')
+) AS words
+ARRAY JOIN [0, 1] AS arr
+-- explain
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression (Projection)
+        ArrayJoin (ARRAY JOIN)
+          Expression ((ARRAY JOIN actions + (Change column names to column identifiers + Project names)))
+            Distinct (DISTINCT)
+              Distinct (Preliminary DISTINCT)
+                Expression ((Projection + Change column names to column identifiers))
+                  ReadFromStorage (Values)
+-- execute
+Hello
+World
+Goodbye
+-- WITH FILL: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs
+-- query
+SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT *
+    FROM values('id UInt8', 0, 2)
+    ORDER BY id ASC WITH FILL
+)
+-- explain
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + (Change column names to column identifiers + Project names)))
+        Filling
+          Distinct (DISTINCT)
+            Sorting (Sorting for ORDER BY)
+              Expression (Before ORDER BY)
+                Distinct (Preliminary DISTINCT)
+                  Expression ((Projection + Change column names to column identifiers))
+                    ReadFromStorage (Values)
+-- execute
+0
+1
+2
+-- WHERE with arrayJoin(): do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs
+-- query
+SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT ['Istanbul', 'Berlin', 'Bensheim'] AS cities
+)
+WHERE arrayJoin(cities) IN ['Berlin', 'Bensheim']
+-- explain
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression (Projection)
+        Filter ((WHERE + (Change column names to column identifiers + Project names)))
+          Distinct (DISTINCT)
+            Distinct (Preliminary DISTINCT)
+              Expression ((Projection + Change column names to column identifiers))
+                ReadFromStorage (SystemOne)
+-- execute
+['Istanbul','Berlin','Bensheim']

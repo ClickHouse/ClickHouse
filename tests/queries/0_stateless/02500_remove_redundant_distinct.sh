@@ -83,3 +83,32 @@ FROM
     )
 )"
 run_query "$query"
+
+echo "-- ARRAY JOIN: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs"
+query="SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT *
+    FROM VALUES('Hello', 'World', 'Goodbye')
+) AS words
+ARRAY JOIN [0, 1] AS arr"
+run_query "$query"
+
+echo "-- WITH FILL: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs"
+query="SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT *
+    FROM values('id UInt8', 0, 2)
+    ORDER BY id ASC WITH FILL
+)"
+run_query "$query"
+
+echo "-- WHERE with arrayJoin(): do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs"
+query="SELECT DISTINCT *
+FROM
+(
+    SELECT DISTINCT ['Istanbul', 'Berlin', 'Bensheim'] AS cities
+)
+WHERE arrayJoin(cities) IN ['Berlin', 'Bensheim']"
+run_query "$query"

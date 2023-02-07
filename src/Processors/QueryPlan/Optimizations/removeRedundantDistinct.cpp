@@ -1,7 +1,9 @@
 #include <memory>
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -77,15 +79,30 @@ namespace
         {
             const IQueryPlanStep * current_step = node->step.get();
 
-            /// don't try to remove DISTINCT after union/join/intersect/except
-            if (typeid_cast<const UnionStep *>(current_step) || typeid_cast<const JoinStep *>(current_step)
-                || typeid_cast<const IntersectOrExceptStep *>(current_step))
+            /// don't try to remove DISTINCT after step with many inputs, like union/join/intersect/except
+            if (current_step->getInputStreams().size() > 1)
+                break;
+
+            /// do not remove DISTINCT if there are steps which can generate new rows
+            if (typeid_cast<const ArrayJoinStep *>(current_step) || typeid_cast<const FillingStep *>(current_step))
                 break;
 
             if (const auto * const expr = typeid_cast<const ExpressionStep *>(current_step); expr)
+            {
+                /// arrayJoin() can generate new rows
+                if (expr->getExpression()->hasArrayJoin())
+                    break;
+
                 dag_stack.push_back(expr->getExpression());
+            }
             if (const auto * const filter = typeid_cast<const FilterStep *>(current_step); filter)
+            {
+                /// arrayJoin() can generate new rows
+                if (filter->getExpression()->hasArrayJoin())
+                    break;
+
                 dag_stack.push_back(filter->getExpression());
+            }
 
             node = node->children.front();
             inner_distinct_step = typeid_cast<DistinctStep *>(node->step.get());
