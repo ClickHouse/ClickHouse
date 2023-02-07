@@ -730,7 +730,7 @@ bool StorageBuffer::optimize(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type Buffer");
 
     if (cleanup)
-        throw Exception("CLEANUP cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
     flushAllBuffers(false);
     return true;

@@ -709,8 +709,8 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     const auto columns = metadata.getColumns().getAllPhysical();
 
     if (!is_deleted_column.empty() && mode != MergingParams::Replacing)
-        throw Exception("is_deleted column for MergeTree cannot be specified in modes except Replacing.",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "is_deleted column for MergeTree cannot be specified in modes except Replacing.");
 
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
         throw Exception(ErrorCodes::LOGICAL_ERROR,

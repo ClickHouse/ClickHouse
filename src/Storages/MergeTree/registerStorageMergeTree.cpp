@@ -443,7 +443,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>() && is_extended_storage_def)
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "is_deleted column name must be an unquoted string {}", getMergeTreeVerboseHelp(is_extended_storage_def));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "is_deleted column name must be an unquoted string {}", verbose_help_message);
             --arg_cnt;
         }
 
