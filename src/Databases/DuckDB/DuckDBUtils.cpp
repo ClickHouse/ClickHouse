@@ -18,7 +18,7 @@ namespace ErrorCodes
 void processDuckDBError(const String & message, bool throw_on_error)
 {
     if (throw_on_error)
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, message);
+        throw Exception::createDeprecated(message, ErrorCodes::PATH_ACCESS_DENIED);
     else
         LOG_ERROR(&Poco::Logger::get("DuckDBEngine"), fmt::runtime(message));
 }

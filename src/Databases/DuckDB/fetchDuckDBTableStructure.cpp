@@ -67,9 +67,6 @@ std::shared_ptr<NamesAndTypesList> fetchDuckDBTableStructure(duckdb::DuckDB * du
 
     auto chunk = result->Fetch();
 
-    if (!chunk)
-        std::cout << "\n\n\n\n\nDUCKDB (fetchDuckDBTableStructure): CHUNK IS EMPTY\n\n\n\n\n";
-
     while (chunk)
     {
         for (size_t idx = 0; idx < chunk->size(); ++idx)

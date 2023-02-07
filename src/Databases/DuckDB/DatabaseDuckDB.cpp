@@ -79,9 +79,6 @@ std::unordered_set<std::string> DatabaseDuckDB::fetchTablesList() const
 
     auto chunk = result->Fetch();
 
-    if (!chunk)
-        std::cout << "\n\n\n\n\nDUCKDB: CHUNK IS EMPTY\n\n\n\n\n";
-
     while (chunk)
     {
         for (size_t idx = 0; idx < chunk->size(); ++idx)
@@ -89,8 +86,6 @@ std::unordered_set<std::string> DatabaseDuckDB::fetchTablesList() const
 
         chunk = result->Fetch();
     }
-
-    std::cout << "\n\n\n\n\nDUCKDB: TABLES SIZE: " << tables.size() << "\n\n\n\n\n";
 
     return tables;
 }

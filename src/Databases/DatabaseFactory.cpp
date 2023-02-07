@@ -474,7 +474,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception("DuckDB database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DuckDB database requires 1 argument: database path");
 
         const auto & arguments = engine->arguments->children;
 
