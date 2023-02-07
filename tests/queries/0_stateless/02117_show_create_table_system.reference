@@ -923,6 +923,7 @@ CREATE TABLE system.replication_queue
     `is_currently_executing` UInt8,
     `num_tries` UInt32,
     `last_exception` String,
+    `last_exception_time` DateTime,
     `last_attempt_time` DateTime,
     `num_postponed` UInt32,
     `postpone_reason` String,
