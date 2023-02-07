@@ -1306,7 +1306,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         if (!limit.empty())
             query += " LIMIT " + limit;
 
-        query += "FORMAT Native";
+        query += " FORMAT Native";
 
         ParserQuery p_query(query.data() + query.size());
 
