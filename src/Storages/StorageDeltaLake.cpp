@@ -94,7 +94,7 @@ void JsonMetadataGetter::init(ContextPtr context)
     }
 }
 
-std::vector<String> JsonMetadataGetter::getJsonLogFiles()
+std::vector<String> JsonMetadataGetter::getJsonLogFiles() const
 {
     const auto & client = base_configuration.client;
     const auto table_path = base_configuration.url.key;
