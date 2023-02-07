@@ -165,7 +165,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
     if (!storage || !mark_type)
     {
         /// Didn't find any data or mark file, suppose that part is empty.
-        return withBytesAndRows(0, 0);
+        return withBytesAndRowsOnDisk(0, 0);
     }
 
     part_storage = std::move(storage);
@@ -181,7 +181,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
     if (!mark_type)
     {
         /// Didn't find any mark file, suppose that part is empty.
-        return withBytesAndRows(0, 0);
+        return withBytesAndRowsOnDisk(0, 0);
     }
 
     part_type = mark_type->part_type;
