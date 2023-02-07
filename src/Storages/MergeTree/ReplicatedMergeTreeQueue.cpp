@@ -2478,7 +2478,6 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
 {
-    std::lock_guard lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));

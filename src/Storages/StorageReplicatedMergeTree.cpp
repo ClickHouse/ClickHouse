@@ -7587,7 +7587,6 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         if (partial_shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
     }
-    
     return true;
 }
 
