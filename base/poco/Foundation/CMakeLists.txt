@@ -1,14 +1,25 @@
 # Foundation (pcre)
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-
 file (GLOB SRCS_PCRE src/pcre_*.c)
 
 add_library (_poco_foundation_pcre ${SRCS_PCRE})
 add_library (Poco::Foundation::PCRE ALIAS _poco_foundation_pcre)
 
-target_compile_options (_poco_foundation_pcre PRIVATE -Wno-sign-compare)
+# TODO: remove these warning exclusions
+target_compile_options (_poco_foundation_pcre
+    PRIVATE
+        -Wno-cast-align
+        -Wno-cast-qual
+        -Wno-comma
+        -Wno-conditional-uninitialized
+        -Wno-extra-semi-stmt
+        -Wno-implicit-fallthrough
+        -Wno-reserved-identifier
+        -Wno-sign-compare
+        -Wno-unknown-pragmas
+        -Wno-unreachable-code-break
+        -Wno-unused-macros
+)
 
 # Foundation
 
@@ -172,21 +183,37 @@ set (SRCS
 add_library (_poco_foundation ${SRCS})
 add_library (Poco::Foundation ALIAS _poco_foundation)
 
+# TODO: remove these warning exclusions
 target_compile_options (_poco_foundation
     PRIVATE
+        -Wno-array-bounds
         -Wno-atomic-implicit-seq-cst
+        -Wno-cast-align
+        -Wno-cast-qual
+        -Wno-class-varargs
+        -Wno-covered-switch-default
         -Wno-deprecated
         -Wno-extra-semi-stmt
-        -Wno-zero-as-null-pointer-constant
+        -Wno-implicit-fallthrough
         -Wno-implicit-int-float-conversion
+        -Wno-misleading-indentation
+        -Wno-missing-noreturn
+        -Wno-old-style-cast
+        -Wno-redundant-parens
+        -Wno-reserved-identifier
+        -Wno-reserved-macro-identifier
+        -Wno-shadow
+        -Wno-shorten-64-to-32
+        -Wno-sign-compare
+        -Wno-suggest-destructor-override
+        -Wno-suggest-override
         -Wno-thread-safety-analysis
         -Wno-thread-safety-negative
-)
-
-target_compile_options (_poco_foundation
-    PRIVATE
-        -Wno-sign-compare
+        -Wno-unreachable-code-return
+        -Wno-unused-exception-parameter
+        -Wno-unused-macros
         -Wno-unused-parameter
+        -Wno-zero-as-null-pointer-constant
 )
 
 target_compile_definitions (_poco_foundation
