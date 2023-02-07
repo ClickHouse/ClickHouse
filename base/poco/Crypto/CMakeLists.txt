@@ -1,3 +1,6 @@
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+
 if (ENABLE_SSL)
     file (GLOB SRCS src/*.cpp)
 
