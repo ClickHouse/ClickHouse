@@ -47,6 +47,8 @@ public:
 
     size_t getImplementationBufferOffset() const;
 
+    const StoredObject & getCurrentObject() const { return current_object; }
+
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
@@ -68,10 +70,7 @@ private:
 
     size_t read_until_position = 0;
 
-    String current_file_path;
-    size_t current_file_size = 0;
-
-    std::optional<StoredObject> current_object;
+    StoredObject current_object;
 
     bool with_cache;
 
