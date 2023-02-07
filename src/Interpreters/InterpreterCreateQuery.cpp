@@ -925,26 +925,24 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
     if (create.temporary)
     {
-        // if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
-        //     throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables can only be created with ENGINE = Memory, not {}",
-        //         create.storage->engine->name);
-
         /// It's possible if some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not.
         /// It makes sense when default_table_engine setting is used, but not for temporary tables.
         /// For temporary tables we ignore this setting to allow CREATE TEMPORARY TABLE query without specifying ENGINE
-        /// even if setting is set to MergeTree or something like that (otherwise MergeTree will be substituted and query will fail).
-        /*
-        if (create.storage && !create.storage->engine)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table: must be either ENGINE = Memory or empty");
-        */
 
         if (!create.cluster.empty())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with ON CLUSTER clause");
 
-        if (create.storage && create.storage->engine && create.storage->engine->name.starts_with("Replicated"))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated table engines");
-
-        if (!create.storage)
+        if (create.storage)
+        {
+            if (create.storage->engine)
+            {
+                if (create.storage->engine->name.starts_with("Replicated"))
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated table engines");
+            }
+            else
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table");
+        }
+        else
         {
             auto engine_ast = std::make_shared<ASTFunction>();
             engine_ast->name = "Memory";
