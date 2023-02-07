@@ -40,6 +40,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -896,7 +897,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMerge(
     if (!canEnqueueBackgroundTask())
     {
         if (out_disable_reason)
-            *out_disable_reason = "Current background tasks memory usage is more than the limit";
+            *out_disable_reason = fmt::format("Current background tasks memory usage ({}) is more than the limit ({})",
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
+                formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()));
     }
     else if (partition_id.empty())
     {
