@@ -77,17 +77,22 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto f_stat = data(place).getFStatistic();
-        if (std::isinf(f_stat) || isNaN(f_stat) || f_stat < 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "F statistic is not defined or infinite for these arguments");
+
+        auto & column_tuple = assert_cast<ColumnTuple &>(to);
+        auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
+        auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
+
+        if (unlikely(std::isinf(f_stat) || isNaN(f_stat) || f_stat < 0))
+        {
+            column_stat.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            column_value.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            return;
+        }
 
         auto p_value = data(place).getPValue(f_stat);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
-
-        auto & column_tuple = assert_cast<ColumnTuple &>(to);
-        auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
-        auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
 
         column_stat.getData().push_back(f_stat);
         column_value.getData().push_back(p_value);
