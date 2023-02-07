@@ -1,5 +1,8 @@
 # Foundation (pcre)
 
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+
 file (GLOB SRCS_PCRE src/pcre_*.c)
 
 add_library (_poco_foundation_pcre ${SRCS_PCRE})
