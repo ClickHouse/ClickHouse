@@ -85,6 +85,7 @@ public:
     /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
+    const DataTypes & getArgumentTypes() const;
     ColumnsWithTypeAndName getArgumentColumns() const;
 
     /// Returns true if function node has window, false otherwise
@@ -143,6 +144,11 @@ public:
       * Function name must be updated accordingly.
       */
     void resolveAsFunction(FunctionBasePtr function_value);
+
+    void resolveAsFunction(const FunctionOverloadResolverPtr & resolver)
+    {
+        resolveAsFunction(resolver->build(getArgumentColumns()));
+    }
 
     /** Resolve function node as aggregate function.
       * It is important that function name is updated with resolved function name.

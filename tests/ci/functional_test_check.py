@@ -7,18 +7,17 @@ import os
 import subprocess
 import sys
 import atexit
+from pathlib import Path
 from typing import List, Tuple
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from pr_info import FORCE_TESTS_LABEL, PRInfo
 from build_download_helper import download_all_deb_packages
-from download_release_packages import download_last_release
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
+from clickhouse_helper import (
+    ClickHouseHelper,
+    mark_flaky_tests,
+    prepare_tests_results_for_clickhouse,
+)
 from commit_status_helper import (
     post_commit_status,
     get_commit,
@@ -26,14 +25,17 @@ from commit_status_helper import (
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from clickhouse_helper import (
-    ClickHouseHelper,
-    mark_flaky_tests,
-    prepare_tests_results_for_clickhouse,
-)
-from stopwatch import Stopwatch
+from docker_pull_helper import get_image_with_version
+from download_release_packages import download_last_release
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import FORCE_TESTS_LABEL, PRInfo
+from report import TestResults, read_test_results
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
 NO_CHANGES_MSG = "Nothing to run"
 
@@ -46,7 +48,8 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_DATABASE_ORDINARY=1")
     if "wide parts enabled" in check_name:
         result.append("USE_POLYMORPHIC_PARTS=1")
-
+    if "ParallelReplicas" in check_name:
+        result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
@@ -126,8 +129,8 @@ def get_tests_to_run(pr_info):
 def process_results(
     result_folder: str,
     server_log_path: str,
-) -> Tuple[str, str, List[Tuple[str, str]], List[str]]:
-    test_results = []  # type: List[Tuple[str, str]]
+) -> Tuple[str, str, TestResults, List[str]]:
+    test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of result_folder.
@@ -161,18 +164,25 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = os.path.join(result_folder, "test_results.tsv")
+    try:
+        results_path = Path(result_folder) / "test_results.tsv"
 
-    if os.path.exists(results_path):
-        logging.info("Found test_results.tsv")
-    else:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
-        return "error", "Not found test_results.tsv", test_results, additional_files
+        if results_path.exists():
+            logging.info("Found test_results.tsv")
+        else:
+            logging.info("Files in result folder %s", os.listdir(result_folder))
+            return "error", "Not found test_results.tsv", test_results, additional_files
 
-    with open(results_path, "r", encoding="utf-8") as results_file:
-        test_results = list(csv.reader(results_file, delimiter="\t"))  # type: ignore
-    if len(test_results) == 0:
-        return "error", "Empty test_results.tsv", test_results, additional_files
+        test_results = read_test_results(results_path)
+        if len(test_results) == 0:
+            return "error", "Empty test_results.tsv", test_results, additional_files
+    except Exception as e:
+        return (
+            "error",
+            f"Cannot parse test_results.tsv ({e})",
+            test_results,
+            additional_files,
+        )
 
     return state, description, test_results, additional_files
 
@@ -195,7 +205,7 @@ def parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -346,16 +356,34 @@ if __name__ == "__main__":
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            gh, pr_info.sha, check_name_with_group, description, state, report_url
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status(
+                gh,
+                pr_info.sha,
+                check_name_with_group,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status(
+                gh, pr_info.sha, check_name_with_group, description, state, report_url
+            )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                state,
+                report_url,
+            )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -373,7 +401,15 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

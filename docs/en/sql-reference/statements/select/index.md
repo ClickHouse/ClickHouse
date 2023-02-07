@@ -282,5 +282,3 @@ Other ways to make settings see [here](../../../operations/settings/index.md).
 ``` sql
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/)<!--hide-->

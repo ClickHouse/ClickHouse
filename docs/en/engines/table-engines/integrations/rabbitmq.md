@@ -77,9 +77,12 @@ Optional parameters:
 - `rabbitmq_password` - RabbitMQ password.
 - `rabbitmq_commit_on_select` - Commit messages when select query is made. Default: `false`.
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
+- `rabbitmq_empty_queue_backoff_start` — A start backoff point to reschedule read if the rabbitmq queue is empty.
+- `rabbitmq_empty_queue_backoff_end` — An end backoff point to reschedule read if the rabbitmq queue is empty.
 
 
-SSL connection:
+
+  * [ ] SSL connection:
 
 Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
 The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
@@ -196,6 +199,3 @@ The number of rows in one RabbitMQ message depends on whether the format is row-
 
 - For row-based formats the number of rows in one RabbitMQ message can be controlled by setting `rabbitmq_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
-
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->

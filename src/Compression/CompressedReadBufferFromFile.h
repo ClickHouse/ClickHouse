@@ -14,7 +14,7 @@ class MMappedFileCache;
 
 
 /// Unlike CompressedReadBuffer, it can do seek.
-class CompressedReadBufferFromFile : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
+class CompressedReadBufferFromFile final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
       /** At any time, one of two things is true:

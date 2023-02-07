@@ -138,7 +138,7 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
-bool StorageMerge::canMoveConditionsToPrewhere() const
+bool StorageMerge::tableSupportsPrewhere() const
 {
     /// NOTE: This check is used during query analysis as condition for applying
     /// "move to PREWHERE" optimization. However, it contains a logical race:
@@ -146,9 +146,9 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
     /// will appear after this check and before calling "read" method, the optimized query may fail.
     /// Since it's quite rare case, we just ignore this possibility.
     const auto & table_doesnt_support_prewhere = getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); });
-    bool can_move = (table_doesnt_support_prewhere == nullptr);
+    bool supports_prewhere = (table_doesnt_support_prewhere == nullptr);
 
-    if (!can_move)
+    if (!supports_prewhere)
         return false;
 
     if (!getInMemoryMetadataPtr())
@@ -165,9 +165,9 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
     {
         const auto & metadata_ptr = table->getInMemoryMetadataPtr();
         if (!metadata_ptr)
-            can_move = false;
+            supports_prewhere = false;
 
-        if (!can_move)
+        if (!supports_prewhere)
             return;
 
         for (const auto & column : metadata_ptr->getColumns().getAll())
@@ -175,13 +175,18 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
             const auto * src_type = column_types[column.name];
             if (src_type && !src_type->equals(*column.type))
             {
-                can_move = false;
+                supports_prewhere = false;
                 return;
             }
         }
     });
 
-    return can_move;
+    return supports_prewhere;
+}
+
+bool StorageMerge::canMoveConditionsToPrewhere() const
+{
+    return tableSupportsPrewhere();
 }
 
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
@@ -294,6 +299,12 @@ void StorageMerge::read(
       */
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
+
+    if (query_info.prewhere_info && !tableSupportsPrewhere())
+        throw DB::Exception(
+            DB::ErrorCodes::ILLEGAL_PREWHERE,
+            "Cannot use PREWHERE with table {}, probably some columns don't have same type or an underlying table doesn't support PREWHERE",
+            getStorageID().getTableName());
 
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
@@ -438,7 +449,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
         /// If sampling requested, then check that table supports it.
         if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
-            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
         Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -488,7 +499,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
             column_names_as_aliases = alias_actions->getRequiredColumns().getNames();
             if (column_names_as_aliases.empty())
-                column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()));
+                column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
         }
 
         auto source_pipeline = createSources(
@@ -574,7 +585,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
         QueryPlan plan;
         if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
@@ -653,7 +664,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
-            column.type = std::make_shared<DataTypeString>();
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(database_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -671,7 +682,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
-            column.type = std::make_shared<DataTypeString>();
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(table_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -728,7 +739,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
                 continue;
 
             if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
-                throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
+                throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE.", storage->getName());
 
             if (storage.get() != this)
             {
@@ -838,10 +849,9 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                    backQuoteIfNeed(command.column_name), toString(deps_mv));
             }
         }
     }
@@ -921,11 +931,11 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     if (const auto * func = node->as<ASTFunction>(); func && func->name == "REGEXP")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception("REGEXP in Merge ENGINE takes only one argument", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "REGEXP in Merge ENGINE takes only one argument");
 
         auto * literal = func->arguments->children[0]->as<ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::Which::String || literal->value.safeGet<String>().empty())
-            throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for REGEXP in Merge ENGINE should be a non empty String Literal");
 
         return {true, func->arguments->children[0]};
     }
@@ -946,9 +956,9 @@ void registerStorageMerge(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
-            throw Exception("Storage Merge requires exactly 2 parameters"
-                " - name of source database and regexp for table names.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage Merge requires exactly 2 parameters - name "
+                            "of source database and regexp for table names.");
 
         auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
@@ -970,7 +980,9 @@ void registerStorageMerge(StorageFactory & factory)
 
 NamesAndTypesList StorageMerge::getVirtuals() const
 {
-    NamesAndTypesList virtuals{{"_database", std::make_shared<DataTypeString>()}, {"_table", std::make_shared<DataTypeString>()}};
+    NamesAndTypesList virtuals{
+        {"_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto first_table = getFirstTable([](auto && table) { return table; });
     if (first_table)

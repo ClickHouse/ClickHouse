@@ -544,7 +544,7 @@ public:
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
                 "Not all data was written for asynchronous IO on file {}. returned: {}",
                 file_path,
-                std::to_string(bytes_written));
+                bytes_written);
 
         ProfileEvents::increment(ProfileEvents::FileSync);
 
