@@ -60,9 +60,7 @@ struct ConnectionTimeouts
 
     /// Timeouts for the case when we will try many addresses in a loop.
     static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings);
-    static ConnectionTimeouts getHTTPTimeouts(
-        const Settings & settings,
-        Poco::Timespan http_keep_alive_timeout);
+    static ConnectionTimeouts getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout);
 };
 
 }
