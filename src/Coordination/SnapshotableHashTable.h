@@ -202,7 +202,7 @@ public:
             list.erase(list_itr);
         }
 
-        updateDataSize(ERASE, key.size(), 0, old_data_size);
+        updateDataSize(ERASE, key.size(), 0, old_data_size, !snapshot_mode);
         return true;
     }
 
