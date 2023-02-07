@@ -1332,6 +1332,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
             configuration.format = checkAndGetLiteralArgument<String>(engine_args.back(), "format");
         }
     }
+    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty();
 
     if (configuration.format == "auto")
         configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.key, true);
