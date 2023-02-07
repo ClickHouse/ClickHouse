@@ -72,6 +72,9 @@ WriteBufferFromFile::WriteBufferFromFile(
 
 WriteBufferFromFile::~WriteBufferFromFile()
 {
+    if (fd < 0)
+        return;
+
     finalize();
     int err = ::close(fd);
     /// Everything except for EBADF should be ignored in dtor, since all of
