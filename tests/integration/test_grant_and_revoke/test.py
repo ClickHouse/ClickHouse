@@ -3,7 +3,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+instance = cluster.add_instance(
+    "instance",
+    user_configs=[
+        "configs/users.d/users.xml",
+    ],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -377,8 +382,6 @@ def test_introspection():
     instance.query("GRANT SELECT ON test.table TO A")
     instance.query("GRANT CREATE ON *.* TO B WITH GRANT OPTION")
 
-    all_access_except_show_named_collections = "SHOW, SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, BACKUP, KILL QUERY, KILL TRANSACTION, MOVE PARTITION BETWEEN SHARDS, CREATE USER, ALTER USER, DROP USER, CREATE ROLE, ALTER ROLE, DROP ROLE, ROLE ADMIN, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, CREATE QUOTA, ALTER QUOTA, DROP QUOTA, CREATE SETTINGS PROFILE, ALTER SETTINGS PROFILE, DROP SETTINGS PROFILE, SHOW ACCESS, SYSTEM, dictGet, INTROSPECTION, SOURCES, CLUSTER"
-
     assert instance.query("SHOW USERS") == TSV(["A", "B", "default"])
     assert instance.query("SHOW CREATE USERS A") == TSV(["CREATE USER A"])
     assert instance.query("SHOW CREATE USERS B") == TSV(["CREATE USER B"])
@@ -415,7 +418,7 @@ def test_introspection():
         [
             "GRANT SELECT ON test.table TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
-            f"GRANT {all_access_except_show_named_collections} ON *.* TO default WITH GRANT OPTION",
+            "GRANT ALL ON *.* TO default WITH GRANT OPTION",
         ]
     )
 
@@ -436,7 +439,7 @@ def test_introspection():
         [
             "GRANT SELECT ON test.table TO A",
             "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
-            f"GRANT {all_access_except_show_named_collections} ON *.* TO default WITH GRANT OPTION",
+            "GRANT ALL ON *.* TO default WITH GRANT OPTION",
         ]
     )
 
@@ -451,7 +454,7 @@ def test_introspection():
     expected_access2 = (
         "GRANT SELECT ON test.table TO A\n"
         "GRANT CREATE ON *.* TO B WITH GRANT OPTION\n"
-        f"GRANT {all_access_except_show_named_collections} ON *.* TO default WITH GRANT OPTION"
+        "GRANT ALL ON *.* TO default WITH GRANT OPTION\n"
     )
     assert expected_access1 in instance.query("SHOW ACCESS")
     assert expected_access2 in instance.query("SHOW ACCESS")
