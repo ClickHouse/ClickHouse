@@ -11,6 +11,8 @@ struct FileCacheKey
 
     std::string toString() const;
 
+    FileCacheKey() = default;
+
     explicit FileCacheKey(const std::string & path);
 
     explicit FileCacheKey(const UInt128 & key_);

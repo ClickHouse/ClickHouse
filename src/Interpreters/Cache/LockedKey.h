@@ -2,6 +2,7 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/CacheMetadata.h>
 #include <Interpreters/Cache/Guards.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 namespace DB
 {
@@ -76,22 +77,20 @@ private:
 
 struct KeysQueue
 {
-    std::unordered_set<FileCacheKey> keys;
-    std::mutex mutex;
+    ConcurrentBoundedQueue<FileCacheKey> keys{100000}; /// TODO: add a setting for the size
 
     void add(const FileCacheKey & key)
     {
-        std::lock_guard lock(mutex);
-        keys.insert(key);
+        [[maybe_unused]] const auto pushed = keys.tryPush(key);
+        chassert(pushed);
     }
 
     void clear(std::function<void(const FileCacheKey &)> && func)
     {
-        std::lock_guard lock(mutex);
-        for (auto it = keys.begin(); it != keys.end();)
+        FileCacheKey key;
+        while (keys.tryPop(key))
         {
-            func(*it);
-            it = keys.erase(it);
+            func(key);
         }
     }
 };
