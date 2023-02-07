@@ -7,7 +7,9 @@
 #include <unordered_map>
 #include <utility>
 
-namespace DB {
+
+namespace DB
+{
 
 // Collection of `CancelTokens` of a thread group responsible for a specific cancellable query or task.
 // Note that adding a thread into multiple groups simultaneously is considered an undefined behaviour.

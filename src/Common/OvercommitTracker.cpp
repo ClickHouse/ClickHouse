@@ -7,14 +7,6 @@
 #include <Interpreters/ProcessList.h>
 #include <fmt/core.h>
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int MEMORY_LIMIT_EXCEEDED;
-    }
-}
-
 namespace CurrentMetrics
 {
     extern const Metric ThreadsInOvercommitTracker;
