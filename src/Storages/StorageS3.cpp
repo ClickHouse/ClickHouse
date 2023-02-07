@@ -11,6 +11,7 @@
 #include <Functions/FunctionsConversion.h>
 
 #include <IO/S3Common.h>
+#include <IO/S3/Requests.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -51,10 +52,6 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -110,6 +107,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 class IOutputFormat;
@@ -136,7 +134,7 @@ class StorageS3Source::DisclosedGlobIterator::Impl : WithContext
 {
 public:
     Impl(
-        const Aws::S3::S3Client & client_,
+        const S3::Client & client_,
         const S3::URI & globbed_uri_,
         ASTPtr & query_,
         const Block & virtual_header_,
@@ -145,7 +143,7 @@ public:
         Strings * read_keys_,
         const S3Settings::RequestSettings & request_settings_)
         : WithContext(context_)
-        , client(client_)
+        , client(S3::Client::create(client_))
         , globbed_uri(globbed_uri_)
         , query(query_)
         , virtual_header(virtual_header_)
@@ -263,6 +261,9 @@ private:
             outcome_future = listObjectsAsync();
         }
 
+        if (request_settings.throw_on_zero_files_match && result_batch.empty())
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can not match any files using prefix {}", request.GetPrefix());
+
         KeysWithInfo temp_buffer;
         temp_buffer.reserve(result_batch.size());
 
@@ -349,7 +350,7 @@ private:
         return list_objects_scheduler([this]
         {
             ProfileEvents::increment(ProfileEvents::S3ListObjects);
-            auto outcome = client.ListObjectsV2(request);
+            auto outcome = client->ListObjectsV2(request);
 
             /// Outcome failure will be handled on the caller side.
             if (outcome.IsSuccess())
@@ -364,7 +365,7 @@ private:
     KeysWithInfo buffer;
     KeysWithInfo::iterator buffer_iter;
 
-    Aws::S3::S3Client client;
+    std::unique_ptr<S3::Client> client;
     S3::URI globbed_uri;
     ASTPtr query;
     Block virtual_header;
@@ -376,7 +377,7 @@ private:
     ObjectInfos * object_infos;
     Strings * read_keys;
 
-    Aws::S3::Model::ListObjectsV2Request request;
+    S3::ListObjectsV2Request request;
     S3Settings::RequestSettings request_settings;
 
     ThreadPool list_objects_pool;
@@ -386,7 +387,7 @@ private:
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
-    const Aws::S3::S3Client & client_,
+    const S3::Client & client_,
     const S3::URI & globbed_uri_,
     ASTPtr query,
     const Block & virtual_header,
@@ -412,7 +413,7 @@ class StorageS3Source::KeysIterator::Impl : WithContext
 {
 public:
     explicit Impl(
-        const Aws::S3::S3Client & client_,
+        const S3::Client & client_,
         const std::string & version_id_,
         const std::vector<String> & keys_,
         const String & bucket_,
@@ -507,7 +508,7 @@ private:
 };
 
 StorageS3Source::KeysIterator::KeysIterator(
-    const Aws::S3::S3Client & client_,
+    const S3::Client & client_,
     const std::string & version_id_,
     const std::vector<String> & keys_,
     const String & bucket_,
@@ -552,7 +553,7 @@ StorageS3Source::StorageS3Source(
     UInt64 max_block_size_,
     const S3Settings::RequestSettings & request_settings_,
     String compression_hint_,
-    const std::shared_ptr<const Aws::S3::S3Client> & client_,
+    const std::shared_ptr<const S3::Client> & client_,
     const String & bucket_,
     const String & version_id_,
     std::shared_ptr<IIterator> file_iterator_,
@@ -1201,7 +1202,7 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
     }
 
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
-    Aws::S3::Model::DeleteObjectsRequest request;
+    S3::DeleteObjectsRequest request;
     request.SetBucket(s3_configuration.uri.bucket);
     request.SetDelete(delkeys);
 
@@ -1211,6 +1212,9 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
         const auto & err = response.GetError();
         throw Exception(ErrorCodes::S3_ERROR, "{}: {}", std::to_string(static_cast<int>(err.GetErrorType())), err.GetMessage());
     }
+
+    for (const auto & error : response.GetResult().GetErrors())
+        LOG_WARNING(&Poco::Logger::get("StorageS3"), "Failed to delete {}, error: {}", error.GetKey(), error.GetMessage());
 }
 
 

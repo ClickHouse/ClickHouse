@@ -5,7 +5,7 @@ sidebar_label: Storing Dictionaries in Memory
 ---
 import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# Storing Dictionaries in Memory 
+# Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -25,7 +25,7 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 
 You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
 
-<CloudDetails /> 
+<CloudDetails />
 
 The configuration looks like this:
 
@@ -299,11 +299,11 @@ Example: The table contains discounts for each advertiser in the format:
 
 To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
-:::warning    
+:::warning
 Values of `range_min` and `range_max` should fit in `Int64` type.
 :::
 
-Example: 
+Example:
 
 ``` xml
 <layout>
@@ -459,7 +459,7 @@ select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-14')) res;
 │ 0.1 │ -- the only one range is matching: 2015-01-01 - Null
 └─────┘
 
-select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res; 
+select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res;
 ┌─res─┐
 │ 0.2 │ -- two ranges are matching, range_min 2015-01-15 (0.2) is bigger than 2015-01-01 (0.1)
 └─────┘
@@ -496,7 +496,7 @@ select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-14')) res;
 │ 0.1 │ -- the only one range is matching: 2015-01-01 - Null
 └─────┘
 
-select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res; 
+select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res;
 ┌─res─┐
 │ 0.1 │ -- two ranges are matching, range_min 2015-01-01 (0.1) is less than 2015-01-15 (0.2)
 └─────┘
@@ -588,7 +588,7 @@ Set a large enough cache size. You need to experiment to select the number of ce
 3.  Assess memory consumption using the `system.dictionaries` table.
 4.  Increase or decrease the number of cells until the required memory consumption is reached.
 
-:::warning    
+:::warning
 Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 :::
 
@@ -660,25 +660,30 @@ This type of storage is for use with composite [keys](../../../sql-reference/dic
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
-Example: The table contains network prefixes and their corresponding AS number and country code:
+**Example**
 
-``` text
-  +-----------|-----|------+
-  | prefix          | asn   | cca2   |
-  +=================+=======+========+
-  | 202.79.32.0/20  | 17501 | NP     |
-  +-----------|-----|------+
-  | 2620:0:870::/48 | 3856  | US     |
-  +-----------|-----|------+
-  | 2a02:6b8:1::/48 | 13238 | RU     |
-  +-----------|-----|------+
-  | 2001:db8::/32   | 65536 | ZZ     |
-  +-----------|-----|------+
+Suppose we have a table in ClickHouse that contains our IP prefixes and mappings:
+
+```sql
+CREATE TABLE my_ip_addresses (
+	prefix String,
+	asn UInt32,
+	cca2 String
+)
+ENGINE = MergeTree
+PRIMARY KEY prefix;
 ```
 
-When using this type of layout, the structure must have a composite key.
+```sql
+INSERT INTO my_ip_addresses VALUES
+	('202.79.32.0/20', 17501, 'NP'),
+    ('2620:0:870::/48', 3856, 'US'),
+    ('2a02:6b8:1::/48', 13238, 'RU'),
+    ('2001:db8::/32', 65536, 'ZZ')
+;
+```
 
-Example:
+Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requires a composite key:
 
 ``` xml
 <structure>
@@ -712,26 +717,29 @@ Example:
 or
 
 ``` sql
-CREATE DICTIONARY somedict (
+CREATE DICTIONARY my_ip_trie_dictionary (
     prefix String,
     asn UInt32,
     cca2 String DEFAULT '??'
 )
 PRIMARY KEY prefix
+SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
+LAYOUT(IP_TRIE)
+LIFETIME(3600);
 ```
 
-The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.
+The key must have only one `String` type attribute that contains an allowed IP prefix. Other types are not supported yet.
 
-For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
+For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys. The syntax is:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', tuple(ip))
 ```
 
-The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
+The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
 
 ``` sql
-dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+select dictGet('my_ip_trie_dictionary', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
