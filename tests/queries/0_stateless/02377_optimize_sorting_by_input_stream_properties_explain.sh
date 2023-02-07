@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set query_plan_read_in_order=0;set max_threads=3"
 ENABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=1;set query_plan_read_in_order=1;set optimize_read_in_order=1;set max_threads=3"
-MAKE_OUTPUT_STABLE="set optimize_read_in_order=1;set max_threads=3"
+MAKE_OUTPUT_STABLE="set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0"
 GREP_SORTING="grep 'PartialSortingTransform\|LimitsCheckingTransform\|MergeSortingTransform\|MergingSortedTransform'"
 GREP_SORTMODE="grep 'Sorting ('"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"

@@ -16,7 +16,7 @@ class SerializationNothing : public SimpleTextSerialization
 private:
     [[noreturn]] static void throwNoSerialization()
     {
-        throw Exception("Serialization is not implemented for type Nothing", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization is not implemented for type Nothing");
     }
 public:
     void serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const override                       { throwNoSerialization(); }

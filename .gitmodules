@@ -257,6 +257,9 @@
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
+[submodule "contrib/idxd-config"]
+	path = contrib/idxd-config
+	url = https://github.com/intel/idxd-config
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -327,3 +330,9 @@
 [submodule "contrib/aws-s2n-tls"]
 	path = contrib/aws-s2n-tls
 	url = https://github.com/ClickHouse/s2n-tls
+[submodule "contrib/crc32-vpmsum"]
+	path = contrib/crc32-vpmsum
+	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/liburing"]
+	path = contrib/liburing
+	url = https://github.com/axboe/liburing

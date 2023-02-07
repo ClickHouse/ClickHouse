@@ -15,11 +15,6 @@ namespace Poco
 class Logger;
 }
 
-namespace Aws::S3
-{
-class S3Client;
-}
-
 namespace DB
 {
 
@@ -92,8 +87,6 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 private:
-    void init();
-
     StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;

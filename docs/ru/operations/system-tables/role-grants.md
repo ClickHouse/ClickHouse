@@ -16,4 +16,3 @@ slug: /ru/operations/system-tables/role-grants
 - `with_admin_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, обладает ли `granted_role` роль привилегией `ADMIN OPTION`. Возможные значения:
     -   1 — Роль обладает привилегией `ADMIN OPTION`.
     -   0 — Роль не обладает привилегией `ADMIN OPTION`.
-

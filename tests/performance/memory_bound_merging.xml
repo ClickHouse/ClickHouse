@@ -11,7 +11,5 @@
 
   <query>select avg(a) from remote('127.0.0.{{1,2}}', default, t_mbm) group by a format Null</query>
 
-  <query>select * from remote('127.0.0.{{1,2}}', default, t_mbm) group by a format Null settings allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 2, use_hedged_requests = 0</query>
-
   <drop_query>drop table t_mbm</drop_query>
 </test>

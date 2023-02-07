@@ -219,5 +219,3 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 -   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->

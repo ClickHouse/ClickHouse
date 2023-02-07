@@ -78,7 +78,7 @@ public:
     {
         auto f_stat = data(place).getFStatistic();
         if (std::isinf(f_stat) || isNaN(f_stat) || f_stat < 0)
-            throw Exception("F statistic is not defined or infinite for these arguments", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "F statistic is not defined or infinite for these arguments");
 
         auto p_value = data(place).getPValue(f_stat);
 
