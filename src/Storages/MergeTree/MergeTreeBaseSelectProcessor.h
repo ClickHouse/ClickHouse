@@ -101,8 +101,10 @@ protected:
     static void
     injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
 
+public:
     static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings);
 
+protected:
     static void initializeRangeReadersImpl(
          MergeTreeRangeReader & range_reader,
          std::deque<MergeTreeRangeReader> & pre_range_readers,

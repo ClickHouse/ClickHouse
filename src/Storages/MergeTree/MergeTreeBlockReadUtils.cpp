@@ -5,6 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include "Storages/MergeTree/MergeTreeBaseSelectProcessor.h"
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -291,7 +292,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     bool with_subcolumns)
 {
     Names column_names = required_columns;
-    Names pre_column_names;
 
     /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
     for (const auto & name : system_columns)
@@ -313,6 +313,40 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (prewhere_info)
     {
+        auto prewhere_actions = IMergeTreeSelectAlgorithm::getPrewhereActions(prewhere_info, {});
+
+        NameSet pre_name_set;
+
+        for (const auto & step : prewhere_actions->steps)
+        {
+            Names step_column_names = step.actions->getActionsDAG().getRequiredColumnsNames();
+
+            injectRequiredColumns(
+                data_part_info_for_reader, storage_snapshot, with_subcolumns, step_column_names);
+
+            Names new_step_column_names;
+            for (const auto & name : step_column_names)
+            {
+                if (pre_name_set.contains(name))
+                    continue;
+                new_step_column_names.push_back(name);
+                pre_name_set.insert(name);
+            }
+
+            result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, new_step_column_names));
+        }
+
+        /// Remove prewhere columns from the list of columns to read
+        Names post_column_names;
+        for (const auto & name : column_names)
+            if (!pre_name_set.contains(name))
+                post_column_names.push_back(name);
+
+        column_names = post_column_names;
+
+
+
+#if 0
         NameSet pre_name_set;
 
         /// Add column reading steps:
@@ -346,9 +380,11 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 post_column_names.push_back(name);
 
         column_names = post_column_names;
+#endif
+
     }
 
-    result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
+//    result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
 
     /// 3. Rest of the requested columns
     result.columns = storage_snapshot->getColumnsByNames(options, column_names);

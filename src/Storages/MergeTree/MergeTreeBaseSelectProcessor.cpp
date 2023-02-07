@@ -7,6 +7,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/typeid_cast.h>
+#include "Core/Names.h"
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -102,6 +103,53 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
         }
 
+#if 1
+        auto conjunctions = getConjunctionNodes(
+            prewhere_info->prewhere_actions->tryFindInOutputs(prewhere_info->prewhere_column_name),
+            {});
+
+        auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
+        NameSet original_output_names;
+        for (const auto & output : original_outputs)
+            original_output_names.insert(output->result_name);
+
+        auto inputs = prewhere_info->prewhere_actions->getInputs();
+        ColumnsWithTypeAndName all_inputs;
+        for (const auto & input : inputs)
+            all_inputs.emplace_back(input->column, input->result_type, input->result_name);
+
+        ActionsDAG::NodeRawConstPtrs all_conjunctions = std::move(conjunctions.allowed);
+        all_conjunctions.insert(all_conjunctions.end(), conjunctions.rejected.begin(), conjunctions.rejected.end());
+
+        for (const auto & conjunction : all_conjunctions)
+        {
+            auto step_dag = ActionsDAG::cloneActionsForConjunction({conjunction}, all_inputs);
+
+            /// Return the condition columns
+            Names step_outputs{conjunction->result_name};
+            /// Preserve all the original outputs computed at this step
+            for (const auto & output : original_output_names)
+                if (step_dag->tryRestoreColumn(output))
+                    step_outputs.emplace_back(output);
+            step_dag->removeUnusedActions(step_outputs, true, true);
+
+            //std::cerr << conjunction->result_name << "\n";
+            std::cerr << step_dag->dumpDAG() << "\n";
+
+            PrewhereExprStep prewhere_step
+            {
+                .actions = std::make_shared<ExpressionActions>(step_dag, actions_settings),
+                .column_name = conjunction->result_name,
+                .remove_column = false, // TODO: properly set this depending on whether the column is used in the next step
+                .need_filter = false
+            };
+            prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+        }
+
+        //prewhere_actions->steps.back().remove_column = prewhere_info->remove_prewhere_column;
+        prewhere_actions->steps.back().need_filter = prewhere_info->need_filter;
+#else
+
         PrewhereExprStep prewhere_step
         {
             .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
@@ -111,6 +159,7 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
         };
 
         prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+#endif
     }
 
     return prewhere_actions;

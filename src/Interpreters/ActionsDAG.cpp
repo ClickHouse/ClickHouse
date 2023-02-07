@@ -1017,6 +1017,9 @@ std::string ActionsDAG::dumpDAG() const
         out << ' ' << map[node];
     out << '\n';
 
+    out << "Project input: " << project_input << '\n';
+    out << "Projected output: " << projected_output << '\n';
+
     return out.str();
 }
 
@@ -1660,20 +1663,20 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
     return res;
 }
 
-namespace
-{
-
-struct ConjunctionNodes
-{
-    ActionsDAG::NodeRawConstPtrs allowed;
-    ActionsDAG::NodeRawConstPtrs rejected;
-};
+//namespace
+//{
+//
+//struct ConjunctionNodes
+//{
+//    ActionsDAG::NodeRawConstPtrs allowed;
+//    ActionsDAG::NodeRawConstPtrs rejected;
+//};
 
 /// Take a node which result is predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
-ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
+ConjunctionNodes getConjunctionNodes(const ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes)
 {
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
@@ -1795,7 +1798,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
     return arguments;
 }
 
-}
+//}
 
 /// Create actions which calculate conjunction of selected nodes.
 /// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
