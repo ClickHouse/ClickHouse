@@ -7555,14 +7555,14 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
 
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+    /// This is significant, because the execution of this task could be delayed at BackgroundPool.
+    /// And we force it to be executed.
+    background_operations_assignee.trigger();
+
     std::unordered_set<String> wait_for_ids = queue.getLogEntryIds();
 
     if (!wait_for_ids.empty())
     {
-        /// This is significant, because the execution of this task could be delayed at BackgroundPool.
-        /// And we force it to be executed.
-        background_operations_assignee.trigger();
-
         Poco::Event target_entry_event;
         auto callback = [&target_entry_event, &wait_for_ids](size_t new_queue_size, std::optional<String> removed_log_entry_id)
         {
