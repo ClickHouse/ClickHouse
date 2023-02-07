@@ -274,7 +274,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 
         if (!it->viable)
             break;
-
+#if 0
         bool moved_enough = false;
         if (total_size_of_queried_columns > 0)
         {
@@ -292,7 +292,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 
         if (moved_enough)
             break;
-
+#endif
         move_condition(it);
     }
 
