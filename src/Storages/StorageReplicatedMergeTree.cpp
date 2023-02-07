@@ -7562,35 +7562,32 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     std::unordered_set<String> wait_for_ids;
     bool set_ids_to_wait = true;
 
-    if (!wait_for_ids.empty())
+    Poco::Event target_entry_event;
+    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait](size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
     {
-        Poco::Event target_entry_event;
-        auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait](size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
+        if (set_ids_to_wait)
         {
-            if (set_ids_to_wait)
-            {
-                wait_for_ids = log_entry_ids;
-                set_ids_to_wait = false;
-            }
-
-            if (removed_log_entry_id.has_value())
-                wait_for_ids.erase(removed_log_entry_id.value());
-
-            if (wait_for_ids.empty() || new_queue_size == 0)
-                target_entry_event.set();
-        };
-        const auto handler = queue.addSubscriber(std::move(callback));
-
-        while (!target_entry_event.tryWait(50))
-        {
-            if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
-                return false;
-
-            if (partial_shutdown_called)
-                throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+            wait_for_ids = log_entry_ids;
+            set_ids_to_wait = false;
         }
-    }
 
+        if (removed_log_entry_id.has_value())
+            wait_for_ids.erase(removed_log_entry_id.value());
+
+        if (wait_for_ids.empty() || new_queue_size == 0)
+            target_entry_event.set();
+    };
+    const auto handler = queue.addSubscriber(std::move(callback));
+
+    while (!target_entry_event.tryWait(50))
+    {
+        if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
+            return false;
+
+        if (partial_shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+    }
+    
     return true;
 }
 
