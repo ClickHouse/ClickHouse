@@ -6,16 +6,17 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranuleBloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
-
 
 namespace DB
 {
@@ -28,19 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-PreparedSetKey getPreparedSetKey(const ASTPtr & node, const DataTypePtr & data_type)
-{
-    /// If the data type is tuple, let's try unbox once
-    if (node->as<ASTSubquery>() || node->as<ASTIdentifier>())
-        return PreparedSetKey::forSubquery(*node);
-
-    if (const auto * date_type_tuple = typeid_cast<const DataTypeTuple *>(&*data_type))
-        return PreparedSetKey::forLiteral(*node, date_type_tuple->getElements());
-
-    return PreparedSetKey::forLiteral(*node, DataTypes(1, data_type));
-}
-
-ColumnWithTypeAndName getPreparedSetInfo(const SetPtr & prepared_set)
+ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
     if (prepared_set->getDataTypes().size() == 1)
         return {prepared_set->getSetElements()[0], prepared_set->getElementsTypes()[0], "dummy"};
@@ -69,7 +58,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
 
     if (!const_column && !non_const_column)
-        throw Exception("LOGICAL ERROR: hash column must be Const Column or UInt64 Column.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: hash column must be Const Column or UInt64 Column.");
 
     if (const_column)
     {
@@ -110,8 +99,38 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_)
     : WithContext(context_), header(header_), query_info(info_), hash_functions(hash_functions_)
 {
-    auto atom_from_ast = [this](auto & node, auto, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
-    rpn = std::move(RPNBuilder<RPNElement>(info_, getContext(), atom_from_ast).extractRPN());
+    if (context_->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (!query_info.filter_actions_dag)
+        {
+            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
+            return;
+        }
+
+        RPNBuilder<RPNElement> builder(
+            query_info.filter_actions_dag->getOutputs().at(0),
+            context_,
+            [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+        rpn = std::move(builder).extractRPN();
+        return;
+    }
+
+    ASTPtr filter_node = buildFilterNode(query_info.query);
+
+    if (!filter_node)
+    {
+        rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
+        return;
+    }
+
+    auto block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context_);
+    RPNBuilder<RPNElement> builder(
+        filter_node,
+        context_,
+        std::move(block_with_constants),
+        query_info.prepared_sets,
+        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
+    rpn = std::move(builder).extractRPN();
 }
 
 bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
@@ -155,7 +174,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
             rpn_stack.back() = arg1 || arg2;
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     return rpn_stack[0];
@@ -226,82 +245,99 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             rpn_stack.emplace_back(false, true);
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::mayBeTrueInRange");
 
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out)
+bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
         DataTypePtr const_type;
-        if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
+
+        if (node.tryGetConstant(const_value, const_type))
         {
-            if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Int64 ||
-                const_value.getType() == Field::Types::Float64)
+            if (const_value.getType() == Field::Types::UInt64)
             {
-                /// Zero in all types is represented in memory the same way as in UInt64.
-                out.function = const_value.reinterpret<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Int64)
+            {
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
     }
 
-    return traverseFunction(node, block_with_constants, out, nullptr);
+    return traverseFunction(node, out, nullptr /*parent*/);
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out, const ASTPtr & parent)
+bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
     bool maybe_useful = false;
 
-    if (const auto * function = node->as<ASTFunction>())
+    if (node.isFunction())
     {
-        if (!function->arguments)
-            return false;
+        const auto function = node.toFunctionNode();
+        auto arguments_size = function.getArgumentsSize();
+        auto function_name = function.getFunctionName();
 
-        const ASTs & arguments = function->arguments->children;
-        for (const auto & arg : arguments)
+        for (size_t i = 0; i < arguments_size; ++i)
         {
-            if (traverseFunction(arg, block_with_constants, out, node))
+            auto argument = function.getArgumentAt(i);
+            if (traverseFunction(argument, out, &node))
                 maybe_useful = true;
         }
 
-        if (arguments.size() != 2)
+        if (arguments_size != 2)
             return false;
 
-        if (functionIsInOrGlobalInOperator(function->name))
-        {
-            auto prepared_set = getPreparedSet(arguments[1]);
+        auto lhs_argument = function.getArgumentAt(0);
+        auto rhs_argument = function.getArgumentAt(1);
 
-            if (prepared_set)
+        if (functionIsInOrGlobalInOperator(function_name))
+        {
+            ConstSetPtr prepared_set = rhs_argument.tryGetPreparedSet();
+
+            if (prepared_set && prepared_set->hasExplicitSetElements())
             {
-                if (traverseASTIn(function->name, arguments[0], prepared_set, out))
+                const auto prepared_info = getPreparedSetInfo(prepared_set);
+                if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
                     maybe_useful = true;
             }
         }
-        else if (function->name == "equals" ||
-                 function->name == "notEquals" ||
-                 function->name == "has" ||
-                 function->name == "mapContains" ||
-                 function->name == "indexOf" ||
-                 function->name == "hasAny" ||
-                 function->name == "hasAll")
+        else if (function_name == "equals" ||
+                 function_name == "notEquals" ||
+                 function_name == "has" ||
+                 function_name == "mapContains" ||
+                 function_name == "indexOf" ||
+                 function_name == "hasAny" ||
+                 function_name == "hasAll")
         {
             Field const_value;
             DataTypePtr const_type;
-            if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
+
+            if (rhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out, parent))
+                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
                     maybe_useful = true;
             }
-            else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type))
+            else if (lhs_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out, parent))
+                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
                     maybe_useful = true;
             }
         }
@@ -310,28 +346,20 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
     return maybe_useful;
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
+bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
-    const ASTPtr & key_ast,
-    const SetPtr & prepared_set,
-    RPNElement & out)
-{
-    const auto prepared_info = getPreparedSetInfo(prepared_set);
-    return traverseASTIn(function_name, key_ast, prepared_set, prepared_info.type, prepared_info.column, out);
-}
-
-bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
-    const String & function_name,
-    const ASTPtr & key_ast,
-    const SetPtr & prepared_set,
+    const RPNBuilderTreeNode & key_node,
+    const ConstSetPtr & prepared_set,
     const DataTypePtr & type,
     const ColumnPtr & column,
     RPNElement & out)
 {
-    if (header.has(key_ast->getColumnName()))
+    auto key_node_column_name = key_node.getColumnName();
+
+    if (header.has(key_node_column_name))
     {
         size_t row_size = column->size();
-        size_t position = header.getPositionByName(key_ast->getColumnName());
+        size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
@@ -345,30 +373,33 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
         return true;
     }
 
-    if (const auto * function = key_ast->as<ASTFunction>())
+    if (key_node.isFunction())
     {
+        auto key_node_function = key_node.toFunctionNode();
+        auto key_node_function_name = key_node_function.getFunctionName();
+        size_t key_node_function_arguments_size = key_node_function.getArgumentsSize();
+
         WhichDataType which(type);
 
-        if (which.isTuple() && function->name == "tuple")
+        if (which.isTuple() && key_node_function_name == "tuple")
         {
             const auto & tuple_column = typeid_cast<const ColumnTuple *>(column.get());
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
-            const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 
-            if (tuple_data_type->getElements().size() != arguments.size() || tuple_column->getColumns().size() != arguments.size())
-                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
 
             bool match_with_subtype = false;
             const auto & sub_columns = tuple_column->getColumns();
             const auto & sub_data_types = tuple_data_type->getElements();
 
-            for (size_t index = 0; index < arguments.size(); ++index)
-                match_with_subtype |= traverseASTIn(function_name, arguments[index], nullptr, sub_data_types[index], sub_columns[index], out);
+            for (size_t index = 0; index < key_node_function_arguments_size; ++index)
+                match_with_subtype |= traverseTreeIn(function_name, key_node_function.getArgumentAt(index), nullptr, sub_data_types[index], sub_columns[index], out);
 
             return match_with_subtype;
         }
 
-        if (function->name == "arrayElement")
+        if (key_node_function_name == "arrayElement")
         {
             /** Try to parse arrayElement for mapKeys index.
               * It is important to ignore keys like column_map['Key'] IN ('') because if key does not exists in map
@@ -377,7 +408,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where map key does not exists.
               */
-
             if (!prepared_set)
                 return false;
 
@@ -390,28 +420,26 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
             if (set_contain_default_value)
                 return false;
 
-            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
-            if (!column_ast_identifier)
-                return false;
-
-            const auto & col_name = column_ast_identifier->name();
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", col_name);
+            auto first_argument = key_node_function.getArgumentAt(0);
+            const auto column_name = first_argument.getColumnName();
+            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
+            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
 
             if (header.has(map_keys_index_column_name))
             {
                 /// For mapKeys we serialize key argument with bloom filter
 
-                auto & argument = function->arguments.get()->children[1];
+                auto second_argument = key_node_function.getArgumentAt(1);
 
-                if (const auto * literal = argument->as<ASTLiteral>())
+                Field constant_value;
+                DataTypePtr constant_type;
+
+                if (second_argument.tryGetConstant(constant_value, constant_type))
                 {
                     size_t position = header.getPositionByName(map_keys_index_column_name);
                     const DataTypePtr & index_type = header.getByPosition(position).type;
-
-                    auto element_key = literal->value;
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key)));
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), constant_value)));
                 }
                 else
                 {
@@ -449,81 +477,104 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
 }
 
 
-static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
+static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 {
     if (!parent)
         return true;
 
+    if (!parent->isFunction())
+        return false;
+
+    auto function = parent->toFunctionNode();
+    auto function_name = function.getFunctionName();
+
     /// `parent` is a function where `indexOf` is located.
     /// Example: `indexOf(arr, x) = 1`, parent is a function named `equals`.
-    if (const auto * function = parent->as<ASTFunction>())
+    if (function_name == "and")
     {
-        if (function->name == "and")
+        return true;
+    }
+    else if (function_name == "equals" /// notEquals is not applicable
+        || function_name == "greater" || function_name == "greaterOrEquals"
+        || function_name == "less" || function_name == "lessOrEquals")
+    {
+        size_t function_arguments_size = function.getArgumentsSize();
+        if (function_arguments_size != 2)
+            return false;
+
+        /// We don't allow constant expressions like `indexOf(arr, x) = 1 + 0` but it's negligible.
+
+        /// We should return true when the corresponding expression implies that the array contains the element.
+        /// Example: when `indexOf(arr, x)` > 10 is written, it means that arr definitely should contain the element
+        /// (at least at 11th position but it does not matter).
+
+        bool reversed = false;
+        Field constant_value;
+        DataTypePtr constant_type;
+
+        if (function.getArgumentAt(0).tryGetConstant(constant_value, constant_type))
         {
+            reversed = true;
+        }
+        else if (function.getArgumentAt(1).tryGetConstant(constant_value, constant_type))
+        {
+        }
+        else
+        {
+            return false;
+        }
+
+        Field zero(0);
+        bool constant_equal_zero = applyVisitor(FieldVisitorAccurateEquals(), constant_value, zero);
+
+        if (function_name == "equals" && !constant_equal_zero)
+        {
+            /// indexOf(...) = c, c != 0
             return true;
         }
-        else if (function->name == "equals" /// notEquals is not applicable
-            || function->name == "greater" || function->name == "greaterOrEquals"
-            || function->name == "less" || function->name == "lessOrEquals")
+        else if (function_name == "notEquals" && constant_equal_zero)
         {
-            if (function->arguments->children.size() != 2)
-                return false;
-
-            /// We don't allow constant expressions like `indexOf(arr, x) = 1 + 0` but it's negligible.
-
-            /// We should return true when the corresponding expression implies that the array contains the element.
-            /// Example: when `indexOf(arr, x)` > 10 is written, it means that arr definitely should contain the element
-            /// (at least at 11th position but it does not matter).
-
-            bool reversed = false;
-            const ASTLiteral * constant = nullptr;
-
-            if (const ASTLiteral * left = function->arguments->children[0]->as<ASTLiteral>())
-            {
-                constant = left;
-                reversed = true;
-            }
-            else if (const ASTLiteral * right = function->arguments->children[1]->as<ASTLiteral>())
-            {
-                constant = right;
-            }
-            else
-                return false;
-
-            Field zero(0);
-            return (function->name == "equals"  /// indexOf(...) = c, c != 0
-                    && !applyVisitor(FieldVisitorAccurateEquals(), constant->value, zero))
-                || (function->name == "notEquals"  /// indexOf(...) != c, c = 0
-                    && applyVisitor(FieldVisitorAccurateEquals(), constant->value, zero))
-                || (function->name == (reversed ? "less" : "greater")   /// indexOf(...) > c, c >= 0
-                    && !applyVisitor(FieldVisitorAccurateLess(), constant->value, zero))
-                || (function->name == (reversed ? "lessOrEquals" : "greaterOrEquals")   /// indexOf(...) >= c, c > 0
-                    && applyVisitor(FieldVisitorAccurateLess(), zero, constant->value));
+            /// indexOf(...) != c, c = 0
+            return true;
         }
+        else if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
+        {
+            /// indexOf(...) > c, c >= 0
+            return true;
+        }
+        else if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals") && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
+        {
+            /// indexOf(...) >= c, c > 0
+            return true;
+        }
+
+        return false;
     }
 
     return false;
 }
 
 
-bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
+bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const String & function_name,
-    const ASTPtr & key_ast,
+    const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
     RPNElement & out,
-    const ASTPtr & parent)
+    const RPNBuilderTreeNode * parent)
 {
-    if (header.has(key_ast->getColumnName()))
+    auto key_column_name = key_node.getColumnName();
+
+    if (header.has(key_column_name))
     {
-        size_t position = header.getPositionByName(key_ast->getColumnName());
+        size_t position = header.getPositionByName(key_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
         if (function_name == "has" || function_name == "indexOf")
         {
             if (!array_type)
-                throw Exception("First argument for function " + function_name + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
 
             /// We can treat `indexOf` function similar to `has`.
             /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
@@ -532,7 +583,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             {
                 out.function = RPNElement::FUNCTION_HAS;
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                if (converted_field.isNull())
+                    return false;
+
                 out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
             }
         }
@@ -555,7 +609,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                     if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType()))
                         return false;
 
-                    mutable_column->insert(convertFieldToType(f, *actual_type, value_type.get()));
+                    auto converted = convertFieldToType(f, *actual_type);
+                    if (converted.isNull())
+                        return false;
+
+                    mutable_column->insert(converted);
                 }
 
                 column = std::move(mutable_column);
@@ -569,11 +627,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
         else
         {
             if (array_type)
-                throw Exception("An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            if (converted_field.isNull())
+                return false;
+
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
 
@@ -582,13 +644,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
     if (function_name == "mapContains" || function_name == "has")
     {
-        const auto * key_ast_identifier = key_ast.get()->as<const ASTIdentifier>();
-        if (!key_ast_identifier)
-            return false;
-
-        const auto & col_name = key_ast_identifier->name();
-        auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-
+        auto map_keys_index_column_name = fmt::format("mapKeys({})", key_column_name);
         if (!header.has(map_keys_index_column_name))
             return false;
 
@@ -601,35 +657,40 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        Field converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+        if (converted_field.isNull())
+            return false;
 
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         return true;
     }
 
-    if (const auto * function = key_ast->as<ASTFunction>())
+    if (key_node.isFunction())
     {
         WhichDataType which(value_type);
 
-        if (which.isTuple() && function->name == "tuple")
-        {
-            const Tuple & tuple = get<const Tuple &>(value_field);
-            const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
-            const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
+        auto key_node_function = key_node.toFunctionNode();
+        auto key_node_function_name = key_node_function.getFunctionName();
+        size_t key_node_function_arguments_size = key_node_function.getArgumentsSize();
 
-            if (tuple.size() != arguments.size())
-                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (which.isTuple() && key_node_function_name == "tuple")
+        {
+            const Tuple & tuple = value_field.get<const Tuple &>();
+            const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+
+            if (tuple.size() != key_node_function_arguments_size)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
 
             bool match_with_subtype = false;
             const DataTypes & subtypes = value_tuple_data_type->getElements();
 
             for (size_t index = 0; index < tuple.size(); ++index)
-                match_with_subtype |= traverseASTEquals(function_name, arguments[index], subtypes[index], tuple[index], out, key_ast);
+                match_with_subtype |= traverseTreeEquals(function_name, key_node_function.getArgumentAt(index), subtypes[index], tuple[index], out, &key_node);
 
             return match_with_subtype;
         }
 
-        if (function->name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
+        if (key_node_function_name == "arrayElement" && (function_name == "equals" || function_name == "notEquals"))
         {
             /** Try to parse arrayElement for mapKeys index.
               * It is important to ignore keys like column_map['Key'] = '' because if key does not exists in map
@@ -641,27 +702,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             if (value_field == value_type->getDefault())
                 return false;
 
-            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
-            if (!column_ast_identifier)
-                return false;
+            auto first_argument = key_node_function.getArgumentAt(0);
+            const auto column_name = first_argument.getColumnName();
 
-            const auto & col_name = column_ast_identifier->name();
-
-            auto map_keys_index_column_name = fmt::format("mapKeys({})", col_name);
-            auto map_values_index_column_name = fmt::format("mapValues({})", col_name);
+            auto map_keys_index_column_name = fmt::format("mapKeys({})", column_name);
+            auto map_values_index_column_name = fmt::format("mapValues({})", column_name);
 
             size_t position = 0;
             Field const_value = value_field;
+            DataTypePtr const_type;
 
             if (header.has(map_keys_index_column_name))
             {
                 position = header.getPositionByName(map_keys_index_column_name);
+                auto second_argument = key_node_function.getArgumentAt(1);
 
-                auto & argument = function->arguments.get()->children[1];
-
-                if (const auto * literal = argument->as<ASTLiteral>())
-                    const_value = literal->value;
-                else
+                if (!second_argument.tryGetConstant(const_value, const_type))
                     return false;
             }
             else if (header.has(map_values_index_column_name))
@@ -684,26 +740,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
     }
 
     return false;
-}
-
-SetPtr MergeTreeIndexConditionBloomFilter::getPreparedSet(const ASTPtr & node)
-{
-    if (header.has(node->getColumnName()))
-    {
-        const auto & column_and_type = header.getByName(node->getColumnName());
-        const auto & prepared_set_it = query_info.sets.find(getPreparedSetKey(node, column_and_type.type));
-
-        if (prepared_set_it != query_info.sets.end() && prepared_set_it->second->hasExplicitSetElements())
-            return prepared_set_it->second;
-    }
-    else
-    {
-        for (const auto & prepared_set_it : query_info.sets)
-            if (prepared_set_it.first.ast_hash == node->getTreeHash() && prepared_set_it.second->hasExplicitSetElements())
-                return prepared_set_it.second;
-    }
-
-    return DB::SetPtr();
 }
 
 }

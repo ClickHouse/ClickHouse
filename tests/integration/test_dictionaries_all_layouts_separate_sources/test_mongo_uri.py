@@ -24,7 +24,7 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    cluster = ClickHouseCluster(__file__, name=test_name)
+    cluster = ClickHouseCluster(__file__)
 
     SOURCE = SourceMongoURI(
         "MongoDB",

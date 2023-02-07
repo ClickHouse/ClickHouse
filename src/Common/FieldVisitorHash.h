@@ -23,6 +23,8 @@ public:
     void operator() (const Int128 & x) const;
     void operator() (const Int256 & x) const;
     void operator() (const UUID & x) const;
+    void operator() (const IPv4 & x) const;
+    void operator() (const IPv6 & x) const;
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;

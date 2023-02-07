@@ -18,7 +18,7 @@ namespace
             result += '.';
         result += subkey;
         return result;
-    };
+    }
 }
 
 
@@ -73,7 +73,7 @@ bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const S
         /// Check that the right configuration has the same set of subkeys as the left configuration.
         Poco::Util::AbstractConfiguration::Keys right_subkeys;
         right.keys(right_key, right_subkeys);
-        std::unordered_set<StringRef> left_subkeys{subkeys.begin(), subkeys.end()};
+        std::unordered_set<std::string_view> left_subkeys{subkeys.begin(), subkeys.end()};
         if ((left_subkeys.size() != right_subkeys.size()) || (left_subkeys.size() != subkeys.size()))
             return false;
         for (const auto & right_subkey : right_subkeys)

@@ -77,6 +77,7 @@ def started_cluster():
 
 
 def test_s3_right_border(started_cluster):
+    node1.query("drop table if exists s3_low_cardinality")
     node1.query(
         """
 CREATE TABLE s3_low_cardinality
@@ -112,3 +113,50 @@ SETTINGS storage_policy = 's3',  min_bytes_for_wide_part = 0, index_granularity 
         )
         == "1300000\n"
     )
+
+
+def test_s3_right_border_2(started_cluster):
+    node1.query("drop table if exists s3_low_cardinality")
+    node1.query(
+        "create table s3_low_cardinality (key UInt32, str_column LowCardinality(String)) engine = MergeTree order by (key) settings storage_policy = 's3', min_bytes_for_wide_part = 0, index_granularity = 8192, min_compress_block_size=1, merge_max_block_size=10000"
+    )
+    node1.query(
+        "insert into s3_low_cardinality select number, number % 8000 from numbers(8192)"
+    )
+    node1.query(
+        "insert into s3_low_cardinality select number = 0 ? 0 : (number + 8192 * 1), number % 8000 + 1 * 8192 from numbers(8192)"
+    )
+    node1.query(
+        "insert into s3_low_cardinality select number = 0 ? 0 : (number + 8192 * 2), number % 8000 + 2 * 8192 from numbers(8192)"
+    )
+    node1.query("optimize table s3_low_cardinality final")
+    res = node1.query("select * from s3_low_cardinality where key = 9000")
+    assert res == "9000\t9000\n"
+
+
+def test_s3_right_border_3(started_cluster):
+    node1.query("drop table if exists s3_low_cardinality")
+    node1.query(
+        "create table s3_low_cardinality (x LowCardinality(String)) engine = MergeTree order by tuple() settings min_bytes_for_wide_part=0, storage_policy = 's3', max_compress_block_size=10000"
+    )
+    node1.query(
+        "insert into s3_low_cardinality select toString(number % 8000) || if(number < 8192 * 3, 'aaaaaaaaaaaaaaaa', if(number < 8192 * 6, 'bbbbbbbbbbbbbbbbbbbbbbbb', 'ccccccccccccccccccc')) from numbers(8192 * 9)"
+    )
+    # Marks are:
+    # Mark 0, points to 0, 8, has rows after 8192, decompressed size 0.
+    # Mark 1, points to 0, 8, has rows after 8192, decompressed size 0.
+    # Mark 2, points to 0, 8, has rows after 8192, decompressed size 0.
+    # Mark 3, points to 0, 8, has rows after 8192, decompressed size 0.
+    # Mark 4, points to 42336, 2255, has rows after 8192, decompressed size 0.
+    # Mark 5, points to 42336, 2255, has rows after 8192, decompressed size 0.
+    # Mark 6, points to 42336, 2255, has rows after 8192, decompressed size 0.
+    # Mark 7, points to 84995, 7738, has rows after 8192, decompressed size 0.
+    # Mark 8, points to 84995, 7738, has rows after 8192, decompressed size 0.
+    # Mark 9, points to 126531, 8637, has rows after 0, decompressed size 0.
+
+    res = node1.query(
+        "select uniq(x) from s3_low_cardinality settings max_threads=2, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem=1, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem=1"
+    )
+    # Reading ranges [0, 5) and [5, 9)
+
+    assert res == "23999\n"

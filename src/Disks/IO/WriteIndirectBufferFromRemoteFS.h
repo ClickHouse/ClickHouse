@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
-#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 

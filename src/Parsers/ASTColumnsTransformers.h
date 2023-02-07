@@ -9,6 +9,23 @@ namespace re2
 
 namespace DB
 {
+
+/// A list of column transformers
+class ASTColumnsTransformerList : public IAST
+{
+public:
+    String getID(char) const override { return "ColumnsTransformerList"; }
+    ASTPtr clone() const override
+    {
+        auto clone = std::make_shared<ASTColumnsTransformerList>(*this);
+        clone->cloneChildren();
+        return clone;
+    }
+
+protected:
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
 class IASTColumnsTransformer : public IAST
 {
 public:
@@ -60,6 +77,7 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void setPattern(String pattern);
+    const std::shared_ptr<re2::RE2> & getMatcher() const;
     bool isColumnMatching(const String & column_name) const;
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;

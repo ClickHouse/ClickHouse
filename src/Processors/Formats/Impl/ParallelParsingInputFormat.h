@@ -9,7 +9,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
 
@@ -82,6 +82,7 @@ public:
         String format_name;
         size_t max_threads;
         size_t min_chunk_bytes;
+        size_t max_block_size;
         bool is_server;
     };
 
@@ -91,6 +92,7 @@ public:
         , file_segmentation_engine(params.file_segmentation_engine)
         , format_name(params.format_name)
         , min_chunk_bytes(params.min_chunk_bytes)
+        , max_block_size(params.max_block_size)
         , is_server(params.is_server)
         , pool(params.max_threads)
     {
@@ -109,7 +111,7 @@ public:
 
     void resetParser() override final
     {
-        throw Exception("resetParser() is not allowed for " + getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
     const BlockMissingValues & getMissingValues() const override final
@@ -170,8 +172,8 @@ private:
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
                     case IProcessor::Status::ExpandPipeline:
-                        throw Exception("One of the parsers returned status " + IProcessor::statusToName(status) +
-                                             " during parallel parsing", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
+                                             IProcessor::statusToName(status));
                 }
             }
         }
@@ -188,6 +190,7 @@ private:
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const size_t min_chunk_bytes;
+    const size_t max_block_size;
 
     BlockMissingValues last_block_missing_values;
 

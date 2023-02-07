@@ -1,5 +1,6 @@
 SET send_logs_level = 'fatal';
 
+-- { echoOn }
 DROP TABLE IF EXISTS sum_map;
 CREATE TABLE sum_map(date Date, timeslot DateTime, statusMap Nested(status UInt16, requests UInt64)) ENGINE = Log;
 
@@ -31,7 +32,7 @@ select sumMap(val, cnt) from ( SELECT [ CAST(1, 'UInt64') ] as val, [1] as cnt )
 select sumMap(val, cnt) from ( SELECT [ CAST(1, 'Float64') ] as val, [1] as cnt );
 select sumMap(val, cnt) from ( SELECT [ CAST('a', 'Enum16(\'a\'=1)') ] as val, [1] as cnt );
 
-select sumMap(val, cnt) from ( SELECT [ CAST(1, 'DateTime(\'Europe/Moscow\')') ] as val, [1] as cnt );
+select sumMap(val, cnt) from ( SELECT [ CAST(1, 'DateTime(\'Asia/Istanbul\')') ] as val, [1] as cnt );
 select sumMap(val, cnt) from ( SELECT [ CAST(1, 'Date') ] as val, [1] as cnt );
 select sumMap(val, cnt) from ( SELECT [ CAST('01234567-89ab-cdef-0123-456789abcdef', 'UUID') ] as val, [1] as cnt );
 select sumMap(val, cnt) from ( SELECT [ CAST(1.01, 'Decimal(10,2)') ] as val, [1] as cnt );
@@ -54,3 +55,8 @@ SELECT sumMap(statusMap.goal_id, statusMap.revenue) FROM sum_map_decimal;
 SELECT sumMapWithOverflow(statusMap.goal_id, statusMap.revenue) FROM sum_map_decimal;
 
 DROP TABLE sum_map_decimal;
+
+CREATE TABLE sum_map_decimal_nullable (`statusMap` Array(Tuple(goal_id UInt16, revenue Nullable(Decimal(9, 5))))) engine=Log;
+INSERT INTO sum_map_decimal_nullable VALUES ([1, 2, 3], [1.0, 2.0, 3.0]), ([3, 4, 5], [3.0, 4.0, 5.0]), ([4, 5, 6], [4.0, 5.0, 6.0]), ([6, 7, 8], [6.0, 7.0, 8.0]);
+SELECT sumMap(statusMap.goal_id, statusMap.revenue) FROM sum_map_decimal_nullable;
+DROP TABLE sum_map_decimal_nullable;

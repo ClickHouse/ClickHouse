@@ -58,9 +58,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {
-            fail_message = fmt::format("There is no table {}.{} on server: {}",
-                backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
-            LOG_WARNING(log, fmt::runtime(fail_message));
+            LOG_WARNING(LogToStr(fail_message, log), "There is no table {}.{} on server: {}",
+                        backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             return;
         }
@@ -197,7 +196,10 @@ bool ConnectionEstablisherAsync::checkReceiveTimeout()
         destroyFiber();
         /// In not async case this exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
-        fail_message = "Timeout exceeded while reading from socket (" + result.entry->getDescription() + ")";
+        fail_message = fmt::format(
+            "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
+            result.entry->getDescription(),
+            result.entry->getSocket()->getReceiveTimeout().totalMilliseconds());
         epoll.remove(socket_fd);
         resetResult();
         return false;

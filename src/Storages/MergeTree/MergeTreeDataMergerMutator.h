@@ -45,7 +45,7 @@ public:
                                                         const MergeTreeTransaction *,
                                                         String *)>;
 
-    MergeTreeDataMergerMutator(MergeTreeData & data_, size_t max_tasks_count_);
+    explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -113,7 +113,8 @@ public:
         const Names & deduplicate_by_columns,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
-        const IMergeTreeDataPart * parent_part = nullptr,
+        bool need_prefix = true,
+        IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
@@ -126,13 +127,14 @@ public:
         ContextPtr context,
         const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
-        TableLockHolder & table_lock_holder);
+        TableLockHolder & table_lock_holder,
+        bool need_prefix = true);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         const MergeTreeData::DataPartsVector & parts,
         const MergeTreeTransactionPtr & txn,
-        MergeTreeData::Transaction * out_transaction = nullptr);
+        MergeTreeData::Transaction & out_transaction);
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
@@ -154,17 +156,7 @@ public :
     ActionBlocker ttl_merges_blocker;
 
 private:
-
-    MergeAlgorithm chooseMergeAlgorithm(
-        const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound,
-        const NamesAndTypesList & gathering_columns,
-        bool deduplicate,
-        bool need_remove_expired_values,
-        const MergeTreeData::MergingParams & merging_params) const;
-
     MergeTreeData & data;
-    const size_t max_tasks_count;
 
     Poco::Logger * log;
 

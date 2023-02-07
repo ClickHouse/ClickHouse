@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/kurtsamp
 sidebar_position: 154
 ---
 
-# kurtSamp {#kurtsamp}
+# kurtSamp
 
 Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
 

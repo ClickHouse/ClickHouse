@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-
 }
 namespace
 {
@@ -33,8 +32,8 @@ namespace
     {
         if (override_name)
             user.setName(override_name->toString());
-        else if (!query.new_name.empty())
-            user.setName(query.new_name);
+        else if (query.new_name)
+            user.setName(*query.new_name);
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
@@ -101,8 +100,21 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
+    bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
+
+     if (!query.attach && !query.alter && !query.auth_data && !implicit_no_password_allowed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Authentication type NO_PASSWORD must "
+                        "be explicitly specified, check the setting allow_implicit_no_password "
+                        "in the server configuration");
+
+    if (!query.attach && query.temporary_password_for_checks)
+    {
+        access_control.checkPasswordComplexityRules(query.temporary_password_for_checks.value());
+        query.temporary_password_for_checks.reset();
+    }
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
@@ -114,11 +126,18 @@ BlockIO InterpreterCreateUserQuery::execute()
                 access->checkAdminOption(role);
         }
     }
-    if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)
+    {
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
+
+        if (!query.attach)
+            getContext()->checkSettingsConstraints(*settings_from_query);
+    }
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, getContext());
 
     if (query.alter)
     {

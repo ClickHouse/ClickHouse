@@ -2,21 +2,23 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/PerformanceAdaptors.h>
+#include <Interpreters/castColumn.h>
 #include <Common/TargetSpecific.h>
 #include <base/range.h>
 #include <cmath>
+#include <numbers>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /** Calculates the distance between two geographical locations.
@@ -40,18 +42,21 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr double PI = 3.14159265358979323846;
+constexpr double PI = std::numbers::pi_v<double>;
+constexpr float PI_F = std::numbers::pi_v<float>;
+
 constexpr float RAD_IN_DEG = static_cast<float>(PI / 180.0);
 constexpr float RAD_IN_DEG_HALF = static_cast<float>(PI / 360.0);
 
 constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
+constexpr float COS_LUT_SIZE_F = 1024.0f; // maxerr 0.00063%
 constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
 constexpr size_t METRIC_LUT_SIZE = 1024;
 
 /** Earth radius in meters using WGS84 authalic radius.
   * We use this value to be consistent with H3 library.
   */
-constexpr float EARTH_RADIUS = 6371007.180918475;
+constexpr float EARTH_RADIUS = 6371007.180918475f;
 constexpr float EARTH_DIAMETER = 2 * EARTH_RADIUS;
 
 
@@ -95,7 +100,7 @@ void geodistInit()
 
         sphere_metric_meters_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
 
-        sphere_metric_lut[i] = sqrf(cosf(latitude));
+        sphere_metric_lut[i] = static_cast<float>(sqr(cos(latitude)));
     }
 }
 
@@ -115,7 +120,7 @@ inline float geodistDegDiff(float f)
 
 inline float geodistFastCos(float x)
 {
-    float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
+    float y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
     size_t i = floatToIndex(y);
     y -= i;
     i &= (COS_LUT_SIZE - 1);
@@ -124,7 +129,7 @@ inline float geodistFastCos(float x)
 
 inline float geodistFastSin(float x)
 {
-    float y = fabsf(x) * (COS_LUT_SIZE / PI / 2);
+    float y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
     size_t i = floatToIndex(y);
     y -= i;
     i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
@@ -199,7 +204,7 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
-            k_lat = sqr(EARTH_DIAMETER * PI / 360);
+            k_lat = sqrf(EARTH_DIAMETER * PI_F / 360.0f);
 
             k_lon = sphere_metric_meters_lut[latitude_midpoint_index]
                 + (sphere_metric_meters_lut[latitude_midpoint_index + 1] - sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
@@ -224,7 +229,7 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
             + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqrf(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
 
         if constexpr (method == Method::SPHERE_DEGREES)
-            return (360.0f / PI) * geodistFastAsinSqrt(a);
+            return (360.0f / PI_F) * geodistFastAsinSqrt(a);
         else
             return EARTH_DIAMETER * geodistFastAsinSqrt(a);
     }
@@ -254,31 +259,54 @@ private:
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isNumber(WhichDataType(arg)))
-                throw Exception(
-                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be numeric",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
+                    "Must be numeric", arg->getName(), std::to_string(arg_idx + 1), getName());
         }
 
         return std::make_shared<DataTypeFloat32>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto dst = ColumnVector<Float32>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        const IColumn & col_lon1 = *arguments[0].column;
-        const IColumn & col_lat1 = *arguments[1].column;
-        const IColumn & col_lon2 = *arguments[2].column;
-        const IColumn & col_lat2 = *arguments[3].column;
+        auto arguments_copy = arguments;
+        for (auto & argument : arguments_copy)
+        {
+            argument.column = argument.column->convertToFullColumnIfConst();
+            argument.column = castColumn(argument, result_type);
+            argument.type = result_type;
+        }
+
+        const auto * col_lon1 = convertArgumentColumnToFloat32(arguments_copy, 0);
+        const auto * col_lat1 = convertArgumentColumnToFloat32(arguments_copy, 1);
+        const auto * col_lon2 = convertArgumentColumnToFloat32(arguments_copy, 2);
+        const auto * col_lat2 = convertArgumentColumnToFloat32(arguments_copy, 3);
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+        {
             dst_data[row_num] = distance<method>(
-                col_lon1.getFloat32(row_num), col_lat1.getFloat32(row_num),
-                col_lon2.getFloat32(row_num), col_lat2.getFloat32(row_num));
+                col_lon1->getData()[row_num], col_lat1->getData()[row_num],
+                col_lon2->getData()[row_num], col_lat2->getData()[row_num]);
+        }
 
         return dst;
+    }
+
+    const ColumnFloat32 * convertArgumentColumnToFloat32(const ColumnsWithTypeAndName & arguments, size_t argument_index) const
+    {
+        const auto * column_typed = checkAndGetColumn<ColumnFloat32>(arguments[argument_index].column.get());
+        if (!column_typed)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be Float32.",
+                    arguments[argument_index].type->getName(),
+                    argument_index + 1,
+                    getName());
+
+        return column_typed;
     }
 };
 
@@ -317,7 +345,7 @@ private:
     ImplementationSelector<IFunction> selector;
 };
 
-void registerFunctionGeoDistance(FunctionFactory & factory)
+REGISTER_FUNCTION(GeoDistance)
 {
     geodistInit();
     factory.registerFunction<FunctionGeoDistance<Method::SPHERE_DEGREES>>();

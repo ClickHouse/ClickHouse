@@ -1,9 +1,10 @@
 ---
+slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Server Settings
 ---
 
-# Server Settings {#server-settings}
+# Server Settings
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -45,7 +46,7 @@ Configuration template:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
+-   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 -   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
@@ -193,6 +194,35 @@ Sets the delay before remove table data in seconds. If the query has `SYNC` modi
 
 Default value: `480` (8 minute).
 
+## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and this directory was not modified for last
+`database_catalog_unused_dir_hide_timeout_sec` seconds, the task will "hide" this directory by
+removing all access rights. It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "immediately".
+
+Default value: `3600` (1 hour).
+
+## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and it was previousely "hidden"
+(see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec))
+and this directory was not modified for last
+`database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory.
+It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "never".
+
+Default value: `2592000` (30 days).
+
+## database_catalog_unused_dir_cleanup_period_sec {#database_catalog_unused_dir_cleanup_period_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+Sets scheduling period of the task. Zero means "never".
+
+Default value: `86400` (1 day).
+
 ## default_database {#default-database}
 
 The default database.
@@ -238,14 +268,14 @@ The path to the table in ZooKeeper.
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
-The path to the config file for external dictionaries.
+The path to the config file for dictionaries.
 
 Path:
 
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
 
 **Example**
 
@@ -267,7 +297,7 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 **Example**
 
 ``` xml
-<user_defined_executable_functions_config>*_dictionary.xml</user_defined_executable_functions_config>
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
@@ -407,6 +437,20 @@ For more information, see the section “[Configuration files](../../operations/
 
 ``` xml
 <include_from>/etc/metrica.xml</include_from>
+```
+
+## interserver_listen_host {#interserver-listen-host}
+
+Restriction on hosts that can exchange data between ClickHouse servers.
+If Keeper is used, the same restriction will be applied to the communication
+between different Keeper instances.
+The default value equals to `listen_host` setting.
+
+Examples:
+
+``` xml
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
 ```
 
 ## interserver_http_port {#interserver-http-port}
@@ -622,6 +666,7 @@ Keys:
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
 -   `tmp_path` - Filesystem path for temporary crash report state.
+-   `environment` - An arbitrary name of an environment in which the ClickHouse server is running. It will be mentioned in each crash report. The default value is `test` or `prod` depending on the version of ClickHouse.
 
 **Recommended way to use**
 
@@ -701,6 +746,37 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 **See Also**
 
 -   [max_server_memory_usage](#max_server_memory_usage)
+
+## concurrent_threads_soft_limit_num {#concurrent_threads_soft_limit_num}
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run. Query can upscale to desired number of threads during execution if more threads become available.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Concurrency Control](/docs/en/development/architecture.md#concurrency-control)
+
+## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
+The maximum number of query processing threads as multiple of number of logical cores.
+More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<concurrent_threads_soft_limit_ratio_to_cores>3</concurrent_threads_soft_limit_ratio_to_cores>
+```
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
@@ -824,7 +900,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in macOS since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 
@@ -897,6 +973,92 @@ Default value: `10000`.
 ``` xml
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
+
+## background_pool_size {#background_pool_size}
+
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**Example**
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
+
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operation could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 2.
+
+**Example**
+
+```xml
+<background_merges_mutations_concurrency_ratio>3</background_merges_mutations_concurrency_ratio>
+```
+
+## background_move_pool_size {#background_move_pool_size}
+
+Sets the number of threads performing background moves for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_move_pool_size>36</background_move_pool_size>
+```
+
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_fetches_pool_size>36</background_fetches_pool_size>
+```
+
+## background_common_pool_size {#background_common_pool_size}
+
+Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_common_pool_size>36</background_common_pool_size>
+```
+
+
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
 
@@ -1029,6 +1191,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
 
@@ -1092,6 +1255,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1104,6 +1268,34 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
+```
+
+## query_cache {#server_configuration_parameters_query-cache}
+
+[Query cache](../query-cache.md) configuration.
+
+The following settings are available:
+
+-   `size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
+-   `max_entries`: The maximum number of `SELECT` query results stored in the cache. Default value: `1024`.
+-   `max_entry_size`: The maximum size in bytes `SELECT` query results may have to be saved in the cache. Default value: `1048576` (1 MiB).
+-   `max_entry_rows`: The maximum number of rows `SELECT` query results may have to be saved in the cache. Default value: `30000000` (30 mil).
+
+Changed settings take effect immediately.
+
+:::warning
+Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `size` or disable the query cache altogether.
+:::
+
+**Example**
+
+```xml
+<query_cache>
+    <size>1073741824</size>
+    <max_entries>1024</max_entries>
+    <max_entry_size>1048576</max_entry_size>
+    <max_entry_rows>30000000</max_entry_rows>
+</query_cache>
 ```
 
 ## query_thread_log {#server_configuration_parameters-query_thread_log}
@@ -1119,6 +1311,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1146,6 +1339,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query views log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1172,6 +1366,7 @@ Parameters:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
 ```xml
@@ -1199,6 +1394,7 @@ Parameters:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -1301,7 +1497,7 @@ Port for communicating with clients over MySQL protocol.
 
 **Possible values**
 
-Positive integer.
+Positive integer to specify the port number to listen to or empty value to disable.
 
 Example
 
@@ -1315,7 +1511,7 @@ Port for communicating with clients over PostgreSQL protocol.
 
 **Possible values**
 
-Positive integer.
+Positive integer to specify the port number to listen to or empty value to disable.
 
 Example
 
@@ -1347,8 +1543,23 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 - `move_factor` is ignored.
 - `keep_free_space_bytes` is ignored.
 - `max_data_part_size_bytes` is ignored.
-- Уou must have exactly one volume in that policy.
+- Policy should have exactly one volume with local disks.
 :::
+
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
+
+Limit the amount of disk space consumed by temporary files in `tmp_path` for the server.
+Queries that exceed this limit will fail with an exception.
+
+Default value: `0`.
+
+**See also**
+
+-   [max_temporary_data_on_disk_size_for_user](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_user)
+-   [max_temporary_data_on_disk_size_for_query](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_query)
+-   [tmp_path](#tmp-path)
+-   [tmp_policy](#tmp-policy)
+-   [max_server_memory_usage](#max_server_memory_usage)
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -1382,6 +1593,16 @@ The directory with user scripts files. Used for Executable user defined function
 
 ``` xml
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
+```
+
+## user_defined_path {#server_configuration_parameters-user_defined_path}
+
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+
+**Example**
+
+``` xml
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
 ## users_config {#users-config}
@@ -1649,4 +1870,3 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
-

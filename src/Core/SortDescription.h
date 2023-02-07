@@ -8,8 +8,7 @@
 #include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/IDataType.h>
-
-class Collator;
+#include <Columns/Collator.h>
 
 namespace DB
 {
@@ -28,7 +27,9 @@ struct FillColumnDescription
     /// All missed values in range [FROM, TO) will be filled
     /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
+    DataTypePtr fill_from_type;
     Field fill_to;          /// Fill value + STEP < FILL_TO
+    DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
 
@@ -47,14 +48,16 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
+    SortColumnDescription() = default;
+
     explicit SortColumnDescription(
-        const std::string & column_name_,
+        std::string column_name_,
         int direction_ = 1,
         int nulls_direction_ = 1,
         const std::shared_ptr<Collator> & collator_ = nullptr,
         bool with_fill_ = false,
         const FillColumnDescription & fill_description_ = {})
-        : column_name(column_name_)
+        : column_name(std::move(column_name_))
         , direction(direction_)
         , nulls_direction(nulls_direction_)
         , collator(collator_)
@@ -63,9 +66,18 @@ struct SortColumnDescription
     {
     }
 
-    bool operator == (const SortColumnDescription & other) const
+    static bool compareCollators(const std::shared_ptr<Collator> & a, const std::shared_ptr<Collator> & b)
     {
-        return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction;
+        if (unlikely(a && b))
+            return *a == *b;
+
+        return a == b;
+    }
+
+    bool operator==(const SortColumnDescription & other) const
+    {
+        return column_name == other.column_name && direction == other.direction && nulls_direction == other.nulls_direction
+            && compareCollators(collator, other.collator);
     }
 
     bool operator != (const SortColumnDescription & other) const
@@ -87,11 +99,39 @@ struct SortColumnDescriptionWithColumnIndex
         : base(std::move(description_)), column_number(column_number_)
     {
     }
+
+    bool operator==(const SortColumnDescriptionWithColumnIndex & other) const
+    {
+        return base == other.base && column_number == other.column_number;
+    }
+
+    bool operator!=(const SortColumnDescriptionWithColumnIndex & other) const { return !(*this == other); }
 };
 
+class CompiledSortDescriptionFunctionHolder;
+
 /// Description of the sorting rule for several columns.
-using SortDescription = std::vector<SortColumnDescription>;
 using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
+
+class SortDescription : public std::vector<SortColumnDescription>
+{
+public:
+    /// Can be safely casted into JITSortDescriptionFunc
+    void * compiled_sort_description = nullptr;
+    std::shared_ptr<CompiledSortDescriptionFunctionHolder> compiled_sort_description_holder;
+    size_t min_count_to_compile_sort_description = 3;
+    bool compile_sort_description = false;
+
+    bool hasPrefix(const SortDescription & prefix) const;
+};
+
+/// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
+SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
+
+/** Compile sort description for header_types.
+  * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
+  */
+void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts);
 
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out);

@@ -5,28 +5,24 @@ import string
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
+from helpers.wait_for_helpers import wait_for_delete_empty_parts
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-NOT_RESTORABLE_CONFIG_PATH = os.path.join(
-    SCRIPT_DIR,
-    "./{}/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml".format(
-        get_instances_dir()
-    ),
-)
 COMMON_CONFIGS = [
     "configs/config.d/bg_processing_pool_conf.xml",
     "configs/config.d/clusters.xml",
 ]
 
 
-def replace_config(old, new):
-    config = open(NOT_RESTORABLE_CONFIG_PATH, "r")
+def replace_config(path, old, new):
+    config = open(path, "r")
     config_lines = config.readlines()
     config.close()
     config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(NOT_RESTORABLE_CONFIG_PATH, "w")
+    config = open(path, "w")
     config.writelines(config_lines)
     config.close()
 
@@ -88,10 +84,13 @@ def generate_values(date_str, count, sign=1):
 def create_table(
     node, table_name, attach=False, replicated=False, db_atomic=False, uuid=""
 ):
+    node.query("DROP DATABASE IF EXISTS s3")
+
     node.query(
         "CREATE DATABASE IF NOT EXISTS s3 ENGINE = {engine}".format(
             engine="Atomic" if db_atomic else "Ordinary"
-        )
+        ),
+        settings={"allow_deprecated_database_ordinary": 1},
     )
 
     create_table_statement = """
@@ -106,8 +105,8 @@ def create_table(
         ORDER BY (dt, id)
         SETTINGS
             storage_policy='s3',
-            old_parts_lifetime=600,
-            index_granularity=512
+            index_granularity=512,
+            old_parts_lifetime=1
         """.format(
         create="ATTACH" if attach else "CREATE",
         table_name=table_name,
@@ -145,6 +144,7 @@ def create_restore_file(node, revision=None, bucket=None, path=None, detached=No
     node.exec_in_container(
         ["bash", "-c", "mkdir -p /var/lib/clickhouse/disks/s3/"], user="root"
     )
+
     node.exec_in_container(
         ["bash", "-c", "touch /var/lib/clickhouse/disks/s3/restore"], user="root"
     )
@@ -242,8 +242,7 @@ def test_full_restore(cluster, replicated, db_atomic):
     node.query("DETACH TABLE s3.test")
     drop_s3_metadata(node)
     create_restore_file(node)
-    node.query("SYSTEM RESTART DISK s3")
-    node.query("ATTACH TABLE s3.test")
+    node.restart_clickhouse()
 
     assert node.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(
         4096 * 4
@@ -273,6 +272,7 @@ def test_restore_another_bucket_path(cluster, db_atomic):
 
     # To ensure parts have merged
     node.query("OPTIMIZE TABLE s3.test")
+    wait_for_delete_inactive_parts(node, "s3.test", retry_count=120)
 
     assert node.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(
         4096 * 4
@@ -282,7 +282,7 @@ def test_restore_another_bucket_path(cluster, db_atomic):
     node_another_bucket = cluster.instances["node_another_bucket"]
 
     create_restore_file(node_another_bucket, bucket="root")
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -297,7 +297,7 @@ def test_restore_another_bucket_path(cluster, db_atomic):
     node_another_bucket_path = cluster.instances["node_another_bucket_path"]
 
     create_restore_file(node_another_bucket_path, bucket="root2", path="data")
-    node_another_bucket_path.query("SYSTEM RESTART DISK s3")
+    node_another_bucket_path.restart_clickhouse()
     create_table(
         node_another_bucket_path, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -339,6 +339,9 @@ def test_restore_different_revisions(cluster, db_atomic):
 
     # To ensure parts have merged
     node.query("OPTIMIZE TABLE s3.test")
+    wait_for_delete_inactive_parts(node, "s3.test", retry_count=120)
+
+    assert node.query("SELECT count(*) from system.parts where table = 'test'") == "3\n"
 
     node.query("ALTER TABLE s3.test FREEZE")
     revision3 = get_revision_counter(node, 3)
@@ -347,13 +350,13 @@ def test_restore_different_revisions(cluster, db_atomic):
         4096 * 4
     )
     assert node.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
-    assert node.query("SELECT count(*) from system.parts where table = 'test'") == "5\n"
+    assert node.query("SELECT count(*) from system.parts where table = 'test'") == "3\n"
 
     node_another_bucket = cluster.instances["node_another_bucket"]
 
     # Restore to revision 1 (2 parts).
     create_restore_file(node_another_bucket, revision=revision1, bucket="root")
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -374,8 +377,7 @@ def test_restore_different_revisions(cluster, db_atomic):
     # Restore to revision 2 (4 parts).
     node_another_bucket.query("DETACH TABLE s3.test")
     create_restore_file(node_another_bucket, revision=revision2, bucket="root")
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
-    node_another_bucket.query("ATTACH TABLE s3.test")
+    node_another_bucket.restart_clickhouse()
 
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
@@ -393,8 +395,7 @@ def test_restore_different_revisions(cluster, db_atomic):
     # Restore to revision 3 (4 parts + 1 merged).
     node_another_bucket.query("DETACH TABLE s3.test")
     create_restore_file(node_another_bucket, revision=revision3, bucket="root")
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
-    node_another_bucket.query("ATTACH TABLE s3.test")
+    node_another_bucket.restart_clickhouse()
 
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
@@ -406,7 +407,7 @@ def test_restore_different_revisions(cluster, db_atomic):
         node_another_bucket.query(
             "SELECT count(*) from system.parts where table = 'test'"
         )
-        == "5\n"
+        == "3\n"
     )
 
 
@@ -440,7 +441,7 @@ def test_restore_mutations(cluster, db_atomic):
     create_restore_file(
         node_another_bucket, revision=revision_before_mutation, bucket="root"
     )
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -460,8 +461,7 @@ def test_restore_mutations(cluster, db_atomic):
     create_restore_file(
         node_another_bucket, revision=revision_after_mutation, bucket="root"
     )
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
-    node_another_bucket.query("ATTACH TABLE s3.test")
+    node_another_bucket.restart_clickhouse()
 
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
@@ -481,8 +481,7 @@ def test_restore_mutations(cluster, db_atomic):
     node_another_bucket.query("DETACH TABLE s3.test")
     revision = (revision_before_mutation + revision_after_mutation) // 2
     create_restore_file(node_another_bucket, revision=revision, bucket="root")
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
-    node_another_bucket.query("ATTACH TABLE s3.test")
+    node_another_bucket.restart_clickhouse()
 
     # Wait for unfinished mutation completion.
     time.sleep(3)
@@ -501,9 +500,15 @@ def test_restore_mutations(cluster, db_atomic):
     ) == "({})".format(4096)
 
 
-@pytest.mark.parametrize("db_atomic", [False, True])
-def test_migrate_to_restorable_schema(cluster, db_atomic):
+def test_migrate_to_restorable_schema(cluster):
+    db_atomic = True
     node = cluster.instances["node_not_restorable"]
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./{}/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml".format(
+            cluster.instances_dir_name
+        ),
+    )
 
     create_table(node, "test", db_atomic=db_atomic)
     uuid = get_table_uuid(node, db_atomic, "test")
@@ -522,7 +527,9 @@ def test_migrate_to_restorable_schema(cluster, db_atomic):
     )
 
     replace_config(
-        "<send_metadata>false</send_metadata>", "<send_metadata>true</send_metadata>"
+        config_path,
+        "<send_metadata>false</send_metadata>",
+        "<send_metadata>true</send_metadata>",
     )
     node.restart_clickhouse()
 
@@ -544,7 +551,7 @@ def test_migrate_to_restorable_schema(cluster, db_atomic):
     create_restore_file(
         node_another_bucket, revision=revision, bucket="root", path="another_data"
     )
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -588,6 +595,8 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
 
     # Detach some partition.
     node.query("ALTER TABLE s3.test DETACH PARTITION '2020-01-07'")
+    wait_for_delete_empty_parts(node, "s3.test", retry_count=120)
+    wait_for_delete_inactive_parts(node, "s3.test", retry_count=120)
 
     node.query("ALTER TABLE s3.test FREEZE")
     revision = get_revision_counter(node, 1)
@@ -601,7 +610,7 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
         path="data",
         detached=True,
     )
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket,
         "test",
@@ -618,10 +627,10 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
     node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-04'")
     node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-05'")
     node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-06'")
-
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
     ) == "({})".format(4096 * 4)
+
     assert node_another_bucket.query(
         "SELECT sum(id) FROM s3.test FORMAT Values"
     ) == "({})".format(0)
@@ -667,7 +676,7 @@ def test_restore_without_detached(cluster, replicated, db_atomic):
         path="data",
         detached=True,
     )
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse()
     create_table(
         node_another_bucket,
         "test",

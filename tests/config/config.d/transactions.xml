@@ -10,4 +10,12 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </transactions_info_log>
 
+    <transaction_log>
+        <zookeeper_path>/test/clickhouse/txn</zookeeper_path>
+
+        <fault_probability_before_commit>0.0</fault_probability_before_commit>
+
+        <!-- Fault injection after commit should not affect tests, because default waiting mode is WAIT_UNKNOWN -->
+        <fault_probability_after_commit>0.01</fault_probability_after_commit>
+    </transaction_log>
 </yandex>

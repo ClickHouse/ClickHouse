@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
@@ -12,12 +13,13 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
-#include "ODBCConnectionFactory.h"
+#include "ODBCPooledConnectionFactory.h"
 
 #include <sql.h>
 #include <sqlext.h>
@@ -80,6 +82,27 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         LOG_WARNING(log, fmt::runtime(message));
     };
 
+    size_t version;
+
+    if (!params.has("version"))
+        version = 0; /// assumed version for too old servers which do not send a version
+    else
+    {
+        String version_str = params.get("version");
+        if (!tryParse(version, version_str))
+        {
+            process_error("Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
+            return;
+        }
+    }
+
+    if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
+    {
+        /// backwards compatibility is considered unnecessary for now, just let the user know that the server and the bridge must be upgraded together
+        process_error("Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+        return;
+    }
+
     if (!params.has("table"))
     {
         process_error("No 'table' param in request URL");
@@ -105,7 +128,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
-        auto connection_holder = ODBCConnectionFactory::instance().get(
+        auto connection_holder = ODBCPooledConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
@@ -158,9 +181,12 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         }
 
         if (columns.empty())
-            throw Exception("Columns definition was not returned", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns definition was not returned");
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(
+            response,
+            request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD,
+            keep_alive_timeout);
         try
         {
             writeStringBinary(columns.toString(), out);

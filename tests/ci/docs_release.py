@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import subprocess
 import os
@@ -6,26 +7,41 @@ import sys
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, CLOUDFLARE_TOKEN
-from s3_helper import S3Helper
-from pr_info import PRInfo
-from get_robot_token import get_best_robot_token
-from ssh import SSHKey
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
 from commit_status_helper import get_commit
+from docker_pull_helper import get_image_with_version
+from env_helper import TEMP_PATH, REPO_COPY, CLOUDFLARE_TOKEN
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import TestResults, TestResult
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from ssh import SSHKey
+from tee_popen import TeePopen
+from upload_result_helper import upload_results
 
-NAME = "Docs Release (actions)"
+NAME = "Docs Release"
 
-if __name__ == "__main__":
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="ClickHouse building script using prebuilt Docker image",
+    )
+    parser.add_argument(
+        "--as-root", action="store_true", help="if the container should run as root"
+    )
+    return parser.parse_args()
+
+
+def main():
     logging.basicConfig(level=logging.INFO)
+    args = parse_args()
 
     temp_path = TEMP_PATH
     repo_path = REPO_COPY
 
-    gh = Github(get_best_robot_token())
-    pr_info = PRInfo(need_changed_files=True)
+    gh = Github(get_best_robot_token(), per_page=100)
+    pr_info = PRInfo()
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
@@ -40,18 +56,23 @@ if __name__ == "__main__":
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    token = CLOUDFLARE_TOKEN
-    cmd = (
-        "docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent "
-        f"-e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
-    )
+    if args.as_root:
+        user = "0:0"
+    else:
+        user = f"{os.geteuid()}:{os.getegid()}"
 
-    run_log_path = os.path.join(test_output, "runlog.log")
+    run_log_path = os.path.join(test_output, "run.log")
 
-    with open(run_log_path, "w", encoding="utf-8") as log, SSHKey(
-        "ROBOT_CLICKHOUSE_SSH_KEY"
-    ):
-        with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as process:
+    with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+        cmd = (
+            f"docker run --cap-add=SYS_PTRACE --user={user} "
+            f"--volume='{os.getenv('SSH_AUTH_SOCK', '')}:/ssh-agent' "
+            f"--volume={repo_path}:/repo_path --volume={test_output}:/output_path "
+            f"-e SSH_AUTH_SOCK=/ssh-agent -e EXTRA_BUILD_ARGS='--verbose' "
+            f"-e CLOUDFLARE_TOKEN={CLOUDFLARE_TOKEN} {docker_image}"
+        )
+        logging.info("Running command: %s", cmd)
+        with TeePopen(cmd, run_log_path) as process:
             retcode = process.wait()
             if retcode == 0:
                 logging.info("Run successfully")
@@ -64,7 +85,7 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     files = os.listdir(test_output)
-    lines = []
+    test_results = []  # type: TestResults
     additional_files = []
     if not files:
         logging.error("No output files after docs release")
@@ -77,22 +98,29 @@ if __name__ == "__main__":
             with open(path, "r", encoding="utf-8") as check_file:
                 for line in check_file:
                     if "ERROR" in line:
-                        lines.append((line.split(":")[-1], "FAIL"))
-        if lines:
+                        test_results.append(TestResult(line.split(":")[-1], "FAIL"))
+        if test_results:
             status = "failure"
             description = "Found errors in docs"
         elif status != "failure":
-            lines.append(("No errors found", "OK"))
+            test_results.append(TestResult("No errors found", "OK"))
         else:
-            lines.append(("Non zero exit code", "FAIL"))
+            test_results.append(TestResult("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     report_url = upload_results(
-        s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME
+        s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print("::notice ::Report url: {report_url}")
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(
         context=NAME, description=description, state=status, target_url=report_url
     )
+
+    if status == "failure":
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

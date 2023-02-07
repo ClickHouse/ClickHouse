@@ -30,7 +30,7 @@ struct BitXorImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
     {
         if (!left->getType()->isIntegerTy())
-            throw Exception("BitXorImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitXorImpl expected an integral type");
         return b.CreateXor(left, right);
     }
 #endif
@@ -41,7 +41,7 @@ using FunctionBitXor = BinaryArithmeticOverloadResolver<BitXorImpl, NameBitXor, 
 
 }
 
-void registerFunctionBitXor(FunctionFactory & factory)
+REGISTER_FUNCTION(BitXor)
 {
     factory.registerFunction<FunctionBitXor>();
 }

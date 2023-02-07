@@ -10,8 +10,9 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/IResolvedFunction.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -83,10 +84,20 @@ public:
     using Fraction = AvgFraction<Numerator, Denominator>;
 
     explicit AggregateFunctionAvgBase(const DataTypes & argument_types_,
-        UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
-        : Base(argument_types_, {}), num_scale(num_scale_), denom_scale(denom_scale_) {}
+                                      UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, createResultType())
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<Float64>>(); }
+    AggregateFunctionAvgBase(const DataTypes & argument_types_, const DataTypePtr & result_type_,
+                             UInt32 num_scale_ = 0, UInt32 denom_scale_ = 0)
+        : Base(argument_types_, {}, result_type_)
+        , num_scale(num_scale_)
+        , denom_scale(denom_scale_)
+    {}
+
+    DataTypePtr createResultType() const { return std::make_shared<DataTypeNumber<Float64>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -135,7 +146,7 @@ public:
         for (const auto & argument : this->argument_types)
             can_be_compiled &= canBeNativeType(*argument);
 
-        auto return_type = getReturnType();
+        auto return_type = this->getResultType();
         can_be_compiled &= canBeNativeType(*return_type);
 
         return can_be_compiled;
@@ -153,10 +164,10 @@ public:
 
         auto * numerator_type = toNativeType<Numerator>(b);
 
-        auto * numerator_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, numerator_type->getPointerTo());
+        auto * numerator_dst_ptr = aggregate_data_dst_ptr;
         auto * numerator_dst_value = b.CreateLoad(numerator_type, numerator_dst_ptr);
 
-        auto * numerator_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, numerator_type->getPointerTo());
+        auto * numerator_src_ptr = aggregate_data_src_ptr;
         auto * numerator_src_value = b.CreateLoad(numerator_type, numerator_src_ptr);
 
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_dst_value, numerator_src_value) : b.CreateFAdd(numerator_dst_value, numerator_src_value);
@@ -164,8 +175,8 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_dst_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_dst_ptr, denominator_offset), denominator_type->getPointerTo());
-        auto * denominator_src_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_src_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_dst_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_dst_ptr, denominator_offset);
+        auto * denominator_src_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_src_ptr, denominator_offset);
 
         auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
         auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);
@@ -179,12 +190,12 @@ public:
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
         auto * numerator_type = toNativeType<Numerator>(b);
-        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+        auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value = b.CreateLoad(denominator_type, denominator_ptr);
 
         auto * double_numerator = nativeCast<Numerator>(b, numerator_value, b.getDoubleTy());
@@ -224,27 +235,47 @@ public:
         ++this->data(place).denominator;
     }
 
-    void
-    addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const final
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** /*columns*/,
+        size_t length,
+        Arena * /*arena*/) const override
+    {
+        this->data(place).denominator += length;
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const final
     {
         AggregateFunctionSumData<Numerator> sum_data;
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            sum_data.addManyConditional(column.getData().data(), flags.data(), batch_size);
-            this->data(place).denominator += countBytesInFilter(flags.data(), batch_size);
+            sum_data.addManyConditional(column.getData().data(), flags.data(), row_begin, row_end);
+            this->data(place).denominator += countBytesInFilter(flags.data(), row_begin, row_end);
         }
         else
         {
-            sum_data.addMany(column.getData().data(), batch_size);
-            this->data(place).denominator += batch_size;
+            sum_data.addMany(column.getData().data(), row_begin, row_end);
+            this->data(place).denominator += (row_end - row_begin);
         }
         increment(place, sum_data.sum);
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *, ssize_t if_argument_pos)
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos)
         const final
     {
         AggregateFunctionSumData<Numerator> sum_data;
@@ -253,22 +284,22 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            auto final_flags = std::make_unique<UInt8[]>(batch_size);
+            auto final_flags = std::make_unique<UInt8[]>(row_end);
             size_t used_value = 0;
-            for (size_t i = 0; i < batch_size; ++i)
+            for (size_t i = row_begin; i < row_end; ++i)
             {
                 UInt8 kept = (!null_map[i]) & !!if_flags[i];
                 final_flags[i] = kept;
                 used_value += kept;
             }
 
-            sum_data.addManyConditional(column.getData().data(), final_flags.get(), batch_size);
+            sum_data.addManyConditional(column.getData().data(), final_flags.get(), row_begin, row_end);
             this->data(place).denominator += used_value;
         }
         else
         {
-            sum_data.addManyNotNull(column.getData().data(), null_map, batch_size);
-            this->data(place).denominator += batch_size - countBytesInFilter(null_map, batch_size);
+            sum_data.addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
+            this->data(place).denominator += (row_end - row_begin) - countBytesInFilter(null_map, row_begin, row_end);
         }
         increment(place, sum_data.sum);
     }
@@ -283,7 +314,7 @@ public:
 
         auto * numerator_type = toNativeType<Numerator>(b);
 
-        auto * numerator_ptr = b.CreatePointerCast(aggregate_data_ptr, numerator_type->getPointerTo());
+        auto * numerator_ptr = aggregate_data_ptr;
         auto * numerator_value = b.CreateLoad(numerator_type, numerator_ptr);
         auto * value_cast_to_numerator = nativeCast(b, arguments_types[0], argument_values[0], numerator_type);
         auto * numerator_result_value = numerator_type->isIntegerTy() ? b.CreateAdd(numerator_value, value_cast_to_numerator) : b.CreateFAdd(numerator_value, value_cast_to_numerator);
@@ -291,7 +322,7 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_ptr = b.CreateConstGEP1_32(b.getInt8Ty(), aggregate_data_ptr, denominator_offset);
         auto * denominator_value_updated = b.CreateAdd(b.CreateLoad(denominator_type, denominator_ptr), llvm::ConstantInt::get(denominator_type, 1));
         b.CreateStore(denominator_value_updated, denominator_ptr);
     }

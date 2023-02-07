@@ -190,6 +190,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             auto cancellation_checker = data.getContext()->getQueryCancellationChecker();
             UInt64 interactive_delay = data.getContext()->getQueryInteractiveDelay();
             PullingAsyncPipelineExecutor executor(io.pipeline);
+            io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
+
             while (block.rows() == 0 && executor.pull(block, interactive_delay))
             {
                 if (cancellation_checker && (*cancellation_checker)())
@@ -225,7 +227,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             }
 
             if (block.rows() != 1)
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
             Block tmp_block;
             while (tmp_block.rows() == 0 && executor.pull(tmp_block, interactive_delay))
@@ -238,7 +240,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             }
 
             if (tmp_block.rows() != 0)
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
         }
 
         block = materializeBlock(block);

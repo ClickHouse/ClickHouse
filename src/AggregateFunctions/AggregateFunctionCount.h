@@ -5,12 +5,14 @@
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/assert_cast.h>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -37,11 +39,13 @@ namespace ErrorCodes
 class AggregateFunctionCount final : public IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCount>
 {
 public:
-    explicit AggregateFunctionCount(const DataTypes & argument_types_) : IAggregateFunctionDataHelper(argument_types_, {}) {}
+    explicit AggregateFunctionCount(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper(argument_types_, {}, createResultType())
+    {}
 
     String getName() const override { return "count"; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeUInt64>();
     }
@@ -53,8 +57,22 @@ public:
         ++data(place).count;
     }
 
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** /*columns*/,
+        size_t length,
+        Arena * /*arena*/) const override
+    {
+        data(place).count += length;
+    }
+
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
     {
         if (if_argument_pos >= 0)
         {
@@ -63,13 +81,14 @@ public:
         }
         else
         {
-            data(place).count += batch_size;
+            data(place).count += row_end - row_begin;
         }
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size,
-        AggregateDataPtr place,
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena *,
@@ -78,12 +97,26 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilterWithNull(flags, null_map);
+            data(place).count += countBytesInFilterWithNull(flags, null_map, row_begin, row_end);
         }
         else
         {
-            data(place).count += batch_size - countBytesInFilter(null_map, batch_size);
+            size_t rows = row_end - row_begin;
+            data(place).count += rows - countBytesInFilter(null_map, row_begin, row_end);
         }
+    }
+
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        return this->getName() == rhs.getName();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        /// Return normalized state type: count()
+        AggregateFunctionProperties properties;
+        return std::make_shared<DataTypeAggregateFunction>(
+            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -136,9 +169,9 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
-        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * count_value_ptr = aggregate_data_ptr;
         auto * count_value = b.CreateLoad(return_type, count_value_ptr);
         auto * updated_count_value = b.CreateAdd(count_value, llvm::ConstantInt::get(return_type, 1));
 
@@ -149,12 +182,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
-        auto * count_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
+        auto * count_value_dst_ptr = aggregate_data_dst_ptr;
         auto * count_value_dst = b.CreateLoad(return_type, count_value_dst_ptr);
 
-        auto * count_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
+        auto * count_value_src_ptr = aggregate_data_src_ptr;
         auto * count_value_src = b.CreateLoad(return_type, count_value_src_ptr);
 
         auto * count_value_dst_updated = b.CreateAdd(count_value_dst, count_value_src);
@@ -166,8 +199,8 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
-        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * return_type = toNativeType(b, this->getResultType());
+        auto * count_value_ptr = aggregate_data_ptr;
 
         return b.CreateLoad(return_type, count_value_ptr);
     }
@@ -183,15 +216,15 @@ class AggregateFunctionCountNotNullUnary final
 {
 public:
     AggregateFunctionCountNotNullUnary(const DataTypePtr & argument, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>({argument}, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionCountData, AggregateFunctionCountNotNullUnary>({argument}, params, createResultType())
     {
         if (!argument->isNullable())
-            throw Exception("Logical error: not Nullable data type passed to AggregateFunctionCountNotNullUnary", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: not Nullable data type passed to AggregateFunctionCountNotNullUnary");
     }
 
     String getName() const override { return "count"; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeUInt64>();
     }
@@ -204,18 +237,37 @@ public:
     }
 
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *,
+        ssize_t if_argument_pos) const override
     {
         const auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilterWithNull(flags, nc.getNullMapData().data());
+            data(place).count += countBytesInFilterWithNull(flags, nc.getNullMapData().data(), row_begin, row_end);
         }
         else
         {
-            data(place).count += batch_size - countBytesInFilter(nc.getNullMapData().data(), batch_size);
+            size_t rows = row_end - row_begin;
+            data(place).count += rows - countBytesInFilter(nc.getNullMapData().data(), row_begin, row_end);
         }
+    }
+
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        return this->getName() == rhs.getName();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        /// Return normalized state type: count()
+        AggregateFunctionProperties properties;
+        return std::make_shared<DataTypeAggregateFunction>(
+            AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -261,12 +313,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
         auto * is_null_value = b.CreateExtractValue(values[0], {1});
         auto * increment_value = b.CreateSelect(is_null_value, llvm::ConstantInt::get(return_type, 0), llvm::ConstantInt::get(return_type, 1));
 
-        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * count_value_ptr = aggregate_data_ptr;
         auto * count_value = b.CreateLoad(return_type, count_value_ptr);
         auto * updated_count_value = b.CreateAdd(count_value, increment_value);
 
@@ -277,12 +329,12 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
+        auto * return_type = toNativeType(b, this->getResultType());
 
-        auto * count_value_dst_ptr = b.CreatePointerCast(aggregate_data_dst_ptr, return_type->getPointerTo());
+        auto * count_value_dst_ptr = aggregate_data_dst_ptr;
         auto * count_value_dst = b.CreateLoad(return_type, count_value_dst_ptr);
 
-        auto * count_value_src_ptr = b.CreatePointerCast(aggregate_data_src_ptr, return_type->getPointerTo());
+        auto * count_value_src_ptr = aggregate_data_src_ptr;
         auto * count_value_src = b.CreateLoad(return_type, count_value_src_ptr);
 
         auto * count_value_dst_updated = b.CreateAdd(count_value_dst, count_value_src);
@@ -294,8 +346,8 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, getReturnType());
-        auto * count_value_ptr = b.CreatePointerCast(aggregate_data_ptr, return_type->getPointerTo());
+        auto * return_type = toNativeType(b, this->getResultType());
+        auto * count_value_ptr = aggregate_data_ptr;
 
         return b.CreateLoad(return_type, count_value_ptr);
     }

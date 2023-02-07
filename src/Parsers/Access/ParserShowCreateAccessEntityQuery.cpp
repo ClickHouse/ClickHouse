@@ -7,7 +7,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <base/range.h>
-#include <assert.h>
+#include <cassert>
 
 
 namespace DB
@@ -150,7 +150,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             break;
         }
         case AccessEntityType::MAX:
-            throw Exception("Type " + toString(type) + " is not implemented in SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type {} is not implemented in SHOW CREATE query", toString(type));
     }
 
     auto query = std::make_shared<ASTShowCreateAccessEntityQuery>();

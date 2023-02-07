@@ -7,49 +7,48 @@ env:
 concurrency:
   group: master-release
   cancel-in-progress: true
-on: # yamllint disable-line rule:truthy
+'on':
   push:
     branches:
       - master
     paths:
-      - 'docs/**'
-      - 'website/**'
-      - 'benchmark/**'
-      - 'docker/**'
       - '.github/**'
+      - 'docker/docs/release/**'
+      - 'docs/**'
+      - 'utils/list-versions/version_date.tsv'
+      - 'website/**'
+      - 'utils/check-style/aspell-ignore/**'
   workflow_dispatch:
 jobs:
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}/docker_images_check/changed_images_amd64.json
@@ -57,18 +56,17 @@ jobs:
     needs: [DockerHubPushAmd64, DockerHubPushAarch64]
     runs-on: [self-hosted, style-checker]
     steps:
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Download changed aarch64 images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}
       - name: Download changed amd64 images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}
@@ -77,7 +75,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
       - name: Upload images files to artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
@@ -96,13 +94,12 @@ jobs:
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK
           EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
       - name: Download changed images
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
@@ -116,6 +113,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"

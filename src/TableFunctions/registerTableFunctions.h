@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
-#include "config_core.h"
+#include "config.h"
 
 namespace DB
 {
@@ -17,11 +16,17 @@ void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+void registerTableFunctionMongoDB(TableFunctionFactory & factory);
+
+void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
 void registerTableFunctionCOS(TableFunctionFactory & factory);
+void registerTableFunctionHudi(TableFunctionFactory & factory);
+void registerTableFunctionDeltaLake(TableFunctionFactory & factory);
+void registerTableFunctionOSS(TableFunctionFactory & factory);
 #endif
 
 #if USE_HDFS
@@ -37,6 +42,7 @@ void registerTableFunctionODBC(TableFunctionFactory & factory);
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 void registerTableFunctionView(TableFunctionFactory & factory);
+void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
@@ -53,6 +59,8 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
 void registerTableFunctionFormat(TableFunctionFactory & factory);
+
+void registerTableFunctionExplain(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

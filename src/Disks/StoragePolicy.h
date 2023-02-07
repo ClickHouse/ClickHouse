@@ -5,13 +5,12 @@
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
 #include <Disks/VolumeJBOD.h>
-#include <Disks/VolumeRAID1.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <memory>
 #include <mutex>
@@ -69,7 +68,7 @@ public:
     ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
-    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const override;
+    std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size.
@@ -105,6 +104,8 @@ private:
     double move_factor = 0.1; /// by default move factor is 10%
 
     void buildVolumeIndices();
+
+    Poco::Logger * log;
 };
 
 

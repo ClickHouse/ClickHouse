@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_PROTOBUF
 #   include <Processors/Formats/IRowInputFormat.h>
@@ -28,9 +28,17 @@ class ReadBuffer;
 class ProtobufRowInputFormat final : public IRowInputFormat
 {
 public:
-    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_);
+    ProtobufRowInputFormat(
+        ReadBuffer & in_,
+        const Block & header_,
+        const Params & params_,
+        const FormatSchemaInfo & schema_info_,
+        bool with_length_delimiter_,
+        bool flatten_google_wrappers_);
 
     String getName() const override { return "ProtobufRowInputFormat"; }
+
+    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
@@ -51,6 +59,7 @@ public:
 
 private:
     const FormatSchemaInfo schema_info;
+    bool skip_unsupported_fields;
 };
 
 }

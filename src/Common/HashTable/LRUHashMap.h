@@ -78,20 +78,20 @@ struct LRUHashMapCellNodeTraits
 };
 
 template <typename TKey, typename TValue, typename Disposer, typename Hash, bool save_hash_in_cells>
-class LRUHashMapImpl :
-    private HashMapTable<
-        TKey,
-        LRUHashMapCell<TKey, TValue, Hash, save_hash_in_cells>,
-        Hash,
-        HashTableGrower<>,
-        HashTableAllocator>
+class LRUHashMapImpl : private HashMapTable<
+                           TKey,
+                           LRUHashMapCell<TKey, TValue, Hash, save_hash_in_cells>,
+                           Hash,
+                           HashTableGrowerWithPrecalculation<>,
+                           HashTableAllocator>
 {
     using Base = HashMapTable<
         TKey,
         LRUHashMapCell<TKey, TValue, Hash, save_hash_in_cells>,
         Hash,
-        HashTableGrower<>,
+        HashTableGrowerWithPrecalculation<>,
         HashTableAllocator>;
+
 public:
     using Key = TKey;
     using Value = TValue;

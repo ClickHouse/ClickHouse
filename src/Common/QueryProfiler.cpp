@@ -1,11 +1,11 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Interpreters/TraceCollector.h>
+#include <Common/TraceSender.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 
@@ -50,11 +50,11 @@ namespace
                 /// But pass with some frequency to avoid drop of all traces.
                 if (overrun_count > 0 && write_trace_iteration % (overrun_count + 1) == 0)
                 {
-                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
+                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
                 }
                 else
                 {
-                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
+                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
                     return;
                 }
             }
@@ -66,8 +66,8 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        TraceCollector::collect(trace_type, stack_trace, 0);
-        ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
+        TraceSender::send(trace_type, stack_trace, {});
+        ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
     }
@@ -81,7 +81,6 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_CREATE_TIMER;
     extern const int CANNOT_SET_TIMER_PERIOD;
-    extern const int CANNOT_DELETE_TIMER;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -96,18 +95,18 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception("QueryProfiler disabled because they cannot work under sanitizers", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
 #elif !USE_UNWIND
     UNUSED(thread_id);
     UNUSED(clock_type);
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work with stock libunwind");
 #else
     /// Sanity check.
     if (!hasPHDRCache())
-        throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
 
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
     if (period < 1000000)
@@ -133,11 +132,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         sev.sigev_signo = pause_signal;
 
 #if defined(OS_FREEBSD)
-        sev._sigev_un._threadid = thread_id;
+        sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
 #elif defined(USE_MUSL)
-        sev.sigev_notify_thread_id = thread_id;
+        sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
 #else
-        sev._sigev_un._tid = thread_id;
+        sev._sigev_un._tid = static_cast<pid_t>(thread_id);
 #endif
         timer_t local_timer_id;
         if (timer_create(clock_type, &sev, &local_timer_id))
@@ -145,8 +144,8 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
             /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
             if (errno == 0)
-                throw Exception("Failed to create thread timer. The function 'timer_create' returned non-zero but didn't set errno. This is bug in your OS.",
-                    ErrorCodes::CANNOT_CREATE_TIMER);
+                throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer. The function "
+                                "'timer_create' returned non-zero but didn't set errno. This is bug in your OS.");
 
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
@@ -188,7 +187,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
     if (timer_id.has_value())
     {
         if (timer_delete(*timer_id))
-            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
         timer_id.reset();
     }
 

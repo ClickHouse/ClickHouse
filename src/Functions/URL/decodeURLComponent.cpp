@@ -158,7 +158,7 @@ struct CodeURLComponentImpl
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by URL functions");
     }
 };
 
@@ -172,7 +172,7 @@ using FunctionEncodeURLComponent = FunctionStringToString<CodeURLComponentImpl<e
 using FunctionDecodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<decode, true>, NameDecodeURLFormComponent>;
 using FunctionEncodeURLFormComponent = FunctionStringToString<CodeURLComponentImpl<encode, true>, NameEncodeURLFormComponent>;
 
-void registerFunctionEncodeAndDecodeURLComponent(FunctionFactory & factory)
+REGISTER_FUNCTION(EncodeAndDecodeURLComponent)
 {
     factory.registerFunction<FunctionDecodeURLComponent>();
     factory.registerFunction<FunctionEncodeURLComponent>();

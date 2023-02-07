@@ -23,7 +23,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
     : values(std::move(values_)), _size(0)
 {
     if (!values->empty())
-        throw Exception("Not empty values passed to ColumnSparse, but no offsets passed", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not empty values passed to ColumnSparse, but no offsets passed");
 
     values->insertDefault();
     offsets = ColumnUInt64::create();
@@ -53,7 +53,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
 
 #ifndef NDEBUG
     const auto & offsets_data = getOffsetsData();
-    const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<UInt64>());
+    const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");
 #endif
@@ -173,8 +173,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
         return;
 
     if (start + length > src.size())
-        throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in IColumnString::insertRangeFrom method.");
 
     auto & offsets_data = getOffsetsData();
 
@@ -336,7 +335,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 void ColumnSparse::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < _size)
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
@@ -347,7 +346,7 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
         if (!!mask[i] ^ inverted)
         {
             if (it.getCurrentRow() == _size)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
             if (!it.isDefault())
                 res_offsets_data[it.getCurrentOffset()] = i;
@@ -613,7 +612,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
 {
     /// TODO: implement specializations.
     if (_size != replicate_offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     if (_size == 0)
         return ColumnSparse::create(values->cloneEmpty());
@@ -744,10 +743,18 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(ColumnCallback callback)
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
 {
     callback(values);
     callback(offsets);
+}
+
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    callback(*values);
+    values->forEachSubcolumnRecursively(callback);
+    callback(*offsets);
+    offsets->forEachSubcolumnRecursively(callback);
 }
 
 const IColumn::Offsets & ColumnSparse::getOffsetsData() const
@@ -770,6 +777,14 @@ size_t ColumnSparse::getValueIndex(size_t n) const
         return 0;
 
     return it - offsets_data.begin() + 1;
+}
+
+ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
+{
+    const auto & offsets_data = getOffsetsData();
+    const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
+    size_t current_offset = it - offsets_data.begin();
+    return Iterator(offsets_data, _size, current_offset, n);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

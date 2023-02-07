@@ -32,7 +32,7 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /
             return;
         }
     }
-    throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a query argument.", getName());
 }
 
 ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context) const
@@ -48,14 +48,14 @@ StoragePtr TableFunctionView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns, "");
+    auto res = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "");
     res->startup();
     return res;
 }
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>();
+    factory.registerFunction<TableFunctionView>({.documentation = {}, .allow_readonly = true});
 }
 
 }

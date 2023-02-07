@@ -4,7 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Poco/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "GeodataProviders/INamesProvider.h"
 
 
@@ -84,9 +84,9 @@ void RegionsNames::reload()
                 max_region_id = name_entry.id;
 
                 if (name_entry.id > max_size)
-                    throw DB::Exception(
-                        "Region id is too large: " + DB::toString(name_entry.id) + ", should be not more than " + DB::toString(max_size),
-                        DB::ErrorCodes::INCORRECT_DATA);
+                    throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                        "Region id is too large: {}, should be not more than {}",
+                        DB::toString(name_entry.id), DB::toString(max_size));
             }
 
             while (name_entry.id >= new_names_refs.size())

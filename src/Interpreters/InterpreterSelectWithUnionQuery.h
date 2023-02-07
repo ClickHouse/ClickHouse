@@ -22,10 +22,16 @@ public:
         const SelectQueryOptions &,
         const Names & required_result_column_names = {});
 
+    InterpreterSelectWithUnionQuery(
+        const ASTPtr & query_ptr_,
+        ContextMutablePtr context_,
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {});
+
     ~InterpreterSelectWithUnionQuery() override;
 
     /// Builds QueryPlan for current query.
-    virtual void buildQueryPlan(QueryPlan & query_plan) override;
+    void buildQueryPlan(QueryPlan & query_plan) override;
 
     BlockIO execute() override;
 
@@ -35,11 +41,14 @@ public:
     static Block getSampleBlock(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
-        bool is_subquery = false);
+        bool is_subquery = false,
+        bool is_create_parameterized_view = false);
 
-    virtual void ignoreWithTotals() override;
+    void ignoreWithTotals() override;
 
     bool supportsTransactions() const override { return true; }
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;

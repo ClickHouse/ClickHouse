@@ -79,7 +79,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
 
-            if (merge_type != MergeType::REGULAR)
+            if (merge_type != MergeType::Regular)
                 out <<"\nmerge_type: " << static_cast<UInt64>(merge_type);
 
             if (new_part_uuid != UUIDHelpers::Nil)
@@ -165,8 +165,16 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
     out << '\n';
 
-    if (new_part_type != MergeTreeDataPartType::WIDE && new_part_type != MergeTreeDataPartType::UNKNOWN)
-        out << "part_type: " << new_part_type.toString() << "\n";
+    using PartType = MergeTreeDataPartType;
+    using StorageType = MergeTreeDataPartStorageType;
+
+    auto part_type = new_part_format.part_type;
+    if (part_type != PartType::Wide && part_type != PartType::Unknown)
+        out << "part_type: " << part_type.toString() << "\n";
+
+    auto storage_type = new_part_format.storage_type;
+    if (storage_type != StorageType::Full && storage_type != StorageType::Unknown)
+        out << "storage_type: " << storage_type.toString() << "\n";
 
     if (quorum)
         out << "quorum: " << quorum << '\n';
@@ -240,7 +248,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
                 if (checkString("merge_type: ", in))
                 {
-                    UInt64 value;
+                    UInt32 value;
                     in >> value;
                     merge_type = checkAndGetMergeType(value);
                 }
@@ -319,12 +327,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         size_t columns_size;
         in >> columns_size >> "\n";
         columns_str.resize(columns_size);
-        in.readStrict(&columns_str[0], columns_size);
+        in.readStrict(columns_str.data(), columns_size);
         in >> "\nmetadata_str_size:\n";
         size_t metadata_size;
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
-        in.readStrict(&metadata_str[0], metadata_size);
+        in.readStrict(metadata_str.data(), metadata_size);
     }
     else if (type_str == "sync_pinned_part_uuids")
     {
@@ -342,13 +350,21 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     if (checkString("part_type: ", in))
     {
-        String part_type_str;
         in >> type_str;
-        new_part_type.fromString(type_str);
+        new_part_format.part_type.fromString(type_str);
         in >> "\n";
     }
     else
-        new_part_type = MergeTreeDataPartType::WIDE;
+        new_part_format.part_type = MergeTreeDataPartType::Wide;
+
+    if (checkString("storage_type: ", in))
+    {
+        in >> type_str;
+        new_part_format.storage_type.fromString(type_str);
+        in >> "\n";
+    }
+    else
+        new_part_format.storage_type = MergeTreeDataPartStorageType::Full;
 
     /// Optional field.
     if (!in.eof())

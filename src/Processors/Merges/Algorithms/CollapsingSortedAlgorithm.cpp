@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 /// Maximum number of messages about incorrect data in the log.
@@ -194,8 +194,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             last_is_positive = false;
         }
         else
-            throw Exception("Incorrect data: Sign = " + toString(sign) + " (must be 1 or -1).",
-                            ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
 
         ++current_pos;
 

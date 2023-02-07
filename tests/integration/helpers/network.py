@@ -236,6 +236,7 @@ class _NetworkManager:
             for i in range(5):
                 if self._container is not None:
                     try:
+                        logging.debug("[network] Removing %s", self._container.id)
                         self._container.remove(force=True)
                         break
                     except docker.errors.NotFound:
@@ -276,7 +277,7 @@ class _NetworkManager:
                 detach=True,
                 network_mode="host",
             )
-            container_id = self._container.id
+            logging.debug("[network] Created new container %s", self._container.id)
             self._container_expire_time = time.time() + self.container_expire_timeout
 
         return self._container
@@ -295,6 +296,10 @@ class _NetworkManager:
         output = self._docker_client.api.exec_start(handle).decode("utf8")
         exit_code = self._docker_client.api.exec_inspect(handle)["ExitCode"]
 
+        logging.debug(
+            "[network] %s: %s (%s): %s", container.id, cmd, exit_code, output.strip()
+        )
+
         if exit_code != 0:
             print(output)
             raise subprocess.CalledProcessError(exit_code, cmd)
@@ -302,7 +307,7 @@ class _NetworkManager:
         return output
 
 
-# Approximately mesure network I/O speed for interface
+# Approximately measure network I/O speed for interface
 class NetThroughput(object):
     def __init__(self, node):
         self.node = node

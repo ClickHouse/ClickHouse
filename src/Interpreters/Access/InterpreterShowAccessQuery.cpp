@@ -32,13 +32,8 @@ QueryPipeline InterpreterShowAccessQuery::executeImpl() const
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    WriteBufferFromOwnString buf;
     for (const auto & query : queries)
-    {
-        buf.restart();
-        formatAST(*query, buf, false, true);
-        column->insert(buf.str());
-    }
+        column->insert(query->formatWithSecretsHidden());
 
     String desc = "ACCESS";
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));

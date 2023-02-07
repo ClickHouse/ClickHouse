@@ -37,7 +37,8 @@ struct StringRef
     size_t size = 0;
 
     /// Non-constexpr due to reinterpret_cast.
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_)
     {
         /// Sanity check for overflowed values.
@@ -51,19 +52,15 @@ struct StringRef
     constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {} /// NOLINT
     constexpr StringRef() = default;
 
+    bool empty() const { return size == 0; }
+
     std::string toString() const { return std::string(data, size); }
-
     explicit operator std::string() const { return toString(); }
-    std::string_view toView() const { return std::string_view(data, size); }
 
+    std::string_view toView() const { return std::string_view(data, size); }
     constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
 };
 
-/// Here constexpr doesn't implicate inline, see https://www.viva64.com/en/w/v1043/
-/// nullptr can't be used because the StringRef values are used in SipHash's pointer arithmetic
-/// and the UBSan thinks that something like nullptr + 8 is UB.
-constexpr const inline char empty_string_ref_addr{};
-constexpr const inline StringRef EMPTY_STRING_REF{&empty_string_ref_addr, 0};
 
 using StringRefs = std::vector<StringRef>;
 
@@ -225,7 +222,7 @@ inline UInt64 shiftMix(UInt64 val)
     return val ^ (val >> 47);
 }
 
-inline UInt64 rotateByAtLeast1(UInt64 val, int shift)
+inline UInt64 rotateByAtLeast1(UInt64 val, UInt8 shift)
 {
     return (val >> shift) | (val << (64 - shift));
 }
@@ -247,7 +244,7 @@ inline size_t hashLessThan8(const char * data, size_t size)
         uint8_t b = data[size >> 1];
         uint8_t c = data[size - 1];
         uint32_t y = static_cast<uint32_t>(a) + (static_cast<uint32_t>(b) << 8);
-        uint32_t z = size + (static_cast<uint32_t>(c) << 2);
+        uint32_t z = static_cast<uint32_t>(size) + (static_cast<uint32_t>(c) << 2);
         return shiftMix(y * k2 ^ z * k3) * k2;
     }
 
@@ -260,7 +257,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
     {
         UInt64 a = unalignedLoad<UInt64>(data);
         UInt64 b = unalignedLoad<UInt64>(data + size - 8);
-        return hashLen16(a, rotateByAtLeast1(b + size, size)) ^ b;
+        return hashLen16(a, rotateByAtLeast1(b + size, static_cast<UInt8>(size))) ^ b;
     }
 
     return hashLessThan8(data, size);
@@ -268,7 +265,7 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    size_t operator() (StringRef x) const
+    unsigned operator() (StringRef x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -278,22 +275,22 @@ struct CRC32Hash
 
         if (size < 8)
         {
-            return hashLessThan8(x.data, x.size);
+            return static_cast<unsigned>(hashLessThan8(x.data, x.size));
         }
 
         const char * end = pos + size;
-        size_t res = -1ULL;
+        unsigned res = -1U;
 
         do
         {
             UInt64 word = unalignedLoad<UInt64>(pos);
-            res = CRC_INT(res, word);
+            res = static_cast<unsigned>(CRC_INT(res, word));
 
             pos += 8;
         } while (pos + 8 < end);
 
         UInt64 word = unalignedLoad<UInt64>(end - 8);    /// I'm not sure if this is normal.
-        res = CRC_INT(res, word);
+        res = static_cast<unsigned>(CRC_INT(res, word));
 
         return res;
     }
@@ -305,7 +302,7 @@ struct StringRefHash : CRC32Hash {};
 
 struct CRC32Hash
 {
-    size_t operator() (StringRef /* x */) const
+    unsigned operator() (StringRef /* x */) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
     }

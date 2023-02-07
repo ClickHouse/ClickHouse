@@ -19,10 +19,10 @@ struct FutureMergedMutatedPart
     String name;
     UUID uuid = UUIDHelpers::Nil;
     String path;
-    MergeTreeDataPartType type;
+    MergeTreeDataPartFormat part_format;
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
-    MergeType merge_type = MergeType::REGULAR;
+    MergeType merge_type = MergeType::Regular;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
@@ -33,13 +33,13 @@ struct FutureMergedMutatedPart
         assign(std::move(parts_));
     }
 
-    FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type)
+    FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartFormat future_part_format)
     {
-        assign(std::move(parts_), future_part_type);
+        assign(std::move(parts_), future_part_format);
     }
 
     void assign(MergeTreeData::DataPartsVector parts_);
-    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type);
+    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartFormat future_part_format);
 
     void updatePath(const MergeTreeData & storage, const IReservation * reservation);
 };

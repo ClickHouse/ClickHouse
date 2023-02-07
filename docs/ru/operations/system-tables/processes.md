@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/processes
+---
 # system.processes {#system_tables-processes}
 
 Используется для реализации запроса `SHOW PROCESSLIST`.
@@ -13,4 +16,3 @@
 -   `memory_usage` (UInt64) – потребление памяти запросом. Может не учитывать некоторые виды выделенной памяти. Смотрите описание настройки [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage).
 -   `query` (String) – текст запроса. Для запросов `INSERT` не содержит встаявляемые данные.
 -   `query_id` (String) – идентификатор запроса, если был задан.
-
