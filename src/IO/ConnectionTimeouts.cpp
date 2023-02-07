@@ -113,11 +113,14 @@ ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const Settings
         settings.receive_data_timeout_ms);
 }
 
-ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(
-    const Settings & settings,
-    Poco::Timespan http_keep_alive_timeout)
+ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout)
 {
-    return ConnectionTimeouts(settings.http_connection_timeout, settings.http_send_timeout, settings.http_receive_timeout, settings.tcp_keep_alive_timeout, http_keep_alive_timeout);
+    return ConnectionTimeouts(
+        settings.http_connection_timeout,
+        settings.http_send_timeout,
+        settings.http_receive_timeout,
+        settings.tcp_keep_alive_timeout,
+        http_keep_alive_timeout);
 }
 
 }
