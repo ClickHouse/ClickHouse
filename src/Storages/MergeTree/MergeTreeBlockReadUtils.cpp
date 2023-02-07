@@ -141,14 +141,20 @@ MergeTreeReadTask::MergeTreeReadTask(
     const NameSet & column_name_set_,
     const MergeTreeReadTaskColumns & task_columns_,
     bool remove_prewhere_column_,
-    MergeTreeBlockSizePredictorPtr && size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    int64_t priority_,
+    std::future<MergeTreeReaderPtr> reader_,
+    std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_)
     : data_part{data_part_}
     , mark_ranges{mark_ranges_}
     , part_index_in_query{part_index_in_query_}
     , column_name_set{column_name_set_}
     , task_columns{task_columns_}
     , remove_prewhere_column{remove_prewhere_column_}
-    , size_predictor{std::move(size_predictor_)}
+    , size_predictor{size_predictor_}
+    , reader(std::move(reader_))
+    , pre_reader_for_step(std::move(pre_reader_for_step_))
+    , priority(priority_)
 {
 }
 

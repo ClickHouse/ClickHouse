@@ -348,6 +348,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
+    M(ReadBufferFromS3InitMicroseconds, "Time spend initializing connection to S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
     \
@@ -375,6 +376,8 @@ The server successfully detected this situation and will download merged part fr
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    M(MergeTreePrefetchedReadPoolInit, "Time spent preparing tasks in MergeTreePrefetchedReadPool") \
+    M(WaitPrefetchTaskMicroseconds, "Time spend waiting for prefetched reader") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \

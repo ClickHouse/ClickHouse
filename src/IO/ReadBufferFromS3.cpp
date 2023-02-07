@@ -12,6 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <base/sleep.h>
 
 #include <utility>
@@ -20,6 +21,7 @@
 namespace ProfileEvents
 {
     extern const Event ReadBufferFromS3Microseconds;
+    extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
@@ -323,6 +325,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (read_settings.for_object_storage)
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())

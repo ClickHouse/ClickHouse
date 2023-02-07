@@ -1,0 +1,8 @@
+diff a/tests/queries/0_stateless/01605_adaptive_granularity_block_borders.sql b/tests/queries/0_stateless/01605_adaptive_granularity_block_borders.sql	(rejected hunks)
+@@ -1,4 +1,6 @@
+ SET use_uncompressed_cache = 0;
++SET allow_prefetched_read_pool_for_remote_filesystem=0;
++SET allow_prefetched_read_pool_for_local_filesystem=0;
+ 
+ DROP TABLE IF EXISTS adaptive_table;
+ 
