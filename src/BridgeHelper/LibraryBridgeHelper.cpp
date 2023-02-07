@@ -12,10 +12,8 @@ LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
     , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , bridge_host(config.getString("library_bridge.host", DEFAULT_HOST))
     , bridge_port(config.getUInt("library_bridge.port", DEFAULT_PORT))
+    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), {context_->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
 {
-    const auto & settings = context_->getSettingsRef();
-    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
-    http_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
 }
 
 

@@ -76,12 +76,8 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query(query_builder.composeLoadAllQuery())
     , bridge_helper(bridge_)
     , bridge_url(bridge_helper->getMainURI())
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), {context_->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
 {
-    const auto & settings = context_->getSettingsRef();
-    const auto & config = context_->getConfigRef();
-    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
-    timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
-
     auto url_params = bridge_helper->getURLParams(max_block_size);
     for (const auto & [name, value] : url_params)
         bridge_url.addQueryParameter(name, value);
