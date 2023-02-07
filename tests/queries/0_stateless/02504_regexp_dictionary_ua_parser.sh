@@ -31,7 +31,8 @@ create dictionary regexp_os
 PRIMARY KEY(regex)
 SOURCE(YAMLRegExpTree(PATH '${user_files_path}/test_02504/os.yaml'))
 LIFETIME(0)
-LAYOUT(regexp_tree);
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = true);
 
 create dictionary regexp_browser
 (
@@ -43,7 +44,8 @@ create dictionary regexp_browser
 PRIMARY KEY(regex)
 SOURCE(YAMLRegExpTree(PATH '${user_files_path}/test_02504/browser.yaml'))
 LIFETIME(0)
-LAYOUT(regexp_tree);
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = true);
 
 create dictionary regexp_device
 (
@@ -55,7 +57,8 @@ create dictionary regexp_device
 PRIMARY KEY(regex)
 SOURCE(YAMLRegExpTree(PATH '${user_files_path}/test_02504/device.yaml'))
 LIFETIME(0)
-LAYOUT(regexp_tree);
+LAYOUT(regexp_tree)
+SETTINGS(regexp_dict_allow_hyperscan = true);
 
 create table user_agents
 (
