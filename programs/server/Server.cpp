@@ -1229,12 +1229,12 @@ try
             size_t default_background_server_memory_usage = static_cast<size_t>(memory_amount * background_memory_usage_to_ram_ratio);
             if (background_memory_usage_soft_limit == 0 || background_memory_usage_soft_limit > default_background_server_memory_usage)
             {
+                background_memory_usage_soft_limit = default_background_server_memory_usage;
                 LOG_WARNING(log, "Setting background_memory_usage_soft_limit was set to {}"
                     " ({} available * {:.2f} background_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(background_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(memory_amount),
                     background_memory_usage_to_ram_ratio);
-                background_memory_usage_soft_limit = default_background_server_memory_usage;
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
