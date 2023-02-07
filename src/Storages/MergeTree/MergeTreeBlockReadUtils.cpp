@@ -344,8 +344,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         column_names = post_column_names;
 
-
-
 #if 0
         NameSet pre_name_set;
 
