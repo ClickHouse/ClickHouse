@@ -7559,13 +7559,20 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     /// And we force it to be executed.
     background_operations_assignee.trigger();
 
-    std::unordered_set<String> wait_for_ids = queue.getLogEntryIds();
+    std::unordered_set<String> wait_for_ids;
+    bool set_ids_to_wait = true;
 
     if (!wait_for_ids.empty())
     {
         Poco::Event target_entry_event;
-        auto callback = [&target_entry_event, &wait_for_ids](size_t new_queue_size, std::optional<String> removed_log_entry_id)
+        auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait](size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
         {
+            if (set_ids_to_wait)
+            {
+                wait_for_ids = log_entry_ids;
+                set_ids_to_wait = false;
+            }
+
             if (removed_log_entry_id.has_value())
                 wait_for_ids.erase(removed_log_entry_id.value());
 
