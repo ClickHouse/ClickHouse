@@ -40,7 +40,7 @@ def cluster():
                 "configs/config.d/named_collections.xml",
             ],
             user_configs=[
-                "configs/users.d/users_no_default_access2.xml",
+                "configs/users.d/users_no_default_access_with_access_management.xml",
             ],
             stay_alive=True,
         )
