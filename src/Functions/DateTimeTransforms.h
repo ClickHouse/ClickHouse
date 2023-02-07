@@ -710,7 +710,8 @@ struct ToYearImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct ToWeekYearImpl {
+struct ToWeekYearImpl
+{
     static constexpr auto name = "toWeekYear";
 
     static constexpr Int8 week_mode = 3;

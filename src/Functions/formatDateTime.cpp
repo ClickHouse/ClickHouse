@@ -527,12 +527,14 @@ private:
                 return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
-        static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) {
+        static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
             auto week_year = ToWeekYearImpl::execute(source, timezone);
             return writeNumberWithPadding(dest, week_year, min_represent_digits);
         }
 
-        static size_t jodaWeekOfWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) {
+        static size_t jodaWeekOfWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
             auto week_of_weekyear = ToWeekOfWeekYearImpl::execute(source, timezone);
             return writeNumberWithPadding(dest, week_of_weekyear, min_represent_digits);
         }
