@@ -13,12 +13,6 @@ namespace Poco::Util
     class AbstractConfiguration;
 }
 
-namespace boost::program_options
-{
-    class options_description;
-}
-
-
 namespace DB
 {
 class IColumn;
@@ -96,6 +90,7 @@ class IColumn;
     M(Bool, s3_create_new_file_on_insert, false, "Enables or disables creating a new file on each insert in s3 engine tables", 0) \
     M(Bool, s3_check_objects_after_upload, false, "Check each uploaded object to s3 with head request to be sure that upload was successful", 0) \
     M(Bool, s3_allow_parallel_part_upload, true, "Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage", 0) \
+    M(Bool, s3_throw_on_zero_files_match, false, "Throw an error, when ListObjects request cannot match any files", 0) \
     M(Bool, enable_s3_requests_logging, false, "Enable very explicit logging of S3 requests. Makes sense for debug only.", 0) \
     M(UInt64, hdfs_replication, 0, "The actual number of replications can be specified when the hdfs file is created.", 0) \
     M(Bool, hdfs_truncate_on_insert, false, "Enables or disables truncate before insert in s3 engine tables", 0) \
@@ -894,6 +889,7 @@ class IColumn;
     M(Bool, input_format_bson_skip_fields_with_unsupported_types_in_schema_inference, false, "Skip fields with unsupported types while schema inference for format BSON.", 0) \
     \
     M(Bool, regexp_dict_allow_other_sources, false, "Allow regexp_tree dictionary to use sources other than yaml source.", 0) \
+    M(Bool, regexp_dict_allow_hyperscan, false, "Allow regexp_tree dictionary using Hyperscan library.", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
@@ -926,24 +922,11 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     /// Dumps profile events to column of type Map(String, String)
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
-    /// Adds program options to set the settings from a command line.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptions(boost::program_options::options_description & options);
-
-    /// Adds program options as to set the settings from a command line.
-    /// Allows to set one setting multiple times, the last value will be used.
-    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
-    void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
-
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
     std::vector<String> getAllRegisteredNames() const override;
-
-    void addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field);
-
-    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
 
     void set(std::string_view name, const Field & value) override;
 
