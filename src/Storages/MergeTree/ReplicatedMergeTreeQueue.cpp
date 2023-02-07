@@ -545,9 +545,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
 
-    /// Here we send empty log_entry_ids because the log_entries to wait for are already set
-    /// when a new subscriber is added
-    notifySubscribers(queue_size, {}, entry->log_entry_id);
+    notifySubscribers(queue_size, entry->log_entry_id);
 
     if (!need_remove_from_zk)
         return;
@@ -1979,17 +1977,6 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res) const
         res.emplace_back(*entry);
 }
 
-std::unordered_set<String> ReplicatedMergeTreeQueue::getLogEntryIds() const
-{
-    std::unordered_set<String> result;
-    std::lock_guard lock(state_mutex);
-
-    result.reserve(queue.size());
-    for (const auto & entry : queue)
-        result.insert(entry->log_entry_id);
-
-    return result;
-}
 
 void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const
 {
@@ -2478,12 +2465,20 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
 {
+    std::unordered_set<String> result;
+    {
+        std::lock_guard lock(state_mutex);
+        result.reserve(queue.size());
+        for (const auto & entry : queue)
+            result.insert(entry->log_entry_id);
+    }
+
     std::lock_guard lock_subscribers(subscribers_mutex);
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
     /// Notify queue size & log entry ids to avoid waiting for removed entries
-    (*it)(queue.size(), getLogEntryIds(), std::nullopt);
+    (*it)(result.size(), result, std::nullopt);
 
     return SubscriberHandler(it, *this);
 }
@@ -2494,16 +2489,16 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size, log_entry_ids, removed_log_entry_id);
+        subscriber_callback(new_queue_size, {},  removed_log_entry_id);
 }
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
 {
-    notifySubscribers(0, {}, std::nullopt);
+    notifySubscribers(0, std::nullopt);
 }
 
 String padIndex(Int64 index)

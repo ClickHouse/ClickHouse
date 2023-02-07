@@ -180,8 +180,8 @@ private:
 
     Subscribers subscribers;
 
-    /// Notify subscribers about queue change (new queue size , log entry ids in queue and entry that was removed)
-    void notifySubscribers(size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id);
+    /// Notify subscribers about queue change (new queue size and entry that was removed)
+    void notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(
@@ -450,8 +450,6 @@ public:
     /// Get the data of the queue elements.
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getEntries(LogEntriesData & res) const;
-
-    std::unordered_set<String> getLogEntryIds() const;
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
