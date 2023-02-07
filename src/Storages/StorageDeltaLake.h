@@ -44,7 +44,7 @@ public:
 private:
     void init(ContextPtr context);
 
-    std::vector<String> getJsonLogFiles();
+    std::vector<String> getJsonLogFiles() const;
 
     std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
 
