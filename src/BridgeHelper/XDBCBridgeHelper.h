@@ -96,14 +96,9 @@ protected:
 
     bool bridgeHandShake() override
     {
-        const auto & settings = getContext()->getSettingsRef();
-        const auto & cfg = getContext()->getConfigRef();
-        Poco::Timespan http_keep_alive_timeout{cfg.getUInt("keep_alive_timeout", 10), 0};
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
-
         try
         {
-            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, timeouts, credentials);
+            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, getHTTPTimeouts(), credentials);
             return checkString(PING_OK_ANSWER, buf);
         }
         catch (...)
@@ -166,6 +161,10 @@ private:
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
+    ConnectionTimeouts getHTTPTimeouts()
+    {
+        return ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), {getContext()->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
+    }
 
 protected:
     using URLParams = std::vector<std::pair<std::string, std::string>>;
@@ -200,12 +199,7 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            const auto & settings = getContext()->getSettingsRef();
-            const auto & cfg = getContext()->getConfigRef();
-            Poco::Timespan http_keep_alive_timeout{cfg.getUInt("keep_alive_timeout", 10), 0};
-            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
-
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts, credentials);
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
 
             bool res;
             readBoolText(res, buf);
@@ -227,12 +221,7 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            const auto & settings = getContext()->getSettingsRef();
-            const auto & cfg = getContext()->getConfigRef();
-            Poco::Timespan http_keep_alive_timeout{cfg.getUInt("keep_alive_timeout", 10), 0};
-            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
-
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts, credentials);
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
 
             std::string character;
             readStringBinary(character, buf);

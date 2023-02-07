@@ -232,6 +232,11 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotReadonl
     return res;
 }
 
+static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
+{
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
+}
+
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
 {
     /// NOTE We don't have special log entry type for MOVE PARTITION/ATTACH PARTITION FROM,
@@ -2355,7 +2360,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     return true;
 }
 
-
 void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entry)
 {
     auto zookeeper = getZooKeeper();
@@ -2384,10 +2388,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         auto metadata_snapshot = getInMemoryMetadataPtr();
         String source_replica_path = entry.source_shard + "/replicas/" + replica;
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-        const auto & settings = getContext()->getSettingsRef();
-        const auto & config = getContext()->getConfigRef();
-        Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+        auto timeouts = getHTTPTimeouts(getContext());
         auto credentials = getContext()->getInterserverCredentials();
         String interserver_scheme = getContext()->getInterserverScheme();
 
@@ -3616,11 +3617,7 @@ void StorageReplicatedMergeTree::stopBeingLeader()
 
 ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(ContextPtr local_context)
 {
-    const auto & sts = local_context->getSettingsRef();
-    const auto & config = local_context->getConfigRef();
-    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(sts, http_keep_alive_timeout);
-
+    auto timeouts = getHTTPTimeouts(local_context);
     auto settings = getSettings();
 
     if (settings->replicated_fetches_http_connection_timeout.changed)
@@ -4267,10 +4264,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     std::function<MutableDataPartPtr()> get_part;
 
     ReplicatedMergeTreeAddress address(zookeeper->get(fs::path(source_replica_path) / "host"));
-    const auto & settings = getContext()->getSettingsRef();
-    const auto & config = getContext()->getConfigRef();
-    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
+    auto timeouts = getHTTPTimeouts(getContext());
     auto credentials = getContext()->getInterserverCredentials();
     String interserver_scheme = getContext()->getInterserverScheme();
 

@@ -75,13 +75,15 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
-    const auto & settings = context->getSettingsRef();
-    const auto & config = context->getConfigRef();
-    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 10), 0};
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, http_keep_alive_timeout);
-
     Poco::Net::HTTPBasicCredentials credentials{};
-    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts, credentials);
+    ReadWriteBufferFromHTTP buf(
+        columns_info_uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        {},
+        ConnectionTimeouts::getHTTPTimeouts(
+            context->getSettingsRef(),
+            {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+        credentials);
 
     std::string columns_info;
     readStringBinary(columns_info, buf);
