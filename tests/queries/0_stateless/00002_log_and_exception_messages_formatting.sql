@@ -44,7 +44,7 @@ select 100, max2((select count() from logs where level = 'Warning' and message_f
     group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.005);
 
 -- Same as above for Error
-select 110, max2((select count() from logs where level = 'Warning' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.01);
+select 110, max2((select count() from logs where level = 'Error' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.01);
 
 -- Avoid too noisy messages: limit the number of messages with high frequency
 select 120, max2(count(), 3) from (select count() / (select count() from logs) as freq, message_format_string from logs group by message_format_string having freq > 0.10);
