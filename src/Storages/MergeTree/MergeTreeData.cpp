@@ -7582,14 +7582,14 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
             /// and columns in storage.
             if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                rename_map[command.rename_to] = command.column_name;
+                rename_map.emplace_back(AlterConversions::RenamePair{command.rename_to, command.column_name});
             }
         }
     }
 
     for (auto it = rename_map.begin(); it != rename_map.end();)
     {
-        if (it->first == it->second)
+        if (it->rename_to == it->rename_from)
             it = rename_map.erase(it);
         else
             ++it;
