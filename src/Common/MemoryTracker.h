@@ -110,6 +110,11 @@ public:
         return amount.load(std::memory_order_relaxed);
     }
 
+    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
+    // MemoryTracker for background task may have a non-zero counter.
+    // This method is intended to fix the counter inside of background_memory_tracker.
+    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
+    // of total_memory_tracker.
     void adjustOnBackgroundTaskEnd(MemoryTracker * child)
     {
         amount.fetch_sub(child->amount.load(std::memory_order_relaxed), std::memory_order_relaxed);

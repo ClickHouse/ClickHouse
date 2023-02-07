@@ -137,7 +137,7 @@ namespace CurrentMetrics
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
-    extern const Metric BackgroundMemoryTracking;
+    extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
 }
@@ -1228,16 +1228,20 @@ try
 
             size_t default_background_server_memory_usage = static_cast<size_t>(memory_amount * background_memory_usage_to_ram_ratio);
             if (background_memory_usage_soft_limit == 0 || background_memory_usage_soft_limit > default_background_server_memory_usage)
+            {
+                LOG_WARNING(log, "Setting background_memory_usage_soft_limit was set to {}"
+                    " ({} available * {:.2f} background_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(background_memory_usage_soft_limit),
+                    formatReadableSizeWithBinarySuffix(memory_amount),
+                    background_memory_usage_to_ram_ratio);
                 background_memory_usage_soft_limit = default_background_server_memory_usage;
+            }
 
-            LOG_INFO(log, "Setting background_memory_usage_soft_limit was set to {}"
-                " ({} available * {:.2f} background_memory_usage_to_ram_ratio)",
-                formatReadableSizeWithBinarySuffix(background_memory_usage_soft_limit),
-                formatReadableSizeWithBinarySuffix(memory_amount),
-                background_memory_usage_to_ram_ratio);
+            LOG_INFO(log, "Merges and mutations memory limit is set to {}",
+                formatReadableSizeWithBinarySuffix(background_memory_usage_soft_limit));
             background_memory_tracker.setSoftLimit(background_memory_usage_soft_limit);
             background_memory_tracker.setDescription("(background)");
-            background_memory_tracker.setMetric(CurrentMetrics::BackgroundMemoryTracking);
+            background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
 
             bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
             total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
