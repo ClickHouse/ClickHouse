@@ -2493,7 +2493,7 @@ void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::opt
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size, {},  removed_log_entry_id);
+        subscriber_callback(new_queue_size, {}, removed_log_entry_id);
 }
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
