@@ -114,6 +114,12 @@ static void splitMutationCommands(
                     .column_name = rename_to,
                 });
 
+                for_file_renames.push_back(
+                {
+                     .type = MutationCommand::Type::RENAME_COLUMN,
+                     .column_name = rename_from,
+                     .rename_to = rename_to
+                });
                 part_columns.rename(rename_from, rename_to);
             }
         }
@@ -615,16 +621,7 @@ static NameToNameVector collectFilesForRenames(
     NameToNameMap squashed_renames;
     for (const auto & command : commands_for_removes)
     {
-
-        std::string result_name;
-        if (command.type == MutationCommand::Type::DROP_INDEX
-            || command.type == MutationCommand::Type::DROP_PROJECTION
-            || command.type == MutationCommand::Type::DROP_COLUMN
-            || command.type == MutationCommand::Type::READ_COLUMN)
-            result_name = "";
-
-        if (command.type == MutationCommand::RENAME_COLUMN)
-            result_name = command.rename_to;
+        std::string result_name = command.rename_to;
 
         bool squashed = false;
         for (const auto & [name_from, name_to] : squashed_renames)
