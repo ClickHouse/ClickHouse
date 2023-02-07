@@ -7,52 +7,52 @@
                                  |_| XML parser
 
    Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
-   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2000 Clark Cooper <coopercc@users.sourceforge.net>
    Copyright (c) 2000-2006 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
    Copyright (c) 2001-2002 Greg Stein <gstein@users.sourceforge.net>
    Copyright (c) 2002-2016 Karl Waclawek <karl@waclawek.net>
    Copyright (c) 2005-2009 Steven Solie <steven@solie.ca>
-   Copyright (c) 2016      Eric Rahm <erahm@mozilla.com>
+   Copyright (c) 2016 Eric Rahm <erahm@mozilla.com>
    Copyright (c) 2016-2022 Sebastian Pipping <sebastian@pipping.org>
-   Copyright (c) 2016      Gaurav <g.gupta@samsung.com>
-   Copyright (c) 2016      Thomas Beutlich <tc@tbeu.de>
-   Copyright (c) 2016      Gustavo Grieco <gustavo.grieco@imag.fr>
-   Copyright (c) 2016      Pascal Cuoq <cuoq@trust-in-soft.com>
-   Copyright (c) 2016      Ed Schouten <ed@nuxi.nl>
+   Copyright (c) 2016 Gaurav <g.gupta@samsung.com>
+   Copyright (c) 2016 Thomas Beutlich <tc@tbeu.de>
+   Copyright (c) 2016 Gustavo Grieco <gustavo.grieco@imag.fr>
+   Copyright (c) 2016 Pascal Cuoq <cuoq@trust-in-soft.com>
+   Copyright (c) 2016 Ed Schouten <ed@nuxi.nl>
    Copyright (c) 2017-2018 Rhodri James <rhodri@wildebeest.org.uk>
-   Copyright (c) 2017      Václav Slavík <vaclav@slavik.io>
-   Copyright (c) 2017      Viktor Szakats <commit@vsz.me>
-   Copyright (c) 2017      Chanho Park <chanho61.park@samsung.com>
-   Copyright (c) 2017      Rolf Eike Beer <eike@sf-mail.de>
-   Copyright (c) 2017      Hans Wennborg <hans@chromium.org>
-   Copyright (c) 2018      Anton Maklakov <antmak.pub@gmail.com>
-   Copyright (c) 2018      Benjamin Peterson <benjamin@python.org>
-   Copyright (c) 2018      Marco Maggi <marco.maggi-ipsu@poste.it>
-   Copyright (c) 2018      Mariusz Zaborski <oshogbo@vexillium.org>
-   Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2017 Václav Slavík <vaclav@slavik.io>
+   Copyright (c) 2017 Viktor Szakats <commit@vsz.me>
+   Copyright (c) 2017 Chanho Park <chanho61.park@samsung.com>
+   Copyright (c) 2017 Rolf Eike Beer <eike@sf-mail.de>
+   Copyright (c) 2017 Hans Wennborg <hans@chromium.org>
+   Copyright (c) 2018 Anton Maklakov <antmak.pub@gmail.com>
+   Copyright (c) 2018 Benjamin Peterson <benjamin@python.org>
+   Copyright (c) 2018 Marco Maggi <marco.maggi-ipsu@poste.it>
+   Copyright (c) 2018 Mariusz Zaborski <oshogbo@vexillium.org>
+   Copyright (c) 2019 David Loffredo <loffredo@steptools.com>
    Copyright (c) 2019-2020 Ben Wagner <bungeman@chromium.org>
-   Copyright (c) 2019      Vadim Zeitlin <vadim@zeitlins.org>
-   Copyright (c) 2021      Dong-hee Na <donghee.na@python.org>
-   Copyright (c) 2022      Samanta Navarro <ferivoz@riseup.net>
-   Copyright (c) 2022      Jeffrey Walton <noloader@gmail.com>
+   Copyright (c) 2019 Vadim Zeitlin <vadim@zeitlins.org>
+   Copyright (c) 2021 Dong-hee Na <donghee.na@python.org>
+   Copyright (c) 2022 Samanta Navarro <ferivoz@riseup.net>
+   Copyright (c) 2022 Jeffrey Walton <noloader@gmail.com>
    Licensed under the MIT license:
 
-   Permission is  hereby granted,  free of charge,  to any  person obtaining
-   a  copy  of  this  software   and  associated  documentation  files  (the
-   "Software"),  to  deal in  the  Software  without restriction,  including
-   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   Permission is hereby granted, free of charge, to any person obtaining
+   a copy of this software and associated documentation files (the
+   "Software"), to deal in the Software without restriction, including
+   without limitation the rights to use, copy, modify, merge, publish,
    distribute, sublicense, and/or sell copies of the Software, and to permit
-   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   persons to whom the Software is furnished to do so, subject to the
    following conditions:
 
-   The above copyright  notice and this permission notice  shall be included
+   The above copyright notice and this permission notice shall be included
    in all copies or substantial portions of the Software.
 
-   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
-   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
