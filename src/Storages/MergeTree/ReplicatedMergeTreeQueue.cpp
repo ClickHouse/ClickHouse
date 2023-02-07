@@ -1769,10 +1769,14 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
     /// of part's metadata.
     for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
     {
-        if (mutation_status->entry->alter_version != -1)
+        int32_t alter_version = mutation_status->entry->alter_version;
+        if (alter_version != -1)
         {
+            if (!alter_sequence.canExecuteDataAlter(alter_version, lock))
+                continue;
+
             /// we take commands with bigger metadata version
-            if (mutation_status->entry->alter_version > part_metadata_version)
+            if (alter_version > part_metadata_version)
             {
                 result[mutation_version] = mutation_status->entry->commands;
             }

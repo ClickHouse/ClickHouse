@@ -158,11 +158,7 @@ static void splitMutationCommands(
         auto alter_conversions = part->storage.getAlterConversionsForPart(part);
         for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
         {
-            if (part_columns.has(rename_from))
-            {
-                for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
-                part_columns.rename(rename_from, rename_to);
-            }
+            for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
     }
 }
@@ -174,8 +170,13 @@ getColumnsForNewDataPart(
     const Block & updated_header,
     NamesAndTypesList storage_columns,
     const SerializationInfoByName & serialization_infos,
+    const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes)
 {
+    MutationCommands all_commands;
+    all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
+    all_commands.insert(all_commands.end(), commands_for_removes.begin(), commands_for_removes.end());
+
     NameSet removed_columns;
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
@@ -191,8 +192,37 @@ getColumnsForNewDataPart(
             storage_columns.emplace_back(column);
     }
 
-    /// All commands are validated in AlterCommand so we don't care about order
-    for (const auto & command : commands_for_removes)
+    NameToNameMap squashed_renames;
+    for (const auto & command : all_commands)
+    {
+        std::string result_name = command.rename_to;
+
+        bool squashed = false;
+        for (const auto & [name_from, name_to] : squashed_renames)
+        {
+            if (name_to == command.column_name)
+            {
+                squashed = true;
+                squashed_renames[name_from] = result_name;
+                break;
+            }
+        }
+        if (!squashed)
+            squashed_renames[command.column_name] = result_name;
+    }
+
+    MutationCommands squashed_commands;
+    for (const auto & command : all_commands)
+    {
+        if (squashed_renames.contains(command.column_name))
+        {
+            squashed_commands.push_back(command);
+            squashed_commands.back().rename_to = squashed_renames[command.column_name];
+        }
+    }
+
+
+    for (const auto & command : squashed_commands)
     {
         if (command.type == MutationCommand::UPDATE)
         {
@@ -285,10 +315,10 @@ getColumnsForNewDataPart(
                 /// should it's previous version should be dropped or removed
                 if (renamed_columns_to_from.contains(it->name) && !was_renamed && !was_removed)
                     throw Exception(
-                                    ErrorCodes::LOGICAL_ERROR,
-                                    "Incorrect mutation commands, trying to rename column {} to {}, "
-                                    "but part {} already has column {}",
-                                    renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Incorrect mutation commands, trying to rename column {} to {}, "
+                        "but part {} already has column {}",
+                        renamed_columns_to_from[it->name], it->name, source_part->name, it->name);
 
                 /// Column was renamed and no other column renamed to it's name
                 /// or column is dropped.
@@ -582,8 +612,46 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
-    /// Remove old data
+    NameToNameMap squashed_renames;
     for (const auto & command : commands_for_removes)
+    {
+
+        std::string result_name;
+        if (command.type == MutationCommand::Type::DROP_INDEX
+            || command.type == MutationCommand::Type::DROP_PROJECTION
+            || command.type == MutationCommand::Type::DROP_COLUMN
+            || command.type == MutationCommand::Type::READ_COLUMN)
+            result_name = "";
+
+        if (command.type == MutationCommand::RENAME_COLUMN)
+            result_name = command.rename_to;
+
+        bool squashed = false;
+        for (const auto & [name_from, name_to] : squashed_renames)
+        {
+            if (name_to == command.column_name)
+            {
+                squashed = true;
+                squashed_renames[name_from] = result_name;
+                break;
+            }
+        }
+        if (!squashed)
+            squashed_renames[command.column_name] = result_name;
+    }
+
+    MutationCommands squashed_commands;
+    for (const auto & command : commands_for_removes)
+    {
+        if (squashed_renames.contains(command.column_name))
+        {
+            squashed_commands.push_back(command);
+            squashed_commands.back().rename_to = squashed_renames[command.column_name];
+        }
+    }
+
+    /// Remove old data
+    for (const auto & command : squashed_commands)
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
@@ -623,7 +691,6 @@ static NameToNameVector collectFilesForRenames(
         {
             String escaped_name_from = escapeForFileName(command.column_name);
             String escaped_name_to = escapeForFileName(command.rename_to);
-
 
             ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
@@ -1698,7 +1765,7 @@ bool MutateTask::prepare()
 
     auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
-        ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
+        ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
