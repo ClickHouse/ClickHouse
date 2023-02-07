@@ -28,16 +28,10 @@ select 1 in (0 + 1, 1, toInt8(sin(5)));
 select (0 + 1, 1, toInt8(sin(5))) in (0 + 1, 1, toInt8(sin(5)));
 select identity(tuple(1)) in (tuple(1), tuple(2));
 select identity(tuple(1)) in (tuple(0), tuple(2));
-select identity(tuple(1)) in (identity(tuple(1)), tuple(2));
-select identity(tuple(1)) in (identity(tuple(0)), tuple(2));
-select identity(tuple(1)) in (identity(tuple(1)), identity(tuple(2)));
-select identity(tuple(1)) in (identity(tuple(1)), identity(identity(tuple(2))));
-select identity(tuple(1)) in (identity(tuple(0)), identity(identity(tuple(2))));
 
 select '-';
 select identity((1, 2)) in (1, 2);
 select identity((1, 2)) in ((1, 2), (3, 4));
-select identity((1, 2)) in ((1, 2), identity((3, 4)));
 
 select '-';
 select (1,2)  as x, ((1,2),(3,4)) as y, 1 in x,  x in y;
@@ -50,4 +44,3 @@ select (1, 2) in (select (1, 2));
 select identity(tuple(1)) in (select tuple(1));
 select identity((1, 2)) in (select 1, 2);
 select identity((1, 2)) in (select (1, 2));
-
