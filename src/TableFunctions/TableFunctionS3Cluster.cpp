@@ -47,7 +47,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     ASTs & args = args_func.at(0)->children;
 
     for (auto & arg : args)
-        arg = evaluateConstantExpressionAsLiteral(arg, context);
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     constexpr auto fmt_string = "The signature of table function {} could be the following:\n"
                                 " - cluster, url\n"
