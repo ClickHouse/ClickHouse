@@ -545,7 +545,9 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
 
-    notifySubscribers(queue_size, entry->log_entry_id);
+    /// Here we send empty log_entry_ids because the log_entries to wait for are already set
+    /// when a new subscriber is added
+    notifySubscribers(queue_size, {}, entry->log_entry_id);
 
     if (!need_remove_from_zk)
         return;
@@ -2481,9 +2483,8 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
-    /// Notify if queue is empty
-    if (queue.empty())
-        (*it)(0, std::nullopt);
+    /// Notify queue size & log entry ids to avoid waiting for removed entries
+    (*it)(queue.size(), getLogEntryIds(), std::nullopt);
 
     return SubscriberHandler(it, *this);
 }
@@ -2494,16 +2495,16 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size, removed_log_entry_id);
+        subscriber_callback(new_queue_size, log_entry_ids, removed_log_entry_id);
 }
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
 {
-    notifySubscribers(0, std::nullopt);
+    notifySubscribers(0, {}, std::nullopt);
 }
 
 String padIndex(Int64 index)
