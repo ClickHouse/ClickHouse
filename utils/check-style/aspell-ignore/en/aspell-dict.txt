@@ -531,3 +531,6 @@ zkcopy
 zlib
 znodes
 zstd
+cancelation
+cancelable
+canceled

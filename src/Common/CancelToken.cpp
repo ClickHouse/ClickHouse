@@ -87,6 +87,18 @@ void CancelToken::signal(UInt64 tid, int code, const String & message)
     Registry::instance()->signal(tid, code, message);
 }
 
+bool CancelToken::isCanceled()
+{
+    return CancelToken::local().state.load() & canceled;
+}
+
+void CancelToken::throwIfCanceled()
+{
+    CancelToken & token = CancelToken::local();
+    if (token.state.load() & canceled)
+        token.raise();
+}
+
 bool CancelToken::wait(UInt32 * address, UInt32 value)
 {
     chassert((reinterpret_cast<UInt64>(address) & canceled) == 0); // An `address` must be 2-byte aligned

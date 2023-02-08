@@ -103,6 +103,13 @@ public:
     static void signal(UInt64 tid);
     static void signal(UInt64 tid, int code, const String & message);
 
+    // Checks if current thread has already received cancellation signal.
+    static bool isCanceled();
+
+    // Thread cancelation point.
+    // Throws `DB::Exception` received from `signal()` after last `reset()`, if any.
+    static void throwIfCanceled();
+
     // Flag used to deliver cancellation into memory address to wake a thread.
     // Note that most significant bit at `addresses` to be used with `wait()` is reserved.
     static constexpr UInt32 signaled = 1u << 31u;
@@ -200,6 +207,8 @@ public:
     void disable() {}
     static void signal(UInt64) {}
     static void signal(UInt64, int, const String &) {}
+    static bool isCanceled() { return false; }
+    static void throwIfCanceled() {}
 
     const UInt64 thread_id;
 };
