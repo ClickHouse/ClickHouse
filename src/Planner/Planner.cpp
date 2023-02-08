@@ -198,6 +198,7 @@ public:
             && settings.group_by_overflow_mode == OverflowMode::ANY && settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
         aggregate_final = query_processing_info.getToStage() > QueryProcessingStage::WithMergeableState
             && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+        aggregate_with_grouping_set = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets();
         aggregation_should_produce_results_in_order_of_bucket_number = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState &&
             settings.distributed_aggregation_memory_efficient;
 
@@ -221,6 +222,7 @@ public:
 
     bool aggregate_overflow_row = false;
     bool aggregate_final = false;
+    bool aggregate_with_grouping_set = false;
     bool aggregation_should_produce_results_in_order_of_bucket_number = false;
     bool query_has_array_join_in_join_tree = false;
     bool query_has_with_totals_in_any_subquery_in_join_tree = false;
@@ -393,7 +395,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         query_plan.getCurrentDataStream(),
         params,
         query_analysis_result.aggregate_final,
-        settings.distributed_aggregation_memory_efficient && is_remote_storage,
+        /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
+        settings.distributed_aggregation_memory_efficient && is_remote_storage && !query_analysis_result.aggregate_with_grouping_set,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
@@ -1149,11 +1152,9 @@ void Planner::buildPlanForQueryNode()
     current_storage_limits.push_back(select_query_info.local_storage_limits);
     select_query_info.storage_limits = std::make_shared<StorageLimitsList>(current_storage_limits);
     select_query_info.has_order_by = query_node.hasOrderBy();
-    auto aggregate_function_nodes = collectAggregateFunctionNodes(query_tree);
-    auto window_function_nodes = collectWindowFunctionNodes(query_tree);
-    select_query_info.has_window = !window_function_nodes.empty();
-    select_query_info.has_aggregates = !aggregate_function_nodes.empty();
-    select_query_info.need_aggregate = query_node.hasGroupBy() || !aggregate_function_nodes.empty();
+    select_query_info.has_window = hasWindowFunctionNodes(query_tree);
+    select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
+    select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
 
     if (!select_query_info.need_aggregate && query_node.hasHaving())
     {
@@ -1204,8 +1205,15 @@ void Planner::buildPlanForQueryNode()
         return;
 
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
+
+    if (!query_processing_info.isFirstStage() && !query_processing_info.isSecondStage() && !query_processing_info.isIntermediateStage())
+        return;
+
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
-    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree, query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(), planner_context);
+    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
+        query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+        planner_context,
+        query_processing_info);
 
     std::vector<ActionsDAGPtr> result_actions_to_execute;
 

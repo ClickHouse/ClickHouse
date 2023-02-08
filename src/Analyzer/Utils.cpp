@@ -418,7 +418,7 @@ private:
 
 }
 
-void assertNoFunction(const QueryTreeNodePtr & node,
+void assertNoFunctionNodes(const QueryTreeNodePtr & node,
     std::string_view function_name,
     int exception_code,
     std::string_view exception_function_name,
@@ -426,6 +426,60 @@ void assertNoFunction(const QueryTreeNodePtr & node,
 {
     ValidateFunctionNodesVisitor visitor(function_name, exception_code, exception_function_name, exception_place_message);
     visitor.visit(node);
+}
+
+namespace
+{
+
+class CheckFunctionExistsVisitor : public ConstInDepthQueryTreeVisitor<CheckFunctionExistsVisitor>
+{
+public:
+    explicit CheckFunctionExistsVisitor(std::string_view function_name_)
+        : function_name(function_name_)
+    {}
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (has_function)
+            return;
+
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        has_function = function_node->getFunctionName() == function_name;
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    {
+        if (has_function)
+            return false;
+
+        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+    bool hasFunction() const
+    {
+        return has_function;
+    }
+
+private:
+    std::string_view function_name;
+    bool has_function = false;
+};
+
+}
+
+bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name)
+{
+    CheckFunctionExistsVisitor visitor(function_name);
+    visitor.visit(node);
+
+    return visitor.hasFunction();
 }
 
 }
