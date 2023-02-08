@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS test_grouping_sets_predicate;
 CREATE TABLE test_grouping_sets_predicate
 (
     day_ Date,
-    typ_ String
+    type_1 String
 )
 ENGINE=MergeTree
 ORDER BY day_;
@@ -26,7 +26,7 @@ FROM
         SELECT
             day_,
             type_1
-        FROM test.grouping
+        FROM test_grouping_sets_predicate 
         WHERE day_ = '2023-01-05'
         GROUP BY
             GROUPING SETS (
@@ -50,7 +50,7 @@ FROM
         SELECT
             day_,
             type_1
-        FROM test.grouping
+        FROM test_grouping_sets_predicate
         WHERE day_ = '2023-01-05'
         GROUP BY
             GROUPING SETS (
@@ -73,7 +73,7 @@ FROM
         SELECT
             day_,
             type_1
-        FROM test.grouping
+        FROM test_grouping_sets_predicate
         WHERE day_ = '2023-01-05'
         GROUP BY
             GROUPING SETS (
@@ -83,3 +83,4 @@ FROM
 )
 WHERE type_1 = 'all';
 
+DROP TABLE test_grouping_sets_predicate;
