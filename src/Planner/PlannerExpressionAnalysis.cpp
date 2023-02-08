@@ -346,7 +346,7 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
 {
-    const auto *chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
+    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & order_by_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
 
     ActionsDAGPtr before_sort_actions = std::make_shared<ActionsDAG>(order_by_input);
@@ -388,16 +388,28 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
 LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
+    const NameSet & required_output_nodes_names,
     ActionsChain & actions_chain)
 {
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     const auto & limit_by_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
     auto before_limit_by_actions = buildActionsDAGFromExpressionNode(query_node.getLimitByNode(), limit_by_input, planner_context);
 
+    NameSet limit_by_column_names_set;
     Names limit_by_column_names;
     limit_by_column_names.reserve(before_limit_by_actions->getOutputs().size());
     for (auto & output_node : before_limit_by_actions->getOutputs())
+    {
+        limit_by_column_names_set.insert(output_node->result_name);
         limit_by_column_names.push_back(output_node->result_name);
+    }
+
+    for (const auto & node : before_limit_by_actions->getNodes())
+    {
+        if (required_output_nodes_names.contains(node.result_name) &&
+            !limit_by_column_names_set.contains(node.result_name))
+            before_limit_by_actions->getOutputs().push_back(&node);
+    }
 
     auto actions_step_before_limit_by = std::make_unique<ActionsChainStep>(before_limit_by_actions);
     actions_chain.addStep(std::move(actions_step_before_limit_by));
@@ -409,7 +421,8 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const PlannerQueryProcessingInfo & planner_query_processing_info)
 {
     auto & query_node = query_tree->as<QueryNode &>();
 
@@ -445,10 +458,50 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     std::optional<LimitByAnalysisResult> limit_by_analysis_result_optional;
 
     if (query_node.hasLimitBy())
-        limit_by_analysis_result_optional = analyzeLimitBy(query_node, join_tree_input_columns, planner_context, actions_chain);
+    {
+        /** If we process only first stage of query and there is ORDER BY, we must preserve ORDER BY output columns
+          * and put them into LIMIT BY output columns, to prevent removing of unused expressions during chain finalize.
+          *
+          * Example: SELECT 1 FROM remote('127.0.0.{2,3}', system.one) ORDER BY dummy LIMIT 1 BY 1;
+          * In this example, LIMIT BY actions does not need `dummy` column, but we must preserve it, because
+          * otherwise coordinator does not find it in block.
+          */
+        NameSet required_output_nodes_names;
+        if (sort_analysis_result_optional.has_value() && !planner_query_processing_info.isSecondStage())
+        {
+            const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
+            for (const auto & output_node : before_order_by_actions->getOutputs())
+                required_output_nodes_names.insert(output_node->result_name);
+        }
+
+        limit_by_analysis_result_optional = analyzeLimitBy(query_node,
+            join_tree_input_columns,
+            planner_context,
+            required_output_nodes_names,
+            actions_chain);
+    }
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & project_names_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
+    auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
+
+    /** If there is DISTINCT we must preserve non constant projection output columns
+      * in project names actions, to prevent removing of unused expressions during chain finalize.
+      *
+      * Example: SELECT DISTINCT id, 1 AS value FROM test_table ORDER BY id;
+      */
+    if (query_node.isDistinct())
+    {
+        std::unordered_set<std::string_view> projection_column_names;
+        for (auto & [column_name, _] : projection_analysis_result.projection_column_names_with_display_aliases)
+            projection_column_names.insert(column_name);
+
+        for (auto & column : project_names_input)
+        {
+            if (projection_column_names.contains(column.name))
+                column.column = nullptr;
+        }
+    }
+
     auto project_names_actions = std::make_shared<ActionsDAG>(project_names_input);
     project_names_actions->project(projection_analysis_result.projection_column_names_with_display_aliases);
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));

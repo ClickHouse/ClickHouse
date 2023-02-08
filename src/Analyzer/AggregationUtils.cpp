@@ -26,8 +26,15 @@ public:
         : assert_no_aggregates_place_message(std::move(assert_no_aggregates_place_message_))
     {}
 
+    explicit CollectAggregateFunctionNodesVisitor(bool only_check_)
+        : only_check(only_check_)
+    {}
+
     void visitImpl(const QueryTreeNodePtr & node)
     {
+        if (only_check && has_aggregate_functions)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction())
             return;
@@ -40,16 +47,32 @@ public:
 
         if (aggregate_function_nodes)
             aggregate_function_nodes->push_back(node);
+
+        has_aggregate_functions = true;
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
-        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
+        if (only_check && has_aggregate_functions)
+            return false;
+
+        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+    bool hasAggregateFunctions() const
+    {
+        return has_aggregate_functions;
     }
 
 private:
     String assert_no_aggregates_place_message;
     QueryTreeNodes * aggregate_function_nodes = nullptr;
+    bool only_check = false;
+    bool has_aggregate_functions = false;
 };
 
 }
@@ -69,15 +92,23 @@ void collectAggregateFunctionNodes(const QueryTreeNodePtr & node, QueryTreeNodes
     visitor.visit(node);
 }
 
+bool hasAggregateFunctionNodes(const QueryTreeNodePtr & node)
+{
+    CollectAggregateFunctionNodesVisitor visitor(true /*only_check*/);
+    visitor.visit(node);
+
+    return visitor.hasAggregateFunctions();
+}
+
 void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message)
 {
     CollectAggregateFunctionNodesVisitor visitor(assert_no_aggregates_place_message);
     visitor.visit(node);
 }
 
-void assertNoGroupingFunction(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message)
+void assertNoGroupingFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_grouping_function_place_message)
 {
-    assertNoFunction(node, "grouping", ErrorCodes::ILLEGAL_AGGREGATION, "GROUPING", assert_no_grouping_function_place_message);
+    assertNoFunctionNodes(node, "grouping", ErrorCodes::ILLEGAL_AGGREGATION, "GROUPING", assert_no_grouping_function_place_message);
 }
 
 }

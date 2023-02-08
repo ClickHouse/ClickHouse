@@ -166,24 +166,27 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 {
     HashState hash_state;
 
-    std::unordered_map<const IQueryTreeNode *, size_t> node_to_identifier;
+    std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;
 
-    std::vector<const IQueryTreeNode *> nodes_to_process;
-    nodes_to_process.push_back(this);
+    std::vector<std::pair<const IQueryTreeNode *, bool>> nodes_to_process;
+    nodes_to_process.emplace_back(this, false);
 
     while (!nodes_to_process.empty())
     {
-        const auto * node_to_process = nodes_to_process.back();
+        const auto [node_to_process, is_weak_node] = nodes_to_process.back();
         nodes_to_process.pop_back();
 
-        auto node_identifier_it = node_to_identifier.find(node_to_process);
-        if (node_identifier_it != node_to_identifier.end())
+        if (is_weak_node)
         {
-            hash_state.update(node_identifier_it->second);
-            continue;
-        }
+            auto node_identifier_it = weak_node_to_identifier.find(node_to_process);
+            if (node_identifier_it != weak_node_to_identifier.end())
+            {
+                hash_state.update(node_identifier_it->second);
+                continue;
+            }
 
-        node_to_identifier.emplace(node_to_process, node_to_identifier.size());
+            weak_node_to_identifier.emplace(node_to_process, weak_node_to_identifier.size());
+        }
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
         if (!node_to_process->alias.empty())
@@ -201,7 +204,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
             if (!node_to_process_child)
                 continue;
 
-            nodes_to_process.push_back(node_to_process_child.get());
+            nodes_to_process.emplace_back(node_to_process_child.get(), false);
         }
 
         hash_state.update(node_to_process->weak_pointers.size());
@@ -212,7 +215,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
             if (!strong_pointer)
                 continue;
 
-            nodes_to_process.push_back(strong_pointer.get());
+            nodes_to_process.emplace_back(strong_pointer.get(), true);
         }
     }
 
@@ -254,11 +257,14 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         auto node_clone = it != replacement_map.end() ? it->second : node_to_clone->cloneImpl();
         *place_for_cloned_node = node_clone;
 
+        old_pointer_to_new_pointer.emplace(node_to_clone, node_clone);
+
+        if (it != replacement_map.end())
+            continue;
+
         node_clone->setAlias(node_to_clone->alias);
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
-
-        old_pointer_to_new_pointer.emplace(node_to_clone, node_clone);
 
         for (auto & child : node_clone->children)
         {
