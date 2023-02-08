@@ -210,6 +210,9 @@ struct SelectQueryInfo
 
     mutable ParallelReplicasReadingCoordinatorPtr coordinator;
 
+    /// Key: full table name
+    mutable std::map<String, NameOrderedSet> query_partitions;
+
     TreeRewriterResultPtr syntax_analyzer_result;
 
     /// This is an additional filer applied to current table.

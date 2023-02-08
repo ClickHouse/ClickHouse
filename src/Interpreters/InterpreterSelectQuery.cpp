@@ -2350,12 +2350,14 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         {
             const String view_name{};
             auto local_storage_id = storage->getStorageID();
+            auto full_table_name = local_storage_id.getFullTableName();
             context->getQueryContext()->addQueryAccessInfo(
                 backQuoteIfNeed(local_storage_id.getDatabaseName()),
-                local_storage_id.getFullTableName(),
+                full_table_name,
                 required_columns,
                 query_info.projection ? query_info.projection->desc->name : "",
-                view_name);
+                view_name,
+                query_info.query_partitions[full_table_name]);
         }
 
         /// Create step which reads from empty source if storage has no data.

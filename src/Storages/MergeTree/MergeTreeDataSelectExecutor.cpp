@@ -862,6 +862,18 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
+
+    auto storage_id = data.getStorageID();
+    auto full_table_name = storage_id.getFullTableName();
+    auto & query_partitions = query_info.query_partitions[full_table_name];
+    for (const auto & part: parts)
+    {
+        const auto & partition = part->partition;
+        WriteBufferFromOwnString buf;
+        partition.serializeText(data, buf, FormatSettings{});
+
+        query_partitions.emplace(buf.str());
+    }
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(

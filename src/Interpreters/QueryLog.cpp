@@ -1,6 +1,7 @@
 #include <Interpreters/QueryLog.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -41,8 +42,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
-    return
-    {
+    return {
         {"type", std::move(query_status_datatype)},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -64,16 +64,15 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"formatted_query", std::make_shared<DataTypeString>()},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>()},
         {"query_kind", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"databases", std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
-        {"tables", std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
-        {"columns", std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
-        {"projections", std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
-        {"views", std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"databases", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"tables", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"columns", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"projections", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"views", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"partitions",
+         std::make_shared<DataTypeMap>(
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+             std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())))},
         {"exception_code", std::make_shared<DataTypeInt32>()},
         {"exception", std::make_shared<DataTypeString>()},
         {"stack_trace", std::make_shared<DataTypeString>()},
@@ -123,11 +122,11 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
 
-        {"used_row_policies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"used_row_policies",
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
 
         {"transaction_id", getTransactionIDDataType()},
     };
-
 }
 
 NamesAndAliases QueryLogElement::getNamesAndAliases()
@@ -194,6 +193,35 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_columns, column_columns);
         fill_column(query_projections, column_projections);
         fill_column(query_views, column_views);
+    }
+
+    {
+        auto & column_partitions = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets_partitions = column_partitions.getNestedColumn().getOffsets();
+        auto & column_tuple = column_partitions.getNestedData();
+        auto & column_full_table = column_tuple.getColumn(0);
+        auto & column_partition_array = column_tuple.getColumn(1);
+
+        auto fill_column = [](const std::unordered_map<String, NameOrderedSet> & data,
+                             IColumn & column_key,
+                             ColumnArray & column_values,
+                             IColumn::Offsets & column_offsets)
+        {
+            auto & offsets = column_values.getOffsets();
+            for (const auto & [key, values] : data)
+            {
+                /// Fill key(String)
+                column_key.insertData(key.data(), key.size());
+
+                /// Fill value(Array(String))
+                for (const auto & partition : values)
+                    column_values.getData().insertData(partition.data(), partition.size());
+                offsets.push_back(offsets.back() + values.size());
+            }
+            column_offsets.push_back(column_offsets.back() + data.size());
+        };
+
+        fill_column(query_partitions, column_full_table, typeid_cast<ColumnArray &>(column_partition_array), offsets_partitions);
     }
 
     columns[i++]->insert(exception_code);

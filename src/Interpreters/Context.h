@@ -284,6 +284,7 @@ private:
             columns = rhs.columns;
             projections = rhs.projections;
             views = rhs.views;
+            partitions = rhs.partitions;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -301,6 +302,7 @@ private:
             std::swap(columns, rhs.columns);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
+            std::swap(partitions, rhs.partitions);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -310,6 +312,8 @@ private:
         std::set<std::string> columns{};
         std::set<std::string> projections{};
         std::set<std::string> views{};
+        /// Key: full table name
+        std::map<std::string, NameOrderedSet> partitions{};
     };
 
     QueryAccessInfo query_access_info;
@@ -608,7 +612,8 @@ public:
         const String & full_quoted_table_name,
         const Names & column_names,
         const String & projection_name = {},
-        const String & view_name = {});
+        const String & view_name = {},
+        const NameOrderedSet & partition_names = {});
 
 
     /// Supported factories for records in query_log

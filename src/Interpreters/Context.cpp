@@ -1268,7 +1268,8 @@ void Context::addQueryAccessInfo(
     const String & full_quoted_table_name,
     const Names & column_names,
     const String & projection_name,
-    const String & view_name)
+    const String & view_name,
+    const NameOrderedSet & partition_names)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
@@ -1282,6 +1283,8 @@ void Context::addQueryAccessInfo(
         query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
     if (!view_name.empty())
         query_access_info.views.emplace(view_name);
+    for (const auto & partition_name : partition_names)
+        query_access_info.partitions.emplace(partition_name);
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const

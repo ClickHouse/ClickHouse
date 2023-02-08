@@ -65,8 +65,8 @@ struct QueryLogElement
     std::set<String> query_columns;
     std::set<String> query_projections;
     std::set<String> query_views;
-    /// Key: db.table
-    std::unordered_map<String, std::unordered_set<String>> query_partitions;
+    /// Key: full table name
+    std::map<String, NameOrderedSet> query_partitions;
 
     std::unordered_set<String> used_aggregate_functions;
     std::unordered_set<String> used_aggregate_function_combinators;
