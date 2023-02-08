@@ -6209,6 +6209,9 @@ public:
             query_tree_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
+        if (nodeIsAggregateFunctionOrInGroupByKeys(node))
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (function_node && function_node->getFunctionName() == "grouping")
         {
@@ -6244,12 +6247,6 @@ public:
         if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
             return;
 
-        for (const auto & group_by_key_node : group_by_keys_nodes)
-        {
-            if (node->isEqual(*group_by_key_node))
-                return;
-        }
-
         std::string column_name;
 
         if (column_node_source->hasAlias())
@@ -6268,24 +6265,32 @@ public:
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
-        if (auto * child_function_node = child_node->as<FunctionNode>())
-        {
-            if (child_function_node->isAggregateFunction())
-                return false;
+        if (nodeIsAggregateFunctionOrInGroupByKeys(parent_node))
+            return false;
 
-            for (const auto & group_by_key_node : group_by_keys_nodes)
-            {
-                if (child_node->isEqual(*group_by_key_node, {.compare_aliases = false}))
-                    return false;
-            }
-        }
+        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return false;
 
-        return !(child_node->getNodeType() == QueryTreeNodeType::QUERY || child_node->getNodeType() == QueryTreeNodeType::UNION);
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
 private:
+    bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
+    {
+        if (auto * function_node = node->as<FunctionNode>())
+            if (function_node->isAggregateFunction())
+                return true;
+
+        for (const auto & group_by_key_node : group_by_keys_nodes)
+            if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
+                return true;
+
+        return false;
+    }
+
     const QueryTreeNodes & group_by_keys_nodes;
     const IdentifierResolveScope & scope;
 };
