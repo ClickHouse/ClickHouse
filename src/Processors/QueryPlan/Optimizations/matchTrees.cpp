@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/matchTrees.h>
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
+#include <Columns/ColumnConst.h>
 #include <stack>
 
 namespace DB::QueryPlanOptimizations
@@ -101,14 +102,20 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                 //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;
 
                 bool found_all_children = true;
-                for (const auto * child : frame.mapped_children)
-                    if (!child)
+                const ActionsDAG::Node * any_child = nullptr;
+                size_t num_children = frame.node->children.size();
+                for (size_t i = 0; i < num_children; ++i)
+                {
+                    if (frame.mapped_children[i])
+                        any_child = frame.mapped_children[i];
+                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
                         found_all_children = false;
+                }
 
-                if (found_all_children && !frame.mapped_children.empty())
+                if (found_all_children && any_child)
                 {
                     Parents container;
-                    Parents * intersection = &inner_parents[frame.mapped_children[0]];
+                    Parents * intersection = &inner_parents[any_child];
 
                     if (frame.mapped_children.size() > 1)
                     {
@@ -116,7 +123,8 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                         size_t mapped_children_size = frame.mapped_children.size();
                         other_parents.reserve(mapped_children_size);
                         for (size_t i = 1; i < mapped_children_size; ++i)
-                            other_parents.push_back(&inner_parents[frame.mapped_children[i]]);
+                            if (frame.mapped_children[i])
+                                other_parents.push_back(&inner_parents[frame.mapped_children[i]]);
 
                         for (const auto * parent : *intersection)
                         {
@@ -148,12 +156,19 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                             if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
                             {
                                 const auto & children = parent->children;
-                                size_t num_children = children.size();
-                                if (frame.mapped_children.size() == num_children)
+                                if (children.size() == num_children)
                                 {
                                     bool all_children_matched = true;
                                     for (size_t i = 0; all_children_matched && i < num_children; ++i)
-                                        all_children_matched = frame.mapped_children[i] == children[i];
+                                    {
+                                        if (frame.mapped_children[i] == nullptr)
+                                        {
+                                            all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
+                                                && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
+                                        }
+                                        else
+                                            all_children_matched = frame.mapped_children[i] == children[i];
+                                    }
 
                                     if (all_children_matched)
                                     {
