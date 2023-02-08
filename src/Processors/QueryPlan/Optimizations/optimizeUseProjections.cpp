@@ -12,6 +12,8 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/logger_useful.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
 #include <stack>
 
 namespace DB::QueryPlanOptimizations
@@ -180,7 +182,10 @@ ActionsDAGPtr analyzeAggregateProjection(
         auto it = index.find(key);
         /// This should not happen ideally.
         if (it == index.end())
+        {
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot find key {} in query DAG", key);
             return {};
+        }
 
         key_nodes.push_back(it->second);
     }
@@ -192,13 +197,22 @@ ActionsDAGPtr analyzeAggregateProjection(
             auto it = index.find(argument);
             /// This should not happen ideally.
             if (it == index.end())
+            {
+                LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot find arg {} for agg functions {}", argument, aggregate.column_name);
                 return {};
+            }
 
             aggregate_args.insert(it->second);
         }
     }
 
     MatchedTrees::Matches matches = matchTrees(*info.before_aggregation, query_dag);
+    for (const auto & [node, match] : matches)
+    {
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Match {} {} -> {} {} (with monotonicity : {})",
+            static_cast<const void *>(node), node->result_name,
+            static_cast<const void *>(match.node), (match.node ? match.node->result_name : ""), match.monotonicity != std::nullopt);
+    }
 
     std::unordered_map<std::string, std::list<size_t>> projection_aggregate_functions;
     for (size_t i = 0; i < info.aggregates.size(); ++i)
@@ -221,7 +235,10 @@ ActionsDAGPtr analyzeAggregateProjection(
     {
         auto it = projection_aggregate_functions.find(aggregate.function->getName());
         if (it == projection_aggregate_functions.end())
+        {
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} by name {}", aggregate.column_name, aggregate.function->getName());
             return {};
+        }
         auto & candidates = it->second;
 
         std::optional<AggFuncMatch> match;
@@ -237,7 +254,12 @@ ActionsDAGPtr analyzeAggregateProjection(
             /// But also functions sum(...) and sumIf(...) will have equal states,
             /// and we can't replace one to another from projection.
             if (!candidate.function->getStateType()->equals(*aggregate.function->getStateType()))
+            {
+                LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} vs {} by state {} vs {}",
+                    aggregate.column_name, candidate.column_name,
+                    candidate.function->getStateType()->getName(), aggregate.function->getStateType()->getName());
                 continue;
+            }
 
             ActionsDAG::NodeRawConstPtrs args;
             size_t num_args = aggregate.argument_names.size();
@@ -250,24 +272,40 @@ ActionsDAGPtr analyzeAggregateProjection(
                 auto jt = index.find(query_name);
                 /// This should not happen ideally.
                 if (jt == index.end())
+                {
+                    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} vs {} : can't find arg {} in query dag",
+                        aggregate.column_name, candidate.column_name, query_name);
                     break;
+                }
 
                 const auto * query_node = jt->second;
 
                 auto kt = proj_index.find(proj_name);
                 /// This should not happen ideally.
                 if (kt == proj_index.end())
+                {
+                    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} vs {} : can't find arg {} in proj dag",
+                        aggregate.column_name, candidate.column_name, proj_name);
                     break;
+                }
 
                 const auto * proj_node = kt->second;
 
                 auto mt = matches.find(query_node);
                 if (mt == matches.end())
+                {
+                    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} vs {} : can't match arg {} vs {} : no node in map",
+                        aggregate.column_name, candidate.column_name, query_name, proj_name);
                     break;
+                }
 
                 const auto & node_match = mt->second;
                 if (node_match.node != proj_node || node_match.monotonicity)
+                {
+                    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Cannot match agg func {} vs {} : can't match arg {} vs {} : no match or monotonicity",
+                        aggregate.column_name, candidate.column_name, query_name, proj_name);
                     break;
+                }
 
                 args.push_back(query_node);
             }
@@ -556,6 +594,12 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         max_added_blocks,
         best_candidate->merge_tree_projection_select_result_ptr,
         reading->isParallelReadingEnabled());
+
+    if (!projection_reading)
+    {
+        Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames())));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+    }
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection reading header {}", projection_reading->getOutputStream().header.dumpStructure());
 
