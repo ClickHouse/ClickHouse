@@ -71,6 +71,14 @@ def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
+# First and last lines of the log
+def trim_for_log(s):
+    if not s:
+        return s
+    lines = s.splitlines()
+    return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+
+
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
         self.message = message
@@ -870,8 +878,7 @@ class TestCase:
     ):
         description = ""
 
-        if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[:100])
+        debug_log = trim_for_log(debug_log)
 
         if proc:
             if proc.returncode is None:
@@ -921,9 +928,7 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    description += "\n".join(
-                        open(self.stdout_file).read().splitlines()[:100]
-                    )
+                    description += trim_for_log(open(self.stdout_file).read())
                     description += "\n"
 
                 description += f"\nstdout:\n{stdout}\n"
@@ -932,7 +937,9 @@ class TestCase:
                 )
 
         if stderr:
-            description += "\n{}\n".format("\n".join(stderr.splitlines()[:100]))
+            description += "\n"
+            description += trim_for_log(stderr)
+            description += "\n"
             description += f"\nstdout:\n{stdout}\n"
             if debug_log:
                 description += "\n"
@@ -946,7 +953,9 @@ class TestCase:
             )
 
         if "Exception" in stdout:
-            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            description += "\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
