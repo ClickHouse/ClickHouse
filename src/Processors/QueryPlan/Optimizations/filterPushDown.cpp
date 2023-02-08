@@ -176,6 +176,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
+        if (aggregating->isGroupingSets())
+            return 0;
+
         const auto & params = aggregating->getParams();
         const auto & keys = params.keys;
 
