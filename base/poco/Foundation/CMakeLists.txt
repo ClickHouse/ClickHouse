@@ -209,6 +209,7 @@ target_compile_options (_poco_foundation
         -Wno-suggest-override
         -Wno-thread-safety-analysis
         -Wno-thread-safety-negative
+        -Wno-undef
         -Wno-unreachable-code-return
         -Wno-unused-exception-parameter
         -Wno-unused-macros
