@@ -480,7 +480,7 @@ protected:
                 {
                     if (table_cast) {
                         size_t totalMarks = 0;
-                        for(auto &part_info: table_cast->getAllDataPartsVector()) 
+                        for(auto &part_info: table_cast->getAllDataPartsVector())
                             totalMarks += part_info->getMarksCount();
                         res_columns[res_index++]->insert(totalMarks);
                     }
