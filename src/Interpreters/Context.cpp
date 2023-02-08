@@ -1283,8 +1283,12 @@ void Context::addQueryAccessInfo(
         query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
     if (!view_name.empty())
         query_access_info.views.emplace(view_name);
-    for (const auto & partition_name : partition_names)
-        query_access_info.partitions.emplace(partition_name);
+
+    if (!partition_names.empty())
+    {
+        auto & partitions = query_access_info.partitions[full_quoted_table_name];
+        partitions.insert(partition_names.begin(), partition_names.end());
+    }
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const

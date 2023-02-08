@@ -202,7 +202,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_full_table = column_tuple.getColumn(0);
         auto & column_partition_array = column_tuple.getColumn(1);
 
-        auto fill_column = [](const std::unordered_map<String, NameOrderedSet> & data,
+        auto fill_column = [](const std::map<String, NameOrderedSet> & data,
                              IColumn & column_key,
                              ColumnArray & column_values,
                              IColumn::Offsets & column_offsets)
