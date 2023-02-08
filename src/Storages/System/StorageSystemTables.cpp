@@ -478,10 +478,12 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (table_cast) {
+                    if (table_cast) 
+                    {
                         size_t totalMarks = 0;
-                        for(auto &part_info: table_cast->getAllDataPartsVector())
+                        for(auto &part_info: table_cast->getAllDataPartsVector()) {
                             totalMarks += part_info->getMarksCount();
+                        }
                         res_columns[res_index++]->insert(totalMarks);
                     }
                     else
