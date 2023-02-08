@@ -156,7 +156,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
         return false;
     }
 
-    bool as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
+    bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
 
     if (is_raw)
     {
@@ -242,7 +242,7 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 
 void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 {
-    bool can_be_parsed_as_null = type->isNullable() || type->isLowCardinalityNullable() || format_settings.null_as_default;
+    bool can_be_parsed_as_null = isNullableOrLowCardinalityNullable(type) || format_settings.null_as_default;
 
     // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
     if (!can_be_parsed_as_null && !buf->eof())

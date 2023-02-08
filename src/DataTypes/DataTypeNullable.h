@@ -53,5 +53,6 @@ private:
 DataTypePtr makeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
+DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 
 }
