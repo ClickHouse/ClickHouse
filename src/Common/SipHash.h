@@ -78,13 +78,13 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 k0 = 0, UInt64 k1 = 0) /// NOLINT
+    SipHash(UInt64 key0 = 0, UInt64 key1 = 0) /// NOLINT
     {
         /// Initialize the state with some random bytes and seed.
-        v0 = 0x736f6d6570736575ULL ^ k0;
-        v1 = 0x646f72616e646f6dULL ^ k1;
-        v2 = 0x6c7967656e657261ULL ^ k0;
-        v3 = 0x7465646279746573ULL ^ k1;
+        v0 = 0x736f6d6570736575ULL ^ key0;
+        v1 = 0x646f72616e646f6dULL ^ key1;
+        v2 = 0x6c7967656e657261ULL ^ key0;
+        v3 = 0x7465646279746573ULL ^ key1;
 
         cnt = 0;
         current_word = 0;
@@ -216,18 +216,28 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     hash.get128(out);
 }
 
-inline UInt128 sipHash128(const char * data, const size_t size)
+inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
 {
-    SipHash hash;
+    SipHash hash(key0, key1);
     hash.update(data, size);
     return hash.get128();
 }
 
-inline UInt64 sipHash64(const char * data, const size_t size)
+inline UInt128 sipHash128(const char * data, const size_t size)
 {
-    SipHash hash;
+    return sipHash128Keyed(0, 0, data, size);
+}
+
+inline UInt64 sipHash64Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
+{
+    SipHash hash(key0, key1);
     hash.update(data, size);
     return hash.get64();
+}
+
+inline UInt64 sipHash64(const char * data, const size_t size)
+{
+    return sipHash64Keyed(0, 0, data, size);
 }
 
 template <typename T>

@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <Core/NamesAndTypes.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
@@ -16,6 +17,9 @@ class IMergeTreeDataPartInfoForReader;
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
+
+class IMergeTreeDataPart;
+using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 
 /** If some of the requested columns are not in the part,
@@ -44,13 +48,11 @@ struct MergeTreeReadTaskColumns
 struct MergeTreeReadTask
 {
     /// data part which should be read while performing this task
-    MergeTreeData::DataPartPtr data_part;
+    DataPartPtr data_part;
     /// Ranges to read from `data_part`.
     MarkRanges mark_ranges;
     /// for virtual `part_index` virtual column
     size_t part_index_in_query;
-    /// ordered list of column names used in this query, allows returning blocks with consistent ordering
-    const Names & ordered_names;
     /// used to determine whether column should be filtered during PREWHERE or WHERE
     const NameSet & column_name_set;
     /// column names to read during PREWHERE and WHERE
@@ -68,10 +70,9 @@ struct MergeTreeReadTask
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part_,
+        const DataPartPtr & data_part_,
         const MarkRanges & mark_ranges_,
         size_t part_index_in_query_,
-        const Names & ordered_names_,
         const NameSet & column_name_set_,
         const MergeTreeReadTaskColumns & task_columns_,
         bool remove_prewhere_column_,
@@ -88,7 +89,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -137,7 +138,7 @@ struct MergeTreeBlockSizePredictor
 
 protected:
 
-    MergeTreeData::DataPartPtr data_part;
+    DataPartPtr data_part;
 
     struct ColumnInfo
     {
