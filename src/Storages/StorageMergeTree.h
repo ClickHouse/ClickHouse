@@ -71,6 +71,9 @@ public:
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalParts(const Settings &) const override;
+    std::optional<UInt64> totalActiveParts(const Settings &) const override;
+    std::optional<UInt64> totalMarks(const Settings &) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
