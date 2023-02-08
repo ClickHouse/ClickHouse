@@ -637,6 +637,7 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         node.step = aggregating->convertToAggregatingProjection(expr_or_filter_node.step->getOutputStream());
         node.children.push_back(&expr_or_filter_node);
+        reading->setAnalyzedResult(std::move(best_candidate->merge_tree_normal_select_result_ptr));
     }
 
     return true;
