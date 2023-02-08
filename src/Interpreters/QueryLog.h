@@ -67,6 +67,7 @@ struct QueryLogElement
     std::set<String> query_views;
     /// Key: full table name
     std::map<String, NameOrderedSet> query_partitions;
+    std::map<String, UInt8> query_is_index_by_dates;
 
     std::unordered_set<String> used_aggregate_functions;
     std::unordered_set<String> used_aggregate_function_combinators;

@@ -73,6 +73,10 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
          std::make_shared<DataTypeMap>(
              std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
              std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())))},
+        {"is_index_by_dates",
+         std::make_shared<DataTypeMap>(
+             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), std::make_shared<DataTypeUInt8>())},
+
         {"exception_code", std::make_shared<DataTypeInt32>()},
         {"exception", std::make_shared<DataTypeString>()},
         {"stack_trace", std::make_shared<DataTypeString>()},
@@ -222,6 +226,32 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         };
 
         fill_column(query_partitions, column_full_table, typeid_cast<ColumnArray &>(column_partition_array), offsets_partitions);
+    }
+
+    {
+        auto & column_is_index_by_dates = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets_is_index_by_dates = column_is_index_by_dates.getNestedColumn().getOffsets();
+        auto & column_tuple = column_is_index_by_dates.getNestedData();
+        auto & column_full_table = column_tuple.getColumn(0);
+        auto & column_is_index_by_date = column_tuple.getColumn(1);
+
+        auto fill_column = [](const std::map<String, UInt8> & data,
+                             IColumn & column_key,
+                             IColumn & column_value,
+                             IColumn::Offsets & column_offsets)
+        {
+            for (const auto & [key, value] : data)
+            {
+                /// Fill key(String)
+                column_key.insertData(key.data(), key.size());
+
+                /// Fill value(UInt8)
+                column_value.insertData(reinterpret_cast<const char *>(&value), 1);
+            }
+            column_offsets.push_back(column_offsets.back() + data.size());
+        };
+
+        fill_column(query_is_index_by_dates, column_full_table, column_is_index_by_date, offsets_is_index_by_dates);
     }
 
     columns[i++]->insert(exception_code);

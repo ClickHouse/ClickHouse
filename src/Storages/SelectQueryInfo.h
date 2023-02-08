@@ -212,6 +212,8 @@ struct SelectQueryInfo
 
     /// Key: full table name
     mutable std::map<String, NameOrderedSet> query_partitions;
+    mutable std::map<String, UInt8> is_index_by_dates;
+
 
     TreeRewriterResultPtr syntax_analyzer_result;
 

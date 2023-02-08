@@ -1269,7 +1269,8 @@ void Context::addQueryAccessInfo(
     const Names & column_names,
     const String & projection_name,
     const String & view_name,
-    const NameOrderedSet & partition_names)
+    const NameOrderedSet & partition_names,
+    UInt8 is_index_by_date)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
@@ -1289,6 +1290,7 @@ void Context::addQueryAccessInfo(
         auto & partitions = query_access_info.partitions[full_quoted_table_name];
         partitions.insert(partition_names.begin(), partition_names.end());
     }
+    query_access_info.is_index_by_dates[full_quoted_table_name] = is_index_by_date;
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const

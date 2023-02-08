@@ -793,6 +793,9 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
 
+    auto storage_id = data.getStorageID();
+    auto full_table_name = storage_id.getFullTableName();
+
     if (metadata_snapshot->hasPartitionKey() && !settings.allow_experimental_analyzer)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -803,7 +806,9 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
-        if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
+        bool is_index_by_date = !(minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless());
+        query_info.is_index_by_dates[full_table_name] = is_index_by_date;
+        if (settings.force_index_by_date && !is_index_by_date)
         {
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
@@ -863,8 +868,6 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
 
-    auto storage_id = data.getStorageID();
-    auto full_table_name = storage_id.getFullTableName();
     auto & query_partitions = query_info.query_partitions[full_table_name];
     for (const auto & part: parts)
     {

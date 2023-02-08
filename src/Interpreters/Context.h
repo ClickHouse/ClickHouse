@@ -285,6 +285,7 @@ private:
             projections = rhs.projections;
             views = rhs.views;
             partitions = rhs.partitions;
+            is_index_by_dates = rhs.is_index_by_dates;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -303,6 +304,7 @@ private:
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
             std::swap(partitions, rhs.partitions);
+            std::swap(is_index_by_dates, rhs.is_index_by_dates);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -314,6 +316,7 @@ private:
         std::set<std::string> views{};
         /// Key: full table name
         std::map<std::string, NameOrderedSet> partitions{};
+        std::map<std::string, UInt8> is_index_by_dates{};
     };
 
     QueryAccessInfo query_access_info;
@@ -613,7 +616,8 @@ public:
         const Names & column_names,
         const String & projection_name = {},
         const String & view_name = {},
-        const NameOrderedSet & partition_names = {});
+        const NameOrderedSet & partition_names = {},
+        UInt8 is_index_by_date = 0);
 
 
     /// Supported factories for records in query_log
