@@ -238,6 +238,7 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse/sysroot
+	ignore = dirty
 [submodule "contrib/nlp-data"]
 	path = contrib/nlp-data
 	url = https://github.com/ClickHouse/nlp-data
@@ -332,7 +333,8 @@
 	url = https://github.com/ClickHouse/s2n-tls
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
-	url = https://github.com/antonblanchard/crc32-vpmsum.git
+	url = https://github.com/antonblanchard/crc32-vpmsum
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+	ignore = dirty
