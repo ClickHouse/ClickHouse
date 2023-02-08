@@ -38,7 +38,11 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -618,19 +622,84 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
 namespace
 {
 
-QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const SelectQueryInfo & query_info, StorageID remote_storage_id)
+class StorageDistributedLocal : public IStorage
+{
+public:
+    StorageDistributedLocal(const StorageID & table_id_, const ColumnsDescription & columns_)
+        : IStorage(table_id_)
+    {
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_);
+        setInMemoryMetadata(storage_metadata);
+    }
+
+    std::string getName() const override { return "StorageDistributedLocal"; }
+
+    bool supportsSampling() const override { return true; }
+    bool supportsFinal() const override { return true; }
+    bool supportsPrewhere() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool canMoveConditionsToPrewhere() const override { return false; }
+
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDistributedLocal does not support getQueryProcessingStage method");
+    }
+
+    Pipe read(const Names & /*column_names*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/) override
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDistributedLocal does not support read method");
+    }
+};
+
+QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const SelectQueryInfo & query_info,
+    const StorageSnapshotPtr & distributed_storage_snapshot,
+    const StorageID & remote_storage_id,
+    const ASTPtr & remote_table_function)
 {
     const auto & query_context = query_info.planner_context->getQueryContext();
-    auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
-    auto storage = DatabaseCatalog::instance().tryGetTable(resolved_remote_storage_id, query_context);
-    if (!storage)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Distributed local table {} does not exists on coordinator",
-            remote_storage_id.getFullTableName());
 
-    auto storage_lock = storage->lockForShare(query_context->getInitialQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), query_context);
-    auto replacement_table_expression = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+    QueryTreeNodePtr replacement_table_expression;
+
+    if (remote_table_function)
+    {
+        auto remote_table_function_query_tree = buildQueryTree(remote_table_function, query_context);
+        auto & remote_table_function_node = remote_table_function_query_tree->as<FunctionNode &>();
+
+        auto table_function_node = std::make_shared<TableFunctionNode>(remote_table_function_node.getFunctionName());
+        table_function_node->getArgumentsNode() = remote_table_function_node.getArgumentsNode();
+
+        QueryAnalysisPass query_analysis_pass;
+        query_analysis_pass.run(table_function_node->getArgumentsNode(), query_context);
+
+        auto remote_table_function_to_resolve = table_function_node->toAST();
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(remote_table_function_to_resolve, query_context);
+        auto table_function_storage = table_function_ptr->execute(remote_table_function_to_resolve, query_context, table_function_ptr->getName());
+
+        table_function_node->resolve(std::move(table_function_ptr), std::move(table_function_storage), query_context);
+        replacement_table_expression = std::move(table_function_node);
+    }
+    else
+    {
+        auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
+        auto storage = DatabaseCatalog::instance().tryGetTable(resolved_remote_storage_id, query_context);
+        if (!storage)
+            storage = std::make_shared<StorageDistributedLocal>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
+
+        auto storage_lock = storage->lockForShare(query_context->getInitialQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+        auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), query_context);
+        replacement_table_expression = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+    }
+
+    replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
     replacement_map.emplace(query_info.table_expression.get(), std::move(replacement_table_expression));
@@ -650,7 +719,6 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
-
     const auto * select_query = query_info.query->as<ASTSelectQuery>();
     if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
         throw Exception(ErrorCodes::ILLEGAL_FINAL, "Final modifier is not allowed together with parallel reading from replicas feature");
@@ -660,8 +728,15 @@ void StorageDistributed::read(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        StorageID remote_storage_id{remote_database, remote_table};
-        auto query_tree_with_replaced_distributed_table = buildQueryTreeDistributedTableReplacedWithLocalTable(query_info, remote_storage_id);
+        StorageID remote_storage_id = StorageID::createEmpty();
+        if (!remote_table_function_ptr)
+            remote_storage_id = StorageID{remote_database, remote_table};
+
+        auto query_tree_with_replaced_distributed_table = buildQueryTreeDistributedTableReplacedWithLocalTable(query_info,
+            storage_snapshot,
+            remote_storage_id,
+            remote_table_function_ptr);
+
         query_ast = queryNodeToSelectQuery(query_tree_with_replaced_distributed_table);
 
         Planner planner(query_tree_with_replaced_distributed_table,

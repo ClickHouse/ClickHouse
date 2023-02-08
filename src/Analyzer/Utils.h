@@ -42,13 +42,18 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
   */
 bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier);
 
-/** Assert that there are no function with specified function name in node children.
+/** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
   */
-void assertNoFunction(const QueryTreeNodePtr & node,
+void assertNoFunctionNodes(const QueryTreeNodePtr & node,
     std::string_view function_name,
     int exception_code,
     std::string_view exception_function_name,
     std::string_view exception_place_message);
+
+/** Returns true if there is function node with specified function name in node children, false otherwise.
+  * Do not visit subqueries.
+  */
+bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name);
 
 }
