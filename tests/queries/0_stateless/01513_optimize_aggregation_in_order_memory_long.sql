@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-random-merge-tree-settings
 
 drop table if exists data_01513;
 create table data_01513 (key String) engine=MergeTree() order by key;
