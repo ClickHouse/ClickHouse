@@ -53,7 +53,6 @@ public:
 
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
-    T operator() (const Int128 & x) const { return T(x); }
     T operator() (const UUID & x) const { return T(x.toUnderType()); }
     T operator() (const IPv4 & x) const { return T(x.toUnderType()); }
     T operator() (const IPv6 & x) const { return T(x.toUnderType()); }
@@ -87,11 +86,6 @@ public:
         }
     }
 
-    T operator() (const UInt128 &) const
-    {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert UInt128 to {}", demangle(typeid(T).name()));
-    }
-
     template <typename U>
     T operator() (const DecimalField<U> & x) const
     {
@@ -112,8 +106,6 @@ public:
     {
         if constexpr (is_decimal<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
-        else if constexpr (std::is_same_v<T, UInt128>)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "No conversion to old UInt128 from {}", demangle(typeid(U).name()));
         else
             return static_cast<T>(x);
     }
