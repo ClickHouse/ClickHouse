@@ -27,6 +27,7 @@ private:
     std::unique_ptr<ProfileEvents::Counters> performance_counters_holder;
 
     ProfileEvents::Counters * performance_counters_scope;
+    ProfileEvents::Counters * previous_counters_scope;
 };
 
 

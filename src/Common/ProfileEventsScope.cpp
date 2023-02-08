@@ -7,14 +7,14 @@ namespace DB
 ProfileEventsScope::ProfileEventsScope()
     : performance_counters_holder(std::make_unique<ProfileEvents::Counters>())
     , performance_counters_scope(performance_counters_holder.get())
+    , previous_counters_scope(CurrentThread::get().attachProfileCountersScope(performance_counters_scope))
 {
-    CurrentThread::get().attachProfileCountersScope(performance_counters_scope);
 }
 
 ProfileEventsScope::ProfileEventsScope(ProfileEvents::Counters * performance_counters_scope_)
     : performance_counters_scope(performance_counters_scope_)
+    , previous_counters_scope(CurrentThread::get().attachProfileCountersScope(performance_counters_scope))
 {
-    CurrentThread::get().attachProfileCountersScope(performance_counters_scope);
 }
 
 std::shared_ptr<ProfileEvents::Counters::Snapshot> ProfileEventsScope::getSnapshot()
@@ -24,7 +24,8 @@ std::shared_ptr<ProfileEvents::Counters::Snapshot> ProfileEventsScope::getSnapsh
 
 ProfileEventsScope::~ProfileEventsScope()
 {
-    CurrentThread::get().detachProfileCountersScope();
+    /// Restore previous performance counters
+    CurrentThread::get().attachProfileCountersScope(previous_counters_scope);
 }
 
 

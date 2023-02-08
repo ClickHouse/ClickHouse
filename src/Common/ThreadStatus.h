@@ -249,8 +249,9 @@ public:
     /// Attaches slave thread to existing thread group
     void attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
 
-    void attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope);
-    void detachProfileCountersScope();
+    /// Returns pointer to the current profile counters to restore them back.
+    /// Note: consequent call with new scope will detach previous scope.
+    ProfileEvents::Counters * attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope);
 
     InternalTextLogsQueuePtr getInternalTextLogsQueue() const
     {
