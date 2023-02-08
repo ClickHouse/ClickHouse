@@ -18,6 +18,10 @@
 #    include <cstdlib>
 #endif
 
+#if USE_GWP_ASAN
+static gwp_asan::GuardedPoolAllocator GuardedAlloc;
+#endif
+
 namespace Memory
 {
 

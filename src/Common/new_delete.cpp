@@ -23,6 +23,25 @@ extern "C"
     extern void zone_register();
 }
 
+#if USE_GWP_ASAN
+/// Both clickhouse_new_delete and clickhouse_common_io links gwp_asan, but It should only init once, otherwise it
+/// will cause unexpected deadlock.
+static struct InitGwpAsan
+{
+    InitGwpAsan()
+    {
+         gwp_asan::options::initOptions();
+         gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
+         GuardedAlloc.init(opts);
+    }
+
+    static bool isInit()
+    {
+        return GuardedAlloc.getAllocatorState()->GuardedPagePoolEnd != 0;
+    }
+} init_gwp_asan;
+#endif
+
 static struct InitializeJemallocZoneAllocatorForOSX
 {
     InitializeJemallocZoneAllocatorForOSX()
