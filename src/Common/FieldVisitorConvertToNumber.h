@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
