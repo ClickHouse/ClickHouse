@@ -18,6 +18,7 @@ struct ExternalDataSourceConfiguration
 {
     String host;
     UInt16 port = 0;
+    bool   secure = false;
     String username = "default";
     String password;
     String quota_key;
@@ -63,7 +64,7 @@ struct ExternalDataSourceInfo
  * configuration values, i.e. ENGINE = PostgreSQL(postgresql_configuration, database = 'postgres_database');
  *
  * Any key-value engine argument except common (`host`, `port`, `username`, `password`, `database`)
- * is returned in EngineArgs struct.
+ * is returned in StorageSpecificArgs struct.
  */
 template <typename T = EmptySettingsTraits>
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
