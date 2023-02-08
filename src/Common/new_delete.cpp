@@ -1,4 +1,5 @@
 #include <cassert>
+#include <iostream>
 #include <new>
 #include "config.h"
 #include <Common/memory.h>
@@ -23,23 +24,6 @@ extern "C"
     extern void zone_register();
 }
 
-#if USE_GWP_ASAN
-
-#include <gwp_asan/optional/options_parser.h>
-
-/// Both clickhouse_new_delete and clickhouse_common_io links gwp_asan, but It should only init once, otherwise it
-/// will cause unexpected deadlock.
-static struct InitGwpAsan
-{
-    InitGwpAsan()
-    {
-         gwp_asan::options::initOptions();
-         gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
-         GuardedAlloc.init(opts);
-    }
-} init_gwp_asan;
-#endif
-
 static struct InitializeJemallocZoneAllocatorForOSX
 {
     InitializeJemallocZoneAllocatorForOSX()
@@ -57,6 +41,28 @@ static struct InitializeJemallocZoneAllocatorForOSX
     }
 } initializeJemallocZoneAllocatorForOSX;
 #endif
+
+#if USE_GWP_ASAN
+
+#include <gwp_asan/optional/options_parser.h>
+
+/// Both clickhouse_new_delete and clickhouse_common_io links gwp_asan, but It should only init once, otherwise it
+/// will cause unexpected deadlock.
+static struct InitGwpAsan
+{
+    InitGwpAsan()
+    {
+         gwp_asan::options::initOptions();
+         gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
+         GuardedAlloc.init(opts);
+
+         ///std::cerr << "GwpAsan is initialized, the options are { Enabled: " << opts.Enabled
+         ///          << ", MaxSimultaneousAllocations: " << opts.MaxSimultaneousAllocations
+         ///          << ", SampleRate: " << opts.SampleRate << " }\n";
+    }
+} init_gwp_asan;
+#endif
+
 
 
 /// Replace default new/delete with memory tracking versions.
