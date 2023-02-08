@@ -140,7 +140,8 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
         if (steps.back().column_name != prewhere_info->prewhere_column_name)
             steps.back().actions->addAlias(steps.back().actions->findInOutputs(steps.back().column_name), prewhere_info->prewhere_column_name);
 
-        prewhere_actions->steps.resize(steps.size());
+        const size_t steps_before_prewhere = prewhere_actions->steps.size();
+        prewhere_actions->steps.resize(steps_before_prewhere + steps.size());
 
         for (ssize_t i = steps.size() - 1; i >= 0; --i)
         {
@@ -169,7 +170,7 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
                 .remove_column = remove_column, // TODO: properly set this depending on whether the column is used in the next step
                 .need_filter = false
             };
-            prewhere_actions->steps[i] = std::move(prewhere_step);
+            prewhere_actions->steps[steps_before_prewhere + i] = std::move(prewhere_step);
         }
 
         prewhere_actions->steps.back().remove_column = prewhere_info->remove_prewhere_column;
