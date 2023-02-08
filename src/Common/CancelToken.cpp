@@ -1,4 +1,5 @@
 #include <Common/CancelToken.h>
+#include <base/getThreadId.h>
 
 namespace DB
 {
@@ -9,8 +10,6 @@ namespace ErrorCodes
 }
 
 #ifdef OS_LINUX /// Because of futex
-
-#include <base/getThreadId.h>
 
 #include <linux/futex.h>
 #include <sys/types.h>
@@ -241,6 +240,10 @@ NonCancelable::~NonCancelable()
 
 namespace DB
 {
+
+CancelToken::CancelToken()
+    : thread_id(getThreadId())
+{}
 
 void CancelToken::raise()
 {

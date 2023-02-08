@@ -42,7 +42,7 @@ public:
         }
     }
 
-    // Cancel group and signal all current thread.
+    // Cancel group and signal all current threads.
     // Note that `args` are saved for later to cancel every new thread.
     template <typename ... Args>
     void cancelGroup(Args && ... args)

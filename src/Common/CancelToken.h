@@ -179,7 +179,7 @@ struct NonCancelable
 class CancelToken
 {
 public:
-    CancelToken() = default;
+    CancelToken();
     CancelToken(const CancelToken &) = delete;
     CancelToken(CancelToken &&) = delete;
     CancelToken & operator=(const CancelToken &) = delete;
@@ -195,8 +195,13 @@ public:
     [[noreturn]] void raise();
     static void notifyOne(UInt32 *) {}
     static void notifyAll(UInt32 *) {}
+    void reset() {}
+    void enable() {}
+    void disable() {}
     static void signal(UInt64) {}
     static void signal(UInt64, int, const String &) {}
+
+    const UInt64 thread_id;
 };
 
 }
