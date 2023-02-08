@@ -166,6 +166,8 @@ static void mergeAttributes(Element & config_element, Element & with_element)
         auto * attr = with_element_attributes->item(i);
         config_element.setAttribute(attr->nodeName(), attr->getNodeValue());
     }
+
+    with_element_attributes->release();
 }
 
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
