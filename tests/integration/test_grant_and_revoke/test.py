@@ -3,7 +3,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance")
+instance = cluster.add_instance(
+    "instance",
+    user_configs=[
+        "configs/users.d/users.xml",
+    ],
+)
 
 
 @pytest.fixture(scope="module", autouse=True)

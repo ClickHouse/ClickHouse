@@ -24,6 +24,26 @@ def cluster():
             ],
             stay_alive=True,
         )
+        cluster.add_instance(
+            "node_no_default_access",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users_no_default_access.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "node_no_default_access_but_with_access_management",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users_no_default_access_with_access_management.xml",
+            ],
+            stay_alive=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -34,12 +54,55 @@ def cluster():
         cluster.shutdown()
 
 
-def replace_config(node, old, new):
+def replace_in_server_config(node, old, new):
     node.replace_in_config(
         "/etc/clickhouse-server/config.d/named_collections.xml",
         old,
         new,
     )
+
+
+def replace_in_users_config(node, old, new):
+    node.replace_in_config(
+        "/etc/clickhouse-server/users.d/users.xml",
+        old,
+        new,
+    )
+
+
+def test_access(cluster):
+    node = cluster.instances["node_no_default_access"]
+    assert (
+        "DB::Exception: default: Not enough privileges. To execute this query it's necessary to have grant SHOW NAMED COLLECTIONS ON *.*"
+        in node.query_and_get_error("select count() from system.named_collections")
+    )
+    node = cluster.instances["node_no_default_access_but_with_access_management"]
+    assert (
+        "DB::Exception: default: Not enough privileges. To execute this query it's necessary to have grant SHOW NAMED COLLECTIONS ON *.*"
+        in node.query_and_get_error("select count() from system.named_collections")
+    )
+
+    node = cluster.instances["node"]
+    assert int(node.query("select count() from system.named_collections")) > 0
+    replace_in_users_config(
+        node, "show_named_collections>1", "show_named_collections>0"
+    )
+    assert "show_named_collections>0" in node.exec_in_container(
+        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+    )
+    node.restart_clickhouse()
+    assert (
+        "DB::Exception: default: Not enough privileges. To execute this query it's necessary to have grant SHOW NAMED COLLECTIONS ON *.*"
+        in node.query_and_get_error("select count() from system.named_collections")
+    )
+    replace_in_users_config(
+        node, "show_named_collections>0", "show_named_collections>1"
+    )
+    assert "show_named_collections>1" in node.exec_in_container(
+        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+    )
+    node.restart_clickhouse()
+    assert int(node.query("select count() from system.named_collections")) > 0
 
 
 def test_config_reload(cluster):
@@ -60,7 +123,7 @@ def test_config_reload(cluster):
         ).strip()
     )
 
-    replace_config(node, "value1", "value2")
+    replace_in_server_config(node, "value1", "value2")
     node.query("SYSTEM RELOAD CONFIG")
 
     assert (
