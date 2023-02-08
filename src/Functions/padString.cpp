@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int LOGICAL_ERROR;
+    extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE;
 }
 
 namespace
@@ -278,7 +278,7 @@ namespace
                     if (new_length < 0)
                     {
                         throw Exception(
-                            ErrorCodes::LOGICAL_ERROR, "New padded length ({}) is negative", std::to_string(new_length));
+                            ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE, "New padded length ({}) is negative", std::to_string(new_length));
                     }
                     if (is_const_new_length)
                     {
