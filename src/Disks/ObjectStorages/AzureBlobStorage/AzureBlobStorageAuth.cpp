@@ -137,7 +137,7 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
         /// (Conflict - The specified container already exists)
         if (!endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
         {
-            tryLogCurrentException("Container already exist, return existing container");
+            tryLogCurrentException("Container already exists, returning the existing container");
             return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
         }
         throw;
