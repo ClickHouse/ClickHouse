@@ -10,7 +10,11 @@ For more information and documentation see https://clickhouse.com/.
 
 ## Versions
 
-The `latest` tag points to the latest release of the latest stable branch. Branch tags like `22.2` point to the latest release of the corresponding branch. Full version tags like `22.2.3.5` point to the corresponding release.
+- The `latest` tag points to the latest release of the latest stable branch.
+- Branch tags like `22.2` point to the latest release of the corresponding branch.
+- Full version tags like `22.2.3.5` point to the corresponding release.
+- The tag `head` is built from the latest commit to the default branch.
+- Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
 
 ## How to use this image
 
@@ -81,7 +85,7 @@ $ docker run -d \
 You may also want to mount:
 
 * `/etc/clickhouse-server/config.d/*.xml` - files with server configuration adjustmenets
-* `/etc/clickhouse-server/usert.d/*.xml` - files with use settings adjustmenets
+* `/etc/clickhouse-server/users.d/*.xml` - files with user settings adjustmenets
 * `/docker-entrypoint-initdb.d/` - folder with database initialization scripts (see below).
 
 ### Linux capabilities
