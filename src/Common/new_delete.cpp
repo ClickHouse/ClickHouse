@@ -24,6 +24,9 @@ extern "C"
 }
 
 #if USE_GWP_ASAN
+
+#include <gwp_asan/optional/options_parser.h>
+
 /// Both clickhouse_new_delete and clickhouse_common_io links gwp_asan, but It should only init once, otherwise it
 /// will cause unexpected deadlock.
 static struct InitGwpAsan
@@ -33,11 +36,6 @@ static struct InitGwpAsan
          gwp_asan::options::initOptions();
          gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
          GuardedAlloc.init(opts);
-    }
-
-    static bool isInit()
-    {
-        return GuardedAlloc.getAllocatorState()->GuardedPagePoolEnd != 0;
     }
 } init_gwp_asan;
 #endif
