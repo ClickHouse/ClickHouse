@@ -1058,13 +1058,12 @@ public:
                 [[fallthrough]];
             case QueryTreeNodeType::LIST:
             {
-                if (!table_expression)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "For expression analysis table expression must not be empty");
-
-                scope.expression_join_tree_node = table_expression;
-                validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
-                initializeTableExpressionData(scope.expression_join_tree_node, scope);
+                if (table_expression)
+                {
+                    scope.expression_join_tree_node = table_expression;
+                    validateTableExpressionModifiers(scope.expression_join_tree_node, scope);
+                    initializeTableExpressionData(scope.expression_join_tree_node, scope);
+                }
 
                 if (node_type == QueryTreeNodeType::LIST)
                     resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -4910,7 +4909,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
 
-            if (column && isColumnConst(*column))
+            /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
+              * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
+              */
+            if (column && isColumnConst(*column) && (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin")))
             {
                 /// Replace function node with result constant node
                 Field column_constant_value;
@@ -6255,7 +6257,10 @@ public:
         else if (auto * table_node = column_node_source->as<TableNode>())
             column_name = table_node->getStorageID().getFullTableName();
 
-        column_name += '.' + column_node->getColumnName();
+        if (!column_name.empty())
+            column_name += '.';
+
+        column_name += column_node->getColumnName();
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
             "Column {} is not under aggregate function and not in GROUP BY. In scope {}",
@@ -6272,7 +6277,7 @@ public:
 
             for (const auto & group_by_key_node : group_by_keys_nodes)
             {
-                if (child_node->isEqual(*group_by_key_node))
+                if (child_node->isEqual(*group_by_key_node, {.compare_aliases = false}))
                     return false;
             }
         }
@@ -6600,7 +6605,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         expandGroupByAll(query_node_typed);
 
     if (query_node_typed.hasPrewhere())
-        assertNoFunction(query_node_typed.getPrewhere(),
+        assertNoFunctionNodes(query_node_typed.getPrewhere(),
             "arrayJoin",
             ErrorCodes::ILLEGAL_PREWHERE,
             "ARRAY JOIN",
@@ -6620,21 +6625,21 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (!join_tree_is_subquery)
     {
         assertNoAggregateFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-        assertNoGroupingFunction(query_node_typed.getJoinTree(), "in JOIN TREE");
+        assertNoGroupingFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
         assertNoWindowFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
     }
 
     if (query_node_typed.hasWhere())
     {
         assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
-        assertNoGroupingFunction(query_node_typed.getWhere(), "in WHERE");
+        assertNoGroupingFunctionNodes(query_node_typed.getWhere(), "in WHERE");
         assertNoWindowFunctionNodes(query_node_typed.getWhere(), "in WHERE");
     }
 
     if (query_node_typed.hasPrewhere())
     {
         assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
-        assertNoGroupingFunction(query_node_typed.getPrewhere(), "in PREWHERE");
+        assertNoGroupingFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
         assertNoWindowFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
     }
 
@@ -6653,7 +6658,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasGroupBy())
     {
         assertNoAggregateFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
-        assertNoGroupingFunction(query_node_typed.getGroupByNode(), "in GROUP BY");
+        assertNoGroupingFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
         assertNoWindowFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
     }
 
@@ -6662,7 +6667,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto & aggregate_function_node_typed = aggregate_function_node->as<FunctionNode &>();
 
         assertNoAggregateFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside another aggregate function");
-        assertNoGroupingFunction(aggregate_function_node_typed.getArgumentsNode(), "inside another aggregate function");
+        assertNoGroupingFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside another aggregate function");
         assertNoWindowFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside an aggregate function");
     }
 
@@ -6703,12 +6708,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.getGroupBy().getNodes().empty())
     {
         if (query_node_typed.hasHaving())
-            assertNoGroupingFunction(query_node_typed.getHaving(), "in HAVING without GROUP BY");
+            assertNoGroupingFunctionNodes(query_node_typed.getHaving(), "in HAVING without GROUP BY");
 
         if (query_node_typed.hasOrderBy())
-            assertNoGroupingFunction(query_node_typed.getOrderByNode(), "in ORDER BY without GROUP BY");
+            assertNoGroupingFunctionNodes(query_node_typed.getOrderByNode(), "in ORDER BY without GROUP BY");
 
-        assertNoGroupingFunction(query_node_typed.getProjectionNode(), "in SELECT without GROUP BY");
+        assertNoGroupingFunctionNodes(query_node_typed.getProjectionNode(), "in SELECT without GROUP BY");
     }
 
     bool has_aggregation = !query_node_typed.getGroupBy().getNodes().empty() || !aggregate_function_nodes.empty();
@@ -6726,7 +6731,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
 
-    if (!has_aggregation && (query_node_typed.isGroupByWithGroupingSets() || is_rollup_or_cube))
+    if (!has_aggregation && (query_node_typed.isGroupByWithGroupingSets() || is_rollup_or_cube || query_node_typed.isGroupByWithTotals()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation");
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions

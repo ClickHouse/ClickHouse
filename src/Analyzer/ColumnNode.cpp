@@ -88,7 +88,7 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    return std::make_shared<ColumnNode>(column, getColumnSource());
+    return std::make_shared<ColumnNode>(column, getSourceWeakPointer());
 }
 
 ASTPtr ColumnNode::toASTImpl() const
