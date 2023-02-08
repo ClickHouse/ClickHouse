@@ -36,6 +36,7 @@
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
+    M(RemoteRead, "Number of read with remote reader in fly") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
@@ -81,6 +82,8 @@
     M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
+    M(MMappedAllocs, "Total number of mmapped allocations") \
+    M(MMappedAllocBytes, "Sum bytes of mmapped allocations") \
     M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
     M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
     M(SyncDrainedConnections, "Number of connections drained synchronously.") \
@@ -100,10 +103,13 @@
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
+    M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
+    M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
 
 namespace CurrentMetrics
 {

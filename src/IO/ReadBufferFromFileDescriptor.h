@@ -62,8 +62,6 @@ public:
 
     size_t getFileSize() override;
 
-    void setProgressCallback(ContextPtr context);
-
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
     bool poll(size_t timeout_microseconds) const;

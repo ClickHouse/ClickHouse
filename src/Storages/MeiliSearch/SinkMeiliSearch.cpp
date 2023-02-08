@@ -42,7 +42,7 @@ void SinkMeiliSearch::writeBlockData(const Block & block) const
     FormatSettings settings = getFormatSettings(local_context);
     settings.json.quote_64bit_integers = false;
     WriteBufferFromOwnString buf;
-    auto writer = FormatFactory::instance().getOutputFormat("JSON", buf, sample_block, local_context, {}, settings);
+    auto writer = FormatFactory::instance().getOutputFormat("JSON", buf, sample_block, local_context, settings);
     writer->write(block);
     writer->flush();
     writer->finalize();
@@ -53,7 +53,7 @@ void SinkMeiliSearch::writeBlockData(const Block & block) const
     auto response = connection.updateQuery(vbuf);
     auto jres = JSON(response).begin();
     if (jres.getName() == "message")
-        throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
+        throw Exception::createRuntime(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
 }
 
 void SinkMeiliSearch::consume(Chunk chunk)

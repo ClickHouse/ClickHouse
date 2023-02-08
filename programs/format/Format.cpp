@@ -165,9 +165,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 /// should throw exception early and make exception message more readable.
                 if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
-                    throw Exception(
-                        "Can't format ASTInsertQuery with data, since data will be lost",
-                        DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA);
+                    throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
+                        "Can't format ASTInsertQuery with data, since data will be lost");
                 }
                 if (!quiet)
                 {

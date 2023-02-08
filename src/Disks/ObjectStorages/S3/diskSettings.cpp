@@ -20,8 +20,8 @@
 #include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
 #include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
+#include <Common/Macros.h>
 
 namespace DB
 {
@@ -49,7 +49,7 @@ std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
     auto endpoint = Poco::URI(proxy_resolver_config.getString(prefix + ".endpoint"));
     auto proxy_scheme = proxy_resolver_config.getString(prefix + ".proxy_scheme");
     if (proxy_scheme != "http" && proxy_scheme != "https")
-        throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy resolver config: {}", proxy_scheme);
     auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
     auto cache_ttl = proxy_resolver_config.getUInt(prefix + ".proxy_cache_time", 10);
 
@@ -72,9 +72,9 @@ std::shared_ptr<S3::ProxyListConfiguration> getProxyListConfiguration(
             Poco::URI proxy_uri(proxy_config.getString(prefix + "." + key));
 
             if (proxy_uri.getScheme() != "http" && proxy_uri.getScheme() != "https")
-                throw Exception("Only HTTP/HTTPS schemas allowed in proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only HTTP/HTTPS schemas allowed in proxy uri: {}", proxy_uri.toString());
             if (proxy_uri.getHost().empty())
-                throw Exception("Empty host in proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host in proxy uri: {}", proxy_uri.toString());
 
             proxies.push_back(proxy_uri);
 
@@ -98,7 +98,7 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
     if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
     {
         if (resolver_configs > 1)
-            throw Exception("Multiple proxy resolver configurations aren't allowed", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple proxy resolver configurations aren't allowed");
 
         return getProxyResolverConfiguration(prefix + ".proxy.resolver", config);
     }
@@ -107,7 +107,7 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 
-std::unique_ptr<Aws::S3::S3Client> getClient(
+std::unique_ptr<S3::Client> getClient(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,
@@ -122,9 +122,10 @@ std::unique_ptr<Aws::S3::S3Client> getClient(
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler);
 
-    S3::URI uri(config.getString(config_prefix + ".endpoint"));
+    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+    S3::URI uri(endpoint);
     if (uri.key.back() != '/')
-        throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 path must ends with '/', but '{}' doesn't.", uri.key);
 
     client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);

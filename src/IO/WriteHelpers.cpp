@@ -1,5 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <cinttypes>
+#include <utility>
+#include <Common/formatIPv6.h>
 #include <Common/hex.h>
 
 
@@ -34,6 +36,29 @@ void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36)
     formatHex(src16 + 2, &dst36[24], 6);
 }
 
+void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
+{
+    size_t idx = (ip >> 24);
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    buf.write('.');
+    idx = (ip >> 16) & 0xFF;
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    buf.write('.');
+    idx = (ip >> 8) & 0xFF;
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    buf.write('.');
+    idx = ip & 0xFF;
+    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+}
+
+void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
+{
+    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+    char * paddr = addr;
+
+    formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
+    buf.write(addr, paddr - addr - 1);
+}
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {

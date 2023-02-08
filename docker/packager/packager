@@ -100,12 +100,11 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type, package_type, sanitizer, shared_libraries):
+def is_release_build(build_type, package_type, sanitizer):
     return (
         build_type == ""
         and package_type == "deb"
         and sanitizer == ""
-        and not shared_libraries
     )
 
 
@@ -116,7 +115,6 @@ def parse_env_variables(
     package_type,
     cache,
     distcc_hosts,
-    shared_libraries,
     clang_tidy,
     version,
     author,
@@ -218,7 +216,7 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
-        if is_release_build(build_type, package_type, sanitizer, shared_libraries):
+        if is_release_build(build_type, package_type, sanitizer):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -231,12 +229,10 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for shared library build and for performance tests.
+    # Create combined output archive for performance tests.
     if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
-    elif shared_libraries:
-        result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
@@ -284,15 +280,6 @@ def parse_env_variables(
         result.append("ENABLE_TESTS=1")
         result.append("BINARY_OUTPUT=tests")
         cmake_flags.append("-DENABLE_TESTS=1")
-
-    if shared_libraries:
-        cmake_flags.append("-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1")
-        # We can't always build utils because it requires too much space, but
-        # we have to build them at least in some way in CI. The shared library
-        # build is probably the least heavy disk-wise.
-        cmake_flags.append("-DENABLE_UTILS=1")
-        # utils are not included into clickhouse-bundle, so build everything
-        build_target = "all"
 
     if clang_tidy:
         cmake_flags.append("-DENABLE_CLANG_TIDY=1")
@@ -371,7 +358,6 @@ if __name__ == "__main__":
         default="",
     )
 
-    parser.add_argument("--shared-libraries", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
@@ -424,7 +410,6 @@ if __name__ == "__main__":
         args.package_type,
         args.cache,
         args.distcc_hosts,
-        args.shared_libraries,
         args.clang_tidy,
         args.version,
         args.author,
