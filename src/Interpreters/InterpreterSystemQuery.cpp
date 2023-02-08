@@ -56,6 +56,11 @@
 #include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
+#include <unistd.h>
+
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
 
 #include "config.h"
 
@@ -292,6 +297,12 @@ BlockIO InterpreterSystemQuery::execute()
             res->wait();
             break;
         }
+        case Type::SYNC_FILE_CACHE:
+        {
+            LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
+            sync();
+            break;
+        }
         case Type::DROP_DNS_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
@@ -320,9 +331,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->dropMMappedFileCache();
             break;
-        case Type::DROP_QUERY_RESULT_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_RESULT_CACHE);
-            getContext()->dropQueryResultCache();
+        case Type::DROP_QUERY_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
+            getContext()->dropQueryCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -331,6 +342,13 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
+#if USE_AWS_S3
+        case Type::DROP_S3_CLIENT_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
+            S3::ClientCacheRegistry::instance().clearCacheForAll();
+            break;
+#endif
+
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
@@ -962,7 +980,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_RESULT_CACHE:
+        case Type::DROP_QUERY_CACHE:
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #endif
@@ -971,6 +989,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
+#if USE_AWS_S3
+        case Type::DROP_S3_CLIENT_CACHE:
+#endif
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
@@ -1133,6 +1154,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_UNFREEZE);
             break;
         }
+        case Type::SYNC_FILE_CACHE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
+            break;
+        }
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:
@@ -1141,11 +1167,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::END: break;
     }
     return required_access;
-}
-
-void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr) const
-{
-    elem.query_kind = "System";
 }
 
 }

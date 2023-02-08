@@ -82,6 +82,8 @@
     M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
+    M(MMappedAllocs, "Total number of mmapped allocations") \
+    M(MMappedAllocBytes, "Sum bytes of mmapped allocations") \
     M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
     M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
     M(SyncDrainedConnections, "Number of connections drained synchronously.") \
@@ -106,6 +108,8 @@
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
+    M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
+    M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
 
 namespace CurrentMetrics
 {
