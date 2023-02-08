@@ -49,6 +49,9 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"storage_policy", std::make_shared<DataTypeString>()},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"comment", std::make_shared<DataTypeString>()},
@@ -451,6 +454,33 @@ protected:
                     auto total_bytes = table->totalBytes(settings);
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++]) 
+                {
+                    auto parts = table->totalParts(settings);
+                    if (parts)
+                        res_columns[res_index++]->insert(*parts);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++]) 
+                {
+                    auto active_parts = table->totalActiveParts(settings);
+                    if (active_parts)
+                        res_columns[res_index++]->insert(*active_parts);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++]) 
+                {
+                    auto total_marks = table->totalMarks(settings);
+                    if (total_marks)
+                        res_columns[res_index++]->insert(*total_marks);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
