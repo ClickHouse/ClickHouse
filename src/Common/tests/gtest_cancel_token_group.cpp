@@ -112,7 +112,7 @@ TEST(CancelTokenGroupTest, RecycleThreads)
                     EnterGroup scoped(job.group);
                     while (true)
                     {
-                        CancelToken::throwIfCanceled(); // cancelation point is required for the last writer which is going never wait (thus, hang up)
+                        CancelToken::throwIfCanceled(); // cancellation point is required for the last writer which is going never wait (thus, hang up)
                         std::unique_lock lock(job.sm);
                         job.test++;
                     }

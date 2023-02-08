@@ -106,7 +106,7 @@ public:
     // Checks if current thread has already received cancellation signal.
     static bool isCanceled();
 
-    // Thread cancelation point.
+    // Thread cancellation point.
     // Throws `DB::Exception` received from `signal()` after last `reset()`, if any.
     static void throwIfCanceled();
 
