@@ -735,6 +735,7 @@ void finalizeMutatedPart(
     ExecuteTTLType execute_ttl_type,
     const CompressionCodecPtr & codec,
     ContextPtr context,
+    StorageMetadataPtr metadata_snapshot,
     bool sync)
 {
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
@@ -781,6 +782,12 @@ void finalizeMutatedPart(
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out_comp);
         written_files.push_back(std::move(out_comp));
+    }
+
+    {
+        auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
+        DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
+        written_files.push_back(std::move(out_metadata));
     }
 
     {
@@ -1555,7 +1562,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->need_sync);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
     }
 
 
