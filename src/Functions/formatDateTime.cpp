@@ -611,6 +611,8 @@ private:
 
         static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
+            if (min_represent_digits > 9)
+                min_represent_digits = 9;
             if (fractional_second == 0)
             {
                 for (UInt64 i = 0; i < min_represent_digits; ++i)
