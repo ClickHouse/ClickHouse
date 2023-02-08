@@ -17,15 +17,7 @@
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/client/RetryStrategy.h>
 
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_REDIRECTS;
-}
-
-namespace S3
+namespace DB::S3
 {
 
 namespace Model = Aws::S3::Model;
@@ -213,8 +205,6 @@ private:
 
     Poco::Logger * log;
 };
-
-}
 
 }
 
