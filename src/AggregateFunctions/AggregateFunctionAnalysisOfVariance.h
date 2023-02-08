@@ -82,7 +82,7 @@ public:
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
         auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
 
-        if (unlikely(std::isinf(f_stat) || isNaN(f_stat) || f_stat < 0))
+        if (unlikely(!std::isfinite(f_stat) || f_stat < 0))
         {
             column_stat.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
             column_value.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
