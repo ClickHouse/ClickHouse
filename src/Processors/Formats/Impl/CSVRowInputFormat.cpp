@@ -293,7 +293,7 @@ bool CSVFormatReader::readField(
         return false;
     }
 
-    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
         /// If value is null but type is not nullable then use default value instead.
         return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
