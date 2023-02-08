@@ -5,7 +5,7 @@ SELECT groupArray()(number) FROM numbers(10); -- { serverError 36 }
 SELECT groupArray(NULL)(number) FROM numbers(10); -- { serverError 36 }
 SELECT groupArray(NULL + NULL)(number) FROM numbers(10); -- { serverError 36 }
 SELECT groupArray([])(number) FROM numbers(10); -- { serverError 36 }
-SELECT groupArray(throwIf(1))(number) FROM numbers(10); -- { serverError 395 }
+SELECT groupArray(throwIf(1))(number) FROM numbers(10); -- { serverError 134 }
 
 -- Not the best error message, can be improved.
 SELECT groupArray(number)(number) FROM numbers(10); -- { serverError 47 }

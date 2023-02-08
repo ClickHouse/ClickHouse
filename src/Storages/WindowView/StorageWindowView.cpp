@@ -256,7 +256,7 @@ namespace
         const auto * arg = ast->as<ASTFunction>();
         if (!arg || !startsWith(arg->name, "toInterval")
         || !IntervalKind::tryParseString(Poco::toLower(arg->name.substr(10)), kind))
-            throw Exception(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception::createDeprecated(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto * interval_unit = arg->children.front()->children.front()->as<ASTLiteral>();
         if (!interval_unit
@@ -373,10 +373,9 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
         extractDependentTable(context, inner_select_query, select_database_name, select_table_name);
     }
     else
-        throw Exception(
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR,
             "Logical error while creating StorageWindowView."
-            " Could not retrieve table name from select query.",
-            DB::ErrorCodes::LOGICAL_ERROR);
+            " Could not retrieve table name from select query.");
 }
 
 UInt32 StorageWindowView::getCleanupBound()
@@ -1442,11 +1441,11 @@ void StorageWindowView::writeIntoWindowView(
         });
     }
 
-    std::shared_lock<std::shared_mutex> fire_signal_lock;
+    std::shared_lock<SharedMutex> fire_signal_lock;
     QueryPipelineBuilder builder;
     if (window_view.is_proctime)
     {
-        fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
+        fire_signal_lock = std::shared_lock(window_view.fire_signal_mutex);
 
         /// Fill ____timestamp column with current time in case of now() time column.
         if (window_view.is_time_column_func_now)

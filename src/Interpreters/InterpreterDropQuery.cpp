@@ -287,6 +287,10 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 table->drop();
                 table->is_dropped = true;
             }
+            else if (kind == ASTDropQuery::Kind::Detach)
+            {
+                table->is_detached = true;
+            }
         }
     }
 
@@ -426,11 +430,6 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     }
 
     return required_access;
-}
-
-void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
-{
-    elem.query_kind = "Drop";
 }
 
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync)
