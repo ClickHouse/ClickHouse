@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
@@ -460,27 +461,30 @@ protected:
 
                 if (columns_mask[src_index++]) 
                 {
-                    auto parts = table->totalParts(settings);
-                    if (parts)
-                        res_columns[res_index++]->insert(*parts);
+                    auto table_cast = dynamic_pointer_cast<MergeTreeData>(table);
+                    if (table_cast)
+                        res_columns[res_index++]->insert(table_cast->getDataPartsForInternalUsage().size());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++]) 
                 {
-                    auto active_parts = table->totalActiveParts(settings);
-                    if (active_parts)
-                        res_columns[res_index++]->insert(*active_parts);
+                    auto table_cast = dynamic_pointer_cast<MergeTreeData>(table);
+                    if (table_cast)
+                        res_columns[res_index++]->insert(table_cast->getPartsCount());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++]) 
                 {
-                    auto total_marks = table->totalMarks(settings);
-                    if (total_marks)
-                        res_columns[res_index++]->insert(*total_marks);
+                    auto table_cast = dynamic_pointer_cast<MergeTreeData>(table);
+                    size_t totalMarks = 0;
+                    for(auto &part_info: table_cast->getDataPartsForInternalUsage()) 
+                        totalMarks += part_info->getMarksCount();
+                    if (table_cast)
+                        res_columns[res_index++]->insert(totalMarks);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

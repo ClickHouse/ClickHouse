@@ -621,27 +621,6 @@ public:
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
 
-    /// If it is possible to quickly determine exact number of parts in the table at this moment of time, then return it.
-    /// Used for:
-    /// - For parts column in system.tables
-    ///
-    /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalParts(const Settings &) const { return {}; }
-
-    /// If it is possible to quickly determine exact number of active parts in the table at this moment of time, then return it.
-    /// Used for:
-    /// - For active_parts column in system.tables
-    ///
-    /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalActiveParts(const Settings &) const { return {}; }
-
-    /// If it is possible to quickly determine exact number of total marks in the table at this moment of time, then return it.
-    /// Used for:
-    /// - For total_marks in system.tables
-    ///
-    /// Does takes underlying Storage (if any) into account.
-    virtual std::optional<UInt64> totalMarks(const Settings &) const { return {}; }
-
     /// Number of rows INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.

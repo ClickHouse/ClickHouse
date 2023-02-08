@@ -269,24 +269,6 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
     return getTotalActiveSizeInBytes();
 }
 
-std::optional<UInt64> StorageMergeTree::totalParts(const Settings &) const
-{
-    return getDataPartsForInternalUsage().size();
-}
-
-std::optional<UInt64> StorageMergeTree::totalActiveParts(const Settings &) const
-{
-    return getPartsCount();
-}
-
-std::optional<UInt64> StorageMergeTree::totalMarks(const Settings &) const
-{
-    size_t totalMarks = 0;
-    for(auto &part_info: getDataPartsForInternalUsage()) 
-        totalMarks += part_info->getMarksCount();
-    return totalMarks;
-}
-
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
