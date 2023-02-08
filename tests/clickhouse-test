@@ -144,7 +144,7 @@ def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_ret
     return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries).strip()
 
 
-def clickhouse_execute_json(base_args, query, timeout=60, settings=None):
+def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
     data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow", max_http_retries=max_http_retries)
     if not data:
         return None
