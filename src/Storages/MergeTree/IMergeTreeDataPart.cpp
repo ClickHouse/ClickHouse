@@ -1352,9 +1352,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+
+        writeMetadata(METADATA_VERSION_FILE_NAME, {}, [loaded_metadata_version](auto & buffer)
+        {
+            writeIntText(loaded_metadata_version, buffer);
+        });
     }
 
-    ///TODO read metadata here
     setColumns(loaded_columns, infos, loaded_metadata_version);
 }
 
