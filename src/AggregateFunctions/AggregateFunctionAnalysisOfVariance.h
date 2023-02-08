@@ -14,17 +14,11 @@
 #include <Common/assert_cast.h>
 #include <Core/Types.h>
 
+
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-class AggregateFunctionAnalysisOfVarianceData final : public AnalysisOfVarianceMoments<Float64>
-{
-};
+using AggregateFunctionAnalysisOfVarianceData = AnalysisOfVarianceMoments<Float64>;
 
 
 /// One way analysis of variance
