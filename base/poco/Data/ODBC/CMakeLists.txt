@@ -31,6 +31,8 @@ if (ENABLE_ODBC)
             -Wno-extra-semi-stmt
             -Wno-old-style-cast
             -Wno-sign-compare
+            -Wno-tautological-constant-out-of-range-compare
+            -Wno-tautological-unsigned-zero-compare
             -Wno-unused-parameter
             -Wno-unused-variable
             -Wno-zero-as-null-pointer-constant
