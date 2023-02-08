@@ -208,6 +208,9 @@ bson
 bsoneachrow
 buildable
 camelCase
+cancelable
+cancelation
+canceled
 capn
 capnproto
 cardinality
@@ -531,6 +534,3 @@ zkcopy
 zlib
 znodes
 zstd
-cancelation
-cancelable
-canceled
