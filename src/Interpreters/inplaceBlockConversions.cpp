@@ -44,7 +44,7 @@ void addDefaultRequiredExpressionsRecursively(
     bool convert_null_to_default = false;
 
     if (is_column_in_query)
-        convert_null_to_default = null_as_default && block.findByName(required_column_name)->type->isNullable() && !required_column_type->isNullable();
+        convert_null_to_default = null_as_default && isNullableOrLowCardinalityNullable(block.findByName(required_column_name)->type) && !isNullableOrLowCardinalityNullable(required_column_type);
 
     if ((is_column_in_query && !convert_null_to_default) || added_columns.contains(required_column_name))
         return;
@@ -179,7 +179,7 @@ bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList &
 {
     for (const auto & required_column : required_columns)
     {
-        if (columns.has(required_column.name) && header.findByName(required_column.name)->type->isNullable() && !required_column.type->isNullable())
+        if (columns.has(required_column.name) && isNullableOrLowCardinalityNullable(header.findByName(required_column.name)->type) && !isNullableOrLowCardinalityNullable(required_column.type))
             return true;
     }
     return false;
