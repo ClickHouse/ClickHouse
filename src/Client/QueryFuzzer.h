@@ -8,7 +8,7 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <Common/randomSeed.h>
-#include "Parsers/IAST_fwd.h"
+#include <Parsers/IAST_fwd.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 
@@ -22,6 +22,8 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTStorage;
+class ASTColumns;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
 
@@ -74,6 +76,8 @@ struct QueryFuzzer
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
     ASTPtr getRandomExpressionList();
+    ASTPtr getRandomSecondaryIndices();
+    ASTPtr getRandomProjections();
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
     ASTs getInsertQueriesForFuzzedTables(const String & full_query);
@@ -86,7 +90,11 @@ struct QueryFuzzer
     void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzStorageColumns(ASTColumns & columns);
+    void fuzzStorageDefinition(ASTStorage & storage);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
+    template <typename T>
+    void fuzzStorageField(ASTStorage & storage, T *& field);
     void fuzzTableName(ASTTableExpression & table);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);

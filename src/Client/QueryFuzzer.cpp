@@ -17,8 +17,10 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ASTDropQuery.h>
-
-#include <unordered_set>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
@@ -251,6 +253,72 @@ ASTPtr QueryFuzzer::getRandomExpressionList()
     return new_ast;
 }
 
+ASTPtr QueryFuzzer::getRandomSecondaryIndices()
+{
+    auto parse_function = [](const auto & query)
+    {
+        ParserFunction parser;
+        return parseQuery(parser, query, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    };
+
+    auto create_index_type = [&]
+    {
+        switch (fuzz_rand() % 6)
+        {
+            case 0: return parse_function(fmt::format("minmax()"));
+            case 1: return parse_function(fmt::format("set({})", fuzz_rand() % 5 + 1));
+            case 2: return parse_function(fmt::format("bloom_filter()"));
+            case 3: return parse_function(fmt::format("ngrambf_v1({}, {}, {}, {})", fuzz_rand() % 5 + 1, 512, 5, fuzz_rand()));
+            case 4: return parse_function(fmt::format("ngrambf_v1({}, {}, {})", 512, 5, fuzz_rand()));
+            case 5: return parse_function(fmt::format("inverted({})", fuzz_rand() % 10));
+        }
+        UNREACHABLE();
+    };
+
+    auto expression_list = std::make_shared<ASTExpressionList>();
+    size_t size = fuzz_rand() % 3 + 1;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto index = std::make_shared<ASTIndexDeclaration>();
+
+        index->name = "__idx_fuzz_" + std::to_string(fuzz_rand() % 1000);
+        index->set(index->expr, getRandomColumnLike());
+        index->set(index->type, create_index_type());
+        index->granularity = rand() % 4 + 1;
+
+        expression_list->children.push_back(std::move(index));
+    }
+
+    return expression_list;
+}
+
+ASTPtr QueryFuzzer::getRandomProjections()
+{
+    auto expression_list = std::make_shared<ASTExpressionList>();
+    size_t size = fuzz_rand() % 3 + 1;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto projection_query = std::make_shared<ASTProjectionSelectQuery>();
+        projection_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, getRandomExpressionList());
+
+        /// GROUP_BY projections are more interesting, create them more frequently.
+        if (fuzz_rand() % 4 == 0)
+            projection_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, getRandomExpressionList());
+        else
+            projection_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, getRandomExpressionList());
+
+        auto projection = std::make_shared<ASTProjectionDeclaration>();
+        projection->name = "__proj_fuzz" + std::to_string(fuzz_rand() % 1000);
+        projection->set(projection->query, projection_query);
+
+        expression_list->children.push_back(std::move(projection));
+    }
+
+    return expression_list;
+}
+
 void QueryFuzzer::replaceWithColumnLike(ASTPtr & ast)
 {
     if (column_like.empty())
@@ -476,35 +544,11 @@ static String getFuzzedTableName(const String & original_name, size_t index)
 
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
-    if (create.columns_list && create.columns_list->columns)
-    {
-        for (auto & ast : create.columns_list->columns->children)
-        {
-            if (auto * column = ast->as<ASTColumnDeclaration>())
-            {
-                fuzzColumnDeclaration(*column);
-            }
-        }
-    }
+    if (create.columns_list)
+        fuzzStorageColumns(*create.columns_list);
 
-    if (create.storage && create.storage->engine)
-    {
-        /// Replace ReplicatedMergeTree to ordinary MergeTree
-        /// to avoid inconsistency of metadata in zookeeper.
-        auto & engine_name = create.storage->engine->name;
-        if (startsWith(engine_name, "Replicated"))
-        {
-            engine_name = engine_name.substr(strlen("Replicated"));
-            if (auto & arguments = create.storage->engine->arguments)
-            {
-                auto & children = arguments->children;
-                if (children.size() <= 2)
-                    arguments.reset();
-                else
-                    children.erase(children.begin(), children.begin() + 2);
-            }
-        }
-    }
+    if (create.storage)
+        fuzzStorageDefinition(*create.storage);
 
     auto full_name = create.getTable();
     auto original_name = getOriginalTableName(full_name);
@@ -528,6 +572,64 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         original_table_name_to_fuzzed[original_name].insert(new_name);
 }
 
+void QueryFuzzer::fuzzStorageColumns(ASTColumns & columns)
+{
+    if (columns.columns)
+    {
+        for (auto & ast : columns.columns->children)
+        {
+            if (auto * column = ast->as<ASTColumnDeclaration>())
+            {
+                fuzzColumnDeclaration(*column);
+            }
+        }
+    }
+
+    if (!columns.indices && fuzz_rand() % 20 == 0)
+    {
+        auto new_indices = getRandomSecondaryIndices();
+        columns.set(columns.indices, new_indices);
+    }
+
+    if (!columns.projections && fuzz_rand() % 20 == 0)
+    {
+        auto new_projections = getRandomProjections();
+        columns.set(columns.projections, new_projections);
+    }
+
+    fuzzColumnLikeExpressionList(columns.indices);
+    fuzzColumnLikeExpressionList(columns.constraints);
+    fuzzColumnLikeExpressionList(columns.projections);
+}
+
+void QueryFuzzer::fuzzStorageDefinition(ASTStorage & storage)
+{
+    if (storage.engine)
+    {
+        /// Replace ReplicatedMergeTree to ordinary MergeTree
+        /// to avoid inconsistency of metadata in zookeeper.
+        auto & engine_name = storage.engine->name;
+        if (startsWith(engine_name, "Replicated"))
+        {
+            engine_name = engine_name.substr(strlen("Replicated"));
+            if (auto & arguments = storage.engine->arguments)
+            {
+                auto & children = arguments->children;
+                if (children.size() <= 2)
+                    arguments.reset();
+                else
+                    children.erase(children.begin(), children.begin() + 2);
+            }
+        }
+    }
+
+    fuzzStorageField(storage, storage.partition_by);
+    fuzzStorageField(storage, storage.primary_key);
+    fuzzStorageField(storage, storage.order_by);
+    fuzzStorageField(storage, storage.sample_by);
+    fuzzStorageField(storage, storage.ttl_table);
+}
+
 void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 {
     if (column.type)
@@ -536,6 +638,46 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
         ParserDataType parser;
         column.type = parseQuery(parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    }
+
+    if (!column.default_expression && fuzz_rand() % 20 == 0)
+    {
+        column.default_expression = getRandomColumnLike();
+        column.default_specifier = "DEFAULT";
+    }
+
+    if (column.default_expression)
+        fuzz(column.default_expression);
+
+    if (!column.ttl && fuzz_rand() % 20 == 0)
+        column.ttl = getRandomColumnLike();
+
+    if (column.ttl)
+        fuzz(column.ttl);
+}
+
+template <typename T>
+void QueryFuzzer::fuzzStorageField(ASTStorage & storage, T *& field)
+{
+    if (!field)
+    {
+        if (fuzz_rand() % 10 == 0)
+        {
+            auto new_field = getRandomColumnLike();
+            storage.set(field, new_field);
+        }
+        return;
+    }
+
+    for (auto & child : storage.children)
+    {
+        if (child.get() == field)
+        {
+            fuzz(child);
+            field = dynamic_cast<T *>(child.get());
+            assert(field);
+            return;
+        }
     }
 }
 
@@ -674,9 +816,22 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     auto it = original_table_name_to_fuzzed.find(original_name);
     if (it != original_table_name_to_fuzzed.end() && !it->second.empty())
     {
-        auto new_table_name = it->second.begin();
-        std::advance(new_table_name, fuzz_rand() % it->second.size());
-        StorageID new_table_id(table_id.database_name, *new_table_name);
+        size_t name_pos = fuzz_rand() % (it->second.size() + 1);
+        String new_table_name;
+
+        if (name_pos == it->second.size())
+        {
+            /// Sometimes set the original table name.
+            new_table_name = original_name;
+        }
+        else
+        {
+            auto table_name_it = it->second.begin();
+            std::advance(table_name_it, name_pos);
+            new_table_name = *table_name_it;
+        }
+
+        StorageID new_table_id(table_id.database_name, new_table_name);
         table.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_table_id);
     }
 }
@@ -1043,14 +1198,40 @@ void QueryFuzzer::addTableLike(ASTPtr ast)
     }
 }
 
+/// Names of most popular table engines.
+/// We can't use StorageFactory, because
+/// storages are not registered in client.
+static const std::unordered_set main_table_engines =
+{
+    "MergeTree",
+    "Memory",
+    "Log",
+    "TinyLog",
+    "StripeLog",
+};
+
 void QueryFuzzer::addColumnLike(ASTPtr ast)
 {
+    /// Data types are represented as ASTFunction.
+    /// Do not add them as column like.
+    if (DataTypeFactory::instance().tryGet(ast))
+        return;
+
+    const auto name = ast->formatForErrorMessage();
+    /// Do not add as column-like identifiers that represent table names.
+    if (table_like_map.contains(name))
+        return;
+
+    /// Do not add as column-like ASTs that represent table engines.
+    for (const auto & engine_name : main_table_engines)
+        if (name.find(engine_name) != std::string::npos)
+            return;
+
     if (column_like_map.size() > 1000)
     {
         column_like_map.clear();
     }
 
-    const auto name = ast->formatForErrorMessage();
     if (name == "Null")
     {
         // The `Null` identifier from FORMAT Null clause. We don't quote it
@@ -1060,6 +1241,7 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
         // Just plug this particular case for now.
         return;
     }
+
     if (name.size() < 200)
     {
         column_like_map.insert({name, ast});
@@ -1090,6 +1272,11 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
     {
         addColumnLike(ast);
     }
+    else if (auto * column = typeid_cast<ASTColumnDeclaration *>(ast.get()))
+    {
+        auto identifier = std::make_shared<ASTIdentifier>(column->name);
+        addColumnLike(identifier);
+    }
     else if (typeid_cast<ASTTableExpression *>(ast.get()))
     {
         addTableLike(ast);
@@ -1097,6 +1284,10 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
     else if (typeid_cast<ASTSubquery *>(ast.get()))
     {
         addTableLike(ast);
+    }
+    else if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(ast.get()))
+    {
+        addTableLike(query_with_table->table);
     }
 
     for (const auto & child : ast->children)
