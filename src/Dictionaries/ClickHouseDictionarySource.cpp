@@ -8,6 +8,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
@@ -230,6 +231,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::string table = config.getString(settings_config_prefix + ".table", "");
         UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
         auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
+        bool clickhouse_secure = config.getBool(settings_config_prefix + ".secure", false);
 
         auto named_collection = created_from_ddl
             ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key)
@@ -245,6 +247,16 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             db = configuration.database;
             table = configuration.table;
             port = configuration.port;
+            clickhouse_secure = configuration.secure;
+
+            // const auto & storage_specific_args = named_collection->specific_args;
+            // for (const auto & [arg_name, arg_value] : storage_specific_args)
+            // {
+            //     if (arg_name == "secure")
+            //     {
+            //         clickhouse_secure = checkAndGetLiteralArgument<bool>(arg_value, "secure");
+            //     }
+            // }
         }
 
         ClickHouseDictionarySource::Configuration configuration{
@@ -261,7 +273,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .port = port,
             .is_local = isLocalAddress({host, port}, default_port),
-            .secure = config.getBool(settings_config_prefix + ".secure", false)};
+            .secure = clickhouse_secure}; // config.getBool(settings_config_prefix + ".secure", false)};
 
 
         ContextMutablePtr context;
