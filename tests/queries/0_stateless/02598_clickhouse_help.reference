@@ -63,7 +63,7 @@ To configure initial environment two ways are supported: queries or command line
     CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);
 Or through corresponding command line parameters --table --structure --input-format and --file.
 
-clickhouse-local supports all features and engines of ClickHouse. You can query data from remote engines and store results locally or other way around. For table engines that actually store data on a disk like Log and MergeTree clickhouse-local puts data to temprorary directory that is not reused between runs.
+clickhouse-local supports all features and engines of ClickHouse. You can query data from remote engines and store results locally or other way around. For table engines that actually store data on a disk like Log and MergeTree clickhouse-local puts data to temporary directory that is not reused between runs.
 
 clickhouse-local can be used to query data from stopped clickhouse-server installation with --path to local directory with data.
 
@@ -152,7 +152,7 @@ Allowed options:
 
 clickhouse format
 
-Usage: /home/ubuntu/thread-ch/clickhouse [options] < query
+Usage: clickhouse format [options] < query
 Allowed options:
   --query arg                           query to format
   -h [ --help ]                         produce help message
@@ -411,7 +411,7 @@ And you should take care and look at exact algorithm, how this tool works, and p
 This tool works fine only with reasonable amount of data (at least 1000s of rows).
 
 
-Usage: /home/ubuntu/thread-ch/clickhouse [options] < in > out
+Usage: clickhouse obfuscator [options] < in > out
 
 Input must be seekable file (it will be read twice).
 
@@ -477,7 +477,7 @@ Options:
 
 
 Example:
-    /home/ubuntu/thread-ch/clickhouse --seed "$(head -c16 /dev/urandom | base64)" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv
+    clickhouse obfuscator --seed "$(head -c16 /dev/urandom | base64)" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv
 
 clickhouse git-import
 
@@ -684,7 +684,7 @@ example, --http_port=8010
 
 clickhouse keeper-converter
 
-Usage: /home/ubuntu/thread-ch/clickhouse --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots
+Usage: clickhouse keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots
 Allowed options:
   -h [ --help ]                 produce help message
   --zookeeper-logs-dir arg      Path to directory with ZooKeeper logs
@@ -850,7 +850,7 @@ To configure initial environment two ways are supported: queries or command line
     CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);
 Or through corresponding command line parameters --table --structure --input-format and --file.
 
-clickhouse-local supports all features and engines of ClickHouse. You can query data from remote engines and store results locally or other way around. For table engines that actually store data on a disk like Log and MergeTree clickhouse-local puts data to temprorary directory that is not reused between runs.
+clickhouse-local supports all features and engines of ClickHouse. You can query data from remote engines and store results locally or other way around. For table engines that actually store data on a disk like Log and MergeTree clickhouse-local puts data to temporary directory that is not reused between runs.
 
 clickhouse-local can be used to query data from stopped clickhouse-server installation with --path to local directory with data.
 
@@ -939,7 +939,7 @@ Allowed options:
 
 clickhouse-format
 
-Usage: /home/ubuntu/thread-ch/clickhouse-format [options] < query
+Usage: clickhouse format [options] < query
 Allowed options:
   --query arg                           query to format
   -h [ --help ]                         produce help message
@@ -1198,7 +1198,7 @@ And you should take care and look at exact algorithm, how this tool works, and p
 This tool works fine only with reasonable amount of data (at least 1000s of rows).
 
 
-Usage: /home/ubuntu/thread-ch/clickhouse-obfuscator [options] < in > out
+Usage: clickhouse obfuscator [options] < in > out
 
 Input must be seekable file (it will be read twice).
 
@@ -1264,7 +1264,7 @@ Options:
 
 
 Example:
-    /home/ubuntu/thread-ch/clickhouse-obfuscator --seed "$(head -c16 /dev/urandom | base64)" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv
+    clickhouse obfuscator --seed "$(head -c16 /dev/urandom | base64)" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv
 
 clickhouse-git-import
 
@@ -1471,7 +1471,7 @@ example, --http_port=8010
 
 clickhouse-keeper-converter
 
-Usage: /home/ubuntu/thread-ch/clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots
+Usage: clickhouse keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots
 Allowed options:
   -h [ --help ]                 produce help message
   --zookeeper-logs-dir arg      Path to directory with ZooKeeper logs
