@@ -31,43 +31,43 @@ public:
 
 TEST_F(DiskTest, createDirectories)
 {
-    this->disk->createDirectories("test_dir1/");
-    EXPECT_TRUE(this->disk->isDirectory("test_dir1/"));
+    disk->createDirectories("test_dir1/");
+    EXPECT_TRUE(disk->isDirectory("test_dir1/"));
 
-    this->disk->createDirectories("test_dir2/nested_dir/");
-    EXPECT_TRUE(this->disk->isDirectory("test_dir2/nested_dir/"));
+    disk->createDirectories("test_dir2/nested_dir/");
+    EXPECT_TRUE(disk->isDirectory("test_dir2/nested_dir/"));
 }
 
 
 TEST_F(DiskTest, writeFile)
 {
     {
-        std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
+        std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
         writeString("test data", *out);
     }
 
     DB::String data;
     {
-        std::unique_ptr<DB::ReadBuffer> in = this->disk->readFile("test_file");
+        std::unique_ptr<DB::ReadBuffer> in = disk->readFile("test_file");
         readString(data, *in);
     }
 
     EXPECT_EQ("test data", data);
-    EXPECT_EQ(data.size(), this->disk->getFileSize("test_file"));
+    EXPECT_EQ(data.size(), disk->getFileSize("test_file"));
 }
 
 
 TEST_F(DiskTest, readFile)
 {
     {
-        std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
+        std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
         writeString("test data", *out);
     }
 
     // Test SEEK_SET
     {
         String buf(4, '0');
-        std::unique_ptr<DB::SeekableReadBuffer> in = this->disk->readFile("test_file");
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
 
         in->seek(5, SEEK_SET);
 
@@ -77,7 +77,7 @@ TEST_F(DiskTest, readFile)
 
     // Test SEEK_CUR
     {
-        std::unique_ptr<DB::SeekableReadBuffer> in = this->disk->readFile("test_file");
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
         String buf(4, '0');
 
         in->readStrict(buf.data(), 4);
@@ -94,10 +94,10 @@ TEST_F(DiskTest, readFile)
 
 TEST_F(DiskTest, iterateDirectory)
 {
-    this->disk->createDirectories("test_dir/nested_dir/");
+    disk->createDirectories("test_dir/nested_dir/");
 
     {
-        auto iter = this->disk->iterateDirectory("");
+        auto iter = disk->iterateDirectory("");
         EXPECT_TRUE(iter->isValid());
         EXPECT_EQ("test_dir/", iter->path());
         iter->next();
@@ -105,7 +105,7 @@ TEST_F(DiskTest, iterateDirectory)
     }
 
     {
-        auto iter = this->disk->iterateDirectory("test_dir/");
+        auto iter = disk->iterateDirectory("test_dir/");
         EXPECT_TRUE(iter->isValid());
         EXPECT_EQ("test_dir/nested_dir/", iter->path());
         iter->next();
