@@ -131,9 +131,18 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
 
         for (const auto & conjunction : all_conjunctions)
         {
+            auto result_name = conjunction->result_name;
             auto step_dag = ActionsDAG::cloneActionsForConjunction({conjunction}, all_inputs);
-            step_dag->removeUnusedActions(Names{conjunction->result_name}, true, true);
-            steps.emplace_back(Step{step_dag, conjunction->result_name});
+            const auto & result_node = step_dag->findInOutputs(result_name);
+            /// Cast to UInt8 if needed
+            if (result_node.result_type->getTypeId() != TypeIndex::UInt8)
+            {
+                const auto & cast_node = step_dag->addCast(result_node, std::make_shared<DataTypeUInt8>());
+                step_dag->addOrReplaceInOutputs(cast_node);
+                result_name = cast_node.result_name;
+            }
+            step_dag->removeUnusedActions(Names{result_name}, true, true);
+            steps.emplace_back(Step{step_dag, result_name});
         }
 
         /// "Rename" the last step result to the combined prewhere column name, because in fact it will be AND of all step results
