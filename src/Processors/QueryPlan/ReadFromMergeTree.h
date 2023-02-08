@@ -158,6 +158,7 @@ public:
     void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
     void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+    void resetParts(MergeTreeData::DataPartsVector parts) { prepared_parts = std::move(parts); }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const MergeTreeData & getMergeTreeData() const { return data; }

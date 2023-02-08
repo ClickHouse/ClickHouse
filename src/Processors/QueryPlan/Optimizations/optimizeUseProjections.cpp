@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/logger_useful.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <stack>
@@ -151,6 +152,8 @@ struct AggregateProjectionCandidate
 
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
+
+    size_t sum_marks = 0;
 };
 
 ActionsDAGPtr analyzeAggregateProjection(
@@ -261,6 +264,16 @@ ActionsDAGPtr analyzeAggregateProjection(
                 continue;
             }
 
+            if (typeid_cast<const AggregateFunctionCount *>(candidate.function.get()))
+            {
+                /// we can ignore arguments for count()
+                match = AggFuncMatch{idx, {}};
+                break;
+            }
+
+            if (aggregate.argument_names.size() != candidate.argument_names.size())
+                continue;
+
             ActionsDAG::NodeRawConstPtrs args;
             size_t num_args = aggregate.argument_names.size();
             args.reserve(num_args);
@@ -317,6 +330,7 @@ ActionsDAGPtr analyzeAggregateProjection(
             //     split_nodes.insert(node);
 
             match = AggFuncMatch{idx, std::move(args)};
+            break;
         }
 
         if (!match)
@@ -434,12 +448,14 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
 
+    bool can_use_minmax_projection = metadata->minmax_count_projection && !reading->getMergeTreeData().has_lightweight_delete_parts.load();
+
     std::vector<const ProjectionDescription *> agg_projections;
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    if (agg_projections.empty())
+    if (!can_use_minmax_projection && agg_projections.empty())
         return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Has agg projection");
@@ -473,29 +489,52 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & aggregates = aggregating->getParams().aggregates;
 
     std::vector<AggregateProjectionCandidate> candidates;
-    candidates.reserve(agg_projections.size());
-    for (const auto * projection : agg_projections)
-    {
+    std::optional<AggregateProjectionCandidate> minmax_projection;
 
+    AggregateProjectionCandidate * best_candidate = nullptr;
+
+    if (can_use_minmax_projection)
+    {
+        const auto * projection = &*(metadata->minmax_count_projection);
         LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try projection {}", projection->name);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata);
         LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
         if (auto proj_dag = analyzeAggregateProjection(info, *dag, filter_node, keys, aggregates))
         {
             LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
-            candidates.emplace_back(AggregateProjectionCandidate{
+            minmax_projection.emplace(AggregateProjectionCandidate{
                 .info = std::move(info),
                 .projection = projection,
                 .dag = std::move(proj_dag),
             });
         }
+
+        best_candidate = &*minmax_projection;
     }
 
-    if (candidates.empty())
-        return false;
+    if (!minmax_projection)
+    {
+        candidates.reserve(agg_projections.size());
+        for (const auto * projection : agg_projections)
+        {
 
-    AggregateProjectionCandidate * best_candidate = nullptr;
-    size_t best_candidate_marks = 0;
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try projection {}", projection->name);
+            auto info = getAggregatingProjectionInfo(*projection, context, metadata);
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
+            if (auto proj_dag = analyzeAggregateProjection(info, *dag, filter_node, keys, aggregates))
+            {
+                LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
+                candidates.emplace_back(AggregateProjectionCandidate{
+                    .info = std::move(info),
+                    .projection = projection,
+                    .dag = std::move(proj_dag),
+                });
+            }
+        }
+
+        if (candidates.empty())
+            return false;
+    }
 
     const auto & parts = reading->getParts();
     const auto & query_info = reading->getQueryInfo();
@@ -531,7 +570,7 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             added_filter_nodes.nodes.push_back(candidate.dag->getOutputs().front());
 
         auto projection_result_ptr = reader.estimateNumMarksToRead(
-            projection_parts,
+            std::move(projection_parts),
             nullptr,
             candidate.dag->getRequiredColumnsNames(),
             metadata,
@@ -545,7 +584,8 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         if (projection_result_ptr->error())
             continue;
 
-        size_t sum_marks = projection_result_ptr->marks();
+        candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
+        candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->marks();
 
         if (!normal_parts.empty())
         {
@@ -556,49 +596,73 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
             if (normal_result_ptr->marks() != 0)
             {
-                sum_marks += normal_result_ptr->marks();
+                candidate.sum_marks += normal_result_ptr->marks();
                 candidate.merge_tree_normal_select_result_ptr = std::move(normal_result_ptr);
             }
         }
 
-        candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
-
-        if (best_candidate == nullptr || best_candidate_marks > sum_marks)
-        {
+        if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
             best_candidate = &candidate;
-            best_candidate_marks = sum_marks;
-        }
     }
 
-    if (!best_candidate)
+    if (!best_candidate && !minmax_projection)
         return false;
 
-    auto storage_snapshot = reading->getStorageSnapshot();
-    auto proj_snapshot = std::make_shared<StorageSnapshot>(
-        storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
-    proj_snapshot->addProjection(best_candidate->projection);
-
-    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}",  proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
-
+    QueryPlanStepPtr projection_reading;
     auto query_info_copy = query_info;
     query_info_copy.prewhere_info = nullptr;
+    bool has_nornal_parts;
 
-    auto projection_reading = reader.readFromParts(
-        {},
-        best_candidate->dag->getRequiredColumnsNames(),
-        proj_snapshot,
-        query_info_copy,
-        context,
-        reading->getMaxBlockSize(),
-        reading->getNumStreams(),
-        max_added_blocks,
-        best_candidate->merge_tree_projection_select_result_ptr,
-        reading->isParallelReadingEnabled());
-
-    if (!projection_reading)
+    if (minmax_projection)
     {
-        Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames())));
+        MergeTreeData::DataPartsVector normal_parts;
+        auto minmax_count_projection_block = reading->getMergeTreeData().getMinMaxCountProjectionBlock(
+            metadata,
+            minmax_projection->dag->getRequiredColumnsNames(),
+            filter_node != nullptr,
+            query_info,
+            parts,
+            normal_parts,
+            max_added_blocks.get(),
+            context);
+
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(minmax_count_projection_block)));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+
+        has_nornal_parts = !normal_parts.empty();
+        if (has_nornal_parts)
+            reading->resetParts(std::move(normal_parts));
+    }
+    else
+    {
+        auto storage_snapshot = reading->getStorageSnapshot();
+        auto proj_snapshot = std::make_shared<StorageSnapshot>(
+            storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
+        proj_snapshot->addProjection(best_candidate->projection);
+
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}",  proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
+
+        projection_reading = reader.readFromParts(
+            {},
+            best_candidate->dag->getRequiredColumnsNames(),
+            proj_snapshot,
+            query_info_copy,
+            context,
+            reading->getMaxBlockSize(),
+            reading->getNumStreams(),
+            max_added_blocks,
+            best_candidate->merge_tree_projection_select_result_ptr,
+            reading->isParallelReadingEnabled());
+
+        if (!projection_reading)
+        {
+            Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames())));
+            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        }
+
+        has_nornal_parts = best_candidate->merge_tree_normal_select_result_ptr != nullptr;
+        if (has_nornal_parts)
+            reading->setAnalyzedResult(std::move(best_candidate->merge_tree_normal_select_result_ptr));
     }
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection reading header {}", projection_reading->getOutputStream().header.dumpStructure());
@@ -623,7 +687,7 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
     expr_or_filter_node.children.push_back(&projection_reading_node);
 
-    if (!best_candidate->merge_tree_normal_select_result_ptr)
+    if (!has_nornal_parts)
     {
         /// All parts are taken from projection
 
@@ -637,7 +701,6 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         node.step = aggregating->convertToAggregatingProjection(expr_or_filter_node.step->getOutputStream());
         node.children.push_back(&expr_or_filter_node);
-        reading->setAnalyzedResult(std::move(best_candidate->merge_tree_normal_select_result_ptr));
     }
 
     return true;
