@@ -100,6 +100,7 @@ void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
+void registerInputFormatSQLite(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -239,6 +240,7 @@ void registerFormats()
 
     registerInputFormatCapnProto(factory);
     registerInputFormatMySQLDump(factory);
+    registerInputFormatSQLite(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
