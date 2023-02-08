@@ -1206,10 +1206,6 @@ void Planner::buildPlanForQueryNode()
         return;
 
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
-
-    if (!query_processing_info.isFirstStage() && !query_processing_info.isSecondStage() && !query_processing_info.isIntermediateStage())
-        return;
-
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
     auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
         query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
