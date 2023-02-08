@@ -588,7 +588,10 @@ void BaseDaemon::closeFDs()
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
             {
                 int err = ::close(fd);
-                chassert(!err || errno == EINTR);
+                /// NOTE: it is OK to ignore error here since at least one fd
+                /// is already closed (for proc_path), and there can be some
+                /// tricky cases, likely.
+                (void)err;
             }
         }
     }
@@ -606,7 +609,10 @@ void BaseDaemon::closeFDs()
             if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
             {
                 int err = ::close(fd);
-                chassert(!err || errno == EINTR);
+                /// NOTE: it is OK to get EBADF here, since it is simply
+                /// iterator over all possible fds, without any checks does
+                /// this process has this fd or not.
+                (void)err;
             }
         }
     }
