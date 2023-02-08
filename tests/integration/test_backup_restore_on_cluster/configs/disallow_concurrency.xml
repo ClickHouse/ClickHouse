@@ -9,7 +9,7 @@
     </storage_configuration>
     <backups>
         <allowed_disk>backups</allowed_disk>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
     </backups>
-    <allow_concurrent_backups>false</allow_concurrent_backups>
-    <allow_concurrent_restores>false</allow_concurrent_restores>
 </clickhouse>

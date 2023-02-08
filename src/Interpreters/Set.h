@@ -1,6 +1,5 @@
 #pragma once
 
-#include <shared_mutex>
 #include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
@@ -8,6 +7,7 @@
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
+#include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
 
 
@@ -131,7 +131,7 @@ private:
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
       */
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
 
     template <typename Method>
     void insertFromBlockImpl(

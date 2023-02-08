@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
+#include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
@@ -18,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
@@ -223,21 +225,9 @@ public:
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
-    MergeTreeDataPartType choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
-
-    /// After this method setColumns must be called
-    MutableDataPartPtr createPart(const String & name,
-        MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
-
-    /// Create part, that already exists on filesystem.
-    /// After this methods 'loadColumnsChecksumsIndexes' must be called.
-    MutableDataPartPtr createPart(const String & name,
-        const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
-
-    MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
+    MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count, bool only_on_disk = false) const;
+    MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
+    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -1053,6 +1043,7 @@ public:
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
     void waitForOutdatedPartsToBeLoaded() const;
+    bool canUsePolymorphicParts() const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1089,7 +1080,7 @@ protected:
     MultiVersion<MergeTreeSettings> storage_settings;
 
     /// Used to determine which UUIDs to send to root query executor for deduplication.
-    mutable std::shared_mutex pinned_part_uuids_mutex;
+    mutable SharedMutex pinned_part_uuids_mutex;
     PinnedPartUUIDsPtr pinned_part_uuids;
 
     /// True if at least one part was created/removed with transaction.
@@ -1426,6 +1417,7 @@ private:
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
+    void checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction

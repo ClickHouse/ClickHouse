@@ -153,7 +153,7 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
@@ -528,7 +528,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -629,7 +629,7 @@ private:
         const DataPartsVector & parts,
         const String & merged_name,
         const UUID & merged_part_uuid,
-        const MergeTreeDataPartType & merged_part_type,
+        const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
@@ -858,7 +858,7 @@ private:
     // Create table id if needed
     void createTableSharedID() const;
 
-    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
+    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
 
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 

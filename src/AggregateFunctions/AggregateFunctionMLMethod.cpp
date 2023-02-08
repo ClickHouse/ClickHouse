@@ -247,15 +247,8 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
     if (adam_rhs.average_gradient.empty())
         return;
 
-    if (average_gradient.empty())
-    {
-        if (!average_squared_gradient.empty() ||
-                adam_rhs.average_gradient.size() != adam_rhs.average_squared_gradient.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Average_gradient and average_squared_gradient must have same size");
-
-        average_gradient.resize(adam_rhs.average_gradient.size(), Float64{0.0});
-        average_squared_gradient.resize(adam_rhs.average_squared_gradient.size(), Float64{0.0});
-    }
+    average_gradient.resize(adam_rhs.average_gradient.size(), Float64{0.0});
+    average_squared_gradient.resize(adam_rhs.average_squared_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < average_gradient.size(); ++i)
     {
@@ -268,14 +261,8 @@ void Adam::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 
 void Adam::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
-    if (average_gradient.empty())
-    {
-        if (!average_squared_gradient.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Average_gradient and average_squared_gradient must have same size");
-
-        average_gradient.resize(batch_gradient.size(), Float64{0.0});
-        average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
-    }
+    average_gradient.resize(batch_gradient.size(), Float64{0.0});
+    average_squared_gradient.resize(batch_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i != average_gradient.size(); ++i)
     {
@@ -328,8 +315,7 @@ void Nesterov::write(WriteBuffer & buf) const
 void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac)
 {
     const auto & nesterov_rhs = static_cast<const Nesterov &>(rhs);
-    if (accumulated_gradient.empty())
-        accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
+    accumulated_gradient.resize(nesterov_rhs.accumulated_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < accumulated_gradient.size(); ++i)
     {
@@ -339,10 +325,7 @@ void Nesterov::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
 
 void Nesterov::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
-    if (accumulated_gradient.empty())
-    {
-        accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
-    }
+    accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {
@@ -402,10 +385,7 @@ void Momentum::merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac
 void Momentum::update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient)
 {
     /// batch_size is already checked to be greater than 0
-    if (accumulated_gradient.empty())
-    {
-        accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
-    }
+    accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
 
     for (size_t i = 0; i < batch_gradient.size(); ++i)
     {

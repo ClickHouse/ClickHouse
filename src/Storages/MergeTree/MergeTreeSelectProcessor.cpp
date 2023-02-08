@@ -21,21 +21,22 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
     const MergeTreeReaderSettings & reader_settings_,
+    MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
-    bool has_limit_below_one_block_,
-    std::optional<ParallelReadingExtension> extension_)
+    bool has_limit_below_one_block_)
     : IMergeTreeSelectAlgorithm{
         storage_snapshot_->getSampleBlockForColumns(required_columns_),
         storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
+        reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     sample_block(storage_snapshot_->metadata->getSampleBlock()),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     has_limit_below_one_block(has_limit_below_one_block_),
+    pool(pool_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
     ordered_names = header_without_const_virtual_columns.getNames();
