@@ -460,15 +460,15 @@ protected:
                 }
 
                 auto table_cast = dynamic_pointer_cast<MergeTreeData>(table);
-                if (columns_mask[src_index++]) 
-                {   
+                if (columns_mask[src_index++])
+                {
                     if (table_cast)
                         res_columns[res_index++]->insert(table_cast->getAllDataPartsVector().size());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
-                if (columns_mask[src_index++]) 
+                if (columns_mask[src_index++])
                 {
                     if (table_cast)
                         res_columns[res_index++]->insert(table_cast->getPartsCount());
@@ -476,7 +476,7 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                if (columns_mask[src_index++]) 
+                if (columns_mask[src_index++])
                 {
                     if (table_cast) {
                         size_t totalMarks = 0;
