@@ -192,7 +192,7 @@ Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) c
     if (checkIfWrongRegionDefined(bucket, error, new_region))
     {
         request.overrideRegion(new_region);
-        return HeadObject(request);
+        return Aws::S3::S3Client::HeadObject(request);
     }
 
     if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
@@ -303,6 +303,83 @@ Model::DeleteObjectOutcome Client::DeleteObject(const DeleteObjectRequest & requ
 Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
 {
     return doRequest(request, [this](const Model::DeleteObjectsRequest & req) { return Aws::S3::S3Client::DeleteObjects(req); });
+}
+
+template <typename RequestType, typename RequestFn>
+std::invoke_result_t<RequestFn, RequestType>
+Client::doRequest(const RequestType & request, RequestFn request_fn) const
+{
+    const auto & bucket = request.GetBucket();
+
+    if (auto region = getRegionForBucket(bucket); !region.empty())
+    {
+        if (!detect_region)
+            LOG_INFO(log, "Using region override {} for bucket {}", region, bucket);
+
+        request.overrideRegion(std::move(region));
+    }
+
+    if (auto uri = getURIForBucket(bucket); uri.has_value())
+        request.overrideURI(std::move(*uri));
+
+
+    bool found_new_endpoint = false;
+    // if we found correct endpoint after 301 responses, update the cache for future requests
+    SCOPE_EXIT(
+        if (found_new_endpoint)
+        {
+            auto uri_override = request.getURIOverride();
+            assert(uri_override.has_value());
+            updateURIForBucket(bucket, std::move(*uri_override));
+        }
+    );
+
+    for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
+    {
+        auto result = request_fn(request);
+        if (result.IsSuccess())
+            return result;
+
+        const auto & error = result.GetError();
+
+        std::string new_region;
+        if (checkIfWrongRegionDefined(bucket, error, new_region))
+        {
+            request.overrideRegion(new_region);
+            continue;
+        }
+
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+            return result;
+
+        // maybe we detect a correct region
+        if (!detect_region)
+        {
+            if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
+            {
+                request.overrideRegion(region);
+                insertRegionOverride(bucket, region);
+            }
+        }
+
+        // we possibly got new location, need to try with that one
+        auto new_uri = getURIFromError(error);
+        if (!new_uri)
+            return result;
+
+        const auto & current_uri_override = request.getURIOverride();
+        /// we already tried with this URI
+        if (current_uri_override && current_uri_override->uri == new_uri->uri)
+        {
+            LOG_INFO(log, "Getting redirected to the same invalid location {}", new_uri->uri.toString());
+            return result;
+        }
+
+        found_new_endpoint = true;
+        request.overrideURI(*new_uri);
+    }
+
+    throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects");
 }
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
