@@ -3310,6 +3310,15 @@ SELECT
 FROM fuse_tbl
 ```
 
+## optimize_rewrite_aggregate_function_with_if
+
+Rewrite aggregate functions with if expression as argument when logically equivalent.
+For example, `avg(if(cond, col, null))` can be rewritten to `avgIf(cond, col)`. It may improve performance.
+
+:::note
+Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+:::
+
 ## allow_experimental_database_replicated {#allow_experimental_database_replicated}
 
 Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
