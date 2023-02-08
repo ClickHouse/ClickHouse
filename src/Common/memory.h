@@ -7,7 +7,6 @@
 
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/gwp_asan.h>
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -19,6 +18,8 @@
 #endif
 
 #if USE_GWP_ASAN
+#    include <gwp_asan/guarded_pool_allocator.h>
+
 static gwp_asan::GuardedPoolAllocator GuardedAlloc;
 #endif
 
