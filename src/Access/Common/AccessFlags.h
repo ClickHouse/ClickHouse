@@ -50,6 +50,7 @@ public:
     bool isEmpty() const { return flags.none(); }
     explicit operator bool() const { return !isEmpty(); }
     bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
+    bool isNamedCollectionAccessOnly() const { return (flags & ~allFlagsGrantableOnNamedCollectionLevel()).isEmpty(); }
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
@@ -75,6 +76,8 @@ public:
 
     /// Returns all the global flags.
     static AccessFlags allGlobalFlags();
+
+    static AccessFlags allGlobalWithParameterFlags();
 
     /// Returns all the flags related to a database.
     static AccessFlags allDatabaseFlags();
@@ -103,6 +106,8 @@ public:
     /// Returns all the flags which could be granted on the global level.
     /// The same as allColumnFlags().
     static AccessFlags allFlagsGrantableOnColumnLevel();
+
+    static AccessFlags allFlagsGrantableOnNamedCollectionLevel();
 
     static constexpr size_t SIZE = 256;
 private:

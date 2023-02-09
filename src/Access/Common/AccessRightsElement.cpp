@@ -21,24 +21,31 @@ namespace
         result += ")";
     }
 
-    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, String & result)
+    void formatONClause(const AccessRightsElement & element, String & result)
     {
         result += "ON ";
-        if (any_database)
+        if (!element.any_named_collection)
+        {
+            if (element.named_collection.empty())
+                result += "*";
+            else
+                result += backQuoteIfNeed(element.named_collection);
+        }
+        else if (element.any_database)
         {
             result += "*.*";
         }
         else
         {
-            if (!database.empty())
+            if (!element.database.empty())
             {
-                result += backQuoteIfNeed(database);
+                result += backQuoteIfNeed(element.database);
                 result += ".";
             }
-            if (any_table)
+            if (element.any_table)
                 result += "*";
             else
-                result += backQuoteIfNeed(table);
+                result += backQuoteIfNeed(element.table);
         }
     }
 
@@ -96,7 +103,7 @@ namespace
         String result;
         formatAccessFlagsWithColumns(element.access_flags, element.columns, element.any_column, result);
         result += " ";
-        formatONClause(element.database, element.any_database, element.table, element.any_table, result);
+        formatONClause(element, result);
         if (with_options)
             formatOptions(element.grant_option, element.is_partial_revoke, result);
         return result;
@@ -129,7 +136,7 @@ namespace
             if (!next_element_uses_same_table_and_options)
             {
                 part += " ";
-                formatONClause(element.database, element.any_database, element.table, element.any_table, part);
+                formatONClause(element, part);
                 if (with_options)
                     formatOptions(element.grant_option, element.is_partial_revoke, part);
                 if (result.empty())

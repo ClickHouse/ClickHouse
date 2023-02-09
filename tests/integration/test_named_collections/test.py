@@ -105,6 +105,76 @@ def test_access(cluster):
     assert int(node.query("select count() from system.named_collections")) > 0
 
 
+def test_granular_access(cluster):
+    node = cluster.instances["node"]
+    assert 1 == int(node.query("SELECT count() FROM system.named_collections"))
+    assert (
+        "collection1" == node.query("SELECT name FROM system.named_collections").strip()
+    )
+
+    node.query("CREATE USER kek")
+    node.query("GRANT select ON *.* TO kek")
+    assert 0 == int(
+        node.query("SELECT count() FROM system.named_collections", user="kek")
+    )
+
+    node.query("GRANT show named collections ON collection1 TO kek")
+    assert 1 == int(
+        node.query("SELECT count() FROM system.named_collections", user="kek")
+    )
+    assert (
+        "collection1"
+        == node.query("SELECT name FROM system.named_collections", user="kek").strip()
+    )
+
+    node.query("CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'")
+    assert 2 == int(node.query("SELECT count() FROM system.named_collections"))
+    assert (
+        "collection1\ncollection2"
+        == node.query("select name from system.named_collections").strip()
+    )
+
+    assert 1 == int(
+        node.query("SELECT count() FROM system.named_collections", user="kek")
+    )
+    assert (
+        "collection1"
+        == node.query("select name from system.named_collections", user="kek").strip()
+    )
+
+    node.query("GRANT show named collections ON collection2 TO kek")
+    assert 2 == int(
+        node.query("SELECT count() FROM system.named_collections", user="kek")
+    )
+    assert (
+        "collection1\ncollection2"
+        == node.query("select name from system.named_collections", user="kek").strip()
+    )
+    node.restart_clickhouse()
+    assert (
+        "collection1\ncollection2"
+        == node.query("select name from system.named_collections", user="kek").strip()
+    )
+
+    node.query("CREATE USER koko")
+    node.query("GRANT select ON *.* TO koko")
+    assert 0 == int(
+        node.query("SELECT count() FROM system.named_collections", user="koko")
+    )
+    node.query("GRANT show named collections ON * TO koko")
+    assert (
+        "collection1\ncollection2"
+        == node.query("select name from system.named_collections", user="koko").strip()
+    )
+    node.restart_clickhouse()
+    assert (
+        "collection1\ncollection2"
+        == node.query("select name from system.named_collections", user="koko").strip()
+    )
+
+    node.query("DROP NAMED COLLECTION collection2")
+
+
 def test_config_reload(cluster):
     node = cluster.instances["node"]
     assert (

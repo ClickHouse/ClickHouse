@@ -14,9 +14,11 @@ struct AccessRightsElement
     String database;
     String table;
     Strings columns;
+    String named_collection;
     bool any_database = true;
     bool any_table = true;
     bool any_column = true;
+    bool any_named_collection = true;
     bool grant_option = false;
     bool is_partial_revoke = false;
 
