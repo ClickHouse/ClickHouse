@@ -459,29 +459,29 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                auto table_cast = dynamic_pointer_cast<MergeTreeData>(table);
+                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
                 if (columns_mask[src_index++])
                 {
-                    if (table_cast)
-                        res_columns[res_index++]->insert(table_cast->getAllDataPartsVector().size());
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getAllDataPartsVector().size());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    if (table_cast)
-                        res_columns[res_index++]->insert(table_cast->getPartsCount());
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getPartsCount());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    if (table_cast)
+                    if (table_merge_tree)
                     {
                         size_t totalMarks = 0;
-                        for (auto &part_info : table_cast->getAllDataPartsVector())
+                        for (auto &part_info : table_merge_tree->getAllDataPartsVector())
                         {
                             totalMarks += part_info->getMarksCount();
                         }
