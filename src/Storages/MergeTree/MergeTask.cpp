@@ -558,10 +558,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
     global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
 
-    if (ctx->column_to->hasAsynchronousWritingBuffers())
-        ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
-    else
-        ctx->column_to->finish(ctx->need_sync);
+    ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
 
     while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
     {

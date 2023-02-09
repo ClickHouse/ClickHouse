@@ -139,10 +139,8 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         out_hashing.next();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
-        if (out->preFinalize())
-            written_files.emplace_back(std::move(out));
-        else
-            out->finalize();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
 
     return written_files;

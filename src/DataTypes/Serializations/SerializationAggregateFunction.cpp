@@ -169,7 +169,6 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
 {
     String s;
     readQuotedStringWithSQLStyle(s, istr);
-    std::cerr << "==========\n" << s << std::endl << "====\n";
     deserializeFromString(function, column, s, version);
 }
 

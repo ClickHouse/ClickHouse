@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
+void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
     compressed_hashing.next();
     compressor.next();
@@ -25,18 +25,16 @@ bool MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 
     marks_hashing.next();
 
-    bool has_asynchronous_writing_buffers = false;
-    has_asynchronous_writing_buffers |= plain_file->preFinalize();
-    has_asynchronous_writing_buffers |= marks_file->preFinalize();
+    plain_file->preFinalize();
+    marks_file->preFinalize();
 
     is_prefinalized = true;
-    return has_asynchronous_writing_buffers;
 }
 
 void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     if (!is_prefinalized)
-        std::ignore = preFinalize();
+        preFinalize();
 
     plain_file->finalize();
     marks_file->finalize();
@@ -362,7 +360,7 @@ void MergeTreeDataPartWriterOnDisk::fillPrimaryIndexChecksums(MergeTreeData::Dat
         }
         checksums.files[index_name].file_size = index_file_hashing_stream->count();
         checksums.files[index_name].file_hash = index_file_hashing_stream->getHash();
-        has_asynchronous_writing_buffers |= index_file_stream->preFinalize();
+        index_file_stream->preFinalize();
     }
 }
 
@@ -394,7 +392,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 
     for (auto & stream : skip_indices_streams)
     {
-        has_asynchronous_writing_buffers |= stream->preFinalize();
+        stream->preFinalize();
         stream->addToChecksums(checksums);
     }
 }

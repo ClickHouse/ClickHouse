@@ -55,7 +55,7 @@ public:
 
     void nextImpl() override;
 
-    bool preFinalize() override;
+    void preFinalize() override;
 
 private:
     void allocateBuffer();

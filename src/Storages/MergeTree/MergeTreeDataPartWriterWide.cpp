@@ -589,7 +589,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksum
 
     for (auto & stream : column_streams)
     {
-        has_asynchronous_writing_buffers |= stream.second->preFinalize();
+        stream.second->preFinalize();
         stream.second->addToChecksums(checksums);
     }
 }

@@ -16,7 +16,7 @@ void WriteBufferFromFileDecorator::finalizeImpl()
     next();
 
     if (!is_prefinalized)
-        std::ignore = WriteBufferFromFileDecorator::preFinalize();
+        WriteBufferFromFileDecorator::preFinalize();
 
     impl->finalize();
 }

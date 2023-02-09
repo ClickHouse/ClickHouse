@@ -418,7 +418,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block &
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
-    std::ignore = out->preFinalize();
+    out->preFinalize();
     return out;
 }
 
