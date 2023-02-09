@@ -21,6 +21,7 @@ from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from upload_result_helper import upload_results
 
 NAME = "Push to Dockerhub"
@@ -191,20 +192,19 @@ def build_and_push_dummy_image(
         Path(TEMP_PATH)
         / f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}.log"
     )
-    with open(build_log, "wb") as bl:
-        cmd = (
-            f"docker pull {dummy_source}; "
-            f"docker tag {dummy_source} {image.repo}:{version_string}; "
-        )
-        if push:
-            cmd += f"docker push {image.repo}:{version_string}"
+    cmd = (
+        f"docker pull {dummy_source}; "
+        f"docker tag {dummy_source} {image.repo}:{version_string}; "
+    )
+    if push:
+        cmd += f"docker push {image.repo}:{version_string}"
 
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
@@ -247,25 +247,24 @@ def build_and_push_one_image(
             f"--cache-from type=registry,ref={image.repo}:{additional_cache}"
         )
 
-    with open(build_log, "wb") as bl:
-        cmd = (
-            "docker buildx build --builder default "
-            f"--label build-url={GITHUB_RUN_URL} "
-            f"{from_tag_arg}"
-            # A hack to invalidate cache, grep for it in docker/ dir
-            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
-            f"--tag {image.repo}:{version_string} "
-            f"{cache_from} "
-            f"--cache-to type=inline,mode=max "
-            f"{push_arg}"
-            f"--progress plain {image.full_path}"
-        )
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    cmd = (
+        "docker buildx build --builder default "
+        f"--label build-url={GITHUB_RUN_URL} "
+        f"{from_tag_arg}"
+        # A hack to invalidate cache, grep for it in docker/ dir
+        f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+        f"--tag {image.repo}:{version_string} "
+        f"{cache_from} "
+        f"--cache-to type=inline,mode=max "
+        f"{push_arg}"
+        f"--progress plain {image.full_path}"
+    )
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
