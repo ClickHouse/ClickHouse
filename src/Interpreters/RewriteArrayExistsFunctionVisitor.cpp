@@ -1,11 +1,10 @@
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
-
 void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
@@ -19,10 +18,7 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
 void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
 {
-    if (!func.arguments || func.arguments->children.empty())
-        return;
-
-    if (func.name != "arrayExists")
+    if (func.name != "arrayExists" || !func.arguments)
         return;
 
     auto & array_exists_arguments = func.arguments->children;
@@ -35,6 +31,9 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         return;
 
     const auto & lambda_func_arguments = lambda_func->arguments->children;
+    if (lambda_func_arguments.size() != 2)
+        return;
+
     const auto * tuple_func = lambda_func_arguments[0]->as<ASTFunction>();
     if (!tuple_func || tuple_func->name != "tuple")
         return;
@@ -70,7 +69,6 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         (filter_id = filter_arguments[1]->as<ASTIdentifier>()) && (filter_literal = filter_arguments[0]->as<ASTLiteral>())
         && filter_id->full_name == id->full_name)
     {
-
         /// arrayExists(x -> elem = x, arr) -> has(arr, elem)
         auto new_func = makeASTFunction("has", std::move(array_exists_arguments[1]), std::move(filter_arguments[0]));
         new_func->setAlias(func.alias);
