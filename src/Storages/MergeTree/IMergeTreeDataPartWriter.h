@@ -39,8 +39,6 @@ public:
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
-    bool hasAsynchronousWritingBuffers() const { return has_asynchronous_writing_buffers; }
-
 protected:
 
     const MergeTreeMutableDataPartPtr data_part;
@@ -50,7 +48,6 @@ protected:
     const MergeTreeWriterSettings settings;
     MergeTreeIndexGranularity index_granularity;
     const bool with_final_mark;
-    bool has_asynchronous_writing_buffers = false;
 
     MutableColumns index_columns;
 };

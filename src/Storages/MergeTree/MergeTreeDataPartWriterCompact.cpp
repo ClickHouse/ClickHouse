@@ -286,8 +286,8 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
     marks_file_hashing->next();
     addToChecksums(checksums);
 
-    has_asynchronous_writing_buffers |= plain_file->preFinalize();
-    has_asynchronous_writing_buffers |= marks_file->preFinalize();
+    plain_file->preFinalize();
+    marks_file->preFinalize();
 }
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)

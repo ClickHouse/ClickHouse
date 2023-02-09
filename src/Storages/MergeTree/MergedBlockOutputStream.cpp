@@ -213,10 +213,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             count_out_hashing.next();
             checksums.files["count.txt"].file_size = count_out_hashing.count();
             checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            if (count_out->preFinalize())
-                written_files.emplace_back(std::move(count_out));
-            else
-                count_out->finalize();
+            count_out->preFinalize();
+            written_files.emplace_back(std::move(count_out));
         }
     }
     else
@@ -228,10 +226,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             writeUUIDText(new_part->uuid, out_hashing);
             checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
             checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
-            if (out->preFinalize())
-                written_files.emplace_back(std::move(out));
-            else
-                out->finalize();
+            out->preFinalize();
+            written_files.emplace_back(std::move(out));
         }
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -257,10 +253,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             count_out_hashing.next();
             checksums.files["count.txt"].file_size = count_out_hashing.count();
             checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-            if (count_out->preFinalize())
-                written_files.emplace_back(std::move(count_out));
-            else
-                count_out->finalize();
+            count_out->preFinalize();
+            written_files.emplace_back(std::move(count_out));
         }
     }
 
@@ -272,10 +266,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
-        if (out->preFinalize())
-            written_files.emplace_back(std::move(out));
-        else
-            out->finalize();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
 
     if (!new_part->getSerializationInfos().empty())
@@ -285,30 +277,24 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->getSerializationInfos().writeJSON(out_hashing);
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
-        if (out->preFinalize())
-            written_files.emplace_back(std::move(out));
-        else
-            out->finalize();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
 
     {
         /// Write a file with a description of columns.
         auto out = new_part->getDataPartStorage().writeFile("columns.txt", 4096, write_settings);
         new_part->getColumns().writeText(*out);
-        if (out->preFinalize())
-            written_files.emplace_back(std::move(out));
-        else
-            out->finalize();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
 
     if (default_codec != nullptr)
     {
         auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings);
         DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
-        if (out->preFinalize())
-            written_files.emplace_back(std::move(out));
-        else
-            out->finalize();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
     else
     {
@@ -320,10 +306,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         /// Write file with checksums.
         auto out = new_part->getDataPartStorage().writeFile("checksums.txt", 4096, write_settings);
         checksums.write(*out);
-        if (out->preFinalize())
-            written_files.emplace_back(std::move(out));
-        else
-            out->finalize();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
 
     return written_files;

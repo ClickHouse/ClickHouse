@@ -110,14 +110,7 @@ public:
     /// and start sending data asynchronously. It may improve writing performance in case you have
     /// multiple files to finalize. Mainly, for blob storage, finalization has high latency,
     /// and calling preFinalize in a loop may parallelize it.
-    ///
-    /// Returns true if preFinalize did something useful and some data was sent asynchronously indeed.
-    /// Otherwise, we can call finalize() and remove a buffer to decrease memory usage.
-    [[nodiscard]] virtual bool preFinalize()
-    {
-        next();
-        return false;
-    }
+    virtual void preFinalize() { next(); }
 
     /// Write the last data.
     void finalize()
