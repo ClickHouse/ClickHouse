@@ -12,6 +12,10 @@ SCRIPT_PATH = Path(__file__).absolute()
 IMAGE_TYPE = "binary"
 
 
+class BuildException(Exception):
+    pass
+
+
 def check_image_exists_locally(image_name: str) -> bool:
     try:
         output = subprocess.check_output(
@@ -57,7 +61,9 @@ def pre_build(repo_path: Path, env_variables: List[str]):
             # conclusion is: in the current state the easiest way to go is to force
             # unshallow repository for performance artifacts.
             # To change it we need to rework our performance tests docker image
-            raise Exception("shallow repository is not suitable for performance builds")
+            raise BuildException(
+                "shallow repository is not suitable for performance builds"
+            )
         if current_branch != "master":
             cmd = (
                 f"git -C {repo_path} fetch --no-recurse-submodules "
@@ -321,7 +327,7 @@ def dir_name(name: str) -> Path:
     return path
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -395,12 +401,11 @@ if __name__ == "__main__":
     ch_root = args.clickhouse_repo_path
 
     if args.additional_pkgs and args.package_type != "deb":
-        raise Exception("Can build additional packages only in deb build")
+        raise BuildException("Can build additional packages only in deb build")
 
-    if args.with_binaries != "" and args.package_type != "deb":
-        raise Exception("Can add additional binaries only in deb build")
-
-    if args.with_binaries != "" and args.package_type == "deb":
+    if args.with_binaries != "":
+        if args.package_type != "deb":
+            raise BuildException("Can add additional binaries only in deb build")
         logging.info("Should place %s to output", args.with_binaries)
 
     dockerfile = ch_root / "docker/packager" / IMAGE_TYPE / "Dockerfile"
@@ -435,3 +440,7 @@ if __name__ == "__main__":
         args.docker_image_version,
     )
     logging.info("Output placed into %s", args.output_dir)
+
+
+if __name__ == "__main__":
+    main()
