@@ -129,11 +129,11 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
-class MergeMutateRuntimeQueue;
-class OrdinaryRuntimeQueue;
-using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+class RoundRobinRuntimeQueue;
+class FifoRuntimeQueue;
+using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
-using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<FifoRuntimeQueue>;
 using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
