@@ -199,6 +199,11 @@ public:
         return getIndexes().getRatioOfDefaultRows(sample_ratio);
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getIndexes().getNumberOfDefaultRows();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);

@@ -156,6 +156,11 @@ public:
         return getRatioOfDefaultRowsImpl<ColumnNullable>(sample_ratio);
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getNumberOfDefaultRowsImpl<ColumnNullable>();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         getIndicesOfNonDefaultRowsImpl<ColumnNullable>(indices, from, limit);
