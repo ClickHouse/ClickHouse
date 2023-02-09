@@ -102,6 +102,8 @@ public:
     /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
     const Processors & getProcessors() const { return *processors; }
 
+    std::shared_ptr<Processors> getProcessorsPtr() { return processors; }
+
 private:
     /// Header is common for all output below.
     Block header;

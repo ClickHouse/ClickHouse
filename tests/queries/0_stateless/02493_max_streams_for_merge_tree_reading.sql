@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 drop table if exists t;
 create table t (x UInt64) engine = MergeTree order by x;
 insert into t select number from numbers_mt(10000000) settings max_insert_threads=8;
