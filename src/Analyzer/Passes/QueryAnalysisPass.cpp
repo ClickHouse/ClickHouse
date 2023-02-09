@@ -1943,7 +1943,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
     if (!table_node && !table_function_node && !query_node && !union_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Unexpected table expression. Expected table, table function, query or union node. Actual {}",
+        "Unexpected table expression. Expected table, table function, query or union node. Table node: {}, scope node: {}",
         table_expression_node->formatASTForErrorMessage(),
         scope.scope_node->formatASTForErrorMessage());
 
@@ -4366,12 +4366,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            std::string error_message = fmt::format("Aggregate function with name '{}' does not exists. In scope {}",
-               function_name,
-               scope.scope_node->formatASTForErrorMessage());
-
-            AggregateFunctionFactory::instance().appendHintsMessage(error_message, function_name);
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, error_message);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exists. In scope {}{}",
+                            function_name, scope.scope_node->formatASTForErrorMessage(),
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -5394,7 +5391,11 @@ void QueryAnalyzer::initializeTableExpressionColumns(const QueryTreeNodePtr & ta
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals());
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+        if (storage_snapshot->storage.supportsSubcolumns())
+            get_column_options.withSubcolumns();
+
+        auto column_names_and_types = storage_snapshot->getColumns(get_column_options);
         const auto & columns_description = storage_snapshot->metadata->getColumns();
 
         std::vector<std::pair<std::string, ColumnNodePtr>> alias_columns_to_resolve;
@@ -5726,7 +5727,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::IDENTIFIER:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Identifiers in FROM section must be already resolved. In scope {}",
+                "Identifiers in FROM section must be already resolved. Node {}, scope {}",
                 join_tree_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }

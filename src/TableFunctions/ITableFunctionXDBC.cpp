@@ -56,7 +56,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
 {
     if (!helper)
     {
-        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string);
+        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string, context->getSettingsRef().odbc_bridge_use_connection_pooling.value);
         helper->startBridgeSync();
     }
 }
