@@ -109,18 +109,6 @@ struct URLBasedDataSourceConfiguration
     void set(const URLBasedDataSourceConfiguration & conf);
 };
 
-struct StorageS3Configuration : URLBasedDataSourceConfiguration
-{
-    S3::AuthSettings auth_settings;
-    S3Settings::RequestSettings request_settings;
-};
-
-
-struct StorageS3ClusterConfiguration : StorageS3Configuration
-{
-    String cluster_name;
-};
-
 struct URLBasedDataSourceConfig
 {
     URLBasedDataSourceConfiguration configuration;

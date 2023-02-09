@@ -1616,13 +1616,27 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->settings_ast)
+        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
+            apply_query_settings(*select->settings());
+        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
+        {
+            const ASTs & children = select_with_union->list_of_selects->children;
+            if (!children.empty())
+            {
+                // On the client it is enough to apply settings only for the
+                // last SELECT, since the only thing that is important to apply
+                // on the client is format settings.
+                const auto * last_select = children.back()->as<ASTSelectQuery>();
+                if (last_select && last_select->settings())
+                {
+                    apply_query_settings(*last_select->settings());
+                }
+            }
+        }
+        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
+            apply_query_settings(*query_with_output->settings_ast);
+        else if (insert && insert->settings_ast)
             apply_query_settings(*insert->settings_ast);
-
-        /// FIXME: try to prettify this cast using `as<>()`
-        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-        if (with_output && with_output->settings_ast)
-            apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
