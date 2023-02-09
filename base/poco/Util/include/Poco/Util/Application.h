@@ -27,7 +27,6 @@
 #include "Poco/Path.h"
 #include "Poco/Timestamp.h"
 #include "Poco/Timespan.h"
-#include "Poco/AutoPtr.h"
 #if defined(POCO_VXWORKS)
 #include <cstdarg>
 #endif
