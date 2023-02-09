@@ -1,0 +1,31 @@
+SELECT cast(id as UInt16) AS id16 FROM test_02559 PREWHERE id16 and (id % 40000) LIMIT 10;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+SELECT cast(id as UInt16) AS id16, (id % 40000) AS id40000, (id16 AND id40000) AS cond FROM test_02559 PREWHERE cond LIMIT 10;
+1	1	1
+2	2	1
+3	3	1
+4	4	1
+5	5	1
+6	6	1
+7	7	1
+8	8	1
+9	9	1
+SELECT cast(id as UInt16) AS id16 FROM test_02559 PREWHERE id16 LIMIT 10;
+1
+2
+3
+4
+5
+6
+7
+8
+9
+SELECT count() FROM test_02559 PREWHERE 1 OR ignore(id) WHERE ignore(id)=0;
