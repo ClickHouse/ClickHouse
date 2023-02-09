@@ -51,10 +51,8 @@ namespace
             if (filter_arguments_nodes.size() != 2)
                 return;
 
-            ConstantNode * filter_constant_node = nullptr;
             ColumnNode * filter_column_node = nullptr;
-            if ((filter_constant_node = filter_arguments_nodes[1]->as<ConstantNode>())
-                && (filter_column_node = filter_arguments_nodes[0]->as<ColumnNode>())
+            if (filter_arguments_nodes[1]->as<ConstantNode>() && (filter_column_node = filter_arguments_nodes[0]->as<ColumnNode>())
                 && filter_column_node->getColumnName() == column_node->getColumnName())
             {
                 /// Rewrite arrayExists(x -> x = elem, arr) -> has(arr, elem)
@@ -64,8 +62,7 @@ namespace
                     FunctionFactory::instance().get("has", getContext())->build(function_node->getArgumentColumns()));
             }
             else if (
-                (filter_constant_node = filter_arguments_nodes[0]->as<ConstantNode>())
-                && (filter_column_node = filter_arguments_nodes[1]->as<ColumnNode>())
+                filter_arguments_nodes[0]->as<ConstantNode>() && (filter_column_node = filter_arguments_nodes[1]->as<ColumnNode>())
                 && filter_column_node->getColumnName() == column_node->getColumnName())
             {
                 /// Rewrite arrayExists(x -> elem = x, arr) -> has(arr, elem)
