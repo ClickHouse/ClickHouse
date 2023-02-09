@@ -4401,7 +4401,13 @@ class ClickHouseInstance:
 
     def create_format_schema(self, file_name, content):
         self.exec_in_container(
-            ["bash", "-c", "echo '{}' > {}".format(content, "/var/lib/clickhouse/format_schemas/" + file_name)]
+            [
+                "bash",
+                "-c",
+                "echo '{}' > {}".format(
+                    content, "/var/lib/clickhouse/format_schemas/" + file_name
+                ),
+            ]
         )
 
 class ClickHouseKiller(object):
