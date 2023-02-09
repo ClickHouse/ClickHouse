@@ -77,6 +77,8 @@ struct S3Settings
         /// See https://github.com/aws/aws-sdk-cpp/issues/1558 and also the function S3ErrorMarshaller::ExtractRegion() for more information.
         bool allow_head_object_request = true;
 
+        bool throw_on_zero_files_match = false;
+
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
 
         RequestSettings() = default;

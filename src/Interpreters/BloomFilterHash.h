@@ -94,6 +94,8 @@ struct BloomFilterHash
         else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
+        else if (which.isIPv4()) return build_hash_column(getNumberTypeHash<IPv4, IPv4>(field));
+        else if (which.isIPv6()) return build_hash_column(getNumberTypeHash<IPv6, IPv6>(field));
         else if (which.isString()) return build_hash_column(getStringTypeHash(field));
         else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
         else throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
@@ -156,6 +158,8 @@ struct BloomFilterHash
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
         else if (which.isUUID()) getNumberTypeHash<UUID, is_first>(column, vec, pos);
+        else if (which.isIPv4()) getNumberTypeHash<IPv4, is_first>(column, vec, pos);
+        else if (which.isIPv6()) getNumberTypeHash<IPv6, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
         else throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
