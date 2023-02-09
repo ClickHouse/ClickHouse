@@ -3313,7 +3313,7 @@ FROM fuse_tbl
 ## optimize_rewrite_aggregate_function_with_if
 
 Rewrite aggregate functions with if expression as argument when logically equivalent.
-For example, `avg(if(cond, col, null))` can be rewritten to `avgIf(cond, col)`. It may improve performance.
+For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
 Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
