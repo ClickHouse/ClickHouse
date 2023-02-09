@@ -298,7 +298,7 @@ if __name__ == "__main__":
             ]
         )
         hung_check_log = os.path.join(args.output_folder, "hung_check.log")
-        tee = Popen(['/usr/bin/tee', hung_check_log], stdin=PIPE)
+        tee = Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE)
         res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
         tee.stdin.close()
         if res != 0 and have_long_running_queries:
