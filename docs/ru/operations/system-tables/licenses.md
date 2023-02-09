@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/licenses
----
 # system.licenses {#system-tables_system.licenses}
 
 Содержит информацию о лицензиях сторонних библиотек, которые находятся в директории [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) исходных кодов ClickHouse.
@@ -38,3 +35,4 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 └────────────────────┴──────────────┴─────────────────────────────────────┘
 
 ```
+

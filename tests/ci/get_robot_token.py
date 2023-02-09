@@ -1,17 +1,8 @@
 #!/usr/bin/env python3
 import logging
-from dataclasses import dataclass
 
 import boto3  # type: ignore
-from github import Github
-from github.AuthenticatedUser import AuthenticatedUser
-
-
-@dataclass
-class Token:
-    user: AuthenticatedUser
-    value: str
-    rest: int
+from github import Github  # type: ignore
 
 
 def get_parameter_from_ssm(name, decrypt=True, client=None):
@@ -28,7 +19,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         ]
     )["Parameters"]
     assert parameters
-    token = None
+    token = {"login": "", "value": "", "rest": 0}
 
     for token_name in [p["Name"] for p in parameters]:
         value = get_parameter_from_ssm(token_name, True, client)
@@ -38,15 +29,12 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_"):
         user = gh.get_user()
         rest, _ = gh.rate_limiting
         logging.info("Get token with %s remaining requests", rest)
-        if token is None:
-            token = Token(user, value, rest)
-            continue
-        if token.rest < rest:
-            token.user, token.value, token.rest = user, value, rest
+        if token["rest"] < rest:
+            token = {"user": user, "value": value, "rest": rest}
 
-    assert token
+    assert token["value"]
     logging.info(
-        "User %s with %s remaining requests is used", token.user.login, token.rest
+        "User %s with %s remaining requests is used", token["user"].login, token["rest"]
     )
 
-    return token.value
+    return token["value"]

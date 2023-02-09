@@ -39,7 +39,7 @@ static inline bool checkExpression(std::string_view match_str, const std::pair<S
     return match_str == expression.first;
 }
 
-static inline auto methodsFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
+static inline auto methodsFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
 {
     std::vector<String> methods;
     Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
@@ -58,13 +58,12 @@ static inline auto getExpression(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression.substr(6));
 
     if (!compiled_regex->ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "cannot compile re2: {} for http handling rule, error: {}. "
-                        "Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                        expression, compiled_regex->error());
+        throw Exception("cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error() +
+                        ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
     return std::make_pair(expression, compiled_regex);
 }
 
-static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
+static inline auto urlFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path) /// NOLINT
 {
     return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
     {
@@ -75,7 +74,7 @@ static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, c
     };
 }
 
-static inline auto headersFilter(const Poco::Util::AbstractConfiguration & config, const std::string & prefix) /// NOLINT
+static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, const std::string & prefix) /// NOLINT
 {
     std::unordered_map<String, std::pair<String, CompiledRegexPtr>> headers_expression;
     Poco::Util::AbstractConfiguration::Keys headers_name;

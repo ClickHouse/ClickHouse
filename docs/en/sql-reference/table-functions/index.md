@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/table-functions/
 sidebar_label: Table Functions
 sidebar_position: 34
 ---
@@ -39,7 +38,3 @@ You can’t use table functions if the [allow_ddl](../../operations/settings/per
 | [s3](../../sql-reference/table-functions/s3.md)                  | Creates a [S3](../../engines/table-engines/integrations/s3.md)-engine table.                                                           |
 | [sqlite](../../sql-reference/table-functions/sqlite.md)          | Creates a [sqlite](../../engines/table-engines/integrations/sqlite.md)-engine table.                                                       |
 
-:::note
-Only these table functions are enabled in readonly mode :
-null, view, viewIfPermitted, numbers, numbers_mt, generateRandom, values, cluster, clusterAllReplicas 
-:::

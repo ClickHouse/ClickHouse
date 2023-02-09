@@ -23,6 +23,12 @@ int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
 }
 
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_STAT;
+}
+
+
 /// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
 int CertificateReloader::setCertificate(SSL * ssl)
 {
@@ -93,7 +99,7 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
         catch (...)
         {
             init_was_not_made = true;
-            LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+            LOG_ERROR(log, fmt::runtime(getCurrentExceptionMessage(false)));
         }
     }
 }
@@ -112,7 +118,7 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, Poco::Log
     if (ec)
     {
         LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
-            description, new_path, errnoToString(ec.value()));
+            description, new_path, errnoToString(ErrorCodes::CANNOT_STAT, ec.value()));
         return false;
     }
 

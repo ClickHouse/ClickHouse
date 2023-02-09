@@ -59,7 +59,7 @@ namespace DB
 
         if (library_init_result != ARES_SUCCESS || ares_init(&channel) != ARES_SUCCESS)
         {
-            throw DB::Exception(DB::ErrorCodes::DNS_ERROR, "Failed to initialize c-ares");
+            throw DB::Exception("Failed to initialize c-ares", DB::ErrorCodes::DNS_ERROR);
         }
     }
 
@@ -128,7 +128,7 @@ namespace DB
             int number_of_fds_ready = 0;
             if (!readable_sockets.empty())
             {
-                number_of_fds_ready = poll(readable_sockets.data(), static_cast<nfds_t>(readable_sockets.size()), static_cast<int>(timeout));
+                number_of_fds_ready = poll(readable_sockets.data(), readable_sockets.size(), timeout);
             }
 
             if (number_of_fds_ready > 0)

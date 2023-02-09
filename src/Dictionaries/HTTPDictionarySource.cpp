@@ -227,7 +227,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         auto settings_config_prefix = config_prefix + ".http";
         Poco::Net::HTTPBasicCredentials credentials;
-        HTTPHeaderEntries header_entries;
+        ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
         String url;
         String endpoint;
         String format;
@@ -245,8 +245,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             credentials.setPassword(named_collection->configuration.password);
 
             header_entries.reserve(named_collection->configuration.headers.size());
-            for (const auto & [key, value] : named_collection->configuration.headers)
-                header_entries.emplace_back(key, value);
+            for (const auto & header : named_collection->configuration.headers)
+                header_entries.emplace_back(std::make_tuple(header.first, header.second.get<String>()));
         }
         else
         {
@@ -271,7 +271,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                 {
                     const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
                     const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
-                    header_entries.emplace_back(header_key, header_value);
+                    header_entries.emplace_back(std::make_tuple(header_key, header_value));
                 }
             }
 

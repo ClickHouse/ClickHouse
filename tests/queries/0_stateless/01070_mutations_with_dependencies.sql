@@ -1,5 +1,4 @@
 -- Tags: no-parallel, no-s3-storage
--- With s3 policy TTL TO DISK 'default' doesn't work (because we have no default, only 's3')
 
 drop table if exists ttl;
 set mutations_sync = 2;

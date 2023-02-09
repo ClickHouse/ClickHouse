@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/statements/alter/index
 toc_hidden_folder: true
 sidebar_position: 42
 sidebar_label: "Манипуляции с индексами"
@@ -23,3 +22,4 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX name IN PARTI
 `MATERIALIZE INDEX` - перестраивает индекс в указанной партиции. Реализовано как мутация. В случае если нужно перестроить индекс над всеми данными то писать `IN PARTITION` не нужно.
 
 Запрос на изменение индексов реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
+

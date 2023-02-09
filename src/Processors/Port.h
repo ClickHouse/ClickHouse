@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 class Port
 {
-    friend void connect(OutputPort &, InputPort &, bool);
+    friend void connect(OutputPort &, InputPort &);
     friend class IProcessor;
 
 public:
@@ -89,7 +89,7 @@ protected:
             DataPtr() : data(new Data())
             {
                 if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not alignment memory for Port");
+                    throw Exception("Not alignment memory for Port", ErrorCodes::LOGICAL_ERROR);
             }
             /// Pointer can store flags in case of exception in swap.
             ~DataPtr() { delete getPtr(getUInt(data) & PTR_MASK); }
@@ -133,7 +133,7 @@ protected:
         State() : data(new Data())
         {
             if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not alignment memory for Port");
+                throw Exception("Not alignment memory for Port", ErrorCodes::LOGICAL_ERROR);
         }
 
         ~State()
@@ -153,14 +153,14 @@ protected:
 
             /// It's possible to push data into finished port. Will just ignore it.
             /// if (flags & IS_FINISHED)
-            ///    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push block to finished port.");
+            ///    throw Exception("Cannot push block to finished port.", ErrorCodes::LOGICAL_ERROR);
 
             /// It's possible to push data into port which is not needed now.
             /// if ((flags & IS_NEEDED) == 0)
-            ///    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push block to port which is not needed.");
+            ///    throw Exception("Cannot push block to port which is not needed.", ErrorCodes::LOGICAL_ERROR);
 
             if (unlikely(flags & HAS_DATA))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot push block to port which already has data");
+                throw Exception("Cannot push block to port which already has data", ErrorCodes::LOGICAL_ERROR);
         }
 
         void ALWAYS_INLINE pull(DataPtr & data_, std::uintptr_t & flags, bool set_not_needed = false)
@@ -174,10 +174,10 @@ protected:
 
             /// It's ok to check because this flag can be changed only by pulling thread.
             if (unlikely((flags & IS_NEEDED) == 0) && !set_not_needed)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pull block from port which is not needed");
+                throw Exception("Cannot pull block from port which is not needed", ErrorCodes::LOGICAL_ERROR);
 
             if (unlikely((flags & HAS_DATA) == 0))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pull block from port which has no data");
+                throw Exception("Cannot pull block from port which has no data", ErrorCodes::LOGICAL_ERROR);
         }
 
         std::uintptr_t ALWAYS_INLINE setFlags(std::uintptr_t flags, std::uintptr_t mask)
@@ -225,7 +225,7 @@ public:
     void ALWAYS_INLINE assumeConnected() const
     {
         if (unlikely(!isConnected()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Port is not connected");
+            throw Exception("Port is not connected", ErrorCodes::LOGICAL_ERROR);
     }
 
     bool ALWAYS_INLINE hasData() const
@@ -237,14 +237,14 @@ public:
     IProcessor & getProcessor()
     {
         if (!processor)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Port does not belong to Processor");
+            throw Exception("Port does not belong to Processor", ErrorCodes::LOGICAL_ERROR);
         return *processor;
     }
 
     const IProcessor & getProcessor() const
     {
         if (!processor)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Port does not belong to Processor");
+            throw Exception("Port does not belong to Processor", ErrorCodes::LOGICAL_ERROR);
         return *processor;
     }
 
@@ -267,7 +267,7 @@ protected:
 ///   * You can pull only if port hasData().
 class InputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &, bool);
+    friend void connect(OutputPort &, InputPort &);
 
 private:
     OutputPort * output_port = nullptr;
@@ -390,7 +390,7 @@ public:
 ///   * You can push only if port doesn't hasData().
 class OutputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &, bool);
+    friend void connect(OutputPort &, InputPort &);
 
 private:
     InputPort * input_port = nullptr;
@@ -483,6 +483,6 @@ using InputPorts = std::list<InputPort>;
 using OutputPorts = std::list<OutputPort>;
 
 
-void connect(OutputPort & output, InputPort & input, bool reconnect = false);
+void connect(OutputPort & output, InputPort & input);
 
 }

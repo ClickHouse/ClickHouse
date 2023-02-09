@@ -114,6 +114,4 @@ struct AggregateUtils
     }
 };
 
-const String & getAggregateFunctionCanonicalNameIfAny(const String & name);
-
 }

@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/row_policies
----
 # system.row_policies {#system_tables-row_policies}
 
 Содержит фильтры безопасности уровня строк (политики строк) для каждой таблицы, а также список ролей и/или пользователей, к которым применяются эти политики.
@@ -33,3 +30,4 @@ slug: /ru/operations/system-tables/row_policies
 ## Смотрите также {#see-also}
 
 -   [SHOW POLICIES](../../sql-reference/statements/show.md#show-policies-statement)
+

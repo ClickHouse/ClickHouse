@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/general/how-do-i-contribute-code-to-clickhouse
 title: 我如何为ClickHouse贡献代码?
 toc_hidden: true
 sidebar_position: 120

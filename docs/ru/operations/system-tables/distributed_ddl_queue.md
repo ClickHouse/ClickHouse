@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/distributed_ddl_queue
----
 # system.distributed_ddl_queue {#system_tables-distributed_ddl_queue}
 
 Содержит информацию о [распределенных ddl запросах (секция ON CLUSTER)](../../sql-reference/distributed-ddl.md), которые были выполнены на кластере.
@@ -18,7 +15,7 @@ slug: /ru/operations/system-tables/distributed_ddl_queue
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала запроса.
 -   `query_finish_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время окончания запроса.
 -   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — продолжительность выполнения запроса (в миллисекундах).
--   `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — код исключения из [ZooKeeper](../../operations/tips.mdx#zookeeper).
+-   `exception_code` ([Enum8](../../sql-reference/data-types/enum.md)) — код исключения из [ZooKeeper](../../operations/tips.md#zookeeper).
 
 **Пример**
 
@@ -63,3 +60,4 @@ exception_code:    ZOK
 
 2 rows in set. Elapsed: 0.025 sec.
 ```
+

@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/ext-dict-functions
----
 # 字典函数 {#zi-dian-han-shu}
 
 有关连接和配置外部词典的信息，请参阅[外部词典](../../sql-reference/functions/ext-dict-functions.md)。
@@ -45,3 +42,5 @@ slug: /zh/sql-reference/functions/ext-dict-functions
 `dictHas('dict_name', id)`
 
 -   检查字典是否存在指定的`id`。如果不存在，则返回0;如果存在，则返回1。
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

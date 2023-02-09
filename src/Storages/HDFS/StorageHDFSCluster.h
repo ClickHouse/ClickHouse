@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HDFS
 
@@ -28,13 +28,12 @@ public:
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & compression_method_,
-        bool structure_argument_was_provided_);
+        const String & compression_method_);
 
     std::string getName() const override { return "HDFSCluster"; }
 
     Pipe read(const Names &, const StorageSnapshotPtr &, SelectQueryInfo &,
-        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, size_t /*num_streams*/) override;
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -42,14 +41,19 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
     ClusterPtr getCluster(ContextPtr context) const override;
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const override;
 
 private:
     String cluster_name;
     String uri;
     String format_name;
     String compression_method;
-    bool structure_argument_was_provided;
+
+    mutable ClusterPtr cluster;
+    mutable std::shared_ptr<HDFSSource::DisclosedGlobIterator> iterator;
+    mutable std::shared_ptr<HDFSSource::IteratorWrapper> callback;
+
+    void createIteratorAndCallback(ContextPtr context) const;
 };
 
 

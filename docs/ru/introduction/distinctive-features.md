@@ -1,5 +1,4 @@
 ---
-slug: /ru/introduction/distinctive-features
 sidebar_position: 4
 sidebar_label: "Отличительные возможности ClickHouse"
 ---
@@ -33,9 +32,9 @@ sidebar_label: "Отличительные возможности ClickHouse"
 
 ## Поддержка SQL {#sql-support}
 
-ClickHouse поддерживает [декларативный язык запросов на основе SQL](../sql-reference/index.md) и во [многих случаях](../sql-reference/ansi.mdx) совпадающий с SQL стандартом.
+ClickHouse поддерживает [декларативный язык запросов на основе SQL](../sql-reference/index.md) и во [многих случаях](../sql-reference/ansi.md) совпадающий с SQL стандартом.
 
-Поддерживаются [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), подзапросы в секциях [FROM](../sql-reference/statements/select/from.md), [IN](../sql-reference/operators/in.md), [JOIN](../sql-reference/statements/select/join.md), [функции window](../sql-reference/window-functions/index.mdx), а также скалярные подзапросы.
+Поддерживаются [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), подзапросы в секциях [FROM](../sql-reference/statements/select/from.md), [IN](../sql-reference/operators/in.md), [JOIN](../sql-reference/statements/select/join.md), [функции window](../sql-reference/window-functions/index.md), а также скалярные подзапросы.
 
 Зависимые подзапросы не поддерживаются, но могут стать доступными в будущем.
 
@@ -75,3 +74,4 @@ ClickHouse предоставляет различные способы разм
 2.  Возможность изменять или удалять ранее записанные данные с низкими задержками и высокой частотой запросов не предоставляется. Есть массовое удаление и изменение данных для очистки более не нужного или соответствия [GDPR](https://gdpr-info.eu).
 3.  Разреженный индекс делает ClickHouse плохо пригодным для точечных чтений одиночных строк по своим
     ключам.
+
