@@ -599,7 +599,13 @@ public:
     {
         auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
-        if (use_environment_credentials)
+        /// add explicit credentials to the front of the chain
+        /// because it's manually defined by the user
+        if (!credentials.IsEmpty())
+        {
+            AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
+        }
+        else if (use_environment_credentials)
         {
             static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
             static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
@@ -693,7 +699,6 @@ public:
             }
         }
 
-        AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
         /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
         /// in chain.
         AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
