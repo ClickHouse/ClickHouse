@@ -4410,6 +4410,7 @@ class ClickHouseInstance:
             ]
         )
 
+
 class ClickHouseKiller(object):
     def __init__(self, clickhouse_node):
         self.clickhouse_node = clickhouse_node

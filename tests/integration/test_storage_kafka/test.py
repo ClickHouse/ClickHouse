@@ -4541,7 +4541,7 @@ message Message {
         kafka_create_topic(admin_client, f"{format_name}_err")
 
         messages = ["qwertyuiop", "poiuytrewq", "zxcvbnm"]
-        kafka_produce(kafka_cluster, f'{format_name}_err', messages)
+        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
         attempt = 0
         rows = 0
@@ -4590,7 +4590,7 @@ struct Message
     kafka_create_topic(admin_client, "CapnProto_err")
 
     messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-    kafka_produce(kafka_cluster, 'CapnProto_err', messages)
+    kafka_produce(kafka_cluster, "CapnProto_err", messages)
 
     attempt = 0
     rows = 0
