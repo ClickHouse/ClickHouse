@@ -163,7 +163,7 @@ private:
     /// A subscriber callback is called when an entry queue is deleted
     mutable std::mutex subscribers_mutex;
 
-    using SubscriberCallBack = std::function<void(size_t /* queue_size */)>;
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */, std::unordered_set<String> /*wait_for_ids*/, std::optional<String> /* removed_log_entry_id */)>;
     using Subscribers = std::list<SubscriberCallBack>;
     using SubscriberIterator = Subscribers::iterator;
 
@@ -180,8 +180,8 @@ private:
 
     Subscribers subscribers;
 
-    /// Notify subscribers about queue change
-    void notifySubscribers(size_t new_queue_size);
+    /// Notify subscribers about queue change (new queue size and entry that was removed)
+    void notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id);
 
     /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(
