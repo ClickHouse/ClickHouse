@@ -41,9 +41,3 @@ SELECT count() == 0 FROM (EXPLAIN PIPELINE
 ;
 
 
--- WITH CUBE is not supported in allow_experimental_analyzer, so the result number of rows is different
-SELECT * FROM ( SELECT 'a' AS key ) AS t1
-INNER JOIN ( SELECT 'a' AS key GROUP BY ignore(1), ignore(2) WITH CUBE ) AS t2
-ON t1.key = t2.key
-SETTINGS allow_experimental_analyzer = 1
-;

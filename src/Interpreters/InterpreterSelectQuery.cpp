@@ -1547,6 +1547,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         };
                         /// This optimization relies on the sorting that should buffer the whole stream before emitting any rows.
                         /// It doesn't hold such a guarantee for streams with const keys.
+                        /// Note: it's also doesn't work with the read-in-order optimization.
+                        /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
                         bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream().header, join_clause.key_names_left)
                             && has_non_const(joined_plan->getCurrentDataStream().header, join_clause.key_names_right);
 
