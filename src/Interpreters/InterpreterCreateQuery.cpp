@@ -1703,7 +1703,6 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
 {
-    elem.query_kind = "Create";
     if (!as_table_saved.empty())
     {
         String database = backQuoteIfNeed(as_database_saved.empty() ? getContext()->getCurrentDatabase() : as_database_saved);

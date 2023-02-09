@@ -319,10 +319,10 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
     getTargetTable()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
 }
 
-void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context, bool force_wait)
+void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->mutate(commands, local_context, force_wait);
+    getTargetTable()->mutate(commands, local_context);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)

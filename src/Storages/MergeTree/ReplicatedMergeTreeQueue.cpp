@@ -544,8 +544,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
     if (!found && need_remove_from_zk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
-
-    notifySubscribers(queue_size);
+    notifySubscribers(queue_size, entry->znode_name);
 
     if (!need_remove_from_zk)
         return;
@@ -1363,10 +1362,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 if (!disk->supportZeroCopyReplication())
                     only_s3_storage = false;
 
-            if (!disks.empty() && only_s3_storage && storage.checkZeroCopyLockExists(entry.new_part_name, disks[0]))
+            String replica_to_execute_merge;
+            if (!disks.empty() && only_s3_storage && storage.checkZeroCopyLockExists(entry.new_part_name, disks[0], replica_to_execute_merge))
             {
-                constexpr auto fmt_string = "Not executing merge/mutation for the part {}, waiting other replica to execute it and will fetch after.";
-                out_postpone_reason = fmt::format(fmt_string, entry.new_part_name);
+                constexpr auto fmt_string = "Not executing merge/mutation for the part {}, waiting for {} to execute it and will fetch after.";
+                out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, replica_to_execute_merge);
                 return false;
             }
         }
@@ -1691,6 +1691,7 @@ bool ReplicatedMergeTreeQueue::processEntry(
     {
         std::lock_guard lock(state_mutex);
         entry->exception = saved_exception;
+        entry->last_exception_time = time(nullptr);
         return false;
     }
 
@@ -2464,12 +2465,17 @@ ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
 {
     std::lock_guard lock(state_mutex);
+    std::unordered_set<String> result;
+    result.reserve(queue.size());
+    for (const auto & entry : queue)
+        result.insert(entry->znode_name);
+
     std::lock_guard lock_subscribers(subscribers_mutex);
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
-    /// Atomically notify about current size
-    (*it)(queue.size());
+    /// Notify queue size & log entry ids to avoid waiting for removed entries
+    (*it)(result.size(), result, std::nullopt);
 
     return SubscriberHandler(it, *this);
 }
@@ -2480,16 +2486,16 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size);
+        subscriber_callback(new_queue_size, {}, removed_log_entry_id);
 }
 
 ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
 {
-    notifySubscribers(0);
+    notifySubscribers(0, std::nullopt);
 }
 
 String padIndex(Int64 index)
