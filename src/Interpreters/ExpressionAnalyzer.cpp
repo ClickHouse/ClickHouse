@@ -1801,11 +1801,16 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions));
 }
 
-ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
+ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
 {
     auto actions = std::make_shared<ActionsDAG>(constant_inputs);
-
     getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
+    return actions;
+}
+
+ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
+{
+    auto actions = getConstActionsDAG(constant_inputs);
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 

@@ -37,20 +37,37 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
-    /// Returns the number of unique files in the backup.
+    /// Returns the number of files stored in the backup. Compare with getNumEntries().
     virtual size_t getNumFiles() const = 0;
 
-    /// Returns the number of files were processed for backup or restore
-    virtual size_t getNumProcessedFiles() const = 0;
+    /// Returns the total size of files stored in the backup. Compare with getTotalSizeOfEntries().
+    virtual UInt64 getTotalSize() const  = 0;
 
-    // Returns the total size of processed files for backup or restore
-    virtual UInt64 getProcessedFilesSize() const = 0;
+    /// Returns the number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder or
+    /// the number of files inside the archive if the backup is stored as an archive.
+    /// It's not the same as getNumFiles() if it's an incremental backups or if it contains empty files or duplicates.
+    /// The following is always true: `getNumEntries() <= getNumFiles()`.
+    virtual size_t getNumEntries() const = 0;
 
-    /// Returns the total size of unique files in the backup.
+    /// Returns the size of entries in the backup, i.e. the total size of files inside the folder if the backup is stored as a folder or
+    /// the total size of files inside the archive if the backup is stored as an archive.
+    /// It's not the same as getTotalSize() because it doesn't include the size of duplicates and the size of files from the base backup.
+    /// The following is always true: `getSizeOfEntries() <= getTotalSize()`.
+    virtual UInt64 getSizeOfEntries() const = 0;
+
+    /// Returns the uncompressed size of the backup. It equals to `getSizeOfEntries() + size_of_backup_metadata (.backup)`
     virtual UInt64 getUncompressedSize() const = 0;
 
-    /// Returns the compressed size of the backup. If the backup is not stored as an archive it returns the same as getUncompressedSize().
+    /// Returns the compressed size of the backup. If the backup is not stored as an archive it's the same as getUncompressedSize().
     virtual UInt64 getCompressedSize() const = 0;
+
+    /// Returns the number of files read during RESTORE from this backup.
+    /// The following is always true: `getNumFilesRead() <= getNumFiles()`.
+    virtual size_t getNumReadFiles() const  = 0;
+
+    // Returns the total size of files read during RESTORE from this backup.
+    /// The following is always true: `getNumReadBytes() <= getTotalSize()`.
+    virtual UInt64 getNumReadBytes() const = 0;
 
     /// Returns names of entries stored in a specified directory in the backup.
     /// If `directory` is empty or '/' the functions returns entries in the backup's root.

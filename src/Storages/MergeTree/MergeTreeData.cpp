@@ -1,36 +1,48 @@
 #include "Storages/MergeTree/MergeTreeDataPartBuilder.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Common/escapeForFileName.h>
+#include <Common/Increment.h>
+#include <Common/noexcept_scope.h>
+#include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/SimpleIncrement.h>
+#include <Common/Stopwatch.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/hasNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/hasNullable.h>
 #include <Disks/createVolume.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TreeRewriter.h>
+#include <IO/S3Common.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/S3Common.h>
-#include <Interpreters/Aggregator.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -40,29 +52,19 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/Freeze.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/Freeze.h>
-#include <Common/Increment.h>
-#include <Common/SimpleIncrement.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Disks/TemporaryFileOnDisk.h>
-#include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/noexcept_scope.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <Common/scope_guard_safe.h>
 
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -82,6 +84,7 @@
 #include <filesystem>
 
 #include <fmt/format.h>
+#include <Poco/Logger.h>
 
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
@@ -848,8 +851,14 @@ Block MergeTreeData::getSampleBlockWithVirtualColumns() const
 {
     DataTypePtr partition_value_type = getPartitionValueType();
     return {
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(
+            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "_part"),
+        ColumnWithTypeAndName(
+            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "_partition_id"),
         ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
         ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
 }
@@ -1897,7 +1906,9 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
                 {
                     if (temporary_parts.contains(basename))
                     {
-                        LOG_WARNING(log, "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
+                        /// Actually we don't rely on temporary_directories_lifetime when removing old temporaries directoties,
+                        /// it's just an extra level of protection just in case we have a bug.
+                        LOG_INFO(log, "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
                         continue;
                     }
                     else
@@ -3403,6 +3414,28 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
     }
 }
 
+void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & /*lock*/) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & columns = metadata_snapshot->getColumns();
+
+    if (!hasDynamicSubcolumns(columns))
+        return;
+
+    const auto & part_columns = part->getColumns();
+    for (const auto & part_column : part_columns)
+    {
+        auto storage_column = columns.getPhysical(part_column.name);
+        if (!storage_column.type->hasDynamicSubcolumns())
+            continue;
+
+        auto concrete_storage_column = object_columns.getPhysical(part_column.name);
+
+        /// It will throw if types are incompatible.
+        getLeastCommonTypeForDynamicColumns(storage_column.type, {concrete_storage_column.type, part_column.type}, true);
+    }
+}
+
 void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename)
 {
     part->is_temp = false;
@@ -3437,6 +3470,7 @@ bool MergeTreeData::addTempPart(
 
     checkPartPartition(part, lock);
     checkPartDuplicate(part, out_transaction, lock);
+    checkPartDynamicColumns(part, lock);
 
     DataPartPtr covering_part;
     DataPartsVector covered_parts = getActivePartsToReplace(part->info, part->name, covering_part, lock);
@@ -3477,6 +3511,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     part->assertState({DataPartState::Temporary});
     checkPartPartition(part, lock);
     checkPartDuplicate(part, out_transaction, lock);
+    checkPartDynamicColumns(part, lock);
 
     PartHierarchy hierarchy = getPartHierarchy(part->info, DataPartState::Active, lock);
 
@@ -6793,6 +6828,14 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
+    if (query_context->getClientInfo().collaborate_with_initiator)
+        return QueryProcessingStage::Enum::FetchColumns;
+
+    if (query_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
+        && !query_context->getClientInfo().collaborate_with_initiator
+        && to_stage >= QueryProcessingStage::WithMergeableState)
+        return QueryProcessingStage::Enum::WithMergeableState;
+
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
         if (auto projection = getQueryProcessingStageWithAggregateProjection(query_context, storage_snapshot, query_info))
@@ -7479,7 +7522,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
         }
         catch (...)
         {
-            write_part_log(ExecutionStatus::fromCurrentException());
+            write_part_log(ExecutionStatus::fromCurrentException("", true));
             if (cloned_part)
                 cloned_part->remove();
 
@@ -7551,7 +7594,19 @@ MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
     if (!write_ahead_log)
     {
         auto reservation = reserveSpace(getSettings()->write_ahead_log_max_bytes);
-        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
+        for (const auto & disk: reservation->getDisks())
+        {
+            if (!disk->isRemote())
+            {
+                write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk);
+                break;
+            }
+        }
+
+        if (!write_ahead_log)
+            throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Can't store write ahead log in remote disk. It makes no sense.");
     }
 
     return write_ahead_log;
@@ -7560,10 +7615,10 @@ MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
 NamesAndTypesList MergeTreeData::getVirtuals() const
 {
     return NamesAndTypesList{
-        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
         NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
-        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
