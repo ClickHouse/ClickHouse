@@ -1344,10 +1344,10 @@ NetworkInterface::NetworkInterfaceList NetworkInterface::list()
 //
 // BSD variants, QNX(?) and Solaris
 //
-#include <sys/types.h>
+/// #include <sys/types.h>
 #include <sys/socket.h>
-#include <ifaddrs.h>
-#include <net/if.h>
+/// #include <ifaddrs.h>
+/// #include <net/if.h>
 #include <net/if_dl.h>
 #ifndef POCO_NO_NET_IFTYPES
 #include <net/if_types.h>
@@ -1526,7 +1526,7 @@ NetworkInterface::Map NetworkInterface::map(bool ipOnly, bool upOnly)
 #include <linux/if_packet.h>
 #endif
 #include <net/if_arp.h>
-#include <iostream>
+/// #include <iostream>
 
 namespace Poco {
 namespace Net {
