@@ -42,7 +42,7 @@ namespace Crypto {
 
 
 class Crypto_API OpenSSLInitializer
-	/// Initalizes the OpenSSL library.
+	/// Initializes the OpenSSL library.
 	///
 	/// The class ensures the earliest initialization and the
 	/// latest shutdown of the OpenSSL library.
