@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -16,7 +15,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
@@ -56,18 +55,14 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
 
-    if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor().visit(*ast_create_query.select);
-
     if (ast_create_query.as_table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
-        auto table_function_ast = ast_create_query.as_table_function->ptr();
-        auto table_function = factory.get(table_function_ast, context);
+        auto table_function = factory.get(ast_create_query.as_table_function, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-        StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
+        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.getTable(), storage};
     }
@@ -87,7 +82,7 @@ std::pair<String, StoragePtr> createTableFromAST(
                                                            "it's a bug or result of manual intervention in metadata files");
 
             if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(ast_create_query.storage->engine->name))
-                throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
+                throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
             /// Leave columns empty.
         }
         else
@@ -118,10 +113,11 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
-
-    /// Clean the query from temporary flags.
-    cleanupObjectDefinitionFromTemporaryFlags(*create);
+    {
+        WriteBufferFromOwnString query_buf;
+        formatAST(*query, query_buf, true);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query_buf.str());
+    }
 
     if (!create->is_dictionary)
         create->attach = true;
@@ -129,6 +125,20 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->temporary);
     create->database.reset();
+    create->as_database.clear();
+    create->as_table.clear();
+    create->if_not_exists = false;
+    create->is_populate = false;
+    create->replace_view = false;
+    create->replace_table = false;
+    create->create_or_replace = false;
+
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
+    if (!create->isView())
+        create->select = nullptr;
+
+    create->format = nullptr;
+    create->out_file = nullptr;
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -186,7 +196,6 @@ void DatabaseOnDisk::createTable(
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
-        assert(fs::exists(getObjectMetadataPath(table_name)));
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
         attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
@@ -204,9 +213,8 @@ void DatabaseOnDisk::createTable(
         if (create.uuid != create_detached.uuid)
             throw Exception(
                     ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "Table {}.{} already exist (detached or detached permanently). To attach it back "
-                    "you need to use short ATTACH syntax (ATTACH TABLE {}.{};)",
-                    backQuote(getDatabaseName()), backQuote(table_name),
+                    "Table {}.{} already exist (detached permanently). To attach it back "
+                    "you need to use short ATTACH syntax or a full statement with the same UUID",
                     backQuote(getDatabaseName()), backQuote(table_name));
     }
 
@@ -232,7 +240,7 @@ void DatabaseOnDisk::createTable(
 
 /// If the table was detached permanently we will have a flag file with
 /// .sql.detached extension, is not needed anymore since we attached the table back
-void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool)
+void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool) const
 {
     try
     {
@@ -284,7 +292,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     }
 }
 
-void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
+void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
@@ -312,7 +320,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(__PRETTY_FUNCTION__)));
         attachTable(local_context, table_name, table, table_data_path_relative);
         if (renamed)
             fs::rename(table_metadata_path_drop, table_metadata_path);
@@ -324,11 +332,11 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
 {
-    std::lock_guard lock(mutex);
-    checkMetadataFilenameAvailabilityUnlocked(to_table_name);
+    std::unique_lock lock(mutex);
+    checkMetadataFilenameAvailabilityUnlocked(to_table_name, lock);
 }
 
-void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
+void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const
 {
     String table_metadata_path = getObjectMetadataPath(to_table_name);
 
@@ -337,11 +345,9 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
         if (fs::exists(detached_permanently_flag))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
-                            backQuote(database_name), backQuote(to_table_name));
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)", backQuote(database_name), backQuote(to_table_name));
         else
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
-                            backQuote(database_name), backQuote(to_table_name));
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
     }
 }
 
@@ -354,7 +360,7 @@ void DatabaseOnDisk::renameTable(
         bool dictionary)
 {
     if (exchange)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tables can be exchanged only in Atomic databases");
+        throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
 
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
@@ -367,7 +373,7 @@ void DatabaseOnDisk::renameTable(
         else if (dynamic_cast<DatabaseAtomic *>(this) && typeid_cast<DatabaseOrdinary *>(&to_database) && getEngineName() == "Replicated")
             from_atomic_to_ordinary = true;
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
+            throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     auto table_data_relative_path = getTableDataPath(table_name);
@@ -377,20 +383,16 @@ void DatabaseOnDisk::renameTable(
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, local_context);
     if (dictionary && table && !table->isDictionary())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
-
-    /// We have to lock the table before detaching, because otherwise lockExclusively will throw. But the table may not exist.
-    bool need_lock = table != nullptr;
-    if (need_lock)
-        table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+        throw Exception("Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables", ErrorCodes::INCORRECT_QUERY);
 
     detachTable(local_context, table_name);
-    if (!need_lock)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table was detached without locking, it's a bug");
 
     UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
+        table_lock = table->lockExclusively(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+
         table_metadata_path = getObjectMetadataPath(table_name);
         attach_query = parseQueryFromMetadata(log, local_context, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
@@ -404,30 +406,16 @@ void DatabaseOnDisk::renameTable(
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
             target_db->checkMetadataFilenameAvailability(to_table_name);
 
-        /// This place is actually quite dangerous. Since data directory is moved to store/
-        /// DatabaseCatalog may try to clean it up as unused. We add UUID mapping to avoid this.
-        /// However, we may fail after data directory move, but before metadata file creation in the destination db.
-        /// In this case nothing will protect data directory (except 30-days timeout).
-        /// But this situation (when table in Ordinary database is partially renamed) require manual intervention anyway.
-        if (from_ordinary_to_atomic)
-        {
-            DatabaseCatalog::instance().addUUIDMapping(create.uuid);
-            if (table->storesDataOnDisk())
-                LOG_INFO(log, "Moving table from {} to {}", table_data_relative_path, to_database.getTableDataPath(create));
-        }
-
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
         table->rename(to_database.getTableDataPath(create), StorageID(create));
     }
     catch (const Exception &)
     {
-        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         throw;
     }
     catch (const Poco::Exception & e)
     {
-        setDetachedTableNotInUseForce(prev_uuid);
         attachTable(local_context, table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
@@ -469,12 +457,13 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     catch (const Exception & e)
     {
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table {} doesn't exist", backQuote(table_name));
-        else if (!is_system_storage && throw_on_error)
+            throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
+                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (is_system_storage)
+            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
+        else if (throw_on_error)
             throw;
     }
-    if (!ast && is_system_storage)
-        ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
     return ast;
 }
 
@@ -511,7 +500,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
-    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    assert(tables.empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
         fs::remove_all(local_context->getPath() + getDataPath());
@@ -544,19 +533,11 @@ String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
     String table_metadata_path = getObjectMetadataPath(object_name);
-    try
-    {
+
+    if (fs::exists(table_metadata_path))
         return FS::getModificationTime(table_metadata_path);
-    }
-    catch (const fs::filesystem_error & e)
-    {
-        if (e.code() == std::errc::no_such_file_or_directory)
-        {
-            return static_cast<time_t>(0);
-        }
-        else
-            throw;
-    }
+    else
+        return static_cast<time_t>(0);
 }
 
 void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const IteratingFunction & process_metadata_file) const
@@ -676,7 +657,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
                              "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
-        throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
     else if (!ast)
         return nullptr;
 
@@ -718,8 +699,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}",
-                            backQuote(getDatabaseName()), backQuote(table_name));
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
         else
             return nullptr;
     }
@@ -727,16 +707,11 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     /// setup create table query storage info.
     auto ast_engine = std::make_shared<ASTFunction>();
     ast_engine->name = storage->getName();
-    ast_engine->no_empty_args = true;
     auto ast_storage = std::make_shared<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-    auto create_table_query = DB::getCreateQueryFromStorage(storage,
-                                                            ast_storage,
-                                                            false,
-                                                            max_parser_depth,
-                                                            throw_on_error);
+    auto create_table_query = DB::getCreateQueryFromStorage(storage, ast_storage, false,
+                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
                             std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
@@ -746,6 +721,8 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
+    std::lock_guard lock(modify_settings_mutex);
+
     auto create_query = getCreateDatabaseQuery()->clone();
     auto * create = create_query->as<ASTCreateQuery>();
     auto * settings = create->storage->settings;
@@ -778,7 +755,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    String database_name_escaped = escapeForFileName(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
+    String database_name_escaped = escapeForFileName(database_name);
     fs::path metadata_root_path = fs::canonical(query_context->getGlobalContext()->getPath());
     fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");

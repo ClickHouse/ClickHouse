@@ -1,7 +1,4 @@
--- Tags: no-parallel-replicas
--- Merge tables doesn't work with parallel replicas currently
-
-SET max_execution_speed = 4000000, timeout_before_checking_execution_speed = 0;
+SET max_execution_speed = 4000000, timeout_before_checking_execution_speed = 0.001;
 
 CREATE TEMPORARY TABLE times (t DateTime);
 

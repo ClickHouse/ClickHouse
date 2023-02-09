@@ -4,8 +4,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -13,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -22,9 +25,6 @@ namespace Poco
 }
 
 
-template <class T>
-class ConcurrentBoundedQueue;
-
 namespace DB
 {
 
@@ -33,6 +33,7 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCPU;
 class QueryThreadLog;
+struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
@@ -79,7 +80,7 @@ public:
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
     std::function<void()> fatal_error_callback;
 
-    std::unordered_set<UInt64> thread_ids;
+    std::vector<UInt64> thread_ids;
     std::unordered_set<ThreadStatusPtr> threads;
 
     /// The first thread created this thread group
@@ -97,16 +98,8 @@ public:
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
-/**
- * We use **constinit** here to tell the compiler the current_thread variable is initialized.
- * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
- * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
- * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
- * See also:
- * - https://en.cppreference.com/w/cpp/language/constinit
- * - https://github.com/ClickHouse/ClickHouse/pull/40078
- */
-extern thread_local constinit ThreadStatus * current_thread;
+
+extern thread_local ThreadStatus * current_thread;
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
@@ -137,6 +130,12 @@ public:
 
     using Deleter = std::function<void()>;
     Deleter deleter;
+
+    // This is the current most-derived OpenTelemetry span for this thread. It
+    // can be changed throughout the query execution, whenever we enter a new
+    // span or exit it. See OpenTelemetrySpanHolder that is normally responsible
+    // for these changes.
+    OpenTelemetryTraceContext thread_trace_context;
 
 protected:
     ThreadGroupStatusPtr thread_group;
@@ -176,8 +175,8 @@ protected:
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     std::function<void()> fatal_error_callback;
 
-    /// See setInternalThread()
-    bool internal_thread = false;
+    /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
+    bool query_profiler_enabled = true;
 
     /// Requires access to query_id.
     friend class MemoryTrackerThreadSwitcher;
@@ -207,7 +206,7 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    std::string_view getQueryId() const
+    StringRef getQueryId() const
     {
         return query_id;
     }
@@ -217,26 +216,11 @@ public:
         return query_context.lock();
     }
 
-    auto getGlobalContext() const
+    void disableProfiling()
     {
-        return global_context.lock();
+        assert(!query_profiler_real && !query_profiler_cpu);
+        query_profiler_enabled = false;
     }
-
-    /// "Internal" ThreadStatus is used for materialized views for separate
-    /// tracking into system.query_views_log
-    ///
-    /// You can have multiple internal threads, but only one non-internal with
-    /// the same thread_id.
-    ///
-    /// "Internal" thread:
-    /// - cannot have query profiler
-    ///   since the running (main query) thread should already have one
-    /// - should not try to obtain latest counter on detach
-    ///   because detaching of such threads will be done from a different
-    ///   thread_id, and some counters are not available (i.e. getrusage()),
-    ///   but anyway they are accounted correctly in the main ThreadStatus of a
-    ///   query.
-    void setInternalThread();
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -293,7 +277,7 @@ protected:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
 
-    void assertState(ThreadState permitted_state, const char * description = nullptr) const;
+    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
 
 private:

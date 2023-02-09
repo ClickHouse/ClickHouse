@@ -72,19 +72,11 @@ private:
         Stopwatch watch;
 
         NodeInfo current_node;
-        /// Current node may not belong to cluster, to be just an observer.
-        bool current_node_is_observer = false;
 
-        explicit ClusterInfo(const String & name_,
-                             const String & zk_root_,
-                             UInt16 port,
-                             bool secure,
-                             size_t shard_id,
-                             bool observer_mode)
+        explicit ClusterInfo(const String & name_, const String & zk_root_, UInt16 port, bool secure, size_t shard_id)
             : name(name_)
             , zk_root(zk_root_)
             , current_node(getFQDNOrHostName() + ":" + toString(port), secure, shard_id)
-            , current_node_is_observer(observer_mode)
         {
         }
     };

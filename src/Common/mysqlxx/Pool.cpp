@@ -9,7 +9,6 @@
 #include <mysqlxx/Pool.h>
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/logger_useful.h>
 #include <ctime>
 
 

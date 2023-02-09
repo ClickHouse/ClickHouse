@@ -40,11 +40,11 @@ namespace
     {
         const auto & info = chunk.getChunkInfo();
         if (!info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk.");
+            throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
 
         const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
+            throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
 
         return agg_info;
     }
@@ -53,29 +53,33 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
-            : ISource(tmp_stream_->getHeader())
-            , tmp_stream(tmp_stream_)
-        {}
+        SourceFromNativeStream(const Block & header, const std::string & path)
+                : ISource(header), file_in(path), compressed_in(file_in),
+                  block_in(std::make_unique<NativeReader>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+        {
+        }
 
         String getName() const override { return "SourceFromNativeStream"; }
 
         Chunk generate() override
         {
-            if (!tmp_stream)
+            if (!block_in)
                 return {};
 
-            auto block = tmp_stream->read();
+            auto block = block_in->read();
             if (!block)
             {
-                tmp_stream = nullptr;
+                block_in.reset();
                 return {};
             }
+
             return convertToChunk(block);
         }
 
     private:
-        TemporaryFileStream * tmp_stream;
+        ReadBufferFromFile file_in;
+        CompressedReadBuffer compressed_in;
+        std::unique_ptr<NativeReader> block_in;
     };
 }
 
@@ -106,7 +110,7 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         Arena * arena_)
-        : ISource(params_->getHeader(), false)
+        : ISource(params_->getHeader())
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
@@ -199,7 +203,7 @@ public:
     {
         auto & output = outputs.front();
 
-        if (finished && single_level_chunks.empty())
+        if (finished && !has_input)
         {
             output.finish();
             return Status::Finished;
@@ -226,7 +230,7 @@ public:
         if (!processors.empty())
             return Status::ExpandPipeline;
 
-        if (!single_level_chunks.empty())
+        if (has_input)
             return preparePushToOutput();
 
         /// Single level case.
@@ -240,23 +244,17 @@ public:
 private:
     IProcessor::Status preparePushToOutput()
     {
-        if (single_level_chunks.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Some ready chunks expected");
-
         auto & output = outputs.front();
-        auto chunk = std::move(single_level_chunks.back());
-        single_level_chunks.pop_back();
-        const auto has_rows = chunk.hasRows();
-        if (has_rows)
-            output.push(std::move(chunk));
+        output.push(std::move(current_chunk));
+        has_input = false;
 
-        if (finished && single_level_chunks.empty())
+        if (finished)
         {
             output.finish();
             return Status::Finished;
         }
 
-        return has_rows ? Status::PortFull : Status::Ready;
+        return Status::PortFull;
     }
 
     /// Read all sources and try to push current bucket.
@@ -270,20 +268,17 @@ private:
             {
                 auto chunk = input.pull();
                 auto bucket = getInfoFromChunk(chunk)->bucket_num;
-                two_level_chunks[bucket] = std::move(chunk);
+                chunks[bucket] = std::move(chunk);
             }
         }
 
         if (!shared_data->is_bucket_processed[current_bucket_num])
             return Status::NeedData;
 
-        if (!two_level_chunks[current_bucket_num])
+        if (!chunks[current_bucket_num])
             return Status::NeedData;
 
-        auto chunk = std::move(two_level_chunks[current_bucket_num]);
-        const auto has_rows = chunk.hasRows();
-        if (has_rows)
-            output.push(std::move(chunk));
+        output.push(std::move(chunks[current_bucket_num]));
 
         ++current_bucket_num;
         if (current_bucket_num == NUM_BUCKETS)
@@ -293,7 +288,7 @@ private:
             return Status::Finished;
         }
 
-        return has_rows ? Status::PortFull : Status::Ready;
+        return Status::PortFull;
     }
 
     AggregatingTransformParamsPtr params;
@@ -303,15 +298,26 @@ private:
     size_t num_threads;
 
     bool is_initialized = false;
+    bool has_input = false;
     bool finished = false;
 
-    Chunks single_level_chunks;
+    Chunk current_chunk;
 
     UInt32 current_bucket_num = 0;
     static constexpr Int32 NUM_BUCKETS = 256;
-    std::array<Chunk, NUM_BUCKETS> two_level_chunks;
+    std::array<Chunk, NUM_BUCKETS> chunks;
 
     Processors processors;
+
+    void setCurrentChunk(Chunk chunk)
+    {
+        if (has_input)
+            throw Exception("Current chunk was already set in "
+                            "ConvertingAggregatedToChunksTransform.", ErrorCodes::LOGICAL_ERROR);
+
+        has_input = true;
+        current_chunk = std::move(chunk);
+    }
 
     void initialize()
     {
@@ -333,7 +339,7 @@ private:
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
-            single_level_chunks.emplace_back(convertToChunk(block));
+            setCurrentChunk(convertToChunk(block));
         }
     }
 
@@ -356,12 +362,11 @@ private:
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M
         else
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+            throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
-        auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
-        for (auto & block : blocks)
-            single_level_chunks.emplace_back(convertToChunk(block));
+        auto block = params->aggregator.prepareBlockAndFillSingleLevel(*first, params->final);
 
+        setCurrentChunk(convertToChunk(block));
         finished = true;
     }
 
@@ -496,8 +501,6 @@ void AggregatingTransform::work()
 
 Processors AggregatingTransform::expandPipeline()
 {
-    if (processors.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not expandPipeline in AggregatingTransform. This is a bug.");
     auto & out = processors.back()->getOutputs().front();
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());
@@ -521,7 +524,7 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
-    if (params->params.only_merge)
+    if (params->only_merge)
     {
         auto block = getInputs().front().getHeader().cloneWithColumns(chunk.detachColumns());
         block = materializeBlock(block);
@@ -530,7 +533,7 @@ void AggregatingTransform::consume(Chunk chunk)
     }
     else
     {
-        if (!params->aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys))
+        if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
             is_consume_finished = true;
     }
 }
@@ -546,7 +549,7 @@ void AggregatingTransform::initGenerate()
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
-        if (params->params.only_merge)
+        if (params->only_merge)
             params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys);
         else
             params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
@@ -560,7 +563,7 @@ void AggregatingTransform::initGenerate()
         elapsed_seconds, src_rows / elapsed_seconds,
         ReadableSize(src_bytes / elapsed_seconds));
 
-    if (params->aggregator.hasTemporaryData())
+    if (params->aggregator.hasTemporaryFiles())
     {
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
@@ -573,7 +576,7 @@ void AggregatingTransform::initGenerate()
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
         return;
 
-    if (!params->aggregator.hasTemporaryData())
+    if (!params->aggregator.hasTemporaryFiles())
     {
         auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
         auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
@@ -600,27 +603,25 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        const auto & tmp_data = params->aggregator.getTemporaryData();
-
+        const auto & files = params->aggregator.getTemporaryFiles();
         Pipe pipe;
+
         {
+            auto header = params->aggregator.getHeader(false);
             Pipes pipes;
 
-            for (auto * tmp_stream : tmp_data.getStreams())
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
+            for (const auto & file : files.files)
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(header, file->path())));
 
             pipe = Pipe::unitePipes(std::move(pipes));
         }
 
-        size_t num_streams = tmp_data.getStreams().size();
-        size_t compressed_size = tmp_data.getStat().compressed_size;
-        size_t uncompressed_size = tmp_data.getStat().uncompressed_size;
         LOG_DEBUG(
             log,
             "Will merge {} temporary files of size {} compressed, {} uncompressed.",
-            num_streams,
-            ReadableSize(compressed_size),
-            ReadableSize(uncompressed_size));
+            files.files.size(),
+            ReadableSize(files.sum_size_compressed),
+            ReadableSize(files.sum_size_uncompressed));
 
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 

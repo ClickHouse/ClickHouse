@@ -5,57 +5,46 @@ import logging
 import subprocess
 import os
 import sys
-from pathlib import Path
-from typing import List, Tuple
 
 from github import Github
 
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from s3_helper import S3Helper
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
+from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import post_commit_status
-from docker_pull_helper import get_image_with_version
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from report import TestResults, read_test_results
-from rerun_helper import RerunHelper
-from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 
 
 def get_run_command(
     build_path, result_folder, repo_tests_path, server_log_folder, image
 ):
     cmd = (
-        "docker run --cap-add=SYS_PTRACE "
-        # a static link, don't use S3_URL or S3_DOWNLOAD
-        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
-        f"-e DISABLE_BC_CHECK={os.environ.get('DISABLE_BC_CHECK', '0')} "
-        # For dmesg and sysctl
-        "--privileged "
-        f"--volume={build_path}:/package_folder "
+        "docker run --cap-add=SYS_PTRACE -e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' "
+        + f"--volume={build_path}:/package_folder "
         f"--volume={result_folder}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
+        f"--volume={server_log_folder}:/var/log/clickhouse-server {image}"
     )
 
     return cmd
 
 
-def process_results(
-    result_folder: str, server_log_path: str, run_log_path: str
-) -> Tuple[str, str, TestResults, List[str]]:
-    test_results = []  # type: TestResults
+def process_results(result_folder, server_log_path, run_log_path):
+    test_results = []
     additional_files = []
     # Just upload all files from result_folder.
-    # If task provides processed results, then it's responsible for content
-    # of result_folder.
+    # If task provides processed results, then it's responsible for content of result_folder.
     if os.path.exists(result_folder):
         test_files = [
             f
@@ -93,23 +82,16 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    try:
-        results_path = Path(result_folder) / "test_results.tsv"
-        test_results = read_test_results(results_path, True)
-        if len(test_results) == 0:
-            raise Exception("Empty results")
-    except Exception as e:
-        return (
-            "error",
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+    results_path = os.path.join(result_folder, "test_results.tsv")
+    with open(results_path, "r", encoding="utf-8") as results_file:
+        test_results = list(csv.reader(results_file, delimiter="\t"))
+    if len(test_results) == 0:
+        raise Exception("Empty results")
 
     return state, description, test_results, additional_files
 
 
-def main():
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -125,7 +107,7 @@ def main():
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -148,7 +130,7 @@ def main():
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = os.path.join(temp_path, "runlog.log")
 
     run_command = get_run_command(
         packages_path, result_path, repo_tests_path, server_log_path, docker_image
@@ -164,7 +146,7 @@ def main():
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )
@@ -176,7 +158,7 @@ def main():
         pr_info.number,
         pr_info.sha,
         test_results,
-        additional_logs,
+        [run_log_path] + additional_logs,
         check_name,
     )
     print(f"::notice ::Report url: {report_url}")
@@ -193,10 +175,3 @@ def main():
         check_name,
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "failure":
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

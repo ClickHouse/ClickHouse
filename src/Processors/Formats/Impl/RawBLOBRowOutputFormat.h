@@ -29,7 +29,8 @@ class RawBLOBRowOutputFormat final : public IRowOutputFormat
 public:
     RawBLOBRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_);
+        const Block & header_,
+        const RowOutputFormatParams & params_);
 
     String getName() const override { return "RawBLOBRowOutputFormat"; }
 

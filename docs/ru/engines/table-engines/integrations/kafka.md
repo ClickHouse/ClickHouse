@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/integrations/kafka
-sidebar_position: 8
-sidebar_label: Kafka
+toc_priority: 8
+toc_title: Kafka
 ---
 
 # Kafka {#kafka}
@@ -87,9 +86,8 @@ SETTINGS
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
-Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
-:::
+!!! attention "Attention"
+    Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
 
 ``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
@@ -169,7 +167,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 ### Поддержка Kerberos {#kafka-kerberos-support}
 
 Чтобы начать работу с Kafka с поддержкой Kerberos, добавьте дочерний элемент `security_protocol` со значением `sasl_plaintext`. Этого будет достаточно, если получен тикет на получение тикета (ticket-granting ticket) Kerberos и он кэшируется средствами ОС.
-ClickHouse может поддерживать учетные данные Kerberos с помощью файла keytab. Рассмотрим дочерние элементы `sasl_kerberos_service_name`, `sasl_kerberos_keytab` и `sasl_kerberos_principal`.
+ClickHouse может поддерживать учетные данные Kerberos с помощью файла keytab. Рассмотрим дочерние элементы `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` и `sasl.kerberos.kinit.cmd`.
 
 Пример:
 
@@ -194,3 +192,4 @@ ClickHouse может поддерживать учетные данные Kerbe
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 -   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+

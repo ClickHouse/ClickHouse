@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -78,7 +78,7 @@ public:
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
                     toString(resolution),
                     getName(),
                     MAX_H3_RES);
@@ -93,7 +93,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3HexAreaKm2)
+void registerFunctionH3HexAreaKm2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3HexAreaKm2>();
 }

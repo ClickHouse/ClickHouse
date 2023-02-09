@@ -1,9 +1,8 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
-#include <IO/ReadSettings.h>
 #include <utility>
 
 namespace Poco { class Logger; }
@@ -12,6 +11,7 @@ namespace DB
 {
 
 class ReadBufferFromRemoteFSGather;
+struct ReadSettings;
 
 /**
  * Reads data from S3/HDFS/Web using stored paths in metadata.
@@ -23,7 +23,7 @@ class ReadBufferFromRemoteFSGather;
 *
 * Buffers chain for diskWeb:
 * AsynchronousIndirectReadBufferFromRemoteFS -> ReadBufferFromRemoteFS ->
-* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHTTP -> ReadBufferFromIStream.
+* -> ReadIndirectBufferFromWebServer -> ReadBufferFromHttp -> ReadBufferFromIStream.
 *
 * We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
@@ -31,7 +31,7 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
-        IAsynchronousReader & reader_, const ReadSettings & settings_,
+        AsynchronousReaderPtr reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
         size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE);
 
@@ -51,10 +51,6 @@ public:
 
     String getInfoForLog() override;
 
-    size_t getFileSize() override;
-
-    bool isIntegratedWithFilesystemCache() const override { return true; }
-
 private:
     bool nextImpl() override;
 
@@ -62,22 +58,11 @@ private:
 
     bool hasPendingDataToRead();
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 
-    enum class FilesystemPrefetchState
-    {
-        USED,
-        CANCELLED_WITH_SEEK,
-        CANCELLED_WITH_RANGE_CHANGE,
-        UNNEEDED,
-    };
-    void resetPrefetch(FilesystemPrefetchState state);
+    AsynchronousReaderPtr reader;
 
-    ReadSettings read_settings;
-
-    IAsynchronousReader & reader;
-
-    Int64 priority;
+    Int32 priority;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
 
@@ -92,6 +77,8 @@ private:
     size_t bytes_to_ignore = 0;
 
     std::optional<size_t> read_until_position;
+
+    bool must_read_until_position;
 
     Poco::Logger * log;
 };

@@ -8,12 +8,11 @@
 
 #include "hasLinuxCapability.h"
 #include <base/unaligned.h>
-#include <Common/logger_useful.h>
 
-#include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
@@ -22,7 +21,6 @@
 
 #if defined(__clang__)
     #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-    #pragma clang diagnostic ignored "-Wnested-anon-types"
 #endif
 
 /// Basic idea is motivated by "iotop" tool.
@@ -119,7 +117,7 @@ struct NetlinkMessage
             }
 
             if (bytes_sent > request_size)
-                throw Exception(ErrorCodes::NETLINK_ERROR, "Wrong result of sendto system call: bytes_sent is greater than request size");
+                throw Exception("Wrong result of sendto system call: bytes_sent is greater than request size", ErrorCodes::NETLINK_ERROR);
 
             if (bytes_sent == request_size)
                 break;
@@ -134,10 +132,10 @@ struct NetlinkMessage
         ssize_t bytes_received = ::recv(fd, this, sizeof(*this), 0);
 
         if (header.nlmsg_type == NLMSG_ERROR)
-            throw Exception(ErrorCodes::NETLINK_ERROR, "Can't receive Netlink response: error {}", std::to_string(error.error));
+            throw Exception("Can't receive Netlink response: error " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
 
         if (!is_nlmsg_ok(&header, bytes_received))
-            throw Exception(ErrorCodes::NETLINK_ERROR, "Can't receive Netlink response: wrong number of bytes received");
+            throw Exception("Can't receive Netlink response: wrong number of bytes received", ErrorCodes::NETLINK_ERROR);
     }
 };
 
@@ -186,7 +184,7 @@ UInt16 getFamilyIdImpl(int fd)
     const NetlinkMessage::Attribute * attr = answer.payload.attribute.next();
 
     if (attr->header.nla_type != CTRL_ATTR_FAMILY_ID)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Received wrong attribute as an answer to GET_FAMILY Netlink command");
+        throw Exception("Received wrong attribute as an answer to GET_FAMILY Netlink command", ErrorCodes::NETLINK_ERROR);
 
     return unalignedLoad<UInt16>(attr->payload);
 }
@@ -205,20 +203,6 @@ bool checkPermissionsImpl()
     try
     {
         TaskStatsInfoGetter();
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::NETLINK_ERROR)
-        {
-            /// This error happens all the time when running inside Docker - consider it ok,
-            /// don't create noise with this error.
-            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
-        }
-        else
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-        return false;
     }
     catch (...)
     {
@@ -253,36 +237,27 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
     if (netlink_socket_fd < 0)
         throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-    try
+    /// On some containerized environments, operation on Netlink socket could hang forever.
+    /// We set reasonably small timeout to overcome this issue.
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000;
+
+    if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
+        throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+
+    union
     {
-        /// On some containerized environments, operation on Netlink socket could hang forever.
-        /// We set reasonably small timeout to overcome this issue.
+        ::sockaddr_nl addr{};
+        ::sockaddr sockaddr;
+    };
+    addr.nl_family = AF_NETLINK;
 
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 50000;
+    if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
+        throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-        if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
-            throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
-
-        union
-        {
-            ::sockaddr_nl addr{};
-            ::sockaddr sockaddr;
-        };
-        addr.nl_family = AF_NETLINK;
-
-        if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
-            throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
-
-        taskstats_family_id = getFamilyId(netlink_socket_fd);
-    }
-    catch (...)
-    {
-        if (netlink_socket_fd >= 0)
-            close(netlink_socket_fd);
-        throw;
-    }
+    taskstats_family_id = getFamilyId(netlink_socket_fd);
 }
 
 
@@ -290,24 +265,26 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
 {
     NetlinkMessage answer = query(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(tid));
 
-    const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
-    if (attr->header.nla_type != TASKSTATS_TYPE_AGGR_PID)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Expected TASKSTATS_TYPE_AGGR_PID");
+    for (const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
+        attr < answer.end();
+        attr = attr->next())
+    {
+        if (attr->header.nla_type == TASKSTATS_TYPE_AGGR_TGID || attr->header.nla_type == TASKSTATS_TYPE_AGGR_PID)
+        {
+            for (const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
+                nested_attr < attr->next();
+                nested_attr = nested_attr->next())
+            {
+                if (nested_attr->header.nla_type == TASKSTATS_TYPE_STATS)
+                {
+                    out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
+                    return;
+                }
+            }
+        }
+    }
 
-    /// TASKSTATS_TYPE_AGGR_PID
-    const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
-    if (nested_attr->header.nla_type != TASKSTATS_TYPE_PID)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Expected TASKSTATS_TYPE_PID");
-    if (nested_attr == nested_attr->next())
-        throw Exception(ErrorCodes::NETLINK_ERROR, "No TASKSTATS_TYPE_STATS packet after TASKSTATS_TYPE_PID");
-    nested_attr = nested_attr->next();
-    if (nested_attr->header.nla_type != TASKSTATS_TYPE_STATS)
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Expected TASKSTATS_TYPE_STATS");
-
-    out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
-
-    if (attr->next() != answer.end())
-        throw Exception(ErrorCodes::NETLINK_ERROR, "Unexpected end of response");
+    throw Exception("There is no TASKSTATS_TYPE_STATS attribute in the Netlink response", ErrorCodes::NETLINK_ERROR);
 }
 
 

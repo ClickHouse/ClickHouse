@@ -1,11 +1,9 @@
 ---
-slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
-sidebar_position: 41
-sidebar_label: Storing Dictionaries in Memory
+toc_priority: 41
+toc_title: Storing Dictionaries in Memory
 ---
-import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# Storing Dictionaries in Memory
+# Storing Dictionaries in Memory {#dicts-external-dicts-dict-layout}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -23,9 +21,7 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 -   The dictionary being accessed could not be loaded.
 -   Error querying a `cached` dictionary.
 
-You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
-
-<CloudDetails />
+You can view the list of external dictionaries and their statuses in the `system.dictionaries` table.
 
 The configuration looks like this:
 
@@ -52,36 +48,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-Dictionaries without word `complex-key*` in a layout have a key with [UInt64](../../../sql-reference/data-types/int-uint.md) type, `complex-key*` dictionaries have a composite key (complex, with arbitrary types).
-
-[UInt64](../../../sql-reference/data-types/int-uint.md) keys in XML dictionaries are defined with `<id>` tag.
-
-Configuration example (column key_column has UInt64 type):
-```xml
-...
-<structure>
-    <id>
-        <name>key_column</name>
-    </id>
-...
-```
-
-Composite `complex` keys XML dictionaries are defined `<key>` tag.
-
-Configuration example of a composite key (key has one element with [String](../../../sql-reference/data-types/string.md) type):
-```xml
-...
-<structure>
-    <key>
-        <attribute>
-            <name>country_code</name>
-            <type>String</type>
-        </attribute>
-    </key>
-...
-```
-
-## Ways to Store Dictionaries in Memory
+## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
@@ -100,7 +67,7 @@ Configuration example of a composite key (key has one element with [String](../.
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
 
-### flat
+### flat {#flat}
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
@@ -127,11 +94,14 @@ or
 LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 ```
 
-### hashed
+### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
+If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
+
+- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
+- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
@@ -139,33 +109,8 @@ Configuration example:
 
 ``` xml
 <layout>
-  <hashed />
-</layout>
-```
-
-or
-
-``` sql
-LAYOUT(HASHED())
-```
-
-If `shards` greater then 1 (default is `1`) the dictionary will load data in parallel, useful if you have huge amount of elements in one dictionary.
-
-Configuration example:
-
-``` xml
-<layout>
   <hashed>
-    <shards>10</shards>
-    <!-- Size of the backlog for blocks in parallel queue.
-
-         Since the bottleneck in parallel loading is rehash, and so to avoid
-         stalling because of thread is doing rehash, you need to have some
-         backlog.
-
-         10000 is good balance between memory and speed.
-         Even for 10e10 elements and can handle all the load without starvation. -->
-    <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+    <preallocate>0</preallocate>
   </hashed>
 </layout>
 ```
@@ -173,14 +118,14 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED(SHARDS 10 [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(HASHED(PREALLOCATE 0))
 ```
 
-### sparse_hashed
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
+It will be also preallocated so as `hashed` (with `preallocate` set to `true`), and note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
@@ -193,12 +138,10 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(SPARSE_HASHED())
+LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 ```
 
-It is also possible to use `shards` for this type of dictionary, and again it is more important for `sparse_hashed` then for `hashed`, since `sparse_hashed` is slower.
-
-### complex_key_hashed
+### complex_key_hashed {#complex-key-hashed}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `hashed`.
 
@@ -206,20 +149,17 @@ Configuration example:
 
 ``` xml
 <layout>
-  <complex_key_hashed>
-    <shards>1</shards>
-    <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
-  </complex_key_hashed>
+  <complex_key_hashed />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### complex_key_sparse_hashed
+### complex_key_sparse_hashed {#complex-key-sparse-hashed}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed).
 
@@ -227,23 +167,19 @@ Configuration example:
 
 ``` xml
 <layout>
-  <complex_key_sparse_hashed>
-    <shards>1</shards>
-  </complex_key_sparse_hashed>
+  <complex_key_sparse_hashed />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
 ```
 
-### hashed_array
+### hashed_array {#dicts-external_dicts_dict_layout-hashed-array}
 
 The dictionary is completely stored in memory. Each attribute is stored in an array. The key attribute is stored in the form of a hashed table where value is an index in the attributes array. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
-
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
@@ -262,7 +198,7 @@ or
 LAYOUT(HASHED_ARRAY())
 ```
 
-### complex_key_hashed_array
+### complex_key_hashed_array {#complex-key-hashed-array}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to [hashed_array](#dicts-external_dicts_dict_layout-hashed-array).
 
@@ -280,48 +216,44 @@ or
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 ```
 
-### range_hashed
+### range_hashed {#range-hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
 This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
 
 Example: The table contains discounts for each advertiser in the format:
 
 ``` text
-┌─advertiser_id─┬─discount_start_date─┬─discount_end_date─┬─amount─┐
-│           123 │          2015-01-16 │        2015-01-31 │   0.25 │
-│           123 │          2015-01-01 │        2015-01-15 │   0.15 │
-│           456 │          2015-01-01 │        2015-01-15 │   0.05 │
-└───────────────┴─────────────────────┴───────────────────┴────────┘
++---------|-------------|-------------|------+
+| advertiser id | discount start date | discount end date | amount |
++===============+=====================+===================+========+
+| 123           | 2015-01-01          | 2015-01-15        | 0.15   |
++---------|-------------|-------------|------+
+| 123           | 2015-01-16          | 2015-01-31        | 0.25   |
++---------|-------------|-------------|------+
+| 456           | 2015-01-01          | 2015-01-15        | 0.05   |
++---------|-------------|-------------|------+
 ```
 
 To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
-:::warning
-Values of `range_min` and `range_max` should fit in `Int64` type.
-:::
+!!! warning "Warning"
+    Values of `range_min` and `range_max` should fit in `Int64` type.
 
 Example:
 
 ``` xml
-<layout>
-    <range_hashed>
-        <!-- Strategy for overlapping ranges (min/max). Default: min (return a matching range with the min(range_min -> range_max) value) -->
-        <range_lookup_strategy>min</range_lookup_strategy>
-    </range_hashed>
-</layout>
 <structure>
     <id>
-        <name>advertiser_id</name>
+        <name>Id</name>
     </id>
     <range_min>
-        <name>discount_start_date</name>
+        <name>first</name>
         <type>Date</type>
     </range_min>
     <range_max>
-        <name>discount_end_date</name>
+        <name>last</name>
         <type>Date</type>
     </range_max>
     ...
@@ -330,38 +262,29 @@ Example:
 or
 
 ``` sql
-CREATE DICTIONARY discounts_dict (
-    advertiser_id UInt64,
-    discount_start_date Date,
-    discount_end_date Date,
-    amount Float64
+CREATE DICTIONARY somedict (
+    id UInt64,
+    first Date,
+    last Date
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(TABLE 'discounts'))
-LIFETIME(MIN 1 MAX 1000)
-LAYOUT(RANGE_HASHED(range_lookup_strategy 'max'))
-RANGE(MIN discount_start_date MAX discount_end_date)
+LAYOUT(RANGE_HASHED())
+RANGE(MIN first MAX last)
 ```
 
-To work with these dictionaries, you need to pass an additional argument to the `dictGet` function, for which a range is selected:
+To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
 
 ``` sql
-dictGet('dict_name', 'attr_name', id, date)
-```
-Query example:
-
-``` sql
-SELECT dictGet('discounts_dict', 'amount', 1, '2022-10-20'::Date);
+dictGetT('dict_name', 'attr_name', id, date)
 ```
 
 This function returns the value for the specified `id`s and the date range that includes the passed date.
 
 Details of the algorithm:
 
--   If the `id` is not found or a range is not found for the `id`, it returns the default value of the attribute's type.
--   If there are overlapping ranges and `range_lookup_strategy=min`, it returns a matching range with minimal `range_min`, if several ranges found, it returns a range with minimal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
--   If there are overlapping ranges and `range_lookup_strategy=max`, it returns a matching range with maximal `range_min`, if several ranges found, it returns a range with maximal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
--   If the `range_max` is `NULL`, the range is open. `NULL` is treated as maximal possible value. For the `range_min` `1970-01-01` or `0` (-MAX_INT) can be used as the open value.
+-   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
+-   If there are overlapping ranges, it returns value for any (random) range.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
 
 Configuration example:
 
@@ -410,109 +333,7 @@ PRIMARY KEY Abcdef
 RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 ```
 
-Configuration example with overlapping ranges and open ranges:
-
-```sql
-CREATE TABLE discounts
-(
-    advertiser_id UInt64,
-    discount_start_date Date,
-    discount_end_date Nullable(Date),
-    amount Float64
-)
-ENGINE = Memory;
-
-INSERT INTO discounts VALUES (1, '2015-01-01', Null, 0.1);
-INSERT INTO discounts VALUES (1, '2015-01-15', Null, 0.2);
-INSERT INTO discounts VALUES (2, '2015-01-01', '2015-01-15', 0.3);
-INSERT INTO discounts VALUES (2, '2015-01-04', '2015-01-10', 0.4);
-INSERT INTO discounts VALUES (3, '1970-01-01', '2015-01-15', 0.5);
-INSERT INTO discounts VALUES (3, '1970-01-01', '2015-01-10', 0.6);
-
-SELECT * FROM discounts ORDER BY advertiser_id, discount_start_date;
-┌─advertiser_id─┬─discount_start_date─┬─discount_end_date─┬─amount─┐
-│             1 │          2015-01-01 │              ᴺᵁᴸᴸ │    0.1 │
-│             1 │          2015-01-15 │              ᴺᵁᴸᴸ │    0.2 │
-│             2 │          2015-01-01 │        2015-01-15 │    0.3 │
-│             2 │          2015-01-04 │        2015-01-10 │    0.4 │
-│             3 │          1970-01-01 │        2015-01-15 │    0.5 │
-│             3 │          1970-01-01 │        2015-01-10 │    0.6 │
-└───────────────┴─────────────────────┴───────────────────┴────────┘
-
--- RANGE_LOOKUP_STRATEGY 'max'
-
-CREATE DICTIONARY discounts_dict
-(
-    advertiser_id UInt64,
-    discount_start_date Date,
-    discount_end_date Nullable(Date),
-    amount Float64
-)
-PRIMARY KEY advertiser_id
-SOURCE(CLICKHOUSE(TABLE discounts))
-LIFETIME(MIN 600 MAX 900)
-LAYOUT(RANGE_HASHED(RANGE_LOOKUP_STRATEGY 'max'))
-RANGE(MIN discount_start_date MAX discount_end_date);
-
-select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-14')) res;
-┌─res─┐
-│ 0.1 │ -- the only one range is matching: 2015-01-01 - Null
-└─────┘
-
-select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res;
-┌─res─┐
-│ 0.2 │ -- two ranges are matching, range_min 2015-01-15 (0.2) is bigger than 2015-01-01 (0.1)
-└─────┘
-
-select dictGet('discounts_dict', 'amount', 2, toDate('2015-01-06')) res;
-┌─res─┐
-│ 0.4 │ -- two ranges are matching, range_min 2015-01-04 (0.4) is bigger than 2015-01-01 (0.3)
-└─────┘
-
-select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
-┌─res─┐
-│ 0.5 │ -- two ranges are matching, range_min are equal, 2015-01-15 (0.5) is bigger than 2015-01-10 (0.6)
-└─────┘
-
-DROP DICTIONARY discounts_dict;
-
--- RANGE_LOOKUP_STRATEGY 'min'
-
-CREATE DICTIONARY discounts_dict
-(
-    advertiser_id UInt64,
-    discount_start_date Date,
-    discount_end_date Nullable(Date),
-    amount Float64
-)
-PRIMARY KEY advertiser_id
-SOURCE(CLICKHOUSE(TABLE discounts))
-LIFETIME(MIN 600 MAX 900)
-LAYOUT(RANGE_HASHED(RANGE_LOOKUP_STRATEGY 'min'))
-RANGE(MIN discount_start_date MAX discount_end_date);
-
-select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-14')) res;
-┌─res─┐
-│ 0.1 │ -- the only one range is matching: 2015-01-01 - Null
-└─────┘
-
-select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res;
-┌─res─┐
-│ 0.1 │ -- two ranges are matching, range_min 2015-01-01 (0.1) is less than 2015-01-15 (0.2)
-└─────┘
-
-select dictGet('discounts_dict', 'amount', 2, toDate('2015-01-06')) res;
-┌─res─┐
-│ 0.3 │ -- two ranges are matching, range_min 2015-01-01 (0.3) is less than 2015-01-04 (0.4)
-└─────┘
-
-select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
-┌─res─┐
-│ 0.6 │ -- two ranges are matching, range_min are equal, 2015-01-10 (0.6) is less than 2015-01-15 (0.5)
-└─────┘
-```
-
-### complex_key_range_hashed
+### complex_key_range_hashed {#complex-key-range-hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range-hashed)). This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md).
 
@@ -534,11 +355,9 @@ LAYOUT(COMPLEX_KEY_RANGE_HASHED())
 RANGE(MIN StartDate MAX EndDate);
 ```
 
-### cache
+### cache {#cache}
 
 The dictionary is stored in a cache that has a fixed number of cells. These cells contain frequently used elements.
-
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
@@ -552,7 +371,7 @@ If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary 
 
 To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
 
-All types of sources are supported.
+Supported [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
 
 Example of settings:
 
@@ -588,19 +407,16 @@ Set a large enough cache size. You need to experiment to select the number of ce
 3.  Assess memory consumption using the `system.dictionaries` table.
 4.  Increase or decrease the number of cells until the required memory consumption is reached.
 
-:::warning
-Do not use ClickHouse as a source, because it is slow to process queries with random reads.
-:::
+!!! warning "Warning"
+    Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
-### complex_key_cache
+### complex_key_cache {#complex-key-cache}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `cache`.
 
-### ssd_cache
+### ssd_cache {#ssd-cache}
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
-
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
 
 ``` xml
 <layout>
@@ -626,15 +442,15 @@ LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
     PATH '/var/lib/clickhouse/user_files/test_dict'))
 ```
 
-### complex_key_ssd_cache
+### complex_key_ssd_cache {#complex-key-ssd-cache}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `ssd_cache`.
 
-### direct
+### direct {#direct}
 
 The dictionary is not stored in memory and directly goes to the source during the processing of a request.
 
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type.
+The dictionary key has the `UInt64` type.
 
 All types of [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), except local files, are supported.
 
@@ -652,38 +468,33 @@ or
 LAYOUT(DIRECT())
 ```
 
-### complex_key_direct
+### complex_key_direct {#complex-key-direct}
 
 This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `direct`.
 
-### ip_trie
+### ip_trie {#ip-trie}
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
-**Example**
+Example: The table contains network prefixes and their corresponding AS number and country code:
 
-Suppose we have a table in ClickHouse that contains our IP prefixes and mappings:
-
-```sql
-CREATE TABLE my_ip_addresses (
-	prefix String,
-	asn UInt32,
-	cca2 String
-)
-ENGINE = MergeTree
-PRIMARY KEY prefix;
+``` text
+  +-----------|-----|------+
+  | prefix          | asn   | cca2   |
+  +=================+=======+========+
+  | 202.79.32.0/20  | 17501 | NP     |
+  +-----------|-----|------+
+  | 2620:0:870::/48 | 3856  | US     |
+  +-----------|-----|------+
+  | 2a02:6b8:1::/48 | 13238 | RU     |
+  +-----------|-----|------+
+  | 2001:db8::/32   | 65536 | ZZ     |
+  +-----------|-----|------+
 ```
 
-```sql
-INSERT INTO my_ip_addresses VALUES
-	('202.79.32.0/20', 17501, 'NP'),
-    ('2620:0:870::/48', 3856, 'US'),
-    ('2a02:6b8:1::/48', 13238, 'RU'),
-    ('2001:db8::/32', 65536, 'ZZ')
-;
-```
+When using this type of layout, the structure must have a composite key.
 
-Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requires a composite key:
+Example:
 
 ``` xml
 <structure>
@@ -717,35 +528,28 @@ Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requir
 or
 
 ``` sql
-CREATE DICTIONARY my_ip_trie_dictionary (
+CREATE DICTIONARY somedict (
     prefix String,
     asn UInt32,
     cca2 String DEFAULT '??'
 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
-LAYOUT(IP_TRIE)
-LIFETIME(3600);
 ```
 
-The key must have only one `String` type attribute that contains an allowed IP prefix. Other types are not supported yet.
+The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.
 
-For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys. The syntax is:
+For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', tuple(ip))
 ```
 
-The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
+The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
 
 ``` sql
-select dictGet('my_ip_trie_dictionary', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data must completely fit into RAM.
-
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

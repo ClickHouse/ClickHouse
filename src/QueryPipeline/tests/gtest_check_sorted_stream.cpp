@@ -83,7 +83,7 @@ static Block getEqualValuesBlockWithSize(
 }
 
 
-TEST(CheckSortedTransform, CheckGoodCase)
+TEST(CheckSortedBlockInputStream, CheckGoodCase)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
@@ -109,7 +109,7 @@ TEST(CheckSortedTransform, CheckGoodCase)
     EXPECT_FALSE(executor.pull(chunk));
 }
 
-TEST(CheckSortedTransform, CheckBadLastRow)
+TEST(CheckSortedBlockInputStream, CheckBadLastRow)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
@@ -132,14 +132,11 @@ TEST(CheckSortedTransform, CheckBadLastRow)
     Chunk chunk;
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
-
-#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
-#endif
 }
 
 
-TEST(CheckSortedTransform, CheckUnsortedBlock1)
+TEST(CheckSortedBlockInputStream, CheckUnsortedBlock1)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
@@ -157,13 +154,10 @@ TEST(CheckSortedTransform, CheckUnsortedBlock1)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
-
-#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
-#endif
 }
 
-TEST(CheckSortedTransform, CheckUnsortedBlock2)
+TEST(CheckSortedBlockInputStream, CheckUnsortedBlock2)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
@@ -181,12 +175,10 @@ TEST(CheckSortedTransform, CheckUnsortedBlock2)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
-#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
-#endif
 }
 
-TEST(CheckSortedTransform, CheckUnsortedBlock3)
+TEST(CheckSortedBlockInputStream, CheckUnsortedBlock3)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
@@ -204,12 +196,10 @@ TEST(CheckSortedTransform, CheckUnsortedBlock3)
     PullingPipelineExecutor executor(pipeline);
 
     Chunk chunk;
-#ifndef ABORT_ON_LOGICAL_ERROR
     EXPECT_THROW(executor.pull(chunk), DB::Exception);
-#endif
 }
 
-TEST(CheckSortedTransform, CheckEqualBlock)
+TEST(CheckSortedBlockInputStream, CheckEqualBlock)
 {
     std::vector<std::string> key_columns{"K1", "K2", "K3"};
     auto sort_description = getSortDescription(key_columns);
