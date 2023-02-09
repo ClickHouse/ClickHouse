@@ -69,6 +69,8 @@ struct AccessRightsElement
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
+    bool isNamedCollectionAccess() const { return access_flags.isNamedCollectionAccessOnly(); }
+
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;

@@ -28,7 +28,6 @@ namespace
         DICTIONARY,
         VIEW,
         COLUMN,
-        GLOBAL_WITH_PARAMETER,
         NAMED_COLLECTION,
     };
 
