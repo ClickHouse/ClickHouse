@@ -207,6 +207,7 @@ target_compile_options (_poco_foundation
         -Wno-sign-compare
         -Wno-suggest-destructor-override
         -Wno-suggest-override
+        -Wno-tautological-unsigned-zero-compare
         -Wno-thread-safety-analysis
         -Wno-thread-safety-negative
         -Wno-undef
