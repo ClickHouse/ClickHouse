@@ -119,7 +119,7 @@ inline void readVarUInt(T & x, ReadBuffer & istr)
 
 [[noreturn]] inline void throwReadAfterEOF()
 {
-    throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
+    throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
 template <bool fast>

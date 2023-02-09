@@ -1,9 +1,8 @@
-#include <type_traits>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Interpreters/ExpressionActions.h>
 #include <base/defines.h>
 
 namespace DB
@@ -36,36 +35,15 @@ UnionStep::UnionStep(DataStreams input_streams_, size_t max_threads_)
         output_stream = input_streams.front();
     else
         output_stream = DataStream{.header = header};
-
-    updateOutputSortDescription();
-}
-
-void UnionStep::updateOutputSortDescription()
-{
-    SortDescription common_sort_description = input_streams.front().sort_description;
-    DataStream::SortScope sort_scope = input_streams.front().sort_scope;
-    for (const auto & input_stream : input_streams)
-    {
-        common_sort_description = commonPrefix(common_sort_description, input_stream.sort_description);
-        sort_scope = std::min(sort_scope, input_stream.sort_scope);
-    }
-    if (!common_sort_description.empty() && sort_scope >= DataStream::SortScope::Chunk)
-    {
-        output_stream->sort_description = common_sort_description;
-        if (sort_scope == DataStream::SortScope::Global && input_streams.size() > 1)
-            output_stream->sort_scope = DataStream::SortScope::Stream;
-        else
-            output_stream->sort_scope = sort_scope;
-    }
 }
 
 QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
+    QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     if (pipelines.empty())
     {
-        QueryPipelineProcessorsCollector collector(*pipeline, this);
         pipeline->init(Pipe(std::make_shared<NullSource>(output_stream->header)));
         processors = collector.detachProcessors();
         return pipeline;
@@ -80,7 +58,6 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         /// But, just in case, convert it to the same header if not.
         if (!isCompatibleHeader(cur_pipeline->getHeader(), getOutputStream().header))
         {
-            QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputStream().header.getColumnsWithTypeAndName(),
@@ -91,13 +68,12 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             {
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });
-
-            auto added_processors = collector.detachProcessors();
-            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads);
+
+    processors = collector.detachProcessors();
     return pipeline;
 }
 

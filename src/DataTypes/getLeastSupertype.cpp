@@ -40,6 +40,7 @@ template <typename DataTypes>
 String getExceptionMessagePrefix(const DataTypes & types)
 {
     WriteBufferFromOwnString res;
+    res << "There is no supertype for types ";
 
     bool first = true;
     for (const auto & type : types)
@@ -64,9 +65,9 @@ DataTypePtr throwOrReturn(const DataTypes & types, std::string_view message_suff
         return nullptr;
 
     if (message_suffix.empty())
-        throw Exception(error_code, "There is no supertype for types {}", getExceptionMessagePrefix(types));
+        throw Exception(error_code, getExceptionMessagePrefix(types));
 
-    throw Exception(error_code, "There is no supertype for types {} {}", getExceptionMessagePrefix(types), message_suffix);
+    throw Exception(error_code, "{} {}", getExceptionMessagePrefix(types), message_suffix);
 }
 
 template <LeastSupertypeOnError on_error>

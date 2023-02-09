@@ -61,7 +61,7 @@ void splitHostAndPort(const std::string & host_and_port, std::string & out_host,
         while (it != end && *it != ']')
             out_host += *it++;
         if (it == end)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed IPv6 address");
+            throw Exception("Malformed IPv6 address", ErrorCodes::BAD_ARGUMENTS);
         ++it;
     }
     else /// Case '<IPv4 or domain name or something else>:<port>'
@@ -77,7 +77,7 @@ void splitHostAndPort(const std::string & host_and_port, std::string & out_host,
             port_str += *it++;
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing port number");
+        throw Exception("Missing port number", ErrorCodes::BAD_ARGUMENTS);
 
     unsigned port;
     if (Poco::NumberParser::tryParseUnsigned(port_str, port) && port <= 0xFFFF)
@@ -85,7 +85,7 @@ void splitHostAndPort(const std::string & host_and_port, std::string & out_host,
         out_port = static_cast<UInt16>(port);
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Port must be numeric");
+        throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
 }
 
 DNSResolver::IPAddresses hostByName(const std::string & host)
@@ -110,7 +110,7 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
     if (addresses.empty())
     {
         ProfileEvents::increment(ProfileEvents::DNSError);
-        throw Exception(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
+        throw Exception("Not found address of host: " + host, ErrorCodes::DNS_ERROR);
     }
 
     return addresses;

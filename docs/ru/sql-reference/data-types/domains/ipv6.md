@@ -81,3 +81,4 @@ SELECT toTypeName(i), CAST(from AS FixedString(16)) AS i FROM hits LIMIT 1;
 │ FixedString(16)                           │  ��� │
 └───────────────────────────────────────────┴─────────┘
 ```
+

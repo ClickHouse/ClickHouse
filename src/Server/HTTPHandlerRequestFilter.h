@@ -58,9 +58,8 @@ static inline auto getExpression(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression.substr(6));
 
     if (!compiled_regex->ok())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "cannot compile re2: {} for http handling rule, error: {}. "
-                        "Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                        expression, compiled_regex->error());
+        throw Exception("cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error() +
+                        ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
     return std::make_pair(expression, compiled_regex);
 }
 

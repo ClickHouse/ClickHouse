@@ -91,8 +91,6 @@ public:
 
     const String & getDescription() const override { return description; }
 
-    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
-
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -110,7 +108,7 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 

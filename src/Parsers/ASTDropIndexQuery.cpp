@@ -9,7 +9,7 @@ namespace DB
 /** Get the text that identifies this element. */
 String ASTDropIndexQuery::getID(char delim) const
 {
-    return "DropIndexQuery" + (delim + getDatabase()) + delim + getTable();
+    return "CreateIndexQuery" + (delim + getDatabase()) + delim + getTable();
 }
 
 ASTPtr ASTDropIndexQuery::clone() const

@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -45,10 +46,7 @@ void WebObjectStorage::initialize(const String & uri_path) const
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
             ConnectionTimeouts::getHTTPTimeouts(getContext()),
-            credentials,
-            /* max_redirects= */ 0,
-            /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
-            getContext()->getReadSettings());
+            credentials);
 
         String file_name;
         FileData file_data{};
@@ -83,15 +81,6 @@ void WebObjectStorage::initialize(const String & uri_path) const
         }
 
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
-    }
-    catch (HTTPException & e)
-    {
-        /// 404 - no files
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return;
-
-        e.addMessage("while loading disk metadata");
-        throw;
     }
     catch (Exception & e)
     {

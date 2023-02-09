@@ -22,23 +22,23 @@ class IDataTypeDummy : public IDataType
 private:
     [[noreturn]] void throwNoSerialization() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization is not implemented for data type {}", getName());
+        throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
 public:
     MutableColumnPtr createColumn() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method createColumn() is not implemented for data type {}", getName());
+        throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     Field getDefault() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault() is not implemented for data type {}", getName());
+        throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertDefaultInto(IColumn &) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultInto() is not implemented for data type {}", getName());
+        throw Exception("Method insertDefaultInto() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool haveSubtypes() const override { return false; }

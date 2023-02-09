@@ -35,7 +35,7 @@ private:
 
     std::string name;
     bool is_cluster_function;
-    PreformattedMessage help_message;
+    std::string help_message;
     bool secure;
 
     ClusterPtr cluster;

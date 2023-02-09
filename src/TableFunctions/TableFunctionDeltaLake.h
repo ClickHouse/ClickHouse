@@ -16,7 +16,7 @@ class TableFunctionS3Cluster;
 
 /* deltaLake(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary DeltaLake table on S3.
  */
-class TableFunctionDeltaLake : public ITableFunction
+class TableFunctionDelta : public ITableFunction
 {
 public:
     static constexpr auto name = "deltaLake";
@@ -34,9 +34,9 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & configuration);
+    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & configuration);
 
-    mutable StorageS3::Configuration configuration;
+    StorageS3Configuration configuration;
 };
 
 }

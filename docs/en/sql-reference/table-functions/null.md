@@ -39,3 +39,4 @@ DROP TABLE IF EXISTS t;
 See also:
 
 -   [Null table engine](../../engines/table-engines/special/null.md)
+

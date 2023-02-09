@@ -23,7 +23,7 @@ FakeMetadataStorageFromDisk::FakeMetadataStorageFromDisk(
 {
 }
 
-MetadataTransactionPtr FakeMetadataStorageFromDisk::createTransaction()
+MetadataTransactionPtr FakeMetadataStorageFromDisk::createTransaction() const
 {
     return std::make_shared<FakeMetadataStorageFromDiskTransaction>(*this, disk);
 }
@@ -66,7 +66,12 @@ uint64_t FakeMetadataStorageFromDisk::getFileSize(const String & path) const
 std::vector<std::string> FakeMetadataStorageFromDisk::listDirectory(const std::string & path) const
 {
     std::vector<std::string> result;
-    disk->listFiles(path, result);
+    auto it = disk->iterateDirectory(path);
+    while (it->isValid())
+    {
+        result.push_back(it->path());
+        it->next();
+    }
     return result;
 }
 
@@ -78,19 +83,6 @@ DirectoryIteratorPtr FakeMetadataStorageFromDisk::iterateDirectory(const std::st
 std::string FakeMetadataStorageFromDisk::readFileToString(const std::string &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readFileToString is not implemented for FakeMetadataStorageFromDisk");
-}
-
-std::string FakeMetadataStorageFromDisk::readInlineDataToString(const std::string & path) const
-{
-    auto rb = disk->readFile(path);
-    std::string result;
-    std::array<char, 1000> buf;
-    while (!rb->eof())
-    {
-        auto sz = rb->read(buf.data(), buf.size());
-        result.append(buf.data(), buf.data() + sz);
-    }
-    return result;
 }
 
 std::unordered_map<String, String> FakeMetadataStorageFromDisk::getSerializedMetadata(const std::vector<String> &) const
@@ -105,7 +97,7 @@ StoredObjects FakeMetadataStorageFromDisk::getStorageObjects(const std::string &
     std::string object_path = fs::path(object_storage_root_path) / blob_name;
     size_t object_size = getFileSize(path);
 
-    auto object = StoredObject::create(*object_storage, object_path, object_size, path, /* exists */true);
+    auto object = StoredObject::create(*object_storage, object_path, object_size, /* exists */true);
     return {std::move(object)};
 }
 
@@ -120,13 +112,6 @@ const IMetadataStorage & FakeMetadataStorageFromDiskTransaction::getStorageForNo
 }
 
 void FakeMetadataStorageFromDiskTransaction::writeStringToFile(const std::string & path, const std::string & data)
-{
-    auto wb = disk->writeFile(path);
-    wb->write(data.data(), data.size());
-    wb->finalize();
-}
-
-void FakeMetadataStorageFromDiskTransaction::writeInlineDataToFile(const std::string & path, const std::string & data)
 {
     auto wb = disk->writeFile(path);
     wb->write(data.data(), data.size());

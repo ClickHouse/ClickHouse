@@ -13,7 +13,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -29,18 +28,20 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration)
+void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
+    if (auto named_collection = getURLBasedDataSourceConfiguration(args, context))
     {
-        StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        s3_configuration.set(common_configuration);
+        StorageS3::processNamedCollectionResult(s3_configuration, storage_specific_args);
     }
     else
     {
         if (args.empty() || args.size() > 6)
-            throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
 
-        auto * header_it = StorageURL::collectHeaders(args, s3_configuration.headers_from_ast, context);
+        auto header_it = StorageURL::collectHeaders(args, s3_configuration, context);
         if (header_it != args.end())
             args.erase(header_it);
 
@@ -87,7 +88,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         }
 
         /// This argument is always the first
-        s3_configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
+        s3_configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
 
         if (args_to_idx.contains("format"))
             s3_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
@@ -106,7 +107,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
     }
 
     if (s3_configuration.format == "auto")
-        s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
+        s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url, true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -127,7 +128,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         getName());
 
     if (args_func.size() != 1)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     auto & args = args_func.at(0)->children;
 
@@ -152,7 +153,8 @@ bool TableFunctionS3::supportsReadingSubsetOfColumns()
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    S3::URI s3_uri (configuration.url);
+    Poco::URI uri(configuration.url);
+    S3::URI s3_uri(uri);
 
     ColumnsDescription columns;
     if (configuration.structure != "auto")

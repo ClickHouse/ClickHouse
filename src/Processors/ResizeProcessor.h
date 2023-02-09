@@ -18,7 +18,7 @@ namespace DB
   * - union data from multiple inputs to single output - to serialize data that was processed in parallel.
   * - split data from single input to multiple outputs - to allow further parallel processing.
   */
-class ResizeProcessor final : public IProcessor
+class ResizeProcessor : public IProcessor
 {
 public:
     /// TODO Check that there is non zero number of inputs and outputs.

@@ -6,6 +6,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
+#include <Common/ConcurrentBoundedQueue.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -13,6 +14,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -21,9 +23,6 @@ namespace Poco
     class Logger;
 }
 
-
-template <class T>
-class ConcurrentBoundedQueue;
 
 namespace DB
 {
@@ -88,6 +87,10 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
+    /// Query without new lines (see toOneLineQuery())
+    /// Used to print in case of fatal error
+    /// (to avoid calling extra code in the fatal error handler)
+    String one_line_query;
     UInt64 normalized_query_hash = 0;
 
     std::vector<ProfileEventsCountersAndMemory> finished_threads_counters_memory;
@@ -293,7 +296,7 @@ protected:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
 
-    void assertState(ThreadState permitted_state, const char * description = nullptr) const;
+    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
 
 private:

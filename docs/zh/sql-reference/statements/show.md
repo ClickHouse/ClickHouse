@@ -166,3 +166,5 @@ SHOW CREATE QUOTA [name | CURRENT]
 ``` sql
 SHOW CREATE [SETTINGS] PROFILE name
 ```
+
+[原始文档](https://clickhouse.com/docs/en/query_language/show/) <!--hide-->

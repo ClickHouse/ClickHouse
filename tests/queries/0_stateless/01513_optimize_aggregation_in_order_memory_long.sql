@@ -1,5 +1,4 @@
--- Tags: long, no-random-merge-tree-settings
--- FIXME no-random-merge-tree-settings requires investigation
+-- Tags: long
 
 drop table if exists data_01513;
 create table data_01513 (key String) engine=MergeTree() order by key;
