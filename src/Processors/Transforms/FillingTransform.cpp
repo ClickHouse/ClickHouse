@@ -366,7 +366,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (first)
     {
-        for (size_t i = 0; i < filling_row.size(); ++i)
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
         {
             auto current_value = (*old_fill_columns[i])[0];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;
