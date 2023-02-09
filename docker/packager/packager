@@ -5,13 +5,14 @@ import os
 import argparse
 import logging
 import sys
+from pathlib import Path
 from typing import List
 
-SCRIPT_PATH = os.path.realpath(__file__)
+SCRIPT_PATH = Path(__file__).absolute()
 IMAGE_TYPE = "binary"
 
 
-def check_image_exists_locally(image_name):
+def check_image_exists_locally(image_name: str) -> bool:
     try:
         output = subprocess.check_output(
             f"docker images -q {image_name} 2> /dev/null", shell=True
@@ -21,7 +22,7 @@ def check_image_exists_locally(image_name):
         return False
 
 
-def pull_image(image_name):
+def pull_image(image_name: str) -> bool:
     try:
         subprocess.check_call(f"docker pull {image_name}", shell=True)
         return True
@@ -30,8 +31,8 @@ def pull_image(image_name):
         return False
 
 
-def build_image(image_name, filepath):
-    context = os.path.dirname(filepath)
+def build_image(image_name: str, filepath: Path) -> None:
+    context = filepath.parent
     build_cmd = f"docker build --network=host -t {image_name} -f {filepath} {context}"
     logging.info("Will build image with cmd: '%s'", build_cmd)
     subprocess.check_call(
@@ -40,7 +41,7 @@ def build_image(image_name, filepath):
     )
 
 
-def pre_build(repo_path: str, env_variables: List[str]):
+def pre_build(repo_path: Path, env_variables: List[str]):
     if "WITH_PERFORMANCE=1" in env_variables:
         current_branch = subprocess.check_output(
             "git branch --show-current", shell=True, encoding="utf-8"
@@ -67,14 +68,15 @@ def pre_build(repo_path: str, env_variables: List[str]):
 
 
 def run_docker_image_with_env(
-    image_name,
-    as_root,
-    output,
-    env_variables,
-    ch_root,
-    ccache_dir,
-    docker_image_version,
+    image_name: str,
+    as_root: bool,
+    output_dir: Path,
+    env_variables: List[str],
+    ch_root: Path,
+    ccache_dir: Path,
+    docker_image_version: str,
 ):
+    output_dir.mkdir(parents=True, exist_ok=True)
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -90,7 +92,7 @@ def run_docker_image_with_env(
         user = f"{os.geteuid()}:{os.getegid()}"
 
     cmd = (
-        f"docker run --network=host --user={user} --rm --volume={output}:/output "
+        f"docker run --network=host --user={user} --rm --volume={output_dir}:/output "
         f"--volume={ch_root}:/build --volume={ccache_dir}:/ccache {env_part} "
         f"{interactive} {image_name}:{docker_image_version}"
     )
@@ -100,7 +102,7 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type, package_type, sanitizer):
+def is_release_build(build_type: str, package_type: str, sanitizer: str) -> bool:
     return build_type == "" and package_type == "deb" and sanitizer == ""
 
 
@@ -312,10 +314,11 @@ def parse_env_variables(
     return result
 
 
-def dir_name(name: str) -> str:
-    if not os.path.isabs(name):
-        name = os.path.abspath(os.path.join(os.getcwd(), name))
-    return name
+def dir_name(name: str) -> Path:
+    path = Path(name)
+    if not path.is_absolute():
+        path = Path.cwd() / name
+    return path
 
 
 if __name__ == "__main__":
@@ -331,7 +334,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--clickhouse-repo-path",
-        default=os.path.join(os.path.dirname(SCRIPT_PATH), os.pardir, os.pardir),
+        default=SCRIPT_PATH.parents[2],
         type=dir_name,
         help="ClickHouse git repository",
     )
@@ -364,7 +367,7 @@ if __name__ == "__main__":
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
         "--ccache_dir",
-        default=os.getenv("HOME", "") + "/.ccache",
+        default=Path.home() / ".ccache",
         type=dir_name,
         help="a directory with ccache",
     )
@@ -400,7 +403,7 @@ if __name__ == "__main__":
     if args.with_binaries != "" and args.package_type == "deb":
         logging.info("Should place %s to output", args.with_binaries)
 
-    dockerfile = os.path.join(ch_root, "docker/packager", IMAGE_TYPE, "Dockerfile")
+    dockerfile = ch_root / "docker/packager" / IMAGE_TYPE / "Dockerfile"
     image_with_version = image_name + ":" + args.docker_image_version
     if not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_with_version) or args.force_build_image:
