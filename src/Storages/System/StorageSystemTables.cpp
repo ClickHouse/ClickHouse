@@ -480,12 +480,12 @@ protected:
                 {
                     if (table_merge_tree)
                     {
-                        size_t totalMarks = 0;
+                        size_t total_marks = 0;
                         for (auto & part : table_merge_tree->getAllDataPartsVector())
                         {
-                            totalMarks += part->getMarksCount();
+                            total_marks += part->getMarksCount();
                         }
-                        res_columns[res_index++]->insert(totalMarks);
+                        res_columns[res_index++]->insert(total_marks);
                     }
                     else
                         res_columns[res_index++]->insertDefault();
