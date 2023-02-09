@@ -31,7 +31,7 @@ def pull_image(image_name: str) -> bool:
         subprocess.check_call(f"docker pull {image_name}", shell=True)
         return True
     except subprocess.CalledProcessError:
-        logging.info(f"Cannot pull image {image_name}".format())
+        logging.info("Cannot pull image %s", image_name)
         return False
 
 
