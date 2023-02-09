@@ -118,10 +118,8 @@ def parse_env_variables(
     sanitizer,
     package_type,
     cache,
-    distcc_hosts,
     clang_tidy,
     version,
-    author,
     official,
     additional_pkgs,
     with_coverage,
@@ -251,10 +249,7 @@ def parse_env_variables(
     else:
         result.append("BUILD_TYPE=None")
 
-    if cache == "distcc":
-        result.append(f"CCACHE_PREFIX={cache}")
-
-    if cache:
+    if cache == "ccache":
         result.append("CCACHE_DIR=/ccache")
         result.append("CCACHE_COMPRESSLEVEL=5")
         result.append("CCACHE_BASEDIR=/build")
@@ -269,14 +264,6 @@ def parse_env_variables(
             # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
             result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
         result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
-
-    if distcc_hosts:
-        hosts_with_params = [f"{host}/24,lzo" for host in distcc_hosts] + [
-            "localhost/`nproc`"
-        ]
-        result.append('DISTCC_HOSTS="' + " ".join(hosts_with_params) + '"')
-    elif cache == "distcc":
-        result.append('DISTCC_HOSTS="localhost/`nproc`"')
 
     if additional_pkgs:
         # NOTE: This are the env for packages/build script
@@ -307,9 +294,6 @@ def parse_env_variables(
 
     if version:
         result.append(f"VERSION_STRING='{version}'")
-
-    if author:
-        result.append(f"AUTHOR='{author}'")
 
     if official:
         cmake_flags.append("-DCLICKHOUSE_OFFICIAL_BUILD=1")
@@ -370,17 +354,19 @@ def main():
     )
 
     parser.add_argument("--clang-tidy", action="store_true")
-    parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
+    parser.add_argument("--cache", choices=("ccache", "sccache", ""), default="")
     parser.add_argument(
         "--ccache_dir",
         default=Path.home() / ".ccache",
         type=dir_name,
         help="a directory with ccache",
     )
-    parser.add_argument("--distcc-hosts", nargs="+")
+    parser.add_argument(
+        "--s3-bucket",
+        help="a bucket with cache for clang-tidy-cache and sscache",
+    )
     parser.add_argument("--force-build-image", action="store_true")
     parser.add_argument("--version")
-    parser.add_argument("--author", default="clickhouse", help="a package author")
     parser.add_argument("--official", action="store_true")
     parser.add_argument("--additional-pkgs", action="store_true")
     parser.add_argument("--with-coverage", action="store_true")
@@ -419,10 +405,8 @@ def main():
         args.sanitizer,
         args.package_type,
         args.cache,
-        args.distcc_hosts,
         args.clang_tidy,
         args.version,
-        args.author,
         args.official,
         args.additional_pkgs,
         args.with_coverage,
