@@ -27,7 +27,7 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
     /// Columns which are not from sorting key may not be constant anymore.
     for (auto & column : header)
         if (column.column && isColumnConst(*column.column) && !sort_keys.contains(column.name))
-            column.column = column.type->createColumn();
+            column.column = column.column->convertToFullColumnIfConst();
 
     return header;
 }
@@ -76,12 +76,12 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     if (which.isInt128() || which.isUInt128())
     {
         max_type = Field::Types::Int128;
-        to_type = std::make_shared<DataTypeInt128>();
+        to_type = type;
     }
     else if (which.isInt256() || which.isUInt256())
     {
         max_type = Field::Types::Int256;
-        to_type = std::make_shared<DataTypeInt256>();
+        to_type = type;
     }
     else if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
     {
@@ -109,9 +109,12 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         || descr.fill_step.getType() > max_type)
         return false;
 
-    descr.fill_from = convertFieldToType(descr.fill_from, *to_type);
-    descr.fill_to = convertFieldToType(descr.fill_to, *to_type);
-    descr.fill_step = convertFieldToType(descr.fill_step, *to_type);
+    if (!descr.fill_from.isNull())
+        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type);
+    if (!descr.fill_to.isNull())
+        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
+    if (!descr.fill_step.isNull())
+        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
 
     if (descr.step_kind)
     {
@@ -201,7 +204,7 @@ FillingTransform::FillingTransform(
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Incompatible types of WITH FILL expression values with column type {}", type->getName());
 
-        if (type->isValueRepresentedByUnsignedInteger() &&
+        if (isUnsignedInteger(type) &&
             ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
              (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {
