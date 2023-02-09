@@ -19,7 +19,7 @@ void RewriteArrayExistsFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
 void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
 {
-    if (func.arguments || func.arguments->children.empty())
+    if (!func.arguments || func.arguments->children.empty())
         return;
 
     if (func.name != "arrayExists")
@@ -47,7 +47,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
     if (!id)
         return;
 
-    const auto * filter_func = lambda_func_arguments[0]->as<ASTFunction>();
+    const auto * filter_func = lambda_func_arguments[1]->as<ASTFunction>();
     if (!filter_func || filter_func->name != "equals")
         return;
 
@@ -58,7 +58,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
     const ASTIdentifier * filter_id = nullptr;
     const ASTLiteral * filter_literal = nullptr;
     if ((filter_id = filter_arguments[0]->as<ASTIdentifier>()) && (filter_literal = filter_arguments[1]->as<ASTLiteral>())
-        && filter_id->full_name != id->full_name)
+        && filter_id->full_name == id->full_name)
     {
         /// arrayExists(x -> x = elem, arr) -> has(arr, elem)
         auto new_func = makeASTFunction("has", std::move(array_exists_arguments[1]), std::move(filter_arguments[1]));
@@ -68,7 +68,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
     }
     else if (
         (filter_id = filter_arguments[1]->as<ASTIdentifier>()) && (filter_literal = filter_arguments[0]->as<ASTLiteral>())
-        && filter_id->full_name != id->full_name)
+        && filter_id->full_name == id->full_name)
     {
 
         /// arrayExists(x -> elem = x, arr) -> has(arr, elem)

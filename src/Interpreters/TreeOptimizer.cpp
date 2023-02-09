@@ -661,6 +661,7 @@ void optimizeSumIfFunctions(ASTPtr & query)
 
 void optimizeArrayExistsFunctions(ASTPtr & query)
 {
+    std::cout << "start to optimize" << std::endl;
     RewriteArrayExistsFunctionVisitor::Data data = {};
     RewriteArrayExistsFunctionVisitor(data).visit(query);
 }
@@ -797,7 +798,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
 
-    if (settings.optimize_array_exists_to_has)
+    if (settings.optimize_rewrite_array_exists_to_has)
         optimizeArrayExistsFunctions(query);
 
     /// Remove injective functions inside uniq
@@ -809,9 +810,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube)
-    {
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
-    }
 
     /// Remove duplicate ORDER BY and DISTINCT from subqueries.
     if (settings.optimize_duplicate_order_by_and_distinct)
