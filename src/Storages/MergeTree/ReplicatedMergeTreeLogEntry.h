@@ -45,6 +45,7 @@ struct ReplicatedMergeTreeLogEntryData
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
         SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
         CLONE_PART_FROM_SHARD,  /// Clone part from another shard.
+        DROP_PART,      /// NOTE: Virtual (has the same (de)serialization format as DROP_RANGE). Deletes the specified part.
     };
 
     static String typeToString(Type type)
@@ -62,6 +63,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
             case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
             case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
+            case ReplicatedMergeTreeLogEntryData::DROP_PART:  return "DROP_PART";
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
         }
@@ -73,7 +75,7 @@ struct ReplicatedMergeTreeLogEntryData
     }
 
     void writeText(WriteBuffer & out) const;
-    void readText(ReadBuffer & in);
+    void readText(ReadBuffer & in, MergeTreeDataFormatVersion partition_format_version);
     String toString() const;
 
     String znode_name;
@@ -183,7 +185,7 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
-    static Ptr parse(const String & s, const Coordination::Stat & stat);
+    static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };
 
 using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
