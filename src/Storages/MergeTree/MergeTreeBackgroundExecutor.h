@@ -67,8 +67,8 @@ struct TaskRuntimeData
     }
 };
 
-
-class OrdinaryRuntimeQueue
+/// Simplest First-in-First-out queue, ignores priority.
+class FifoRuntimeQueue
 {
 public:
     TaskRuntimeDataPtr pop()
@@ -83,7 +83,7 @@ public:
     void remove(StorageID id)
     {
         auto it = std::remove_if(queue.begin(), queue.end(),
-            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
+            [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         queue.erase(it, queue.end());
     }
 
@@ -94,8 +94,8 @@ private:
     boost::circular_buffer<TaskRuntimeDataPtr> queue{0};
 };
 
-/// Uses a heap to pop a task with minimal priority
-class MergeMutateRuntimeQueue
+/// Uses a heap to pop a task with minimal priority.
+class PriorityRuntimeQueue
 {
 public:
     TaskRuntimeDataPtr pop()
@@ -115,10 +115,7 @@ public:
 
     void remove(StorageID id)
     {
-        auto it = std::remove_if(buffer.begin(), buffer.end(),
-            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
-        buffer.erase(it, buffer.end());
-
+        std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
 
@@ -126,7 +123,85 @@ public:
     bool empty() { return buffer.empty(); }
 
 private:
-    std::vector<TaskRuntimeDataPtr> buffer{};
+    std::vector<TaskRuntimeDataPtr> buffer;
+};
+
+/// Round-robin queue, ignores priority.
+class RoundRobinRuntimeQueue
+{
+public:
+    TaskRuntimeDataPtr pop()
+    {
+        assert(buffer.size() != unused);
+        while (buffer[current] == nullptr)
+            current = (current + 1) % buffer.size();
+        auto result = std::move(buffer[current]);
+        buffer[current] = nullptr; // mark as unused
+        unused++;
+        if (buffer.size() == unused)
+        {
+            buffer.clear();
+            unused = current = 0;
+        }
+        else
+            current = (current + 1) % buffer.size();
+        return result;
+    }
+
+    // Inserts element just before round-robin pointer.
+    // This way inserted element will be pop()-ed last. It guarantees fairness to avoid starvation.
+    void push(TaskRuntimeDataPtr item)
+    {
+        if (unused == 0)
+        {
+            buffer.insert(buffer.begin() + current, std::move(item));
+            current = (current + 1) % buffer.size();
+        }
+        else // Optimization to avoid O(N) complexity -- reuse unused elements
+        {
+            assert(!buffer.empty());
+            size_t pos = (current + buffer.size() - 1) % buffer.size();
+            while (buffer[pos] != nullptr)
+            {
+                std::swap(item, buffer[pos]);
+                pos = (pos + buffer.size() - 1) % buffer.size();
+            }
+            buffer[pos] = std::move(item);
+            unused--;
+        }
+    }
+
+    void remove(StorageID id)
+    {
+        // This is similar to `std::erase_if()`, but we also track movement of `current` element
+        size_t saved = 0;
+        size_t new_current = 0;
+        for (size_t i = 0; i < buffer.size(); i++)
+        {
+            if (buffer[i] != nullptr && buffer[i]->task->getStorageID() != id) // erase unused and matching elements
+            {
+                if (i < current)
+                    new_current++;
+                if (i != saved)
+                    buffer[saved] = std::move(buffer[i]);
+                saved++;
+            }
+        }
+        buffer.erase(buffer.begin() + saved, buffer.end());
+        current = new_current;
+        unused = 0;
+    }
+
+    void setCapacity(size_t count) { buffer.reserve(count); }
+    bool empty() { return buffer.empty(); }
+
+private:
+    // Buffer can contain unused elements (nullptrs)
+    // Unused elements are created by pop() and reused by push()
+    std::vector<TaskRuntimeDataPtr> buffer;
+
+    size_t current = 0; // round-robin pointer
+    size_t unused = 0; // number of nullptr elements
 };
 
 /**
@@ -149,13 +224,21 @@ private:
  *                          |s|
  *
  *  Each task is simply a sequence of steps. Heavier tasks have longer sequences.
- *  When a step of a task is executed, we move tasks to pending queue. And take another from the queue's head.
- *  With these architecture all small merges / mutations will be executed faster, than bigger ones.
+ *  When a step of a task is executed, we move tasks to pending queue. And take the next task from pending queue.
+ *  Next task is choosen from pending tasks using one of the scheduling policies (class Queue):
+ *  1) FifoRuntimeQueue. The simplest First-in-First-out queue. Guaranties tasks are executed in order.
+ *  2) PriorityRuntimeQueue. Uses heap to select task with smallest priority value.
+ *     With this architecture all small merges / mutations will be executed faster, than bigger ones.
+ *     WARNING: Starvation is possible in case of overload.
+ *  3) RoundRobinRuntimeQueue. Next task is selected, using round-robin pointer, which iterates over all tasks in rounds.
+ *     When task is added to pending queue, it is placed just before round-robin pointer
+ *     to given every other task an opportunity to execute one step.
+ *     With this architecture all merges / mutations are fairly scheduled and never starved.
+ *     All decisions regarding priorities are left to components creating tasks (e.g. SimpleMergeSelector).
  *
- *  We use boost::circular_buffer as a container for queues not to do any allocations.
- *
- *  Another nuisance that we faces with is than background operations always interact with an associated Storage.
- *  So, when a Storage want to shutdown, it must wait until all its background operations are finished.
+ *  We use boost::circular_buffer as a container for active queue to avoid allocations.
+ *  Another nuisance that we face is that background operations always interact with an associated Storage.
+ *  So, when a Storage wants to shutdown, it must wait until all its background operations are finished.
  */
 template <class Queue>
 class MergeTreeBackgroundExecutor final : boost::noncopyable
@@ -225,10 +308,8 @@ private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
 
-extern template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
-extern template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
-
-using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
-using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+extern template class MergeTreeBackgroundExecutor<FifoRuntimeQueue>;
+extern template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
+extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 
 }
