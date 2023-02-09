@@ -302,7 +302,7 @@ if __name__ == "__main__":
         res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
         tee.stdin.close()
         if res != 0 and have_long_running_queries:
-            logging.info("Hung check failed with exit code {}".format(res))
+            logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"
             with open(
