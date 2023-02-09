@@ -237,7 +237,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const Names & column_names,
-        const InputOrderInfoPtr & input_order_info,
         ActionsDAGPtr & out_projection);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
