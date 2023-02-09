@@ -213,7 +213,7 @@ def build_and_push_dummy_image(
 def build_and_push_one_image(
     image: DockerImage,
     version_string: str,
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
 ) -> Tuple[bool, Path]:
@@ -241,11 +241,9 @@ def build_and_push_one_image(
         f"--cache-from type=registry,ref={image.repo}:{version_string} "
         f"--cache-from type=registry,ref={image.repo}:latest"
     )
-    if additional_cache:
-        cache_from = (
-            f"{cache_from} "
-            f"--cache-from type=registry,ref={image.repo}:{additional_cache}"
-        )
+    for tag in additional_cache:
+        assert tag
+        cache_from = f"{cache_from} --cache-from type=registry,ref={image.repo}:{tag}"
 
     cmd = (
         "docker buildx build --builder default "
@@ -273,7 +271,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
 ) -> TestResults:
@@ -317,7 +315,7 @@ def process_single_image(
 def process_image_with_parents(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool = False,
 ) -> TestResults:
@@ -437,9 +435,13 @@ def main():
 
     result_images = {}
     test_results = []  # type: TestResults
-    additional_cache = ""
-    if pr_info.release_pr or pr_info.merged_pr:
-        additional_cache = str(pr_info.release_pr or pr_info.merged_pr)
+    additional_cache = []  # type: List[str]
+    if pr_info.release_pr:
+        logging.info("Use %s as additional cache tag", pr_info.release_pr)
+        additional_cache.append(str(pr_info.release_pr))
+    if pr_info.merged_pr:
+        logging.info("Use %s as additional cache tag", pr_info.merged_pr)
+        additional_cache.append(str(pr_info.merged_pr))
 
     for image in changed_images:
         # If we are in backport PR, then pr_info.release_pr is defined
