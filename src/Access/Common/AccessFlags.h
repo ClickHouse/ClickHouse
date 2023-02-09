@@ -77,8 +77,6 @@ public:
     /// Returns all the global flags.
     static AccessFlags allGlobalFlags();
 
-    static AccessFlags allGlobalWithParameterFlags();
-
     /// Returns all the flags related to a database.
     static AccessFlags allDatabaseFlags();
 

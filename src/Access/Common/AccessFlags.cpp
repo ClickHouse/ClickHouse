@@ -96,7 +96,6 @@ namespace
 
         const Flags & getAllFlags() const { return all_flags; }
         const Flags & getGlobalFlags() const { return all_flags_for_target[GLOBAL]; }
-        const Flags & getGlobalWithParameterFlags() const { return all_flags_for_target[GLOBAL_WITH_PARAMETER]; }
         const Flags & getDatabaseFlags() const { return all_flags_for_target[DATABASE]; }
         const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
         const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
@@ -118,7 +117,6 @@ namespace
             VIEW = TABLE,
             COLUMN,
             DICTIONARY,
-            GLOBAL_WITH_PARAMETER,
             NAMED_COLLECTION,
         };
 
@@ -365,7 +363,6 @@ std::vector<AccessType> AccessFlags::toAccessTypes() const { return Helper::inst
 std::vector<std::string_view> AccessFlags::toKeywords() const { return Helper::instance().flagsToKeywords(flags); }
 AccessFlags AccessFlags::allFlags() { return Helper::instance().getAllFlags(); }
 AccessFlags AccessFlags::allGlobalFlags() { return Helper::instance().getGlobalFlags(); }
-AccessFlags AccessFlags::allGlobalWithParameterFlags() { return Helper::instance().getGlobalWithParameterFlags(); }
 AccessFlags AccessFlags::allDatabaseFlags() { return Helper::instance().getDatabaseFlags(); }
 AccessFlags AccessFlags::allTableFlags() { return Helper::instance().getTableFlags(); }
 AccessFlags AccessFlags::allColumnFlags() { return Helper::instance().getColumnFlags(); }

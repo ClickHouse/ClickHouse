@@ -24,12 +24,12 @@ namespace
     void formatONClause(const AccessRightsElement & element, String & result)
     {
         result += "ON ";
-        if (!element.any_named_collection)
+        if (element.isNamedCollectionAccess())
         {
-            if (element.named_collection.empty())
-                result += "*";
-            else
+            if (!element.any_named_collection)
                 result += backQuoteIfNeed(element.named_collection);
+            else
+                result += "*";
         }
         else if (element.any_database)
         {
