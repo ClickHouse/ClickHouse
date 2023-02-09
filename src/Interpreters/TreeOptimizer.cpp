@@ -661,7 +661,6 @@ void optimizeSumIfFunctions(ASTPtr & query)
 
 void optimizeArrayExistsFunctions(ASTPtr & query)
 {
-    std::cout << "start to optimize" << std::endl;
     RewriteArrayExistsFunctionVisitor::Data data = {};
     RewriteArrayExistsFunctionVisitor(data).visit(query);
 }
