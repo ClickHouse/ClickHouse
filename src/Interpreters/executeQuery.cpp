@@ -70,10 +70,14 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
+#include <cstdlib>
+
 #include <memory>
 #include <random>
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
+
+#include "prql.h"
 
 namespace ProfileEvents
 {
@@ -387,6 +391,29 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             /// TODO: parser should fail early when max_query_size limit is reached.
             ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
+        else if (settings.dialect == Dialect::prql && !internal)
+        {
+            using std::calloc;
+            char * input = calloc(1, end - begin + 1);
+            char * tmp1 = input;
+            char * tmp2 = begin;
+            while (tmp2 != end) {
+                *tmp1 = *tmp2;
+                ++tmp1;
+                ++tmp2;
+            }
+            *tmp1 = 0;
+            char * new_begin = nullptr;
+            int res = to_sql(input, new_begin);
+            throw 0;
+            char * new_end = new_begin;
+            while (*new_end != 0) {
+                ++new_end;
+            }
+            ParserQuery parser(new_end, settings.allow_settings_after_format_in_insert);
+            ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings.max_parser_depth);
+            // TODO: prql to sql
         }
         else
         {
