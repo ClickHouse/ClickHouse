@@ -61,7 +61,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     {
         WhichDataType which_from(descr.fill_from_type);
         if ((which_from.isDateOrDate32() || which_from.isDateTime() || which_from.isDateTime64()) &&
-            !descr.fill_from_type->equals(*type))
+            !descr.fill_from_type->equals(*removeNullable(type)))
                 return false;
     }
 
@@ -198,7 +198,7 @@ FillingTransform::FillingTransform(
         auto & descr = filling_row.getFillDescription(i);
 
         const Block & output_header = getOutputPort().getHeader();
-        const DataTypePtr & type = output_header.getByPosition(block_position).type;
+        const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
 
         if (!tryConvertFields(descr, type))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
@@ -349,8 +349,8 @@ void FillingTransform::transform(Chunk & chunk)
         interpolate();
         while (filling_row.next(next_row))
         {
-                insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-                interpolate();
+            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+            interpolate();
         }
 
         setResultColumns(chunk, res_fill_columns, res_interpolate_columns, res_other_columns);
