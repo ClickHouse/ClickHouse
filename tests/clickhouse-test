@@ -91,7 +91,7 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None
+    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -120,7 +120,7 @@ def clickhouse_execute_http(
     if default_format is not None:
         params["default_format"] = default_format
 
-    for i in range(MAX_RETRIES):
+    for i in range(max_http_retries):
         try:
             client.request(
                 "POST",
@@ -130,7 +130,7 @@ def clickhouse_execute_http(
             data = res.read()
             break
         except Exception as ex:
-            if i == MAX_RETRIES - 1:
+            if i == max_http_retries - 1:
                 raise ex
 
             sleep(i + 1)
@@ -140,13 +140,12 @@ def clickhouse_execute_http(
 
     return data
 
+def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5):
+    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries).strip()
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None):
-    return clickhouse_execute_http(base_args, query, timeout, settings).strip()
 
-
-def clickhouse_execute_json(base_args, query, timeout=60, settings=None):
-    data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow")
+def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
+    data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow", max_http_retries=max_http_retries)
     if not data:
         return None
     rows = []
@@ -641,7 +640,7 @@ class TestCase:
 
             clickhouse_execute(
                 args,
-                "CREATE DATABASE " + database + get_db_engine(testcase_args, database),
+                "CREATE DATABASE IF NOT EXISTS " + database + get_db_engine(testcase_args, database),
                 settings=get_create_database_settings(args, testcase_args),
             )
 
@@ -1139,7 +1138,7 @@ class TestCase:
             seconds_left = max(
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
-            drop_database_query = "DROP DATABASE " + database
+            drop_database_query = "DROP DATABASE IF EXISTS " + database
             if args.replicated_database:
                 drop_database_query += " ON CLUSTER test_cluster_database_replicated"
 
@@ -1670,7 +1669,7 @@ def check_server_started(args):
     retry_count = args.server_check_retries
     while retry_count > 0:
         try:
-            clickhouse_execute(args, "SELECT 1")
+            clickhouse_execute(args, "SELECT 1", max_http_retries=1)
             print(" OK")
             sys.stdout.flush()
             return True
