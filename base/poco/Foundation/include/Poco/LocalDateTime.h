@@ -37,7 +37,7 @@ class Foundation_API LocalDateTime
 	/// i.e. UTC = local time - time zone differential.
 	///
 	/// Although LocalDateTime supports relational and arithmetic
-	/// operators, all date/time comparisons and date/time arithmetics
+	/// operators, all date/time comparisons and date/time arithmetic
 	/// should be done in UTC, using the DateTime or Timestamp
 	/// class for better performance. The relational operators
 	/// normalize the dates/times involved to UTC before carrying out
@@ -173,7 +173,7 @@ public:
 		/// There will be no week 0 in 2007.
 	
 	int day() const;
-		/// Returns the day witin the month (1 to 31).
+		/// Returns the day within the month (1 to 31).
 		
 	int dayOfWeek() const;
 		/// Returns the weekday (0 to 6, where

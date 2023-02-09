@@ -39,7 +39,7 @@ class ODBC_API TypeInfo
 	///
 	/// This class provides mapping between C and SQL datatypes as well
 	/// as datatypes supported by the underlying database. In order for database
-	/// types to be available, a valid conection handle must be supplied at either
+	/// types to be available, a valid connection handle must be supplied at either
 	/// object construction time, or at a later point in time, through call to
 	/// fillTypeInfo member function.
 	///

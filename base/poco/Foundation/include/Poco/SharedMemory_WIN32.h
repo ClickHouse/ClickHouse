@@ -50,7 +50,7 @@ public:
 		/// will generally ignore the hint.
 
 	char* begin() const;
-		/// Returns the beginn address of the SharedMemory segment. Will be null for illegal segments.
+		/// Returns the begin address of the SharedMemory segment. Will be null for illegal segments.
 
 	char* end() const;
 		/// Points past the last byte of the end address of the SharedMemory segment. Will be null for illegal segments.
