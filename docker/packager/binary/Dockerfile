@@ -69,6 +69,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         libc6 \
         libc6-dev \
         libc6-dev-arm64-cross \
+        python3-boto3 \
         yasm \
         zstd \
     && apt-get clean \

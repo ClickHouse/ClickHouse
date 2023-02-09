@@ -37,6 +37,13 @@ export FASTTEST_DATA
 export FASTTEST_OUT
 export PATH
 
+function ccache_status
+{
+    ccache --show-config ||:
+    ccache --show-stats ||:
+    SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
+}
+
 function start_server
 {
     set -m # Spawn server in its own process groups
@@ -171,7 +178,7 @@ function run_cmake
     export CCACHE_COMPILERCHECK=content
     export CCACHE_MAXSIZE=15G
 
-    ccache --show-stats ||:
+    ccache_status
     ccache --zero-stats ||:
 
     mkdir "$FASTTEST_BUILD" ||:
@@ -193,7 +200,7 @@ function build
             strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
             zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
-        ccache --show-stats ||:
+        ccache_status
         ccache --evict-older-than 1d ||:
     )
 }
