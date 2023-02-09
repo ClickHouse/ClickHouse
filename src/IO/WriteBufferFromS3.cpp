@@ -356,7 +356,7 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     }
     else
     {
-        write_settings.resource_link.adjust(cost, 0); // We assume no resource was used in case of failure
+        write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
     }
 }
