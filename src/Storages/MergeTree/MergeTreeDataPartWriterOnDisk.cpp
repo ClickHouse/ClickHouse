@@ -115,13 +115,16 @@ static size_t computeIndexGranularityImpl(
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
+
     if (!can_use_adaptive_index_granularity)
         index_granularity_for_block = fixed_index_granularity_rows;
     else
     {
         size_t block_size_in_memory = block.bytes();
         if (blocks_are_granules)
+        {
             index_granularity_for_block = rows_in_block;
+        }
         else if (block_size_in_memory >= index_granularity_bytes)
         {
             size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
@@ -133,11 +136,17 @@ static size_t computeIndexGranularityImpl(
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
-    if (index_granularity_for_block == 0) /// very rare case when index granularity bytes less then single row
+
+    /// We should be less or equal than fixed index granularity.
+    /// But if block size is a granule size then do not adjust it.
+    /// Granularity greater than fixed granularity might come from compact part.
+    if (!blocks_are_granules)
+        index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
+
+    /// Very rare case when index granularity bytes less than single row.
+    if (index_granularity_for_block == 0)
         index_granularity_for_block = 1;
 
-    /// We should be less or equal than fixed index granularity
-    index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
     return index_granularity_for_block;
 }
 
