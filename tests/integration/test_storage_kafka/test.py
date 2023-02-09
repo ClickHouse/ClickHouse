@@ -4470,7 +4470,7 @@ def test_bad_messages_parsing(kafka_cluster):
 
         print(format_name)
 
-        kafka_create_topic(admin_client, f'{format_name}_err')
+        kafka_create_topic(admin_client, f"{format_name}_err")
 
         instance.query(
             f"""
@@ -4491,7 +4491,7 @@ def test_bad_messages_parsing(kafka_cluster):
         )
 
         messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
-        kafka_produce(kafka_cluster, f'{format_name}_err', messages)
+        kafka_produce(kafka_cluster, f"{format_name}_err", messages)
 
         attempt = 0
         rows = 0
@@ -4503,9 +4503,9 @@ def test_bad_messages_parsing(kafka_cluster):
 
         assert rows == len(messages)
 
-        kafka_delete_topic(admin_client, f'{format_name}_err')
+        kafka_delete_topic(admin_client, f"{format_name}_err")
 
-    protobuf_schema="""
+    protobuf_schema = """
 syntax = "proto3";
 
 message Message {
@@ -4538,7 +4538,7 @@ message Message {
 
         print(format_name)
 
-        kafka_create_topic(admin_client, f'{format_name}_err')
+        kafka_create_topic(admin_client, f"{format_name}_err")
 
         messages = ["qwertyuiop", "poiuytrewq", "zxcvbnm"]
         kafka_produce(kafka_cluster, f'{format_name}_err', messages)
@@ -4553,9 +4553,9 @@ message Message {
 
         assert rows == len(messages)
 
-        kafka_delete_topic(admin_client, f'{format_name}_err')
+        kafka_delete_topic(admin_client, f"{format_name}_err")
 
-    capn_proto_schema="""
+    capn_proto_schema = """
 @0xd9dd7b35452d1c4f;
 
 struct Message
@@ -4587,7 +4587,7 @@ struct Message
 
     print("CapnProto")
 
-    kafka_create_topic(admin_client, 'CapnProto_err')
+    kafka_create_topic(admin_client, "CapnProto_err")
 
     messages = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
     kafka_produce(kafka_cluster, 'CapnProto_err', messages)
@@ -4602,7 +4602,7 @@ struct Message
 
     assert rows == len(messages)
 
-    kafka_delete_topic(admin_client, 'CapnProto_err')
+    kafka_delete_topic(admin_client, "CapnProto_err")
 
 
 if __name__ == "__main__":
