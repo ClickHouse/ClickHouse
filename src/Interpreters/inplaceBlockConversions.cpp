@@ -101,7 +101,11 @@ void addDefaultRequiredExpressionsRecursively(
         auto default_value = column.type->getDefault();
         ASTPtr expr = std::make_shared<ASTLiteral>(default_value);
         if (is_column_in_query && convert_null_to_default)
-            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
+        {
+            /// We should CAST default value to required type, otherwise the result of ifNull function can be different type.
+            auto cast_expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(cast_expr));
+        }
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
     }
