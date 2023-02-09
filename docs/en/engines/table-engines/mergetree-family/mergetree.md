@@ -454,32 +454,36 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            |
-| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            |
-| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            |
-| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            |
-| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            |
-| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            |
-| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
-| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
-| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            |
-| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            |
-| hasTokenCaseInsensitive                                                                                    | ✗           | ✗      | ✗          | ✔          | ✗            |
-| hasTokenCaseInsensitiveOrNull                                                                              | ✗           | ✗      | ✗          | ✔          | ✗            |
+| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | inverted |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|----------|
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔     | ✔          | ✔          | ✔           | ✔        |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔     | ✔          | ✔          | ✔           | ✔        |
+| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔     | ✔          | ✔          | ✗           | ✔        |
+| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔     | ✔          | ✔          | ✗           | ✔        |
+| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔     | ✔          | ✔          | ✗           | ✔        |
+| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗     | ✔          | ✔          | ✗           | ✔        |
+| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗     | ✔          | ✗          | ✗           | ✔        |
+| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔     | ✔          | ✔          | ✔           | ✔        |
+| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔     | ✔          | ✔          | ✔           | ✔        |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔     | ✗          | ✗          | ✗           | ✗        |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔     | ✗          | ✗          | ✗           | ✗        |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔     | ✗          | ✗          | ✗           | ✗        |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔     | ✗          | ✗          | ✗           | ✗        |
+| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔     | ✗          | ✗          | ✗           | ✗        |
+| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔     | ✗          | ✗          | ✗           | ✗        |
+| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗     | ✔          | ✔          | ✔           | ✔        |
+| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗     | ✗          | ✗          | ✔           | ✗        |
+| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗     | ✗          | ✗          | ✔           | ✗        |
+| hasToken                                                                                                   | ✗           | ✗     | ✗          | ✔          | ✗           | ✔        |
+| hasTokenOrNull                                                                                             | ✗           | ✗     | ✗          | ✔          | ✗           | ✔        |
+| hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗     | ✗          | ✔          | ✗           | ✗        |
+| hasTokenCaseInsensitiveOrNull (*)                                                                          | ✗           | ✗     | ✗          | ✔          | ✗           | ✗        |
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
+(*) For `hasTokenCaseInsensitve` and `hasTokenCaseInsensitive` to be effective, the data skipping index of type `tokenbf_v1` must be created on lowercased data, for example:
+```
+CREATE TABLE tab (id UInt64, s String, INDEX tok_bf_idx (s, lower(s)) TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1) ... . ) ENGINE = MergeTree()
+```
 
 :::note
 Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
