@@ -76,23 +76,25 @@ ARG TARGETARCH
 ARG NFPM_VERSION=2.20.0
 
 RUN arch=${TARGETARCH:-amd64} \
-  && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
-  && dpkg -i /tmp/nfpm.deb \
-  && rm /tmp/nfpm.deb
+    && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
+    && dpkg -i /tmp/nfpm.deb \
+    && rm /tmp/nfpm.deb
 
 ARG GO_VERSION=1.18.3
 # We need go for clickhouse-diagnostics
 RUN arch=${TARGETARCH:-amd64} \
-  && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
-  && tar -xzf /tmp/go.tgz -C /usr/local/ \
-  && rm /tmp/go.tgz
+    && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+    && tar -xzf /tmp/go.tgz -C /usr/local/ \
+    && rm /tmp/go.tgz
 
 ENV PATH="$PATH:/usr/local/go/bin"
 ENV GOPATH=/workdir/go
 ENV GOCACHE=/workdir/
 
-RUN curl https://raw.githubusercontent.com/matus-chochlik/ctcache/7fd516e91c17779cbc6fc18bd119313d9532dd90/clang-tidy-cache -Lo /usr/bin/clang-tidy-cache \
-  && chmod +x /usr/bin/clang-tidy-cache
+ARG CLANG_TIDY_SHA1=03644275e794b0587849bfc2ec6123d5ae0bdb1c
+RUN curl -Lo /usr/bin/clang-tidy-cache \
+        "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
+    && chmod +x /usr/bin/clang-tidy-cache
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
