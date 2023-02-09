@@ -273,9 +273,8 @@ void ASTColumnsExceptTransformer::setPattern(String pattern)
     original_pattern = std::move(pattern);
     column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
     if (!column_matcher->ok())
-        throw DB::Exception(
-            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
-            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "COLUMNS pattern {} cannot be compiled: {}",
+            original_pattern, column_matcher->error());
 }
 
 const std::shared_ptr<re2::RE2> & ASTColumnsExceptTransformer::getMatcher() const

@@ -619,7 +619,8 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
     catch (const pqxx::undefined_table &)
     {
         /// Removing table from replication must succeed even if table does not exist in PostgreSQL.
-        LOG_WARNING(log, "Did not remove table {} from publication, because table does not exist in PostgreSQL", doubleQuoteWithSchema(table_name), publication_name);
+        LOG_WARNING(log, "Did not remove table {} from publication, because table does not exist in PostgreSQL (publication: {})",
+                    doubleQuoteWithSchema(table_name), publication_name);
     }
 }
 
@@ -756,7 +757,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     }
 
                     LOG_ERROR(log,
-                              "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. ",
+                              "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. "
                               "Will use tables list from setting. "
                               "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
                               "Or you can you ALTER SETTING. "

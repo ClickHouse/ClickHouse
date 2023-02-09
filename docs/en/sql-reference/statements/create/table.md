@@ -3,6 +3,7 @@ slug: /en/sql-reference/statements/create/table
 sidebar_position: 36
 sidebar_label: TABLE
 title: "CREATE TABLE"
+keywords: [compression, codec, schema, DDL]
 ---
 
 Creates a new table. This query can have various syntax forms depending on a use case.
@@ -293,7 +294,7 @@ These codecs are designed to make compression more effective by using specific f
 
 #### Gorilla
 
-`Gorilla` — Calculates XOR between current and previous value and writes it in compact binary form. Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+`Gorilla` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
 #### FPC
 
