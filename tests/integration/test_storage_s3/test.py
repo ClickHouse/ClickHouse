@@ -1715,10 +1715,12 @@ def test_environment_credentials(started_cluster):
     # manually defined access key should override from env
     with pytest.raises(helpers.client.QueryRuntimeException) as ei:
         instance.query(
-                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', 'aws', 'aws123')")
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', 'aws', 'aws123')"
+        )
 
         assert ei.value.returncode == 243
         assert "HTTP response code: 403" in ei.value.stderr
+
 
 def test_s3_list_objects_failure(started_cluster):
     bucket = started_cluster.minio_bucket
