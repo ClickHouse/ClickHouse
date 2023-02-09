@@ -46,7 +46,7 @@ void MergeTreeSelectAlgorithm::initializeReaders()
 {
     task_columns = getReadTaskColumns(
         LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
-        required_columns, virt_column_names, prewhere_info, /*with_subcolumns=*/ true);
+        required_columns, virt_column_names, prewhere_info, reader_settings, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();

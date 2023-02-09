@@ -29,6 +29,8 @@ struct MergeTreeReaderSettings
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
     bool use_asynchronous_read_from_pool = false;
+    /// If PREWHERE has multiple conditions combined with AND, execute them in separate read/filtering steps.
+    bool enable_multiple_prewhere_read_steps = false;
 };
 
 struct MergeTreeWriterSettings
