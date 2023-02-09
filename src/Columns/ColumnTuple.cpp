@@ -565,6 +565,11 @@ double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
     return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
 }
 
+UInt64 ColumnTuple::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnTuple>();
+}
+
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);

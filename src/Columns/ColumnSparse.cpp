@@ -470,7 +470,7 @@ int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
 
 bool ColumnSparse::hasEqualValues() const
 {
-    size_t num_defaults = getNumberOfDefaults();
+    size_t num_defaults = getNumberOfDefaultRows();
     if (num_defaults == _size)
         return true;
 
@@ -512,7 +512,7 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
     else
         values->getPermutation(direction, stability, limit + 1, null_direction_hint, perm);
 
-    size_t num_of_defaults = getNumberOfDefaults();
+    size_t num_of_defaults = getNumberOfDefaultRows();
     size_t row = 0;
 
     const auto & offsets_data = getOffsetsData();
@@ -677,7 +677,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
         return;
     }
 
-    if (getNumberOfDefaults() == 0)
+    if (getNumberOfDefaultRows() == 0)
     {
         size_t min_idx = 1;
         size_t max_idx = 1;
@@ -709,7 +709,12 @@ void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t
 
 double ColumnSparse::getRatioOfDefaultRows(double) const
 {
-    return static_cast<double>(getNumberOfDefaults()) / _size;
+    return static_cast<double>(getNumberOfDefaultRows()) / _size;
+}
+
+UInt64 ColumnSparse::getNumberOfDefaultRows() const
+{
+    return _size - offsets->size();
 }
 
 MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
