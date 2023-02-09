@@ -1,6 +1,7 @@
-#if defined(OS_LINUX)
-
 #include "IOUringReader.h"
+
+#if USE_LIBURING
+
 #include <base/errnoToString.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
