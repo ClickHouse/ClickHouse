@@ -929,6 +929,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     }
 
     std::vector<JoinTreeQueryPlan> query_plans_stack;
+    bool has_remote_table = false;
 
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -969,9 +970,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         else
         {
             const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-            if (table_expression_data.isRemote() && !is_single_table_expression)
+            if (table_expression_data.isRemote() && has_remote_table)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "JOIN with remote storages is unsuppored");
+                    "JOIN with multiple remote storages is unsuppored");
+
+            has_remote_table = table_expression_data.isRemote();
 
             query_plans_stack.push_back(buildQueryPlanForTableExpression(table_expression,
                 select_query_info,

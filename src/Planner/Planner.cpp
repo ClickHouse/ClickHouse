@@ -218,6 +218,17 @@ public:
             /// Constness of offset is validated during query analysis stage
             limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         }
+
+        /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
+        if (limit_length != 0 &&
+            !query_node.isDistinct() &&
+            !query_node.isLimitWithTies() &&
+            !query_node.hasLimitBy() &&
+            !query_has_array_join_in_join_tree &&
+            limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
+        {
+            partial_sorting_limit = limit_length + limit_offset;
+        }
     }
 
     bool aggregate_overflow_row = false;
@@ -229,6 +240,7 @@ public:
     SortDescription sort_description;
     UInt64 limit_length = 0;
     UInt64 limit_offset = 0;
+    UInt64 partial_sorting_limit = 0;
 };
 
 void addExpressionStep(QueryPlan & query_plan,
@@ -513,23 +525,9 @@ void addDistinctStep(QueryPlan & query_plan,
 
 void addSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context,
-    const QueryNode & query_node)
+    const PlannerContextPtr & planner_context)
 {
     const auto & sort_description = query_analysis_result.sort_description;
-    UInt64 limit_length = query_analysis_result.limit_length;
-    UInt64 limit_offset = query_analysis_result.limit_offset;
-
-    UInt64 partial_sorting_limit = 0;
-
-    /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
-    if (limit_length != 0 && !query_node.isDistinct() && !query_node.hasLimitBy() && !query_node.isLimitWithTies() &&
-        !query_analysis_result.query_has_array_join_in_join_tree &&
-        limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
-    {
-        partial_sorting_limit = limit_length + limit_offset;
-    }
-
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     SortingStep::Settings sort_settings(*query_context);
@@ -537,7 +535,7 @@ void addSortingStep(QueryPlan & query_plan,
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         sort_description,
-        partial_sorting_limit,
+        query_analysis_result.partial_sorting_limit,
         sort_settings,
         settings.optimize_sorting_by_input_stream_properties);
     sorting_step->setStepDescription("Sorting for ORDER BY");
@@ -553,10 +551,12 @@ void addMergeSortingStep(QueryPlan & query_plan,
     const auto & settings = query_context->getSettingsRef();
 
     const auto & sort_description = query_analysis_result.sort_description;
-    UInt64 limit_length = query_analysis_result.limit_length;
     const auto max_block_size = settings.max_block_size;
 
-    auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), sort_description, max_block_size, limit_length);
+    auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(),
+        sort_description,
+        max_block_size,
+        query_analysis_result.partial_sorting_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
@@ -719,6 +719,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     bool apply_prelimit = apply_limit &&
         query_node.hasLimit() &&
         !query_node.isLimitWithTies() &&
+        !query_node.isGroupByWithTotals() &&
         !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree &&
         !query_analysis_result.query_has_array_join_in_join_tree &&
         !query_node.isDistinct() &&
@@ -756,7 +757,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
         return;
 
     if (expressions_analysis_result.hasSort())
-        addSortingStep(query_plan, query_analysis_result, planner_context, query_node);
+        addSortingStep(query_plan, query_analysis_result, planner_context);
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -1381,13 +1382,13 @@ void Planner::buildPlanForQueryNode()
               */
             if (query_processing_info.isFromAggregationState())
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "after aggregation stage for ORDER BY");
-            else if (!query_processing_info.isFirstStage()
-                && !expression_analysis_result.hasAggregation()
-                && !expression_analysis_result.hasWindow()
-                && !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
+            else if (!query_processing_info.isFirstStage() &&
+                !expression_analysis_result.hasAggregation() &&
+                !expression_analysis_result.hasWindow() &&
+                !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
                 addMergeSortingStep(query_plan, query_analysis_result, planner_context, "for ORDER BY, without aggregation");
             else
-                addSortingStep(query_plan, query_analysis_result, planner_context, query_node);
+                addSortingStep(query_plan, query_analysis_result, planner_context);
         }
 
         /** Optimization if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
