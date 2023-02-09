@@ -17,11 +17,12 @@ public:
 
     std::string getFileName() const override;
 
-    void preFinalize() override
+    bool preFinalize() override
     {
         next();
-        impl->preFinalize();
+        auto res = impl->preFinalize();
         is_prefinalized = true;
+        return res;
     }
 
     const WriteBuffer & getImpl() const { return *impl; }

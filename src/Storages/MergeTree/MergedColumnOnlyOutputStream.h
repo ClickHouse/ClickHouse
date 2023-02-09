@@ -29,6 +29,7 @@ public:
     MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
+    bool hasAsynchronousWritingBuffers() const { return writer->hasAsynchronousWritingBuffers(); }
     void finish(bool sync);
 
 private:

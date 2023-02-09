@@ -148,7 +148,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
 #endif
 }
 
-void WriteBufferFromS3::preFinalize()
+bool WriteBufferFromS3::preFinalize()
 {
     next();
 
@@ -163,12 +163,13 @@ void WriteBufferFromS3::preFinalize()
     }
 
     is_prefinalized = true;
+    return true;
 }
 
 void WriteBufferFromS3::finalizeImpl()
 {
     if (!is_prefinalized)
-        preFinalize();
+        std::ignore = preFinalize();
 
     waitForAllBackGroundTasks();
 
