@@ -964,9 +964,7 @@ private:
     ImplementationSelector<IFunction> selector;
 };
 
-DECLARE_MULTITARGET_CODE(
-
-template <typename Impl, bool Keyed, typename KeyType>
+template <typename Impl, bool Keyed = false, typename KeyType = char>
 class FunctionAnyHash : public IFunction
 {
 public:
@@ -1363,36 +1361,14 @@ public:
         else
             return Impl::combineHashes(h1, h2);
     }
-};
 
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Impl, bool Keyed = false, typename KeyType = char>
-class FunctionAnyHash : public TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType>
-{
-public:
-    explicit FunctionAnyHash(ContextPtr context) : selector(context)
+    explicit FunctionAnyHash(ContextPtr)
     {
-        selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType>>();
-
-#if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::FunctionAnyHash<Impl, Keyed, KeyType>>();
-        selector.registerImplementation<TargetArch::AVX512F, TargetSpecific::AVX512F::FunctionAnyHash<Impl, Keyed, KeyType>>();
-#endif
     }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
     static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionAnyHash>(context);
     }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 
