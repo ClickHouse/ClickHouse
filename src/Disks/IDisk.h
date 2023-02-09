@@ -28,6 +28,7 @@ namespace Poco
 {
     namespace Util
     {
+        /// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
         class AbstractConfiguration;
     }
 }
