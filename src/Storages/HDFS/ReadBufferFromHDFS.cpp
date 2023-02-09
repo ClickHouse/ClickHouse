@@ -99,7 +99,16 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
 
         ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        int bytes_read;
+        try
+        {
+            bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        }
+        catch (...)
+        {
+            read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
+            throw;
+        }
         rlock.unlock();
 
         if (bytes_read < 0)
