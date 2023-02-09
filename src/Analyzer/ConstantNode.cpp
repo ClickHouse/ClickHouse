@@ -10,6 +10,7 @@
 #include <DataTypes/FieldToDataType.h>
 
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Interpreters/convertFieldToType.h>
 
@@ -76,7 +77,66 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 
 ASTPtr ConstantNode::toASTImpl() const
 {
-    return std::make_shared<ASTLiteral>(constant_value->getValue());
+    const auto & constant_value_literal = constant_value->getValue();
+    auto constant_value_ast = std::make_shared<ASTLiteral>(constant_value_literal);
+
+    bool need_to_add_cast_function = false;
+    auto constant_value_literal_type = constant_value_literal.getType();
+    WhichDataType constant_value_type(constant_value->getType());
+
+    switch (constant_value_literal_type)
+    {
+        case Field::Types::UInt64:
+        {
+            need_to_add_cast_function = !constant_value_type.isUInt64();
+            break;
+        }
+        case Field::Types::Int64:
+        {
+            need_to_add_cast_function = !constant_value_type.isInt64();
+            break;
+        }
+        case Field::Types::Float64:
+        {
+            need_to_add_cast_function = !constant_value_type.isFloat64();
+            break;
+        }
+        case Field::Types::String:
+        {
+            need_to_add_cast_function = !constant_value_type.isString();
+            break;
+        }
+        case Field::Types::Int128:
+        case Field::Types::UInt128:
+        case Field::Types::Int256:
+        case Field::Types::UInt256:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
+        case Field::Types::AggregateFunctionState:
+        case Field::Types::Array:
+        case Field::Types::Tuple:
+        case Field::Types::Map:
+        case Field::Types::UUID:
+        case Field::Types::Bool:
+        case Field::Types::Object:
+        case Field::Types::IPv4:
+        case Field::Types::IPv6:
+        case Field::Types::Null:
+        {
+            need_to_add_cast_function = true;
+            break;
+        }
+    }
+
+    if (need_to_add_cast_function)
+    {
+        auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value->getType()->getName());
+        return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
+    }
+
+    return constant_value_ast;
 }
 
 }

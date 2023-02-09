@@ -62,10 +62,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     auto aggregate_function_nodes = collectAggregateFunctionNodes(query_tree);
     auto aggregates_descriptions = extractAggregateDescriptions(aggregate_function_nodes, *planner_context);
 
-    ColumnsWithTypeAndName aggregates_columns;
-    aggregates_columns.reserve(aggregates_descriptions.size());
+    ColumnsWithTypeAndName available_columns_after_aggregation;
+    available_columns_after_aggregation.reserve(aggregates_descriptions.size());
     for (auto & aggregate_description : aggregates_descriptions)
-        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
+        available_columns_after_aggregation.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
 
     Names aggregation_keys;
 
@@ -157,6 +157,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
         }
     }
 
+    for (auto & node : before_aggregation_actions->getOutputs())
+        available_columns_after_aggregation.emplace_back(nullptr, node->result_type, node->result_name);
+
     /// Add expressions from aggregate functions arguments
 
     for (auto & aggregate_function_node : aggregate_function_nodes)
@@ -183,10 +186,12 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
       * With set number, which is used as an additional key at the stage of merging aggregating data.
       */
     if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets())
-        aggregates_columns.emplace_back(nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set");
+        available_columns_after_aggregation.emplace_back(nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
     /// Only aggregation keys and aggregates are available for next steps after GROUP BY step
-    auto aggregate_step = std::make_unique<ActionsChainStep>(before_aggregation_actions, ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
+    auto aggregate_step = std::make_unique<ActionsChainStep>(before_aggregation_actions,
+        false /*use_actions_nodes_as_output_columns*/,
+        available_columns_after_aggregation);
     actions_chain.addStep(std::move(aggregate_step));
 
     AggregationAnalysisResult aggregation_analysis_result;
@@ -277,7 +282,7 @@ std::optional<WindowAnalysisResult> analyzeWindow(const QueryTreeNodePtr & query
             window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
-        ActionsChainStep::AvailableOutputColumnsStrategy::ALL_NODES,
+        true /*use_actions_nodes_as_output_columns*/,
         window_functions_additional_columns);
     actions_chain.addStep(std::move(before_window_step));
 

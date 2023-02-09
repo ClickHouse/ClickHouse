@@ -438,6 +438,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         auto identifier = Identifier(ast_identifier->name_parts);
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
+    else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
+    {
+        auto identifier = Identifier(table_identifier->name_parts);
+        result = std::make_shared<IdentifierNode>(std::move(identifier));
+    }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
         auto column_transformers = buildColumnTransformers(asterisk->transformers, context);
