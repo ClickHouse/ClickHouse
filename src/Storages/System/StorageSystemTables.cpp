@@ -481,9 +481,9 @@ protected:
                     if (table_merge_tree)
                     {
                         size_t totalMarks = 0;
-                        for (auto &part_info : table_merge_tree->getAllDataPartsVector())
+                        for (auto & part : table_merge_tree->getAllDataPartsVector())
                         {
-                            totalMarks += part_info->getMarksCount();
+                            totalMarks += part->getMarksCount();
                         }
                         res_columns[res_index++]->insert(totalMarks);
                     }
