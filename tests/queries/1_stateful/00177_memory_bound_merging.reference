@@ -10,24 +10,10 @@ http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny	2014-03-18	http:/
 http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny	2014-03-19	http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny
 http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny	2014-03-20	http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny
 1
-(Expression)
-ExpressionTransform × 16
-  (MergingAggregated)
-  MergingAggregatedBucketTransform × 16
-    Resize 1 → 16
-      FinishAggregatingInOrderTransform 3 → 1
-        (Union)
-          (Aggregating)
-          SortingAggregatedForMemoryBoundMergingTransform 16 → 1
-            MergingAggregatedBucketTransform × 16
-              Resize 1 → 16
-                FinishAggregatingInOrderTransform 2 → 1
-                  AggregatingInOrderTransform × 2
-                    (Expression)
-                    ExpressionTransform × 2
-                      (Filter)
-                      FilterTransform × 2
-                        (ReadFromMergeTree)
-                        ExpressionTransform × 2
-                          MergeTreeInOrder × 2 0 → 1
-          (ReadFromRemoteParallelReplicas)
+MergingAggregatedBucketTransform
+FinishAggregatingInOrderTransform
+SortingAggregatedForMemoryBoundMergingTransform
+MergingAggregatedBucketTransform
+FinishAggregatingInOrderTransform
+AggregatingInOrderTransform
+MergeTreeInOrder
