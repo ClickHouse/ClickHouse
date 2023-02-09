@@ -129,9 +129,14 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
+
+/// Concurrent merges are scheduled using `RoundRobinRuntimeQueue` to ensure fair and starvation-free operation.
+/// Previously in heavily overloaded shards big merges could possibly be starved by smaller
+/// merges due to the use of strict priority scheduling `PriorityRuntimeQueue`.
 class RoundRobinRuntimeQueue;
 using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
+
 using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
