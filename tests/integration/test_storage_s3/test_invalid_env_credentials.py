@@ -61,6 +61,7 @@ def prepare_s3_bucket(started_cluster):
 
     minio_client.make_bucket(started_cluster.minio_restricted_bucket)
 
+
 def run_s3_mocks(started_cluster):
     script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
     start_mock_servers(
@@ -73,6 +74,7 @@ def run_s3_mocks(started_cluster):
             ("no_list_objects.py", "resolver", "8083"),
         ],
     )
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -100,6 +102,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_with_invalid_environment_credentials(started_cluster):
     auth = "'minio','minio123'"
     bucket = started_cluster.minio_restricted_bucket
@@ -111,7 +114,8 @@ def test_with_invalid_environment_credentials(started_cluster):
 
     with pytest.raises(helpers.client.QueryRuntimeException) as ei:
         instance.query(
-                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl')")
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl')"
+        )
 
         assert ei.value.returncode == 243
         assert "HTTP response code: 403" in ei.value.stderr
@@ -122,5 +126,3 @@ def test_with_invalid_environment_credentials(started_cluster):
             f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth})"
         ).strip()
     )
-
-
