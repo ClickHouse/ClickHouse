@@ -208,3 +208,64 @@ Expression (Project names)
                 ReadFromStorage (SystemOne)
 -- execute
 ['Istanbul','Berlin','Bensheim']
+-- GROUP BY before DISTINCT with on the same columns => remove DISTINCT
+-- query
+SELECT DISTINCT a
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY a
+)
+-- explain
+Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+  Aggregating
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
+      Join (JOIN FillRightFirst)
+        Expression (Change column names to column identifiers)
+          ReadFromStorage (SystemNumbers)
+        Expression (Change column names to column identifiers)
+          ReadFromStorage (SystemNumbers)
+-- execute
+0
+2
+1
+-- GROUP BY before DISTINCT with on different columns => do _not_ remove DISTINCT
+-- query
+SELECT DISTINCT c
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY a
+)
+-- explain
+Expression (Project names)
+  Distinct (DISTINCT)
+    Distinct (Preliminary DISTINCT)
+      Expression ((Projection + (Change column names to column identifiers + (Project names + Projection))))
+        Aggregating
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + DROP unused columns after JOIN)))))
+            Join (JOIN FillRightFirst)
+              Expression (Change column names to column identifiers)
+                ReadFromStorage (SystemNumbers)
+              Expression (Change column names to column identifiers)
+                ReadFromStorage (SystemNumbers)
+-- execute
+12
