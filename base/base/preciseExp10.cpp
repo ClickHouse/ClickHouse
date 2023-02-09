@@ -1,8 +1,7 @@
-/*
-  Origin: musl-libc /src/math/exp10.c
-  https://www.musl-libc.org/
-  http://git.musl-libc.org/cgit/musl/tree/src/math/exp10.c
-*/
+/** Origin: musl-libc /src/math/exp10.c
+  * https://www.musl-libc.org/
+  * http://git.musl-libc.org/cgit/musl/tree/src/math/exp10.c
+  */
 /*
 musl as a whole is licensed under the following standard MIT license:
 
