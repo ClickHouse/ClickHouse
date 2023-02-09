@@ -91,7 +91,7 @@ private:
 };
 
 
-TEST(Executor, RoundRobin)
+TEST(Executor, Simple)
 {
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
@@ -135,7 +135,7 @@ TEST(Executor, RemoveTasks)
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<FifoRuntimeQueue>>
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
         "GTest",
         tasks_kinds,
@@ -176,7 +176,7 @@ TEST(Executor, RemoveTasksStress)
     const size_t schedulers_count = 5;
     const size_t removers_count = 5;
 
-    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<FifoRuntimeQueue>>
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
         "GTest",
         tasks_kinds,
