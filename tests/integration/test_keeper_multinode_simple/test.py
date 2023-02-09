@@ -1,6 +1,5 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
 import random
 import string
 import os
@@ -44,8 +43,29 @@ def smaller_exception(ex):
     return "\n".join(str(ex).split("\n")[0:2])
 
 
+def wait_node(node):
+    for _ in range(100):
+        zk = None
+        try:
+            node.query("SELECT * FROM system.zookeeper WHERE path = '/'")
+            zk = get_fake_zk(node.name, timeout=30.0)
+            zk.create("/test", sequence=True)
+            print("node", node.name, "ready")
+            break
+        except Exception as ex:
+            time.sleep(0.2)
+            print("Waiting until", node.name, "will be ready, exception", ex)
+        finally:
+            if zk:
+                zk.stop()
+                zk.close()
+    else:
+        raise Exception("Can't wait node", node.name, "to become ready")
+
+
 def wait_nodes():
-    keeper_utils.wait_nodes(cluster, [node1, node2, node3])
+    for node in [node1, node2, node3]:
+        wait_node(node)
 
 
 def get_fake_zk(nodename, timeout=30.0):
@@ -62,10 +82,6 @@ def test_read_write_multinode(started_cluster):
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3")
-
-        # Cleanup
-        if node1_zk.exists("/test_read_write_multinode_node1") != None:
-            node1_zk.delete("/test_read_write_multinode_node1")
 
         node1_zk.create("/test_read_write_multinode_node1", b"somedata1")
         node2_zk.create("/test_read_write_multinode_node2", b"somedata2")
@@ -108,10 +124,6 @@ def test_watch_on_follower(started_cluster):
         node1_zk = get_fake_zk("node1")
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3")
-
-        # Cleanup
-        if node1_zk.exists("/test_data_watches") != None:
-            node1_zk.delete("/test_data_watches")
 
         node1_zk.create("/test_data_watches")
         node2_zk.set("/test_data_watches", b"hello")
@@ -171,10 +183,6 @@ def test_session_expiration(started_cluster):
         node3_zk = get_fake_zk("node3", timeout=3.0)
         print("Node3 session id", node3_zk._session_id)
 
-        # Cleanup
-        if node3_zk.exists("/test_ephemeral_node") != None:
-            node3_zk.delete("/test_ephemeral_node")
-
         node3_zk.create("/test_ephemeral_node", b"world", ephemeral=True)
 
         with PartitionManager() as pm:
@@ -213,18 +221,13 @@ def test_follower_restart(started_cluster):
     try:
         wait_nodes()
         node1_zk = get_fake_zk("node1")
-        node3_zk = get_fake_zk("node3")
-
-        # Cleanup
-        if node1_zk.exists("/test_restart_node") != None:
-            node1_zk.delete("/test_restart_node")
 
         node1_zk.create("/test_restart_node", b"hello")
+
         node3.restart_clickhouse(kill=True)
 
-        wait_nodes()
-
         node3_zk = get_fake_zk("node3")
+
         # got data from log
         assert node3_zk.get("/test_restart_node")[0] == b"hello"
 
@@ -242,11 +245,11 @@ def test_follower_restart(started_cluster):
 
 def test_simple_replicated_table(started_cluster):
     wait_nodes()
-
     for i, node in enumerate([node1, node2, node3]):
-        node.query("DROP TABLE IF EXISTS t SYNC")
         node.query(
-            f"CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{i + 1}') ORDER BY tuple()"
+            "CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{}') ORDER BY tuple()".format(
+                i + 1
+            )
         )
 
     node2.query("INSERT INTO t SELECT number FROM numbers(10)")

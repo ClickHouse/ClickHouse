@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/errors
----
 # system.errors {#system_tables-errors}
 
 包含错误代码和它们被触发的次数.

@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/cli
 sidebar_position: 17
 sidebar_label: "Клиент командной строки"
 ---

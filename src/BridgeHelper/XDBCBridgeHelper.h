@@ -16,7 +16,7 @@
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 
 namespace DB
@@ -63,12 +63,10 @@ public:
     XDBCBridgeHelper(
             ContextPtr context_,
             Poco::Timespan http_timeout_,
-            const std::string & connection_string_,
-            bool use_connection_pooling_)
+            const std::string & connection_string_)
         : IXDBCBridgeHelper(context_->getGlobalContext())
         , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
         , connection_string(connection_string_)
-        , use_connection_pooling(use_connection_pooling_)
         , http_timeout(http_timeout_)
         , config(context_->getGlobalContext()->getConfigRef())
     {
@@ -111,7 +109,7 @@ protected:
 
     String getName() const override { return BridgeHelperMixin::getName(); }
 
-    unsigned getDefaultPort() const override { return DEFAULT_PORT; }
+    size_t getDefaultPort() const override { return DEFAULT_PORT; }
 
     String serviceAlias() const override { return BridgeHelperMixin::serviceAlias(); }
 
@@ -134,7 +132,6 @@ protected:
         uri.setHost(bridge_host);
         uri.setPort(bridge_port);
         uri.setScheme("http");
-        uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
         return uri;
     }
 
@@ -149,7 +146,6 @@ private:
 
     Poco::Logger * log;
     std::string connection_string;
-    bool use_connection_pooling;
     Poco::Timespan http_timeout;
     std::string bridge_host;
     size_t bridge_port;
@@ -193,7 +189,6 @@ protected:
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
             uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
-            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
@@ -215,15 +210,15 @@ protected:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
             uri.addQueryParameter("connection_string", getConnectionString());
-            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
             ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
-                    character, BridgeHelperMixin::serviceAlias());
+                throw Exception(
+                    "Failed to parse quoting style from '" + character + "' for service " + BridgeHelperMixin::serviceAlias(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else if (character.length() == 0)
                 quote_style = IdentifierQuotingStyle::None;
             else if (character[0] == '`')
@@ -231,7 +226,7 @@ protected:
             else if (character[0] == '"')
                 quote_style = IdentifierQuotingStyle::DoubleQuotes;
             else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Can not map quote identifier '{}' to enum value", character);
+                throw Exception("Can not map quote identifier '" + character + "' to enum value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return *quote_style;

@@ -1,21 +1,16 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_LIBPQXX
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace Poco
 {
 class Logger;
-}
-
-namespace postgres
-{
-class PoolWithFailover;
-using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 }
 
 namespace DB
@@ -43,26 +38,11 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    struct Configuration
-    {
-        String host;
-        UInt16 port = 0;
-        String username = "default";
-        String password;
-        String database;
-        String table;
-        String schema;
-        String on_conflict;
-
-        std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
-        String addresses_expr;
-    };
-
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+    static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     String remote_table_name;

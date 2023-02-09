@@ -38,6 +38,10 @@ BUILD_LOG_NAME = "build_log.log"
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
+    if build_config["bundled"] != "bundled":
+        return False
+    if build_config["libraries"] == "shared":
+        return False
     if build_config["sanitizer"] != "":
         return True
     if build_config["build_type"] != "":
@@ -56,9 +60,8 @@ def get_packager_cmd(
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
-    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
+        f"cd {packager_path} && ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
@@ -66,6 +69,8 @@ def get_packager_cmd(
         cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
+    if build_config["libraries"] == "shared":
+        cmd += " --shared-libraries"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
@@ -171,7 +176,7 @@ def create_json_artifact(
     build_config: BuildConfig,
     elapsed: int,
     success: bool,
-) -> None:
+):
     subprocess.check_call(
         f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
@@ -215,7 +220,7 @@ def upload_master_static_binaries(
     build_config: BuildConfig,
     s3_helper: S3Helper,
     build_output_path: str,
-) -> None:
+):
     """Upload binary artifacts to a static S3 links"""
     static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
@@ -253,7 +258,7 @@ def main():
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
     # FIXME performance
     s3_performance_path = "/".join(
-        (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
+        (performance_pr, pr_info.sha, build_name, "performance.tgz")
     )
 
     # If this is rerun, then we try to find already created artifacts and just
@@ -331,13 +336,13 @@ def main():
 
     # FIXME performance
     performance_urls = []
-    performance_path = os.path.join(build_output_path, "performance.tar.zst")
+    performance_path = os.path.join(build_output_path, "performance.tgz")
     if os.path.exists(performance_path):
         performance_urls.append(
             s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
         )
         logging.info(
-            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
+            "Uploaded performance.tgz to %s, now delete to avoid duplication",
             performance_urls[0],
         )
         os.remove(performance_path)

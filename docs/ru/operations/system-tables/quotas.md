@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/quotas
----
 # system.quotas {#system_tables-quotas}
 
 Содержит информацию о [квотах](quotas.md).
@@ -27,3 +24,5 @@ slug: /ru/operations/system-tables/quotas
 ## Смотрите также {#see-also}
 
 -   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
+
+

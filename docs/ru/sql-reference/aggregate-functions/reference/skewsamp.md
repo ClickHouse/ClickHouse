@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/skewsamp
 sidebar_position: 151
 ---
 
@@ -26,3 +25,4 @@ skewSamp(expr)
 ``` sql
 SELECT skewSamp(value) FROM series_with_value_column;
 ```
+

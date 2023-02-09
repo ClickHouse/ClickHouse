@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -29,6 +29,7 @@ public:
     CapnProtoRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
+        const RowOutputFormatParams & params_,
         const FormatSchemaInfo & info,
         const FormatSettings & format_settings_);
 

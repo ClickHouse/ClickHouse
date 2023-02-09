@@ -7,7 +7,8 @@
 #include <Functions/checkHyperscanRegexp.h>
 #include "Regexps.h"
 
-#include "config.h"
+#include "config_functions.h"
+#include <Common/config.h>
 
 #if USE_VECTORSCAN
 #    include <hs.h>
@@ -106,7 +107,7 @@ struct MultiMatchAnyImpl
         hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for vectorscan");
+            throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -130,31 +131,33 @@ struct MultiMatchAnyImpl
             UInt64 length = haystack_offsets[i] - offset - 1;
             /// vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
-                throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
+                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
             /// zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
-                static_cast<unsigned>(length),
+                length,
                 0,
                 smart_scratch.get(),
                 on_match,
                 &res[i]);
             if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
-                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
+                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
             offset = haystack_offsets[i];
         }
 #else
         /// fallback if vectorscan is not compiled
         if constexpr (WithEditDistance)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Edit distance multi-search is not implemented when vectorscan is off");
+            throw Exception(
+                "Edit distance multi-search is not implemented when vectorscan is off",
+                ErrorCodes::NOT_IMPLEMENTED);
         PaddedPODArray<UInt8> accum(res.size());
         memset(res.data(), 0, res.size() * sizeof(res.front()));
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, String(needles[j].data(), needles[j].size()), nullptr, accum, nullptr);
+            MatchImpl<Name, MatchTraits::Syntax::Re2, MatchTraits::Case::Sensitive, MatchTraits::Result::DontNegate>::vectorConstant(haystack_data, haystack_offsets, String(needles[j].data(), needles[j].size()), nullptr, accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)
@@ -229,7 +232,7 @@ struct MultiMatchAnyImpl
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
             if (err != HS_SUCCESS)
-                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for vectorscan");
+                throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -251,20 +254,20 @@ struct MultiMatchAnyImpl
 
             /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())
-                throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
+                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
 
             /// zero the result, scan, check, update the offset.
             res[i] = 0;
             err = hs_scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + prev_haystack_offset,
-                static_cast<unsigned>(cur_haystack_length),
+                cur_haystack_length,
                 0,
                 smart_scratch.get(),
                 on_match,
                 &res[i]);
             if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
-                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan with vectorscan");
+                throw Exception("Failed to scan with vectorscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
 
             prev_haystack_offset = haystack_offsets[i];
             prev_needles_offset = needles_offsets[i];
@@ -275,7 +278,9 @@ struct MultiMatchAnyImpl
         /// -- the code is copypasted from vectorVector() in MatchImpl.h and quite complex code ... all of it can be removed once vectorscan is
         ///    enabled on all platforms (#38906)
         if constexpr (WithEditDistance)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Edit distance multi-search is not implemented when vectorscan is off");
+            throw Exception(
+                "Edit distance multi-search is not implemented when vectorscan is off",
+                ErrorCodes::NOT_IMPLEMENTED);
 
         (void)edit_distance;
 

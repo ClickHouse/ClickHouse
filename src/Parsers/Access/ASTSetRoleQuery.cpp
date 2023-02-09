@@ -14,15 +14,7 @@ String ASTSetRoleQuery::getID(char) const
 
 ASTPtr ASTSetRoleQuery::clone() const
 {
-    auto res = std::make_shared<ASTSetRoleQuery>(*this);
-
-    if (roles)
-        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
-
-    if (to_users)
-        res->to_users = std::static_pointer_cast<ASTRolesOrUsersSet>(to_users->clone());
-
-    return res;
+    return std::make_shared<ASTSetRoleQuery>(*this);
 }
 
 

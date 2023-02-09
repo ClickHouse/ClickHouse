@@ -42,13 +42,13 @@ IMergingTransformBase::IMergingTransformBase(
 
 void IMergingTransformBase::onNewInput()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "onNewInput is not implemented for {}", getName());
+    throw Exception("onNewInput is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IMergingTransformBase::addInput()
 {
     if (have_all_inputs)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "IMergingTransform already have all inputs.");
+        throw Exception("IMergingTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
 
     inputs.emplace_back(outputs.front().getHeader(), this);
     onNewInput();
@@ -57,7 +57,7 @@ void IMergingTransformBase::addInput()
 void IMergingTransformBase::setHaveAllInputs()
 {
     if (have_all_inputs)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "IMergingTransform already have all inputs.");
+        throw Exception("IMergingTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
 
     have_all_inputs = true;
 }

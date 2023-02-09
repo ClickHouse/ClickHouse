@@ -30,7 +30,8 @@ namespace
 FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & format, bool require_message, bool is_server, const std::string & format_schema_path)
 {
     if (format_schema.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The format {} requires a schema. The corresponding setting should be set", format);
+        throw Exception(
+            "The format " + format + " requires a schema. The corresponding setting should be set", ErrorCodes::BAD_ARGUMENTS);
 
     String default_file_extension = getFormatSchemaDefaultFileExtension(format);
 
@@ -40,18 +41,20 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
         size_t colon_pos = format_schema.find(':');
         if ((colon_pos == String::npos) || (colon_pos == 0) || (colon_pos == format_schema.length() - 1))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format{}. Got '{}'",
-                    (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'"), format_schema);
+            throw Exception(
+                    "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
+                    + (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'") +
+                    ". Got '" + format_schema + "'", ErrorCodes::BAD_ARGUMENTS);
         }
         else
         {
             path = fs::path(format_schema.substr(0, colon_pos));
             String filename = path.has_filename() ? path.filename() : path.parent_path().filename();
             if (filename.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format{}. Got '{}'",
-                    (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'"), format_schema);
+                throw Exception(
+                    "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
+                    + (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'") +
+                    ". Got '" + format_schema + "'", ErrorCodes::BAD_ARGUMENTS);
         }
         message_name = format_schema.substr(colon_pos + 1);
     }
@@ -75,7 +78,7 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
     if (path.is_absolute())
     {
         if (is_server)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Absolute path in the 'format_schema' setting is prohibited: {}", path.string());
+            throw Exception("Absolute path in the 'format_schema' setting is prohibited: " + path.string(), ErrorCodes::BAD_ARGUMENTS);
         schema_path = path.filename();
         schema_directory = path.parent_path() / "";
     }

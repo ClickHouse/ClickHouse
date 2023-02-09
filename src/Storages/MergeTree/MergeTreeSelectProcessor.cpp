@@ -1,14 +1,13 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
-MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
+MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
@@ -21,31 +20,38 @@ MergeTreeSelectAlgorithm::MergeTreeSelectAlgorithm(
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
     const MergeTreeReaderSettings & reader_settings_,
-    MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
-    bool has_limit_below_one_block_)
-    : IMergeTreeSelectAlgorithm{
+    bool has_limit_below_one_block_,
+    std::optional<ParallelReadingExtension> extension_)
+    : MergeTreeBaseSelectProcessor{
         storage_snapshot_->getSampleBlockForColumns(required_columns_),
         storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        reader_settings_, use_uncompressed_cache_, virt_column_names_},
+        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     sample_block(storage_snapshot_->metadata->getSampleBlock()),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     has_limit_below_one_block(has_limit_below_one_block_),
-    pool(pool_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
-    ordered_names = header_without_const_virtual_columns.getNames();
+    /// Actually it means that parallel reading from replicas enabled
+    /// and we have to collaborate with initiator.
+    /// In this case we won't set approximate rows, because it will be accounted multiple times.
+    /// Also do not count amount of read rows if we read in order of sorting key,
+    /// because we don't know actual amount of read rows in case when limit is set.
+    if (!extension_.has_value() && !reader_settings.read_in_order)
+        addTotalRowsApprox(total_rows);
+
+    ordered_names = header_without_virtual_columns.getNames();
 }
 
-void MergeTreeSelectAlgorithm::initializeReaders()
+void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
-        LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot,
+        storage, storage_snapshot, data_part,
         required_columns, virt_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
@@ -62,7 +68,7 @@ void MergeTreeSelectAlgorithm::initializeReaders()
 }
 
 
-void MergeTreeSelectAlgorithm::finish()
+void MergeTreeSelectProcessor::finish()
 {
     /** Close the files (before destroying the object).
     * When many sources are created, but simultaneously reading only a few of them,
@@ -73,6 +79,6 @@ void MergeTreeSelectAlgorithm::finish()
     data_part.reset();
 }
 
-MergeTreeSelectAlgorithm::~MergeTreeSelectAlgorithm() = default;
+MergeTreeSelectProcessor::~MergeTreeSelectProcessor() = default;
 
 }

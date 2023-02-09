@@ -82,7 +82,7 @@ public:
     {
         static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
         if (scale_a > max_scale || scale_b > max_scale)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Bad scale of decimal field");
+            throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
         Shift shift;
         if (scale_a < scale_b)
@@ -189,7 +189,7 @@ private:
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                     constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
             else if (c1_is_const)
             {
@@ -198,7 +198,7 @@ private:
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                     vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
             else
             {
@@ -207,10 +207,10 @@ private:
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                         vectorVector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
                     else
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
+                        throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
         }
 
@@ -230,7 +230,7 @@ private:
         if constexpr (is_decimal<B>)
             y = b.value;
         else
-            y = static_cast<CompareInt>(b);
+            y = b;
 
         if constexpr (_check_overflow)
         {
@@ -251,7 +251,7 @@ private:
                 overflow |= common::mulOverflow(y, scale, y);
 
             if (overflow)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Can't compare decimal number due to overflow");
+                throw Exception("Can't compare decimal number due to overflow", ErrorCodes::DECIMAL_OVERFLOW);
         }
         else
         {

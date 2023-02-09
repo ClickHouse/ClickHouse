@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/utilities/clickhouse-benchmark
 sidebar_position: 61
 sidebar_label: clickhouse-benchmark
 ---
@@ -160,3 +159,4 @@ localhost:9000, queries 10, QPS: 6.082, RPS: 121959604.568, MiB/s: 930.478, resu
 99.900%     0.172 sec.
 99.990%     0.172 sec.
 ```
+
