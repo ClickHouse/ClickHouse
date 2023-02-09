@@ -433,6 +433,11 @@ else()
     link_libraries(global-group)
 endif ()
 
+option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
+if (NOT OS_LINUX AND NOT OS_ANDROID)
+    set(ENABLE_GWP_ASAN OFF)
+endif ()
+
 option(WERROR "Enable -Werror compiler option" ON)
 
 if (WERROR)
