@@ -57,3 +57,4 @@ endfunction()
 
 add_rust_subdirectory (BLAKE3)
 add_rust_subdirectory (skim)
+add_rust_subdirectory (prql)
