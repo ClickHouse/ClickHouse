@@ -80,7 +80,7 @@ public:
 
         bool is_prefinalized = false;
 
-        void preFinalize();
+        [[nodiscard]] bool preFinalize();
 
         void finalize();
 
