@@ -1282,10 +1282,10 @@ private:
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
 
     /// Array join expressions counter
-    size_t array_join_expressions_counter = 0;
+    size_t array_join_expressions_counter = 1;
 
     /// Subquery counter
-    size_t subquery_counter = 0;
+    size_t subquery_counter = 1;
 
     /// Global expression node to projection name map
     std::unordered_map<QueryTreeNodePtr, ProjectionName> node_to_projection_name;
@@ -1907,6 +1907,26 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
             else
             {
+                /** Make unique column names for tuple.
+                  *
+                  * Example: SELECT (SELECT 2 AS x, x)
+                  */
+                NameSet block_column_names;
+                size_t unique_column_name_counter = 1;
+
+                for (auto & column_with_type : block)
+                {
+                    if (!block_column_names.contains(column_with_type.name))
+                    {
+                        block_column_names.insert(column_with_type.name);
+                        continue;
+                    }
+
+                    column_with_type.name += '_';
+                    column_with_type.name += std::to_string(unique_column_name_counter);
+                    ++unique_column_name_counter;
+                }
+
                 scalar_block.insert({
                     ColumnTuple::create(block.getColumns()),
                     std::make_shared<DataTypeTuple>(block.getDataTypes(), block.getNames()),
@@ -1939,7 +1959,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         if (constant_node->getValue().isNull())
         {
             std::string cast_type = constant_node->getResultType()->getName();
-            std::string cast_function_name = "__CAST";
+            std::string cast_function_name = "_CAST";
 
             auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
             auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
@@ -2129,6 +2149,11 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
 
     bool table_expression_has_alias = table_expression_node->hasAlias();
     if (table_expression_has_alias)
+        return;
+
+    auto * query_node = table_expression_node->as<QueryNode>();
+    auto * union_node = table_expression_node->as<UnionNode>();
+    if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
         return;
 
     auto table_expression_node_type = table_expression_node->getNodeType();
@@ -5207,8 +5232,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             IdentifierResolveScope subquery_scope(node, &scope /*parent_scope*/);
             subquery_scope.subquery_depth = scope.subquery_depth + 1;
 
-            ++subquery_counter;
             std::string projection_name = "_subquery_" + std::to_string(subquery_counter);
+            ++subquery_counter;
 
             if (node_type == QueryTreeNodeType::QUERY)
                 resolveQuery(node, subquery_scope);
@@ -5547,7 +5572,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 auto resolved_identifier = table_identifier_resolve_result.resolved_identifier;
 
                 if (!resolved_identifier)
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE,
                         "Unknown table expression identifier '{}' in scope {}",
                         from_table_identifier.getIdentifier().getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
@@ -6066,6 +6091,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
             auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
+            if (!result_left_table_expression && identifier_node->hasAlias())
+            {
+                std::vector<std::string> alias_identifier_parts = {identifier_node->getAlias()};
+                IdentifierLookup alias_identifier_lookup{Identifier(std::move(alias_identifier_parts)), IdentifierLookupContext::EXPRESSION};
+                result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(alias_identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
+            }
+
             if (!result_left_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "JOIN {} using identifier '{}' cannot be resolved from left table expression. In scope {}",
@@ -6081,6 +6113,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     scope.scope_node->formatASTForErrorMessage());
 
             auto result_right_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope);
+            if (!result_right_table_expression && identifier_node->hasAlias())
+            {
+                std::vector<std::string> alias_identifier_parts = {identifier_node->getAlias()};
+                IdentifierLookup alias_identifier_lookup{Identifier(std::move(alias_identifier_parts)), IdentifierLookupContext::EXPRESSION};
+                result_right_table_expression = tryResolveIdentifierFromJoinTreeNode(alias_identifier_lookup, join_node_typed.getRightTableExpression(), scope);
+            }
+
             if (!result_right_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "JOIN {} using identifier '{}' cannot be resolved from right table expression. In scope {}",
