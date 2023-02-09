@@ -1,0 +1,3 @@
+clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
+target_include_directories(prql_integration INTERFACE include)
+add_library(ch_rust::prql_integration ALIAS prql_integration)
