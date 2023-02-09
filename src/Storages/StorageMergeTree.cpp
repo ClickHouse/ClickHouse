@@ -1262,7 +1262,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
-        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, shared_lock, common_assignee_trigger);
+        /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
+        /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
+        /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(), mutate_entry, shared_lock, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
