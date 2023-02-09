@@ -884,7 +884,7 @@ AggregationInputOrder buildInputOrderInfo(
 }
 
 InputOrderInfoPtr buildInputOrderInfo(
-    ReadFromMergeTree * reading,
+    const ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
     const ActionsDAGPtr & dag,
     const SortDescription & description,
@@ -1012,7 +1012,11 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             limit);
 
         if (order_info)
-            reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        {
+            bool can_read = reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+            if (!can_read)
+                return nullptr;
+        }
 
         return order_info;
     }
@@ -1025,7 +1029,11 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             limit);
 
         if (order_info)
-            merge->requestReadingInOrder(order_info);
+        {
+            bool can_read = merge->requestReadingInOrder(order_info);
+            if (!can_read)
+                return nullptr;
+        }
 
         return order_info;
     }
@@ -1057,10 +1065,14 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
             dag, keys);
 
         if (order_info.input_order)
-            reading->requestReadingInOrder(
+        {
+            bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit);
+            if (!can_read)
+                return {};
+        }
 
         return order_info;
     }
@@ -1072,7 +1084,11 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
             dag, keys);
 
         if (order_info.input_order)
-            merge->requestReadingInOrder(order_info.input_order);
+        {
+            bool can_read = merge->requestReadingInOrder(order_info.input_order);
+            if (!can_read)
+                return {};
+        }
 
         return order_info;
     }
@@ -1261,7 +1277,9 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
-        read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        if (!can_read)
+            return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
     }
 

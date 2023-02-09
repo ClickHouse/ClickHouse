@@ -158,7 +158,10 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
     const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
-    void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    /// Returns `false` if requested reading cannot be performed.
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+
+    static bool isFinal(const SelectQueryInfo & query_info);
 
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
