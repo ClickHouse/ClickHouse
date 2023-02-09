@@ -1,9 +1,0 @@
-diff a/tests/clickhouse-test b/tests/clickhouse-test	(rejected hunks)
-@@ -601,7 +601,6 @@ class SettingsRandomizer:
-         "local_filesystem_read_method": lambda: random.choice(
-             ["read", "pread", "mmap", "pread_threadpool"]
-         ),
--        "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
-         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
-         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
-         "compile_expressions": lambda: random.randint(0, 1),
