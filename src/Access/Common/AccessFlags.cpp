@@ -96,11 +96,13 @@ namespace
 
         const Flags & getAllFlags() const { return all_flags; }
         const Flags & getGlobalFlags() const { return all_flags_for_target[GLOBAL]; }
+        const Flags & getGlobalWithParameterFlags() const { return all_flags_for_target[GLOBAL_WITH_PARAMETER]; }
         const Flags & getDatabaseFlags() const { return all_flags_for_target[DATABASE]; }
         const Flags & getTableFlags() const { return all_flags_for_target[TABLE]; }
         const Flags & getColumnFlags() const { return all_flags_for_target[COLUMN]; }
         const Flags & getDictionaryFlags() const { return all_flags_for_target[DICTIONARY]; }
         const Flags & getAllFlagsGrantableOnGlobalLevel() const { return getAllFlags(); }
+        const Flags & getAllFlagsGrantableOnNamedCollectionLevel() const { return all_flags_for_target[NAMED_COLLECTION]; }
         const Flags & getAllFlagsGrantableOnDatabaseLevel() const { return all_flags_grantable_on_database_level; }
         const Flags & getAllFlagsGrantableOnTableLevel() const { return all_flags_grantable_on_table_level; }
         const Flags & getAllFlagsGrantableOnColumnLevel() const { return getColumnFlags(); }
@@ -116,6 +118,8 @@ namespace
             VIEW = TABLE,
             COLUMN,
             DICTIONARY,
+            GLOBAL_WITH_PARAMETER,
+            NAMED_COLLECTION,
         };
 
         struct Node;
@@ -295,7 +299,7 @@ namespace
                 collectAllFlags(child.get());
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
-            all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
+            all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_for_target[NAMED_COLLECTION] | all_flags_grantable_on_table_level;
         }
 
         Helper()
@@ -345,7 +349,7 @@ namespace
         std::unordered_map<std::string_view, Flags> keyword_to_flags_map;
         std::vector<Flags> access_type_to_flags_mapping;
         Flags all_flags;
-        Flags all_flags_for_target[static_cast<size_t>(DICTIONARY) + 1];
+        Flags all_flags_for_target[static_cast<size_t>(NAMED_COLLECTION) + 1];
         Flags all_flags_grantable_on_database_level;
         Flags all_flags_grantable_on_table_level;
     };
@@ -361,11 +365,13 @@ std::vector<AccessType> AccessFlags::toAccessTypes() const { return Helper::inst
 std::vector<std::string_view> AccessFlags::toKeywords() const { return Helper::instance().flagsToKeywords(flags); }
 AccessFlags AccessFlags::allFlags() { return Helper::instance().getAllFlags(); }
 AccessFlags AccessFlags::allGlobalFlags() { return Helper::instance().getGlobalFlags(); }
+AccessFlags AccessFlags::allGlobalWithParameterFlags() { return Helper::instance().getGlobalWithParameterFlags(); }
 AccessFlags AccessFlags::allDatabaseFlags() { return Helper::instance().getDatabaseFlags(); }
 AccessFlags AccessFlags::allTableFlags() { return Helper::instance().getTableFlags(); }
 AccessFlags AccessFlags::allColumnFlags() { return Helper::instance().getColumnFlags(); }
 AccessFlags AccessFlags::allDictionaryFlags() { return Helper::instance().getDictionaryFlags(); }
 AccessFlags AccessFlags::allFlagsGrantableOnGlobalLevel() { return Helper::instance().getAllFlagsGrantableOnGlobalLevel(); }
+AccessFlags AccessFlags::allFlagsGrantableOnNamedCollectionLevel() { return Helper::instance().getAllFlagsGrantableOnNamedCollectionLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnDatabaseLevel() { return Helper::instance().getAllFlagsGrantableOnDatabaseLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnTableLevel() { return Helper::instance().getAllFlagsGrantableOnTableLevel(); }
 AccessFlags AccessFlags::allFlagsGrantableOnColumnLevel() { return Helper::instance().getAllFlagsGrantableOnColumnLevel(); }

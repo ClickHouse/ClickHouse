@@ -123,12 +123,38 @@ namespace
                 if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
                     return false;
 
+                String database_name, table_name, collection_name;
+                bool any_database = false, any_table = false, any_named_collection = true;
+
+                size_t named_collection_access = 0;
+                for (const auto & elem : access_and_columns)
+                {
+                    if (elem.first.isNamedCollectionAccessOnly())
+                        ++named_collection_access;
+                }
+                const bool grant_named_collection_access = named_collection_access == access_and_columns.size();
+
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
 
-                String database_name, table_name;
-                bool any_database = false, any_table = false;
-                if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                if (grant_named_collection_access)
+                {
+                    ASTPtr collection;
+                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                    {
+                        any_named_collection = true;
+                    }
+                    else if (ParserIdentifier{}.parse(pos, collection, expected))
+                    {
+                        any_named_collection = false;
+                        collection_name = getIdentifierName(collection);
+                    }
+                    else
+                        return false;
+
+                    any_database = any_table = true;
+                }
+                else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
                     return false;
 
                 for (auto & [access_flags, columns] : access_and_columns)
@@ -140,6 +166,8 @@ namespace
                     element.any_database = any_database;
                     element.database = database_name;
                     element.any_table = any_table;
+                    element.any_named_collection = any_named_collection;
+                    element.named_collection = collection_name;
                     element.table = table_name;
                     res_elements.emplace_back(std::move(element));
                 }

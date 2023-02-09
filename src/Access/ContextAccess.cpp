@@ -606,7 +606,9 @@ template <bool throw_if_denied, bool grant_option>
 bool ContextAccess::checkAccessImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (element.any_database)
+    if (!element.any_named_collection)
+        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.named_collection);
+    else if (element.any_database)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
     else if (element.any_table)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database);

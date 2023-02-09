@@ -61,12 +61,22 @@ namespace
                     res.any_database = true;
                     res.any_table = true;
                     res.any_column = true;
+                    res.any_named_collection = !access_flags.isNamedCollectionAccessOnly();
                     break;
                 }
                 case 1:
                 {
-                    res.any_database = false;
-                    res.database = full_name[0];
+                    res.any_named_collection = !access_flags.isNamedCollectionAccessOnly();
+                    if (!res.any_named_collection)
+                    {
+                        res.any_database = true;
+                        res.named_collection = full_name[0];
+                    }
+                    else
+                    {
+                        res.any_database = false;
+                        res.database = full_name[0];
+                    }
                     res.any_table = true;
                     res.any_column = true;
                     break;
@@ -317,8 +327,8 @@ public:
         const Node * child = tryGetChild(name);
         if (child)
             return child->isGranted(flags_to_check, subnames...);
-        else
-            return flags.contains(flags_to_check);
+
+        return flags.contains(flags_to_check);
     }
 
     template <typename StringT>
@@ -783,7 +793,9 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
     assert(!element.is_partial_revoke);
     assert(!element.grant_option || with_grant_option);
-    if (element.any_database)
+    if (!element.any_named_collection)
+        grantImpl<with_grant_option>(element.access_flags, element.named_collection);
+    else if (element.any_database)
         grantImpl<with_grant_option>(element.access_flags);
     else if (element.any_table)
         grantImpl<with_grant_option>(element.access_flags, element.database);
@@ -825,7 +837,10 @@ void AccessRights::grant(const AccessFlags & flags, std::string_view database, s
 void AccessRights::grant(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) { grantImpl<false>(flags, database, table, columns); }
 void AccessRights::grant(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) { grantImpl<false>(flags, database, table, columns); }
 void AccessRights::grant(const AccessRightsElement & element) { grantImpl<false>(element); }
-void AccessRights::grant(const AccessRightsElements & elements) { grantImpl<false>(elements); }
+void AccessRights::grant(const AccessRightsElements & elements)
+{
+    grantImpl<false>(elements);
+}
 
 void AccessRights::grantWithGrantOption(const AccessFlags & flags) { grantImpl<true>(flags); }
 void AccessRights::grantWithGrantOption(const AccessFlags & flags, std::string_view database) { grantImpl<true>(flags, database); }
@@ -858,7 +873,9 @@ template <bool grant_option>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
     assert(!element.grant_option || grant_option);
-    if (element.any_database)
+    if (!element.any_named_collection)
+        revokeImpl<grant_option>(element.access_flags, element.named_collection);
+    else if (element.any_database)
         revokeImpl<grant_option>(element.access_flags);
     else if (element.any_table)
         revokeImpl<grant_option>(element.access_flags, element.database);
@@ -912,7 +929,7 @@ void AccessRights::revokeGrantOption(const AccessRightsElements & elements) { re
 
 AccessRightsElements AccessRights::getElements() const
 {
-#if 0
+#if 1
     logTree();
 #endif
     if (!root)
@@ -934,6 +951,7 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 {
     auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
     {
+        logTree();
         if (!root_node)
             return flags.isEmpty();
         return root_node->isGranted(flags, args...);
@@ -948,7 +966,9 @@ template <bool grant_option>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (element.any_database)
+    if (!element.any_named_collection)
+        return isGrantedImpl<grant_option>(element.access_flags, element.named_collection);
+    else if (element.any_database)
         return isGrantedImpl<grant_option>(element.access_flags);
     else if (element.any_table)
         return isGrantedImpl<grant_option>(element.access_flags, element.database);
