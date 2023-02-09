@@ -39,6 +39,7 @@ target_compile_options (_poco_xml
         -Wno-suggest-destructor-override
         -Wno-suggest-override
         -Wno-tautological-type-limit-compare
+        -Wno-tautological-unsigned-zero-compare
         -Wno-unreachable-code
         -Wno-unused-macros
         -Wno-unused-parameter
