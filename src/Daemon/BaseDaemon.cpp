@@ -159,7 +159,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
         /// The time that is usually enough for separate thread to print info into log.
-        sleepForSeconds(20);  /// FIXME: use some feedback from threads that process stacktrace
+        sleepForSeconds(60);  /// FIXME: use some feedback from threads that process stacktrace
         call_default_signal_handler(sig);
     }
 
@@ -438,7 +438,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     out.next();
 
     /// The time that is usually enough for separate thread to print info into log.
-    sleepForSeconds(20);
+    sleepForSeconds(60);
 }
 #endif
 
