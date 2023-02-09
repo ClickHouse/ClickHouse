@@ -1301,9 +1301,43 @@ Possible values:
 
 Default value: `3`.
 
-## enable_experimental_query_result_cache {#enable-experimental-query-result-cache}
+## use_query_cache {#use-query-cache}
 
-If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
+If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-reads-from-query-cache)
+and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in more detail how the cache is used.
+
+Possible values:
+
+- 0 - Yes
+- 1 - No
+
+Default value: `0`.
+
+## enable_reads_from_query_cache {#enable-reads-from-query-cache}
+
+If turned on, results of `SELECT` queries are retrieved from the [query cache](../query-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`.
+
+## enable_writes_to_query_cache {#enable-writes-to-query-cache}
+
+If turned on, results of `SELECT` queries are stored in the [query cache](../query-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`.
+
+## query_cache_store_results_of_queries_with_nondeterministic_functions {#query--store-results-of-queries-with-nondeterministic-functions}
+
+If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1312,31 +1346,9 @@ Possible values:
 
 Default value: `0`.
 
-## enable_experimental_query_result_cache_passive_usage {#enable-experimental-query-result-cache-passive-usage}
+## query_cache_min_query_runs {#query-cache-min-query-runs}
 
-If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `0`.
-
-## query_result_cache_store_results_of_queries_with_nondeterministic_functions {#query-result-cache-store-results-of-queries-with-nondeterministic-functions}
-
-If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `0`.
-
-## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
-
-Minimum number of times a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
+Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1344,9 +1356,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
+## query_cache_min_query_duration {#query-cache-min-query-duration}
 
-Minimum duration in milliseconds a query needs to run for its result to be stored in the [query result cache](../query-result-cache.md).
+Minimum duration in milliseconds a query needs to run for its result to be stored in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1354,9 +1366,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cache_ttl {#query-result-cache-ttl}
+## query_cache_ttl {#query-cache-ttl}
 
-After this time in seconds entries in the [query result cache](../query-result-cache.md) become stale.
+After this time in seconds entries in the [query cache](../query-cache.md) become stale.
 
 Possible values:
 
@@ -1364,9 +1376,9 @@ Possible values:
 
 Default value: `60`
 
-## query_result_cache_share_between_users {#query-result-cache-share-between-users}
+## query_cache_share_between_users {#query-cache-share-between-users}
 
-If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) can be read by other users.
+If turned on, the result of `SELECT` queries cached in the [query cache](../query-cache.md) can be read by other users.
 It is not recommended to enable this setting due to security reasons.
 
 Possible values:
@@ -1631,6 +1643,49 @@ SELECT * FROM test_table
 │ 1 │
 └───┘
 ```
+
+## insert_keeper_max_retries
+
+The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Retries are disabled
+
+Default value: 0
+
+Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
+The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
+```
+timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
+```
+
+For example, if `insert_keeper_retry_initial_backoff_ms=100`, `insert_keeper_retry_max_backoff_ms=10000` and `insert_keeper_max_retries=8` then timeouts will be `100, 200, 400, 800, 1600, 3200, 6400, 10000`.
+
+Apart from fault tolerance, the retries aim to provide a better user experience - they allow to avoid returning an error during INSERT execution if Keeper is restarted, for example, due to an upgrade.
+
+## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms}
+
+Initial timeout(in milliseconds) to retry a failed Keeper request during INSERT query execution
+
+Possible values:
+
+-   Positive integer.
+-   0 — No timeout
+
+Default value: 100
+
+## insert_keeper_retry_max_backoff_ms {#insert_keeper_retry_max_backoff_ms}
+
+Maximum timeout (in milliseconds) to retry a failed Keeper request during INSERT query execution
+
+Possible values:
+
+-   Positive integer.
+-   0 — Maximum timeout is not limited
+
+Default value: 10000
 
 ## max_network_bytes {#settings-max-network-bytes}
 
@@ -3255,6 +3310,15 @@ SELECT
 FROM fuse_tbl
 ```
 
+## optimize_rewrite_aggregate_function_with_if
+
+Rewrite aggregate functions with if expression as argument when logically equivalent.
+For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
+
+:::note
+Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+:::
+
 ## allow_experimental_database_replicated {#allow_experimental_database_replicated}
 
 Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
@@ -3633,6 +3697,30 @@ Default value: `0`.
 **See Also**
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
+
+## optimize_using_constraints
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for query optimization. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_append_index
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_substitute_columns
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for column substitution. The default is `false`.
+
+Possible values:
+
+- true, false
 
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
