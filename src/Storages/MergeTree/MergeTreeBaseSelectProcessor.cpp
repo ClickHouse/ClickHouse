@@ -59,7 +59,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
-    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings))
+    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
     , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
@@ -84,7 +84,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
 }
 
 
-std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings)
+std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps)
 {
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
     if (prewhere_info)
@@ -104,98 +104,102 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
         }
 
-#if 1
-        auto conjunctions = getConjunctionNodes(
-            prewhere_info->prewhere_actions->tryFindInOutputs(prewhere_info->prewhere_column_name),
-            {});
-
-        auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
-        NameSet original_output_names;
-        for (const auto & output : original_outputs)
-            original_output_names.insert(output->result_name);
-
-        auto inputs = prewhere_info->prewhere_actions->getInputs();
-        ColumnsWithTypeAndName all_inputs;
-        for (const auto & input : inputs)
-            all_inputs.emplace_back(input->column, input->result_type, input->result_name);
-
-        ActionsDAG::NodeRawConstPtrs all_conjunctions = std::move(conjunctions.allowed);
-        all_conjunctions.insert(all_conjunctions.end(), conjunctions.rejected.begin(), conjunctions.rejected.end());
-
-        struct Step
+        if (enable_multiple_prewhere_read_steps)
         {
-            ActionsDAGPtr actions;
-            String column_name;
-        };
-        std::vector<Step> steps;
+            auto conjunctions = getConjunctionNodes(
+                prewhere_info->prewhere_actions->tryFindInOutputs(prewhere_info->prewhere_column_name),
+                {});
 
-        for (const auto & conjunction : all_conjunctions)
-        {
-            auto result_name = conjunction->result_name;
-            auto step_dag = ActionsDAG::cloneActionsForConjunction({conjunction}, all_inputs);
-            const auto & result_node = step_dag->findInOutputs(result_name);
-            /// Cast to UInt8 if needed
-            if (result_node.result_type->getTypeId() != TypeIndex::UInt8)
+            auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
+            NameSet outputs_required_by_next_steps;
+            for (const auto & output : original_outputs)
+                outputs_required_by_next_steps.insert(output->result_name);
+
+            auto inputs = prewhere_info->prewhere_actions->getInputs();
+            ColumnsWithTypeAndName all_inputs;
+            for (const auto & input : inputs)
+                all_inputs.emplace_back(input->column, input->result_type, input->result_name);
+
+            ActionsDAG::NodeRawConstPtrs all_conjunctions = std::move(conjunctions.allowed);
+            all_conjunctions.insert(all_conjunctions.end(), conjunctions.rejected.begin(), conjunctions.rejected.end());
+
+            struct Step
             {
-                const auto & cast_node = step_dag->addCast(result_node, std::make_shared<DataTypeUInt8>());
-                step_dag->addOrReplaceInOutputs(cast_node);
-                result_name = cast_node.result_name;
+                ActionsDAGPtr actions;
+                String column_name;
+            };
+            std::vector<Step> steps;
+
+            for (const auto & conjunction : all_conjunctions)
+            {
+                auto result_name = conjunction->result_name;
+                auto step_dag = ActionsDAG::cloneActionsForConjunction({conjunction}, all_inputs);
+                const auto & result_node = step_dag->findInOutputs(result_name);
+                /// Cast to UInt8 if needed
+                if (result_node.result_type->getTypeId() != TypeIndex::UInt8)
+                {
+                    const auto & cast_node = step_dag->addCast(result_node, std::make_shared<DataTypeUInt8>());
+                    step_dag->addOrReplaceInOutputs(cast_node);
+                    result_name = cast_node.result_name;
+                }
+                step_dag->removeUnusedActions(Names{result_name}, true, true);
+                steps.emplace_back(Step{step_dag, result_name});
             }
-            step_dag->removeUnusedActions(Names{result_name}, true, true);
-            steps.emplace_back(Step{step_dag, result_name});
+
+            /// "Rename" the last step result to the combined prewhere column name, because in fact it will be AND of all step results
+            if (steps.back().column_name != prewhere_info->prewhere_column_name)
+                steps.back().actions->addAlias(steps.back().actions->findInOutputs(steps.back().column_name), prewhere_info->prewhere_column_name);
+
+            const size_t steps_before_prewhere = prewhere_actions->steps.size();
+            prewhere_actions->steps.resize(steps_before_prewhere + steps.size());
+
+            /// Check the steps in the reverse order so that we can maintain the list of outputs used by the next steps
+            /// and preserve them in the current step.
+            for (ssize_t i = steps.size() - 1; i >= 0; --i)
+            {
+                const auto & step = steps[i];
+
+                /// Return the condition column
+                Names step_outputs{step.column_name};
+                const bool remove_column = !outputs_required_by_next_steps.contains(step.column_name);
+                /// Preserve outputs computed at this step that are used by the next steps
+                for (const auto & output : outputs_required_by_next_steps)
+                    if (step.actions->tryRestoreColumn(output))
+                        step_outputs.emplace_back(output);
+                step.actions->removeUnusedActions(step_outputs, true, true);
+
+                /// Add current step columns as outputs that should be preserved from previous steps
+                for (const auto & input :step.actions->getInputs())
+                    outputs_required_by_next_steps.insert(input->result_name);
+
+                //std::cerr << conjunction->result_name << "\n";
+                //std::cerr << step.actions->dumpDAG() << "\n";
+
+                PrewhereExprStep prewhere_step
+                {
+                    .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
+                    .column_name = step.column_name,
+                    .remove_column = remove_column,
+                    .need_filter = false
+                };
+                prewhere_actions->steps[steps_before_prewhere + i] = std::move(prewhere_step);
+            }
+
+            prewhere_actions->steps.back().remove_column = prewhere_info->remove_prewhere_column;
+            prewhere_actions->steps.back().need_filter = prewhere_info->need_filter;
         }
-
-        /// "Rename" the last step result to the combined prewhere column name, because in fact it will be AND of all step results
-        if (steps.back().column_name != prewhere_info->prewhere_column_name)
-            steps.back().actions->addAlias(steps.back().actions->findInOutputs(steps.back().column_name), prewhere_info->prewhere_column_name);
-
-        const size_t steps_before_prewhere = prewhere_actions->steps.size();
-        prewhere_actions->steps.resize(steps_before_prewhere + steps.size());
-
-        for (ssize_t i = steps.size() - 1; i >= 0; --i)
+        else
         {
-            const auto & step = steps[i];
-
-            /// Return the condition columns
-            Names step_outputs{step.column_name};
-            const bool remove_column = !original_output_names.contains(step.column_name);
-            /// Preserve all the original outputs computed at this step
-            for (const auto & output : original_output_names)
-                if (step.actions->tryRestoreColumn(output))
-                    step_outputs.emplace_back(output);
-            step.actions->removeUnusedActions(step_outputs, true, true);
-
-            /// Add current step columns as outputs for previous steps
-            for (const auto & input :step.actions->getInputs())
-                original_output_names.insert(input->result_name);
-
-            //std::cerr << conjunction->result_name << "\n";
-            //std::cerr << step.actions->dumpDAG() << "\n";
-
             PrewhereExprStep prewhere_step
             {
-                .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
-                .column_name = step.column_name,
-                .remove_column = remove_column, // TODO: properly set this depending on whether the column is used in the next step
-                .need_filter = false
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
+                .column_name = prewhere_info->prewhere_column_name,
+                .remove_column = prewhere_info->remove_prewhere_column,
+                .need_filter = prewhere_info->need_filter
             };
-            prewhere_actions->steps[steps_before_prewhere + i] = std::move(prewhere_step);
+
+            prewhere_actions->steps.emplace_back(std::move(prewhere_step));
         }
-
-        prewhere_actions->steps.back().remove_column = prewhere_info->remove_prewhere_column;
-        prewhere_actions->steps.back().need_filter = prewhere_info->need_filter;
-#else
-
-        PrewhereExprStep prewhere_step
-        {
-            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
-            .column_name = prewhere_info->prewhere_column_name,
-            .remove_column = prewhere_info->remove_prewhere_column,
-            .need_filter = prewhere_info->need_filter
-        };
-
-        prewhere_actions->steps.emplace_back(std::move(prewhere_step));
-#endif
     }
 
     return prewhere_actions;
