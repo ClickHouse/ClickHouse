@@ -117,15 +117,13 @@ class TestDockerImageCheck(unittest.TestCase):
         self.assertEqual(versions, ["1", "1-HEAD"])
         self.assertEqual(result_version, "1-HEAD")
 
-    @patch("builtins.open")
-    @patch("subprocess.Popen")
+    @patch("docker_images_check.TeePopen")
     @patch("platform.machine")
-    def test_build_and_push_one_image(self, mock_machine, mock_popen, mock_open):
+    def test_build_and_push_one_image(self, mock_machine, mock_popen):
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
         image = di.DockerImage("path", "name", False, gh_repo_path="")
 
         result, _ = di.build_and_push_one_image(image, "version", "", True, True)
-        mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -138,13 +136,11 @@ class TestDockerImageCheck(unittest.TestCase):
             mock_popen.call_args.args,
         )
         self.assertTrue(result)
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
 
         mock_popen.return_value.__enter__.return_value.wait.return_value = 0
         result, _ = di.build_and_push_one_image(image, "version2", "", False, True)
-        mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -158,12 +154,10 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertTrue(result)
 
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
         mock_popen.return_value.__enter__.return_value.wait.return_value = 1
         result, _ = di.build_and_push_one_image(image, "version2", "", False, False)
-        mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -176,14 +170,12 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertFalse(result)
 
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
         mock_popen.return_value.__enter__.return_value.wait.return_value = 1
         result, _ = di.build_and_push_one_image(
             image, "version2", "cached-version", False, False
         )
-        mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_not_called()
         self.assertIn(
@@ -197,7 +189,6 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertFalse(result)
 
-        mock_open.reset_mock()
         mock_popen.reset_mock()
         mock_machine.reset_mock()
         only_amd64_image = di.DockerImage("path", "name", True)
@@ -206,7 +197,6 @@ class TestDockerImageCheck(unittest.TestCase):
         result, _ = di.build_and_push_one_image(
             only_amd64_image, "version", "", True, True
         )
-        mock_open.assert_called_once()
         mock_popen.assert_called_once()
         mock_machine.assert_called_once()
         self.assertIn(
