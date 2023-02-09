@@ -432,11 +432,6 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     return required_access;
 }
 
-void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
-{
-    elem.query_kind = "Drop";
-}
-
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))

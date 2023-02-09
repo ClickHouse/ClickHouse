@@ -193,7 +193,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw ParsingException(std::string("Cannot parse uuid ") + tmp, ErrorCodes::CANNOT_PARSE_UUID);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
                     UUID uuid;
                     parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
@@ -468,10 +468,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         };
     }
 
-    throw Exception(
-        "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n"
-        + nodeToJson(root_node),
-        ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+        "Type {} is not compatible with Avro {}:\n{}",
+        target_type->getName(), avro::toString(root_node->type()), nodeToJson(root_node));
 }
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
@@ -842,7 +841,7 @@ private:
             }
             catch (const avro::Exception & e)
             {
-                throw Exception(e.what(), ErrorCodes::INCORRECT_DATA);
+                throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
             }
         }
         catch (Exception & e)

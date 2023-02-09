@@ -439,6 +439,139 @@ Header: number UInt64
 0
 1
 2
+-- sum() with Floats depends on order, -> sorting is not removed here
+-- query
+SELECT
+    toTypeName(sum(v)),
+    sum(v)
+FROM
+(
+    SELECT v
+    FROM
+    (
+        SELECT CAST('9007199254740992', 'Float64') AS v
+        UNION ALL
+        SELECT CAST('1', 'Float64') AS v
+        UNION ALL
+        SELECT CAST('1', 'Float64') AS v
+    )
+    ORDER BY v ASC
+)
+-- explain
+Expression ((Projection + Before ORDER BY))
+Header: toTypeName(sum(v)) String
+        sum(v) Float64
+  Aggregating
+  Header: sum(v) Float64
+    Expression ((Before GROUP BY + Projection))
+    Header: v Float64
+      Sorting (Sorting for ORDER BY)
+      Header: v Float64
+        Union
+        Header: v Float64
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+-- execute
+Float64	9007199254740994
+-- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
+-- query
+SELECT
+    toTypeName(sum(v)),
+    sum(v)
+FROM
+(
+    SELECT v
+    FROM
+    (
+        SELECT '9007199254740992'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+        UNION ALL
+        SELECT '1'::Nullable(Float64) AS v
+    )
+    ORDER BY v ASC
+)
+-- explain
+Expression ((Projection + Before ORDER BY))
+Header: toTypeName(sum(v)) String
+        sum(v) Nullable(Float64)
+  Aggregating
+  Header: sum(v) Nullable(Float64)
+    Expression ((Before GROUP BY + Projection))
+    Header: v Nullable(Float64)
+      Sorting (Sorting for ORDER BY)
+      Header: v Nullable(Float64)
+        Union
+        Header: v Nullable(Float64)
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Nullable(Float64)
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+-- execute
+Nullable(Float64)	9007199254740994
+-- sumIf() with Floats depends on order, -> sorting is not removed here
+-- query
+SELECT
+    toTypeName(sumIf(v, v > 0)),
+    sumIf(v, v > 0)
+FROM
+(
+    SELECT v
+    FROM
+    (
+        SELECT CAST('9007199254740992', 'Float64') AS v
+        UNION ALL
+        SELECT CAST('1', 'Float64') AS v
+        UNION ALL
+        SELECT CAST('1', 'Float64') AS v
+    )
+    ORDER BY v ASC
+)
+-- explain
+Expression ((Projection + Before ORDER BY))
+Header: toTypeName(sumIf(v, greater(v, 0))) String
+        sumIf(v, greater(v, 0)) Float64
+  Aggregating
+  Header: sumIf(v, greater(v, 0)) Float64
+    Expression ((Before GROUP BY + Projection))
+    Header: v Float64
+            greater(v, 0) UInt8
+      Sorting (Sorting for ORDER BY)
+      Header: v Float64
+        Union
+        Header: v Float64
+          Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+          Expression (( + (Conversion before UNION + (Projection + Before ORDER BY))))
+          Header: v Float64
+            ReadFromStorage (SystemOne)
+            Header: dummy UInt8
+-- execute
+Float64	9007199254740994
 -- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function
 -- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order
 -- query

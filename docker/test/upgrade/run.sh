@@ -13,6 +13,31 @@ set -x
 # core.COMM.PID-TID
 sysctl kernel.core_pattern='core.%e.%p-%P'
 
+OK="\tOK\t\\N\t"
+FAIL="\tFAIL\t\\N\t"
+
+FAILURE_CONTEXT_LINES=50
+FAILURE_CONTEXT_MAX_LINE_WIDTH=400
+
+function escaped()
+{
+    # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
+    # Also limit lines width just in case (too long lines are not really useful usually)
+    clickhouse local -S 's String' --input-format=LineAsString -q "select substr(s, 1, $FAILURE_CONTEXT_MAX_LINE_WIDTH)
+      from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
+}
+function head_escaped()
+{
+    head -n $FAILURE_CONTEXT_LINES $1 | escaped
+}
+function unts()
+{
+    grep -Po "[0-9][0-9]:[0-9][0-9] \K.*"
+}
+function trim_server_logs()
+{
+    head -n $FAILURE_CONTEXT_LINES "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
+}
 
 function install_packages()
 {
@@ -30,7 +55,9 @@ function configure()
     /usr/share/clickhouse-test/config/install.sh
 
     # avoid too slow startup
-    sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+    sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+      | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" \
+      > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
     sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
@@ -134,6 +161,7 @@ function stop()
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
+    echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
     kill -TERM "$(pidof gdb)" ||:
     sleep 5
     echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
@@ -149,10 +177,11 @@ function start()
         if [ "$counter" -gt ${1:-120} ]
         then
             echo "Cannot start clickhouse-server"
-            echo -e "Cannot start clickhouse-server\tFAIL" >> /test_output/test_results.tsv
+            rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
+            echo -e "Cannot start clickhouse-server$FAIL$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
-            tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
+            tail -n100 /var/log/clickhouse-server/stderr.log
+            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
             break
         fi
         # use root to match with current uid
@@ -274,8 +303,9 @@ else
     configure
 
     # But we still need default disk because some tables loaded only into it
-    sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
-    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+    sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
+      | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
+      > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
     sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 
@@ -299,8 +329,9 @@ else
     mkdir tmp_stress_output
 
     stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
-        && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
-        || echo -e 'Test script failed\tFAIL' >> /test_output/test_results.tsv
+        && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
+        || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
+
     rm -rf tmp_stress_output
 
     # We experienced deadlocks in this command in very rare cases. Let's debug it:
@@ -321,9 +352,10 @@ else
     export ZOOKEEPER_FAULT_INJECTION=0
     configure
     start 500
-    clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_output/test_results.tsv \
-        || (echo -e 'Server failed to start\tFAIL' >> /test_output/test_results.tsv \
-        && rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log >> /test_output/application_errors.txt)
+    clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+        || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
+        && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
+        >> /test_output/test_results.tsv)
 
     # Remove file application_errors.txt if it's empty
     [ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
@@ -382,9 +414,12 @@ else
                -e "MutateFromLogEntryTask" \
                -e "No connection to ZooKeeper, cannot get shared table ID" \
                -e "Session expired" \
+               -e "TOO_MANY_PARTS" \
+               -e "Authentication failed" \
         /var/log/clickhouse-server/clickhouse-server.upgrade.log | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
-        && echo -e 'Error message in logs after server upgrade (see upgrade_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'No Error messages after server upgrade\tOK' >> /test_output/test_results.tsv
+        && echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/bc_check_error_messages.txt)" \
+            >> /test_output/test_results.tsv \
+        || echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
 
     # Remove file bc_check_error_messages.txt if it's empty
     [ -s /test_output/upgrade_error_messages.txt ] || rm /test_output/upgrade_error_messages.txt
@@ -393,42 +428,46 @@ else
     rg -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
     rg -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
     rg -Fav -e "ASan doesn't fully support makecontext/swapcontext functions" -e "DB::Exception" /test_output/tmp > /dev/null \
-        && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
+        && echo -e "Sanitizer assert (in stderr.log)$FAIL$(head_escaped /test_output/tmp)" >> /test_output/test_results.tsv \
+        || echo -e "No sanitizer asserts$OK" >> /test_output/test_results.tsv
     rm -f /test_output/tmp
 
     # OOM
     rg -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.*.log > /dev/null \
-        && echo -e 'OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
+        && echo -e "Signal 9 in clickhouse-server.log$FAIL" >> /test_output/test_results.tsv \
+        || echo -e "No OOM messages in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
     # Logical errors
     echo "Check for Logical errors in server log:"
     rg -Fa -A20 "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.*.log > /test_output/logical_errors.txt \
-        && echo -e 'Logical error thrown (see server logs or logical_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
+        && echo -e "Logical error thrown (see clickhouse-server.log or logical_errors.txt)$FAIL$(head_escaped /test_output/logical_errors.txt)" >> /test_output/test_results.tsv \
+        || echo -e "No logical errors$OK" >> /test_output/test_results.tsv
 
     # Remove file logical_errors.txt if it's empty
     [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
     # Crash
     rg -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.*.log > /dev/null \
-        && echo -e 'Killed by signal (in server logs)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
+        && echo -e "Killed by signal (in clickhouse-server.log)$FAIL" >> /test_output/test_results.tsv \
+        || echo -e "Not crashed$OK" >> /test_output/test_results.tsv
 
     # It also checks for crash without stacktrace (printed by watchdog)
     echo "Check for Fatal message in server log:"
     rg -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.*.log > /test_output/fatal_messages.txt \
-        && echo -e 'Fatal message in server logs (see bc_check_fatal_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
-        || echo -e 'No fatal messages in server logs\tOK' >> /test_output/test_results.tsv
+        && echo -e "Fatal message in clickhouse-server.log (see fatal_messages.txt)$FAIL$(trim_server_logs fatal_messages.txt)" >> /test_output/test_results.tsv \
+        || echo -e "No fatal messages in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
     # Remove file fatal_messages.txt if it's empty
     [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
 
+    rg -Fa "########################################" /test_output/* > /dev/null \
+        && echo -e "Killed by signal (output files)$FAIL" >> /test_output/test_results.tsv
+
     tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
     for table in query_log trace_log
     do
-        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.backward.tsv.zst ||:
+        clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" \
+          | zstd --threads=0 > /test_output/$table.backward.tsv.zst ||:
     done
 fi
 
@@ -436,8 +475,8 @@ dmesg -T > /test_output/dmesg.log
 
 # OOM in dmesg -- those are real
 grep -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' /test_output/dmesg.log \
-    && echo -e 'OOM in dmesg\tFAIL' >> /test_output/test_results.tsv \
-    || echo -e 'No OOM in dmesg\tOK' >> /test_output/test_results.tsv
+    && echo -e "OOM in dmesg$FAIL$(head_escaped /test_output/dmesg.log)" >> /test_output/test_results.tsv \
+    || echo -e "No OOM in dmesg$OK" >> /test_output/test_results.tsv
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
 
@@ -450,7 +489,21 @@ then
 fi
 
 # Write check result into check_status.tsv
-clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%'), rowNumberInAllBlocks() LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
+# Try to choose most specific error for the whole check status
+clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+(test like '%Sanitizer%') DESC,
+(test like '%Killed by signal%') DESC,
+(test like '%gdb.log%') DESC,
+(test ilike '%possible deadlock%') DESC,
+(test like '%start%') DESC,
+(test like '%dmesg%') DESC,
+(test like '%OOM%') DESC,
+(test like '%Signal 9%') DESC,
+(test like '%Fatal message%') DESC,
+(test like '%Error message%') DESC,
+(test like '%previous release%') DESC,
+rowNumberInAllBlocks()
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
