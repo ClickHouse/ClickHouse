@@ -88,7 +88,8 @@ static void assertIndexColumnsType(const Block & header)
         WhichDataType which(actual_type);
 
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
-            !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID())
+            !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID() &&
+            !which.isIPv4() && !which.isIPv6())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
     }
 }

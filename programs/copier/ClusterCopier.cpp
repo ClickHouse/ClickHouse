@@ -6,7 +6,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/setThreadName.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -1307,7 +1306,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         if (!limit.empty())
             query += " LIMIT " + limit;
 
-        query += "FORMAT Native";
+        query += " FORMAT Native";
 
         ParserQuery p_query(query.data() + query.size());
 
@@ -1453,7 +1452,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                                                            *zookeeper, host_id);
         // Maybe we are the first worker
 
-        ASTPtr query_select_ast = get_select_query(split_table_for_current_piece, "count()", /*enable_splitting*/ true);
+        ASTPtr query_select_ast = get_select_query(split_table_for_current_piece, "count()", /* enable_splitting= */ true);
         UInt64 count;
         {
             auto local_context = Context::createCopy(context);
@@ -1521,7 +1520,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         }
 
         // Select all fields
-        ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ true, inject_fault ? "1" : "");
+        ASTPtr query_select_ast = get_select_query(task_shard.table_read_shard, "*", /* enable_splitting= */ true, inject_fault ? "1" : "");
 
         LOG_INFO(log, "Executing SELECT query and pull from {}: {}", task_shard.getDescription(), queryToString(query_select_ast));
 
@@ -2041,7 +2040,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
 
                 while (true)
                 {
-                    auto block = remote_query_executor->read();
+                    auto block = remote_query_executor->readBlock();
                     if (!block)
                         break;
                 }
