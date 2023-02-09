@@ -566,11 +566,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
     }
 
-    bool final = false;
-    if (modified_query_info.table_expression_modifiers)
-        final = modified_query_info.table_expression_modifiers->hasFinal();
-    else
-        final = modified_select.final();
+    bool final = isFinal(modified_query_info);
 
     if (!final && storage->needRewriteQueryWithFinal(real_column_names))
     {
@@ -912,6 +908,23 @@ void ReadFromMerge::convertingSourceStream(
     }
 }
 
+bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
+{
+    if (order_info_->direction != 1 && isFinal(query_info))
+        return false;
+
+    order_info = order_info_;
+    return true;
+}
+
+bool ReadFromMerge::isFinal(const SelectQueryInfo & query_info)
+{
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->hasFinal();
+    const auto & select_query = query_info.query->as<ASTSelectQuery &>();
+    return select_query.final();
+}
+
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
     ColumnSizeByName column_sizes;
@@ -993,4 +1006,5 @@ NamesAndTypesList StorageMerge::getVirtuals() const
 
     return virtuals;
 }
+
 }
