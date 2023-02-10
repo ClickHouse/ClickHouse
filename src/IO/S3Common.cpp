@@ -25,9 +25,6 @@
 #    include <aws/core/utils/json/JsonSerializer.h>
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
-#    include <aws/core/utils/HashingUtils.h>
-#    include <aws/core/utils/UUID.h>
-#    include <aws/core/http/HttpClientFactory.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
