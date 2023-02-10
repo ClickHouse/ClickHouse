@@ -28,12 +28,12 @@ namespace ErrorCodes
 
 
 void TableFunctionHudi::parseArgumentsImpl(
-    const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & base_configuration)
+    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & base_configuration)
 {
     if (args.empty() || args.size() > 6)
         throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto * header_it = StorageURL::collectHeaders(args, base_configuration.headers, context);
+    auto * header_it = StorageURL::collectHeaders(args, base_configuration.headers_from_ast, context);
     if (header_it != args.end())
         args.erase(header_it);
 
@@ -77,7 +77,7 @@ void TableFunctionHudi::parseArgumentsImpl(
     }
 
     /// This argument is always the first
-    base_configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
+    base_configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
 
     if (args_to_idx.contains("format"))
         base_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");

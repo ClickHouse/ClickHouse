@@ -9,7 +9,7 @@ namespace ErrorCodes
 }
 
 
-bool DropPartsRanges::isAffectedByDropRange(const std::string & new_part_name, std::string & postpone_reason) const
+bool DropPartsRanges::isAffectedByDropPart(const std::string & new_part_name, std::string & postpone_reason) const
 {
     if (new_part_name.empty())
         return false;
@@ -19,7 +19,9 @@ bool DropPartsRanges::isAffectedByDropRange(const std::string & new_part_name, s
     {
         if (!drop_range.isDisjoint(entry_info))
         {
-            postpone_reason = fmt::format("Has DROP RANGE affecting entry {} producing part {}. Will postpone it's execution.", drop_range.getPartNameForLogs(), new_part_name);
+            postpone_reason = fmt::format("Has DROP_PART affecting entry {} producing part {}. "
+                                          "Will postpone it's execution.",
+                                          drop_range.getPartNameForLogs(), new_part_name);
             return true;
         }
     }
@@ -27,23 +29,24 @@ bool DropPartsRanges::isAffectedByDropRange(const std::string & new_part_name, s
     return false;
 }
 
-bool DropPartsRanges::isAffectedByDropRange(const ReplicatedMergeTreeLogEntry & entry, std::string & postpone_reason) const
+bool DropPartsRanges::isAffectedByDropPart(const ReplicatedMergeTreeLogEntry & entry, std::string & postpone_reason) const
 {
-    return isAffectedByDropRange(entry.new_part_name, postpone_reason);
+    return isAffectedByDropPart(entry.new_part_name, postpone_reason);
 }
 
-void DropPartsRanges::addDropRange(const ReplicatedMergeTreeLogEntryPtr & entry)
+void DropPartsRanges::addDropPart(const ReplicatedMergeTreeLogEntryPtr & entry)
 {
-    if (entry->type != ReplicatedMergeTreeLogEntry::DROP_RANGE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to add entry of type {} to drop ranges, expected DROP_RANGE", entry->typeToString());
+    if (entry->type != ReplicatedMergeTreeLogEntry::DROP_PART)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to add entry of type {} to drop ranges, expected DROP_RANGE",
+                        entry->typeToString());
 
     MergeTreePartInfo entry_info = MergeTreePartInfo::fromPartName(*entry->getDropRange(format_version), format_version);
     drop_ranges.emplace(entry->znode_name, entry_info);
 }
 
-void DropPartsRanges::removeDropRange(const ReplicatedMergeTreeLogEntryPtr & entry)
+void DropPartsRanges::removeDropPart(const ReplicatedMergeTreeLogEntryPtr & entry)
 {
-    if (entry->type != ReplicatedMergeTreeLogEntry::DROP_RANGE)
+    if (entry->type != ReplicatedMergeTreeLogEntry::DROP_PART)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Trying to remove entry of type {} from drop ranges, expected DROP_RANGE",
                         entry->typeToString());
@@ -53,7 +56,7 @@ void DropPartsRanges::removeDropRange(const ReplicatedMergeTreeLogEntryPtr & ent
     drop_ranges.erase(it);
 }
 
-bool DropPartsRanges::hasDropRange(const MergeTreePartInfo & new_drop_range_info, MergeTreePartInfo * out_drop_range_info) const
+bool DropPartsRanges::hasDropPart(const MergeTreePartInfo & new_drop_range_info, MergeTreePartInfo * out_drop_range_info) const
 {
     for (const auto & [_, drop_range] : drop_ranges)
     {

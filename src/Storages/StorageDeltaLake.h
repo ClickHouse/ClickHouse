@@ -37,21 +37,20 @@ private:
 class JsonMetadataGetter
 {
 public:
-    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context);
+    JsonMetadataGetter(const StorageS3::Configuration & configuration_, ContextPtr context);
 
     std::vector<String> getFiles() { return std::move(metadata).listCurrentFiles(); }
 
 private:
     void init(ContextPtr context);
 
-    std::vector<String> getJsonLogFiles();
+    std::vector<String> getJsonLogFiles() const;
 
     std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
 
     void handleJSON(const JSON & json);
 
-    StorageS3::S3Configuration base_configuration;
-    String table_path;
+    StorageS3::Configuration base_configuration;
     DeltaLakeMetadata metadata;
 };
 
@@ -62,7 +61,7 @@ public:
     // 2. Finds out parts with latest version
     // 3. Creates url for underlying StorageS3 enigne to handle reads
     StorageDeltaLake(
-        const StorageS3Configuration & configuration_,
+        const StorageS3::Configuration & configuration_,
         const StorageID & table_id_,
         ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
@@ -83,11 +82,12 @@ public:
         size_t num_streams) override;
 
     static ColumnsDescription getTableStructureFromData(
-        const StorageS3Configuration & configuration,
+        StorageS3::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
+
 private:
-    StorageS3::S3Configuration base_configuration;
+    StorageS3::Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
     String table_path;
