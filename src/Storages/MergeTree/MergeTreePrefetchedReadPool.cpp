@@ -220,10 +220,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
             if (thread_tasks.empty())
                 threads_tasks.erase(prefetched_tasks_to_steal);
 
-            LOG_TRACE(
-                log, "Thread {} stole prefetched task (priority: {}) from {} ({})",
-                thread, task->priority, from_thread, toString(task->mark_ranges));
-
             return task;
         }
 
@@ -252,8 +248,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
             if (thread_tasks.empty())
                 threads_tasks.erase(non_prefetched_tasks_to_steal);
 
-            LOG_TRACE(log, "Thread {} stole {} non-prefetched tasks from {}", thread, current_thread_tasks.size(), from_thread);
-
             auto task = std::move(current_thread_tasks.front());
             current_thread_tasks.erase(current_thread_tasks.begin());
             if (current_thread_tasks.empty())
@@ -262,7 +256,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
             return task;
         }
 
-        LOG_TEST(log, "Thread {} returns with no task (current threads tasks: {})", thread, dumpTasks(threads_tasks));
         return nullptr;
     }
 
@@ -275,11 +268,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
     size_t remaining_tasks_num = thread_tasks.size();
     if (thread_tasks.empty())
         threads_tasks.erase(it);
-
-    LOG_TEST(
-        log,
-        "Thread {} returns with task (min_marks_for_concurrent_read: {}, reader: {}, remaining_tasks: {} ({}, all remainin: {}))",
-        thread, min_marks_for_concurrent_read, task->reader.valid(), remaining_tasks_num, toString(task->mark_ranges), dumpTasks(threads_tasks));
 
     return task;
 }
