@@ -55,8 +55,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         return;
 
     const ASTIdentifier * filter_id = nullptr;
-    const ASTLiteral * filter_literal = nullptr;
-    if ((filter_id = filter_arguments[0]->as<ASTIdentifier>()) && (filter_literal = filter_arguments[1]->as<ASTLiteral>())
+    if ((filter_id = filter_arguments[0]->as<ASTIdentifier>()) && filter_arguments[1]->as<ASTLiteral>()
         && filter_id->full_name == id->full_name)
     {
         /// arrayExists(x -> x = elem, arr) -> has(arr, elem)
@@ -66,7 +65,7 @@ void RewriteArrayExistsFunctionMatcher::visit(const ASTFunction & func, ASTPtr &
         return;
     }
     else if (
-        (filter_id = filter_arguments[1]->as<ASTIdentifier>()) && (filter_literal = filter_arguments[0]->as<ASTLiteral>())
+        (filter_id = filter_arguments[1]->as<ASTIdentifier>()) && filter_arguments[0]->as<ASTLiteral>()
         && filter_id->full_name == id->full_name)
     {
         /// arrayExists(x -> elem = x, arr) -> has(arr, elem)
