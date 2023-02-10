@@ -50,8 +50,7 @@ public:
     bool isEmpty() const { return flags.none(); }
     explicit operator bool() const { return !isEmpty(); }
     bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
-    bool containsOnly(const AccessFlags & other) const { return flags == other.flags; }
-    bool isNamedCollectionAccess() const { return containsOnly(AccessFlags::allFlagsGrantableOnNamedCollectionLevel()); }
+    bool isNamedCollectionAccess() const { return AccessFlags::allFlagsGrantableOnNamedCollectionLevel().contains(*this); }
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }

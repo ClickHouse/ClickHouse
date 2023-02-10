@@ -155,7 +155,9 @@ namespace
                     any_database = any_table = true;
                 }
                 else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                {
                     return false;
+                }
 
                 for (auto & [access_flags, columns] : access_and_columns)
                 {
