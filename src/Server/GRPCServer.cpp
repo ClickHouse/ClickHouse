@@ -9,18 +9,18 @@
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -28,6 +28,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -39,6 +40,7 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
+#include <Common/logger_useful.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -49,6 +51,7 @@ using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
 using GRPCResult = clickhouse::grpc::Result;
 using GRPCException = clickhouse::grpc::Exception;
 using GRPCProgress = clickhouse::grpc::Progress;
+using GRPCObsoleteTransportCompression = clickhouse::grpc::ObsoleteTransportCompression;
 
 namespace DB
 {
@@ -61,6 +64,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_REQUEST_PARAMETER;
 }
 
 namespace
@@ -98,62 +102,6 @@ namespace
         });
     }
 
-    grpc_compression_algorithm parseCompressionAlgorithm(const String & str)
-    {
-        if (str == "none")
-            return GRPC_COMPRESS_NONE;
-        else if (str == "deflate")
-            return GRPC_COMPRESS_DEFLATE;
-        else if (str == "gzip")
-            return GRPC_COMPRESS_GZIP;
-        else if (str == "stream_gzip")
-            return GRPC_COMPRESS_STREAM_GZIP;
-        else
-            throw Exception("Unknown compression algorithm: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
-    }
-
-    grpc_compression_level parseCompressionLevel(const String & str)
-    {
-        if (str == "none")
-            return GRPC_COMPRESS_LEVEL_NONE;
-        else if (str == "low")
-            return GRPC_COMPRESS_LEVEL_LOW;
-        else if (str == "medium")
-            return GRPC_COMPRESS_LEVEL_MED;
-        else if (str == "high")
-            return GRPC_COMPRESS_LEVEL_HIGH;
-        else
-            throw Exception("Unknown compression level: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
-    }
-
-    grpc_compression_algorithm convertCompressionAlgorithm(const ::clickhouse::grpc::CompressionAlgorithm & algorithm)
-    {
-        if (algorithm == ::clickhouse::grpc::NO_COMPRESSION)
-            return GRPC_COMPRESS_NONE;
-        else if (algorithm == ::clickhouse::grpc::DEFLATE)
-            return GRPC_COMPRESS_DEFLATE;
-        else if (algorithm == ::clickhouse::grpc::GZIP)
-            return GRPC_COMPRESS_GZIP;
-        else if (algorithm == ::clickhouse::grpc::STREAM_GZIP)
-            return GRPC_COMPRESS_STREAM_GZIP;
-        else
-            throw Exception("Unknown compression algorithm: '" + ::clickhouse::grpc::CompressionAlgorithm_Name(algorithm) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
-
-    grpc_compression_level convertCompressionLevel(const ::clickhouse::grpc::CompressionLevel & level)
-    {
-        if (level == ::clickhouse::grpc::COMPRESSION_NONE)
-            return GRPC_COMPRESS_LEVEL_NONE;
-        else if (level == ::clickhouse::grpc::COMPRESSION_LOW)
-            return GRPC_COMPRESS_LEVEL_LOW;
-        else if (level == ::clickhouse::grpc::COMPRESSION_MEDIUM)
-            return GRPC_COMPRESS_LEVEL_MED;
-        else if (level == ::clickhouse::grpc::COMPRESSION_HIGH)
-            return GRPC_COMPRESS_LEVEL_HIGH;
-        else
-            throw Exception("Unknown compression level: '" + ::clickhouse::grpc::CompressionLevel_Name(level) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
-
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
     {
@@ -182,14 +130,108 @@ namespace
             }
             return grpc::SslServerCredentials(options);
 #else
-            throw DB::Exception(
-                "Can't use SSL in grpc, because ClickHouse was built without SSL library",
-                DB::ErrorCodes::SUPPORT_IS_DISABLED);
+            throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "Can't use SSL in grpc, because ClickHouse was built without SSL library");
 #endif
         }
         return grpc::InsecureServerCredentials();
     }
 
+    /// Transport compression makes gRPC library to compress packed Result messages before sending them through network.
+    struct TransportCompression
+    {
+        grpc_compression_algorithm algorithm;
+        grpc_compression_level level;
+
+        /// Extracts the settings of transport compression from a query info if possible.
+        static std::optional<TransportCompression> fromQueryInfo(const GRPCQueryInfo & query_info)
+        {
+            TransportCompression res;
+            if (!query_info.transport_compression_type().empty())
+            {
+                res.setAlgorithm(query_info.transport_compression_type(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                res.setLevel(query_info.transport_compression_level(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                return res;
+            }
+
+            if (query_info.has_obsolete_result_compression())
+            {
+                switch (query_info.obsolete_result_compression().algorithm())
+                {
+                    case GRPCObsoleteTransportCompression::NO_COMPRESSION: res.algorithm = GRPC_COMPRESS_NONE; break;
+                    case GRPCObsoleteTransportCompression::DEFLATE: res.algorithm = GRPC_COMPRESS_DEFLATE; break;
+                    case GRPCObsoleteTransportCompression::GZIP: res.algorithm = GRPC_COMPRESS_GZIP; break;
+                    case GRPCObsoleteTransportCompression::STREAM_GZIP: res.algorithm = GRPC_COMPRESS_STREAM_GZIP; break;
+                    default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression algorithm: {}", GRPCObsoleteTransportCompression::CompressionAlgorithm_Name(query_info.obsolete_result_compression().algorithm()));
+                }
+
+                switch (query_info.obsolete_result_compression().level())
+                {
+                    case GRPCObsoleteTransportCompression::COMPRESSION_NONE: res.level = GRPC_COMPRESS_LEVEL_NONE; break;
+                    case GRPCObsoleteTransportCompression::COMPRESSION_LOW: res.level = GRPC_COMPRESS_LEVEL_LOW; break;
+                    case GRPCObsoleteTransportCompression::COMPRESSION_MEDIUM: res.level = GRPC_COMPRESS_LEVEL_MED; break;
+                    case GRPCObsoleteTransportCompression::COMPRESSION_HIGH: res.level = GRPC_COMPRESS_LEVEL_HIGH; break;
+                    default: throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Unknown compression level: {}", GRPCObsoleteTransportCompression::CompressionLevel_Name(query_info.obsolete_result_compression().level()));
+                }
+                return res;
+            }
+
+            return std::nullopt;
+        }
+
+        /// Extracts the settings of transport compression from the server configuration.
+        static TransportCompression fromConfiguration(const Poco::Util::AbstractConfiguration & config)
+        {
+            TransportCompression res;
+            if (config.has("grpc.transport_compression_type"))
+            {
+                res.setAlgorithm(config.getString("grpc.transport_compression_type"), ErrorCodes::INVALID_CONFIG_PARAMETER);
+                res.setLevel(config.getInt("grpc.transport_compression_level", 0), ErrorCodes::INVALID_CONFIG_PARAMETER);
+            }
+            else
+            {
+                res.setAlgorithm(config.getString("grpc.compression", "none"), ErrorCodes::INVALID_CONFIG_PARAMETER);
+                res.setLevel(config.getString("grpc.compression_level", "none"), ErrorCodes::INVALID_CONFIG_PARAMETER);
+            }
+            return res;
+        }
+
+    private:
+        void setAlgorithm(const String & str, int error_code)
+        {
+            if (str == "none")
+                algorithm = GRPC_COMPRESS_NONE;
+            else if (str == "deflate")
+                algorithm = GRPC_COMPRESS_DEFLATE;
+            else if (str == "gzip")
+                algorithm = GRPC_COMPRESS_GZIP;
+            else if (str == "stream_gzip")
+                algorithm = GRPC_COMPRESS_STREAM_GZIP;
+            else
+                throw Exception(error_code, "Unknown compression algorithm: '{}'", str);
+        }
+
+        void setLevel(const String & str, int error_code)
+        {
+            if (str == "none")
+                level = GRPC_COMPRESS_LEVEL_NONE;
+            else if (str == "low")
+                level = GRPC_COMPRESS_LEVEL_LOW;
+            else if (str == "medium")
+                level = GRPC_COMPRESS_LEVEL_MED;
+            else if (str == "high")
+                level = GRPC_COMPRESS_LEVEL_HIGH;
+            else
+                throw Exception(error_code, "Unknown compression level: '{}'", str);
+        }
+
+        void setLevel(int level_, int error_code)
+        {
+            if (0 <= level_ && level_ < GRPC_COMPRESS_LEVEL_COUNT)
+                level = static_cast<grpc_compression_level>(level_);
+            else
+                throw Exception(error_code, "Compression level {} is out of range 0..{}", level_, GRPC_COMPRESS_LEVEL_COUNT - 1);
+        }
+    };
 
     /// Gets session's timeout from query info or from the server config.
     std::chrono::steady_clock::duration getSessionTimeout(const GRPCQueryInfo & query_info, const Poco::Util::AbstractConfiguration & config)
@@ -199,10 +241,9 @@ namespace
         {
             auto max_session_timeout = config.getUInt("max_session_timeout", 3600);
             if (session_timeout > max_session_timeout)
-                throw Exception(
-                    "Session timeout '" + std::to_string(session_timeout) + "' is larger than max_session_timeout: "
-                        + std::to_string(max_session_timeout) + ". Maximum session timeout could be modified in configuration file.",
-                    ErrorCodes::INVALID_SESSION_TIMEOUT);
+                throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+                    "Maximum session timeout could be modified in configuration file.",
+                    std::to_string(session_timeout), std::to_string(max_session_timeout));
         }
         else
             session_timeout = config.getInt("default_session_timeout", 60);
@@ -281,15 +322,19 @@ namespace
             return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
         }
 
-        void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
+        std::optional<String> getClientHeader(const String & key) const
         {
-            grpc_context.set_compression_algorithm(algorithm);
-            grpc_context.set_compression_level(level);
+            const auto & client_metadata = grpc_context.client_metadata();
+            auto it = client_metadata.find(key);
+            if (it != client_metadata.end())
+                return String{it->second.data(), it->second.size()};
+            return std::nullopt;
         }
 
-        void setResultCompression(const ::clickhouse::grpc::Compression & compression)
+        void setTransportCompression(const TransportCompression & transport_compression)
         {
-            setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
+            grpc_context.set_compression_algorithm(transport_compression.algorithm);
+            grpc_context.set_compression_level(transport_compression.level);
         }
 
     protected:
@@ -342,7 +387,7 @@ namespace
             case CALL_WITH_STREAM_IO: return "ExecuteQueryWithStreamIO()";
             case CALL_MAX: break;
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     bool isInputStreaming(CallType call_type)
@@ -381,7 +426,7 @@ namespace
 
         void write(const GRPCResult &, const CompletionCallback &) override
         {
-            throw Exception("Responder<CALL_SIMPLE>::write() should not be called", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Responder<CALL_SIMPLE>::write() should not be called");
         }
 
         void writeAndFinish(const GRPCResult & result, const grpc::Status & status, const CompletionCallback & callback) override
@@ -413,7 +458,7 @@ namespace
 
         void write(const GRPCResult &, const CompletionCallback &) override
         {
-            throw Exception("Responder<CALL_WITH_STREAM_INPUT>::write() should not be called", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Responder<CALL_WITH_STREAM_INPUT>::write() should not be called");
         }
 
         void writeAndFinish(const GRPCResult & result, const grpc::Status & status, const CompletionCallback & callback) override
@@ -502,7 +547,7 @@ namespace
             case CALL_WITH_STREAM_IO: return std::make_unique<Responder<CALL_WITH_STREAM_IO>>();
             case CALL_MAX: break;
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
 
@@ -579,7 +624,7 @@ namespace
         void executeQuery();
 
         void processInput();
-        void initializeBlockInputStream(const Block & header);
+        void initializePipeline(const Block & header);
         void createExternalTables();
 
         void generateOutput();
@@ -594,6 +639,9 @@ namespace
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
 
+        void addQueryDetailsToResult();
+        void addOutputFormatToResult();
+        void addOutputColumnsNamesAndTypesToResult(const Block & headers);
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
@@ -611,12 +659,19 @@ namespace
         std::optional<Session> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
+        OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
         ASTInsertQuery * insert_query = nullptr;
         String input_format;
         String input_data_delimiter;
+        CompressionMethod input_compression_method = CompressionMethod::None;
+        PODArray<char> output;
         String output_format;
+        bool send_output_columns_names_and_types = false;
+        CompressionMethod output_compression_method = CompressionMethod::None;
+        int output_compression_level = 0;
+
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
         bool input_function_is_used = false;
@@ -633,8 +688,10 @@ namespace
         bool responder_finished = false;
         bool cancelled = false;
 
-        std::optional<ReadBufferFromCallback> read_buffer;
-        std::optional<WriteBufferFromString> write_buffer;
+        std::unique_ptr<ReadBuffer> read_buffer;
+        std::unique_ptr<WriteBuffer> write_buffer;
+        WriteBufferFromVector<PODArray<char>> * nested_write_buffer = nullptr;
+        WriteBuffer * compressing_write_buffer = nullptr;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
         std::shared_ptr<IOutputFormat> output_format_processor;
@@ -718,7 +775,7 @@ namespace
         readQueryInfo();
 
         if (query_info.cancel())
-            throw Exception("Initial query info cannot set the 'cancel' field", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+            throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "Initial query info cannot set the 'cancel' field");
 
         LOG_DEBUG(log, "Received initial QueryInfo: {}", getQueryDescription(query_info));
     }
@@ -742,6 +799,23 @@ namespace
         session->authenticate(user, password, user_address);
         session->getClientInfo().quota_key = quota_key;
 
+        ClientInfo client_info = session->getClientInfo();
+
+        /// Parse the OpenTelemetry traceparent header.
+        auto traceparent = responder->getClientHeader("traceparent");
+        if (traceparent)
+        {
+            String error;
+            if (!client_info.client_trace_context.parseTraceparentHeader(traceparent.value(), error))
+            {
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
+                    "Failed to parse OpenTelemetry traceparent header '{}': {}",
+                    traceparent.value(), error);
+            }
+            auto tracestate = responder->getClientHeader("tracestate");
+            client_info.client_trace_context.tracestate = tracestate.value_or("");
+        }
+
         /// The user could specify session identifier and session timeout.
         /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
@@ -750,7 +824,7 @@ namespace
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
         }
 
-        query_context = session->makeQueryContext();
+        query_context = session->makeQueryContext(std::move(client_info));
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -764,6 +838,12 @@ namespace
         query_context->setCurrentQueryId(query_info.query_id());
         query_scope.emplace(query_context);
 
+        /// Set up tracing context for this query on current thread
+        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
+            query_context->getClientInfo().client_trace_context,
+            query_context->getSettingsRef(),
+            query_context->getOpenTelemetrySpanLog());
+
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
         send_exception_with_stacktrace = settings.calculate_text_stack_trace;
@@ -772,6 +852,7 @@ namespace
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
             logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+            logs_queue->setSourceRegexp(settings.send_logs_source_regexp);
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
             CurrentThread::setFatalErrorCallback([this]{ onFatalError(); });
         }
@@ -780,9 +861,9 @@ namespace
         if (!query_info.database().empty())
             query_context->setCurrentDatabase(query_info.database());
 
-        /// Apply compression settings for this call.
-        if (query_info.has_result_compression())
-            responder->setResultCompression(query_info.result_compression());
+        /// Apply transport compression for this call.
+        if (auto transport_compression = TransportCompression::fromQueryInfo(query_info))
+            responder->setTransportCompression(*transport_compression);
 
         /// The interactive delay will be used to show progress.
         interactive_delay = settings.interactive_delay;
@@ -792,7 +873,7 @@ namespace
         query_text = std::move(*(query_info.mutable_query()));
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
-        ParserQuery parser(end);
+        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
         ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
         /// Choose input format.
@@ -816,11 +897,25 @@ namespace
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
 
+        send_output_columns_names_and_types = query_info.send_output_columns();
+
+        /// Choose compression.
+        String input_compression_method_str = query_info.input_compression_type();
+        if (input_compression_method_str.empty())
+            input_compression_method_str = query_info.obsolete_compression_type();
+        input_compression_method = chooseCompressionMethod("", input_compression_method_str);
+
+        String output_compression_method_str = query_info.output_compression_type();
+        if (output_compression_method_str.empty())
+            output_compression_method_str = query_info.obsolete_compression_type();
+        output_compression_method = chooseCompressionMethod("", output_compression_method_str);
+        output_compression_level = query_info.output_compression_level();
+
         /// Set callback to create and fill external tables
         query_context->setExternalTablesInitializer([this] (ContextPtr context)
         {
             if (context != query_context)
-                throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in external tables initializer");
             createExternalTables();
         });
 
@@ -828,15 +923,15 @@ namespace
         query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
         {
             if (context != query_context)
-                throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
         {
             if (context != query_context)
-                throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
             Block block;
             while (!block && pipeline_executor->pull(block));
@@ -864,14 +959,20 @@ namespace
         if (!has_data_to_insert)
         {
             if (!insert_query)
-                throw Exception("Query requires data to insert, but it is not an INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
+                throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "Query requires data to insert, but it is not an INSERT query");
             else
-                throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+            {
+                const auto & settings = query_context->getSettingsRef();
+                if (settings.throw_if_no_data_to_insert)
+                    throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
+                else
+                    return;
+            }
         }
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.pipeline.getHeader());
+        initializePipeline(io.pipeline.getHeader());
 
         PushingPipelineExecutor executor(io.pipeline);
         executor.start();
@@ -886,10 +987,10 @@ namespace
         executor.finish();
     }
 
-    void Call::initializeBlockInputStream(const Block & header)
+    void Call::initializePipeline(const Block & header)
     {
         assert(!read_buffer);
-        read_buffer.emplace([this]() -> std::pair<const void *, size_t>
+        read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
             {
@@ -922,7 +1023,7 @@ namespace
                     break;
 
                 if (!isInputStreaming(call_type))
-                    throw Exception("next_query_info is allowed to be set only for streaming input", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                    throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "next_query_info is allowed to be set only for streaming input");
 
                 readQueryInfo();
                 if (!query_info.query().empty() || !query_info.query_id().empty() || !query_info.settings().empty()
@@ -930,9 +1031,9 @@ namespace
                     || query_info.external_tables_size() || !query_info.user_name().empty() || !query_info.password().empty()
                     || !query_info.quota().empty() || !query_info.session_id().empty())
                 {
-                    throw Exception("Extra query infos can be used only to add more input data. "
-                                    "Only the following fields can be set: input_data, next_query_info, cancel",
-                                    ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                    throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO,
+                                    "Extra query infos can be used only to add more input data. "
+                                    "Only the following fields can be set: input_data, next_query_info, cancel");
                 }
 
                 if (isQueryCancelled())
@@ -945,34 +1046,13 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
+        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
+
         assert(!pipeline);
         auto source = query_context->getInputFormat(
             input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
-        QueryPipelineBuilder builder;
-        builder.init(Pipe(source));
 
-        /// Add default values if necessary.
-        if (ast)
-        {
-            if (insert_query)
-            {
-                auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
-                if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
-                {
-                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
-                    const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
-                    if (!columns.empty())
-                    {
-                        builder.addSimpleTransform([&](const Block & cur_header)
-                        {
-                            return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
-                        });
-                    }
-                }
-            }
-        }
-
-        pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+        pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
@@ -999,7 +1079,8 @@ namespace
                     NamesAndTypesList columns;
                     for (size_t column_idx : collections::range(external_table.columns_size()))
                     {
-                        const auto & name_and_type = external_table.columns(column_idx);
+                        /// TODO: consider changing protocol
+                        const auto & name_and_type = external_table.columns(static_cast<int>(column_idx));
                         NameAndTypePair column;
                         column.name = name_and_type.name();
                         if (column.name.empty())
@@ -1017,7 +1098,10 @@ namespace
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context);
-                    ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
+
+                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
+                    buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
+
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
@@ -1034,7 +1118,7 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     auto in = external_table_context->getInputFormat(
-                        format, data, metadata_snapshot->getSampleBlock(),
+                        format, *buf, metadata_snapshot->getSampleBlock(),
                         external_table_context->getSettings().max_insert_block_size);
 
                     QueryPipelineBuilder cur_pipeline;
@@ -1061,7 +1145,7 @@ namespace
                 break;
 
             if (!isInputStreaming(call_type))
-                throw Exception("next_query_info is allowed to be set only for streaming input", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO, "next_query_info is allowed to be set only for streaming input");
 
             readQueryInfo();
             if (!query_info.query().empty() || !query_info.query_id().empty() || !query_info.settings().empty()
@@ -1069,9 +1153,11 @@ namespace
                 || !query_info.output_format().empty() || !query_info.user_name().empty() || !query_info.password().empty()
                 || !query_info.quota().empty() || !query_info.session_id().empty())
             {
-                throw Exception("Extra query infos can be used only to add more data to input or more external tables. "
-                                "Only the following fields can be set: input_data, external_tables, next_query_info, cancel",
-                                ErrorCodes::INVALID_GRPC_QUERY_INFO);
+                throw Exception(ErrorCodes::INVALID_GRPC_QUERY_INFO,
+                                "Extra query infos can be used only "
+                                "to add more data to input or more external tables. "
+                                "Only the following fields can be set: "
+                                "input_data, external_tables, next_query_info, cancel");
             }
             if (isQueryCancelled())
                 break;
@@ -1081,6 +1167,9 @@ namespace
 
     void Call::generateOutput()
     {
+        /// We add query_id and time_zone to the first result anyway.
+        addQueryDetailsToResult();
+
         if (!io.pipeline.initialized() || io.pipeline.pushing())
             return;
 
@@ -1088,9 +1177,19 @@ namespace
         if (io.pipeline.pulling())
             header = io.pipeline.getHeader();
 
-        write_buffer.emplace(*result.mutable_output());
+        if (output_compression_method != CompressionMethod::None)
+            output.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        write_buffer = std::make_unique<WriteBufferFromVector<PODArray<char>>>(output);
+        nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
+        if (output_compression_method != CompressionMethod::None)
+        {
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level);
+            compressing_write_buffer = write_buffer.get();
+        }
+
+        auto has_output = [&] { return (nested_write_buffer->position() != output.data()) || (compressing_write_buffer && compressing_write_buffer->offset()); };
+
         output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
-        output_format_processor->doWritePrefix();
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1109,6 +1208,9 @@ namespace
                 }
                 return true;
             };
+
+            addOutputFormatToResult();
+            addOutputColumnsNamesAndTypesToResult(header);
 
             Block block;
             while (check_for_cancel())
@@ -1131,8 +1233,7 @@ namespace
 
                 addLogsToResult();
 
-                bool has_output = write_buffer->offset();
-                if (has_output || result.has_progress() || result.logs_size())
+                if (has_output() || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1152,13 +1253,11 @@ namespace
             auto executor = std::make_shared<CompletedPipelineExecutor>(io.pipeline);
             auto callback = [&]() -> bool
             {
-
                 throwIfFailedToSendResult();
                 addProgressToResult();
                 addLogsToResult();
 
-                bool has_output = write_buffer->offset();
-                if (has_output || result.has_progress() || result.logs_size())
+                if (has_output() || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1169,7 +1268,7 @@ namespace
             executor->execute();
         }
 
-        output_format_processor->doWriteSuffix();
+        output_format_processor->finalize();
     }
 
     void Call::finishQuery()
@@ -1196,7 +1295,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessage(exception, true));
+        LOG_ERROR(log, getExceptionMessageAndPattern(exception, /* with_stacktrace */ true));
 
         if (responder && !responder_finished)
         {
@@ -1248,6 +1347,8 @@ namespace
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
         io.process_list_entry.reset();
+        if (query_context)
+            query_context->setProcessListElement(nullptr);
         if (session)
             session->releaseSessionID();
     }
@@ -1260,9 +1361,12 @@ namespace
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
+        nested_write_buffer = nullptr;
+        compressing_write_buffer = nullptr;
         io = {};
         query_scope.reset();
         query_context.reset();
+        thread_trace_context.reset();
         session.reset();
     }
 
@@ -1334,9 +1438,9 @@ namespace
         if (failed_to_read_query_info)
         {
             if (initial_query_info_read)
-                throw Exception("Failed to read extra QueryInfo", ErrorCodes::NETWORK_ERROR);
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read extra QueryInfo");
             else
-                throw Exception("Failed to read initial QueryInfo", ErrorCodes::NETWORK_ERROR);
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to read initial QueryInfo");
         }
     }
 
@@ -1359,9 +1463,32 @@ namespace
         return false;
     }
 
+    void Call::addQueryDetailsToResult()
+    {
+        *result.mutable_query_id() = query_context->getClientInfo().current_query_id;
+        *result.mutable_time_zone() = DateLUT::instance().getTimeZone();
+    }
+
+    void Call::addOutputFormatToResult()
+    {
+        *result.mutable_output_format() = output_format;
+    }
+
+    void Call::addOutputColumnsNamesAndTypesToResult(const Block & header)
+    {
+        if (!send_output_columns_names_and_types)
+            return;
+        for (const auto & column : header)
+        {
+            auto & name_and_type = *result.add_output_columns();
+            *name_and_type.mutable_name() = column.name;
+            *name_and_type.mutable_type() = column.type->getName();
+        }
+    }
+
     void Call::addProgressToResult()
     {
-        auto values = progress.fetchAndResetPiecewiseAtomically();
+        auto values = progress.fetchValuesAndResetPiecewiseAtomically();
         if (!values.read_rows && !values.read_bytes && !values.total_rows_to_read && !values.written_rows && !values.written_bytes)
             return;
         auto & grpc_progress = *result.mutable_progress();
@@ -1378,11 +1505,17 @@ namespace
         if (!totals)
             return;
 
-        WriteBufferFromString buf{*result.mutable_totals()};
-        auto format = query_context->getOutputFormat(output_format, buf, totals);
-        format->doWritePrefix();
+        PODArray<char> memory;
+        if (output_compression_method != CompressionMethod::None)
+            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
-        format->doWriteSuffix();
+        format->finalize();
+        buf->finalize();
+
+        result.mutable_totals()->assign(memory.data(), memory.size());
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1390,11 +1523,17 @@ namespace
         if (!extremes)
             return;
 
-        WriteBufferFromString buf{*result.mutable_extremes()};
-        auto format = query_context->getOutputFormat(output_format, buf, extremes);
-        format->doWritePrefix();
+        PODArray<char> memory;
+        if (output_compression_method != CompressionMethod::None)
+            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
+        auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
-        format->doWriteSuffix();
+        format->finalize();
+        buf->finalize();
+
+        result.mutable_extremes()->assign(memory.data(), memory.size());
     }
 
     void Call::addProfileInfoToResult(const ProfileInfo & info)
@@ -1442,14 +1581,14 @@ namespace
                 auto & log_entry = *result.add_logs();
                 log_entry.set_time(column_time.getElement(row));
                 log_entry.set_time_microseconds(column_time_microseconds.getElement(row));
-                StringRef query_id = column_query_id.getDataAt(row);
-                log_entry.set_query_id(query_id.data, query_id.size);
+                std::string_view query_id = column_query_id.getDataAt(row).toView();
+                log_entry.set_query_id(query_id.data(), query_id.size());
                 log_entry.set_thread_id(column_thread_id.getElement(row));
                 log_entry.set_level(static_cast<::clickhouse::grpc::LogsLevel>(column_level.getElement(row)));
-                StringRef source = column_source.getDataAt(row);
-                log_entry.set_source(source.data, source.size);
-                StringRef text = column_text.getDataAt(row);
-                log_entry.set_text(text.data, text.size);
+                std::string_view source = column_source.getDataAt(row).toView();
+                log_entry.set_source(source.data(), source.size());
+                std::string_view text = column_text.getDataAt(row).toView();
+                log_entry.set_text(text.data(), text.size());
             }
         }
     }
@@ -1465,6 +1604,38 @@ namespace
         if (!send_final_message && !isOutputStreaming(call_type))
             return;
 
+        /// Copy output to `result.output`, with optional compressing.
+        if (write_buffer)
+        {
+            size_t output_size;
+            if (send_final_message)
+            {
+                if (compressing_write_buffer)
+                    LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
+                write_buffer->finalize();
+                output_size = output.size();
+            }
+            else
+            {
+                if (compressing_write_buffer && compressing_write_buffer->offset())
+                {
+                    LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
+                    compressing_write_buffer->sync();
+                }
+                output_size = nested_write_buffer->position() - output.data();
+            }
+
+            if (output_size)
+            {
+                result.mutable_output()->assign(output.data(), output_size);
+                nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
+            }
+        }
+
+        if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !result.logs_size()
+            && !result.has_progress() && !result.has_stats() && !result.has_exception() && !result.cancelled())
+            return; /// Nothing to send.
+
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
         if (sending_result.get())
@@ -1477,9 +1648,6 @@ namespace
 
         /// Start sending the result.
         LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
-
-        if (write_buffer)
-            write_buffer->finalize();
 
         sending_result.set(true);
         auto callback = [this](bool ok)
@@ -1501,8 +1669,6 @@ namespace
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
-        if (write_buffer)
-            write_buffer->restart();
 
         if (send_final_message)
         {
@@ -1517,7 +1683,7 @@ namespace
     void Call::throwIfFailedToSendResult()
     {
         if (failed_to_send_result)
-            throw Exception("Failed to send result to the client", ErrorCodes::NETWORK_ERROR);
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to send result to the client");
     }
 
     void Call::sendException(const Exception & exception)
@@ -1698,11 +1864,17 @@ void GRPCServer::start()
     builder.RegisterService(&grpc_service);
     builder.SetMaxSendMessageSize(iserver.config().getInt("grpc.max_send_message_size", -1));
     builder.SetMaxReceiveMessageSize(iserver.config().getInt("grpc.max_receive_message_size", -1));
-    builder.SetDefaultCompressionAlgorithm(parseCompressionAlgorithm(iserver.config().getString("grpc.compression", "none")));
-    builder.SetDefaultCompressionLevel(parseCompressionLevel(iserver.config().getString("grpc.compression_level", "none")));
+    auto default_transport_compression = TransportCompression::fromConfiguration(iserver.config());
+    builder.SetDefaultCompressionAlgorithm(default_transport_compression.algorithm);
+    builder.SetDefaultCompressionLevel(default_transport_compression.level);
 
     queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
+    if (nullptr == grpc_server)
+    {
+        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Can't start grpc server, there is a port conflict");
+    }
+
     runner->start();
 }
 

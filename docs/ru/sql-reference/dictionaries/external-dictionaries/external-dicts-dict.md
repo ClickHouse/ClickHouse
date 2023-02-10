@@ -1,6 +1,7 @@
 ---
-toc_priority: 40
-toc_title: "Настройка внешнего словаря"
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict
+sidebar_position: 40
+sidebar_label: "Настройка внешнего словаря"
 ---
 
 # Настройка внешнего словаря {#dicts-external-dicts-dict}
@@ -47,4 +48,3 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 -   [layout](external-dicts-dict-layout.md) — Размещение словаря в памяти.
 -   [structure](external-dicts-dict-structure.md) — Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
 -   [lifetime](external-dicts-dict-lifetime.md) — Периодичность обновления словарей.
-

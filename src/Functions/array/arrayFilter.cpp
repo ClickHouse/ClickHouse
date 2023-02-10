@@ -1,7 +1,8 @@
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include "FunctionArrayMapped.h"
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+
+#include "FunctionArrayMapped.h"
 
 
 namespace DB
@@ -15,6 +16,9 @@ namespace ErrorCodes
   */
 struct ArrayFilterImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -34,7 +38,7 @@ struct ArrayFilterImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
             if (column_filter_const->getValue<UInt8>())
                 return array.clone();
@@ -70,7 +74,7 @@ struct ArrayFilterImpl
 struct NameArrayFilter { static constexpr auto name = "arrayFilter"; };
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;
 
-void registerFunctionArrayFilter(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayFilter)
 {
     factory.registerFunction<FunctionArrayFilter>();
 }

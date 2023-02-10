@@ -11,12 +11,8 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, const Block &
 {
 }
 
-void PostgreSQLOutputFormat::doWritePrefix()
+void PostgreSQLOutputFormat::writePrefix()
 {
-    if (initialized)
-        return;
-
-    initialized = true;
     const auto & header = getPort(PortKind::Main).getHeader();
     auto data_types = header.getDataTypes();
 
@@ -25,7 +21,7 @@ void PostgreSQLOutputFormat::doWritePrefix()
         std::vector<PostgreSQLProtocol::Messaging::FieldDescription> columns;
         columns.reserve(header.columns());
 
-        for (size_t i = 0; i < header.columns(); i++)
+        for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             columns.emplace_back(column_name, data_types[i]->getTypeId());
@@ -37,8 +33,6 @@ void PostgreSQLOutputFormat::doWritePrefix()
 
 void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
-    doWritePrefix();
-
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
         const Columns & columns = chunk.getColumns();
@@ -61,8 +55,6 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
     }
 }
 
-void PostgreSQLOutputFormat::finalize() {}
-
 void PostgreSQLOutputFormat::flush()
 {
     message_transport.flush();
@@ -74,7 +66,6 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
         "PostgreSQLWire",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & settings) { return std::make_shared<PostgreSQLOutputFormat>(buf, sample, settings); });
 }
 }

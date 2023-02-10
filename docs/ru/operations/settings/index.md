@@ -1,7 +1,7 @@
 ---
-toc_folder_title: Settings
-toc_priority: 55
-toc_title: Introduction
+sidebar_label: Settings
+sidebar_position: 55
+slug: /ru/operations/settings/
 ---
 
 # Настройки {#session-settings-intro}
@@ -24,7 +24,7 @@ toc_title: Introduction
 
     -   При запуске консольного клиента ClickHouse в не интерактивном режиме установите параметр запуска `--setting=value`.
     -   При использовании HTTP API передавайте cgi-параметры (`URL?setting_1=value&setting_2=value...`).
-    -  Укажите необходимые настройки в секции [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select) запроса SELECT. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
+    -  Укажите необходимые настройки в секции [SETTINGS](../../sql-reference/statements/select/index.md#settings-in-select-query) запроса SELECT. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
 
 Настройки, которые можно задать только в конфигурационном файле сервера, в разделе не рассматриваются.
 
@@ -53,4 +53,3 @@ SELECT getSetting('custom_a');
 **См. также**
 
 -   [Конфигурационные параметры сервера](../../operations/server-configuration-parameters/settings.md)
-

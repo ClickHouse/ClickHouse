@@ -1,0 +1,32 @@
+{
+	"meta":
+	[
+		{
+			"name": "count()",
+			"type": "UInt64"
+		},
+		{
+			"name": "n",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		{
+			"count()": "1",
+			"n": 1
+		}
+	],
+
+	"totals":
+	{
+		"count()": "3",
+		"n": 0
+	},
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 3,
+
+	"statistics":

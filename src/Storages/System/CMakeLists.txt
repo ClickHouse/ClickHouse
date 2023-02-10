@@ -2,19 +2,19 @@
 # You can also regenerate it manually this way:
 # execute_process(COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh")
 
-include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
-
-set (CONFIG_BUILD "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp")
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
-get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
-
 get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
 
-configure_file (StorageSystemBuildOptions.generated.cpp.in ${CONFIG_BUILD})
+function(generate_system_build_options)
+    include(${ClickHouse_SOURCE_DIR}/src/configure_config.cmake)
+    configure_file(StorageSystemBuildOptions.cpp.in StorageSystemBuildOptions.generated.cpp)
+endfunction()
+
+generate_system_build_options()
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(storages_system .)
-list (APPEND storages_system_sources ${CONFIG_BUILD})
+list (APPEND storages_system_sources StorageSystemBuildOptions.generated.cpp)
 
 add_custom_target(generate-contributors
     ./StorageSystemContributors.sh
@@ -43,13 +43,15 @@ list (APPEND storages_system_sources ${GENERATED_TIMEZONES_SRC})
 # Overlength strings
 set_source_files_properties(${GENERATED_LICENSES_SRC} PROPERTIES COMPILE_FLAGS -w)
 
+include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
 clickhouse_embed_binaries(
         TARGET information_schema_metadata
         RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/InformationSchema/"
         RESOURCES schemata.sql tables.sql views.sql columns.sql
 )
 
-add_library(clickhouse_storages_system ${storages_system_headers} ${storages_system_sources})
+list (SORT storages_system_sources) # Reproducible build
+add_library(clickhouse_storages_system ${storages_system_sources})
 
 add_dependencies(clickhouse_storages_system information_schema_metadata)
 

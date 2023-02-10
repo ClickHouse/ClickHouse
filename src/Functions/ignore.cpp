@@ -36,6 +36,8 @@ public:
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    bool useDefaultImplementationForSparseColumns() const override { return false; }
+
     String getName() const override
     {
         return name;
@@ -54,7 +56,7 @@ public:
 
 }
 
-void registerFunctionIgnore(FunctionFactory & factory)
+REGISTER_FUNCTION(Ignore)
 {
     factory.registerFunction<FunctionIgnore>();
 }

@@ -1,10 +1,10 @@
 ---
-toc_folder_title: CREATE
-toc_priority: 34
-toc_title: Overview
+slug: /en/sql-reference/statements/create/
+sidebar_position: 34
+sidebar_label: CREATE
 ---
 
-# CREATE Queries {#create-queries}
+# CREATE Queries
 
 Create queries make a new entity of one of the following kinds:
 
@@ -18,5 +18,3 @@ Create queries make a new entity of one of the following kinds:
 -   [ROW POLICY](../../../sql-reference/statements/create/row-policy.md)
 -   [QUOTA](../../../sql-reference/statements/create/quota.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/create/settings-profile.md)
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/create/) <!--hide-->

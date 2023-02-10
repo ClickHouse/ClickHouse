@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Step which has single input and single output data stream.
 /// It doesn't mean that pipeline has single port before or after such step.
 class ITransformingStep : public IQueryPlanStep
@@ -55,7 +60,27 @@ public:
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
+    /// Updates the input stream of the given step. Used during query plan optimizations.
+    /// It won't do any validation of a new stream, so it is your responsibility to ensure that this update doesn't break anything
+    /// (e.g. you update data stream traits or correctly remove / add columns).
+    void updateInputStream(DataStream input_stream)
+    {
+        input_streams.clear();
+        input_streams.emplace_back(std::move(input_stream));
+
+        updateOutputStream();
+
+        updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
+    }
+
     void describePipeline(FormatSettings & settings) const override;
+
+    /// Enforcement is supposed to be done through the special settings that will be taken into account by remote nodes during query planning (e.g. force_aggregation_in_order).
+    /// Should be called only if data_stream_traits.can_enforce_sorting_properties_in_distributed_query == true.
+    virtual void adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    }
 
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.
@@ -70,8 +95,9 @@ protected:
     TransformTraits transform_traits;
 
 private:
-    /// We collect processors got after pipeline transformation.
-    Processors processors;
+    virtual void updateOutputStream() = 0;
+
+    /// If we should collect processors got after pipeline transformation.
     bool collect_processors;
 
     const DataStreamTraits data_stream_traits;

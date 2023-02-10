@@ -1,15 +1,19 @@
 ---
-toc_priority: 42
-toc_title: Dictionary Updates
+slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime
+sidebar_position: 42
+sidebar_label: Dictionary Updates
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# Dictionary Updates {#dictionary-updates}
+# Dictionary Updates 
 
-ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `<lifetime>` tag in seconds.
+ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `lifetime` tag in seconds.
 
 Dictionary updates (other than loading for first use) do not block queries. During updates, the old version of a dictionary is used. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
 
 Example of settings:
+
+<CloudDetails />
 
 ``` xml
 <dictionary>
@@ -93,6 +97,21 @@ It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to onl
 -   If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 -   If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
 -   If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
+    - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
+    ```sql
+    ...
+    SOURCE(CLICKHOUSE(... 
+        update_field 'added_time' 
+        QUERY '
+            SELECT my_arr.1 AS x, my_arr.2 AS y, creation_time 
+            FROM (
+                SELECT arrayZip(x_arr, y_arr) AS my_arr, creation_time 
+                FROM dictionary_source
+                WHERE {condition}
+            )'
+    ))
+    ...
+    ```
 
 If `update_field` option is set, additional option `update_lag` can be set. Value of `update_lag` option is subtracted from previous update time before request updated data.
 
@@ -117,3 +136,7 @@ or
 SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
 ```
+
+## Related Content
+
+- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

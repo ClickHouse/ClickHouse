@@ -9,14 +9,14 @@ namespace DB
 /// in reverse order of primary key.
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeReverseSelectProcessor final : public MergeTreeSelectProcessor
+class MergeTreeReverseSelectAlgorithm final : public MergeTreeSelectAlgorithm
 {
 public:
     template <typename... Args>
-    MergeTreeReverseSelectProcessor(Args &&... args)
-        : MergeTreeSelectProcessor{std::forward<Args>(args)...}
+    explicit MergeTreeReverseSelectAlgorithm(Args &&... args)
+        : MergeTreeSelectAlgorithm{std::forward<Args>(args)...}
     {
-        LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
+        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
     }
@@ -24,10 +24,19 @@ public:
     String getName() const override { return "MergeTreeReverse"; }
 
 private:
-    bool getNewTask() override;
-    Chunk readFromPart() override;
+    bool getNewTaskImpl() override;
+    void finalizeNewTask() override {}
 
-    Chunks chunks;
+    bool getNewTaskParallelReplicas();
+    bool getNewTaskOrdinaryReading();
+
+    BlockAndProgress readFromPart() override;
+
+    std::vector<BlockAndProgress> chunks;
+
+    /// Used for parallel replicas
+    bool no_more_tasks{false};
+
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
 };
 

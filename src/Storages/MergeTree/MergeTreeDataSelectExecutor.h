@@ -12,6 +12,7 @@ namespace DB
 {
 
 class KeyCondition;
+struct QueryIdHolder;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
@@ -28,39 +29,49 @@ public:
 
     QueryPlanPtr read(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
-        unsigned num_streams,
+        size_t num_streams,
         QueryProcessingStage::Enum processed_stage,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
     QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot_base,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
-        unsigned num_streams,
+        size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
-        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr) const;
+        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr,
+        bool enable_parallel_reading = false) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
     MergeTreeDataSelectAnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
+        const PrewhereInfoPtr & prewhere_info,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
+        const ActionDAGNodes & added_filter_nodes,
         ContextPtr context,
-        unsigned num_streams,
+        size_t num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+
+    static MarkRanges markRangesFromPKRange(
+        const MergeTreeData::DataPartPtr & part,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const Settings & settings,
+        Poco::Logger * log);
 
 private:
     const MergeTreeData & data;
@@ -74,16 +85,22 @@ private:
         const Settings & settings,
         Poco::Logger * log);
 
-    static MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPartPtr & part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const KeyCondition & key_condition,
-        const Settings & settings,
-        Poco::Logger * log);
-
     static MarkRanges filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        const Settings & settings,
+        const MergeTreeReaderSettings & reader_settings,
+        size_t & total_granules,
+        size_t & granules_dropped,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        Poco::Logger * log);
+
+    static MarkRanges filterMarksUsingMergedIndex(
+        MergeTreeIndices indices,
+        MergeTreeIndexMergedConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const Settings & settings,
@@ -185,7 +202,7 @@ public:
     /// Also, calculate _sample_factor if needed.
     /// Also, update key condition with selected sampling range.
     static MergeTreeDataSelectSamplingData getSampling(
-        const ASTSelectQuery & select,
+        const SelectQueryInfo & select_query_info,
         NamesAndTypesList available_real_columns,
         const MergeTreeData::DataPartsVector & parts,
         KeyCondition & key_condition,

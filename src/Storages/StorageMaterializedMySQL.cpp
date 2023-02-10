@@ -1,20 +1,13 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 
 #include <Storages/StorageMaterializedMySQL.h>
 
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -39,26 +32,28 @@ bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_na
     return needRewriteQueryWithFinalForStorage(column_names, nested_storage);
 }
 
-Pipe StorageMaterializedMySQL::read(
+void StorageMaterializedMySQL::read(
+    QueryPlan & query_plan,
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & /*storage_snapshot*/,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned int num_streams)
+    size_t num_streams)
 {
-    /// If the background synchronization thread has exception.
-    rethrowSyncExceptionIfNeed(database);
+    if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
+        db->rethrowExceptionIfNeeded();
 
-    return readFinalFromNestedStorage(nested_storage, column_names, metadata_snapshot,
+    readFinalFromNestedStorage(query_plan, nested_storage, column_names,
             query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 NamesAndTypesList StorageMaterializedMySQL::getVirtuals() const
 {
-    /// If the background synchronization thread has exception.
-    rethrowSyncExceptionIfNeed(database);
+    if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
+        db->rethrowExceptionIfNeeded();
+
     return nested_storage->getVirtuals();
 }
 

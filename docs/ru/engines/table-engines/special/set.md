@@ -1,6 +1,7 @@
 ---
-toc_priority: 39
-toc_title: Set
+slug: /ru/engines/table-engines/special/set
+sidebar_position: 39
+sidebar_label: Set
 ---
 
 # Set {#set}
@@ -19,4 +20,3 @@ toc_title: Set
 При создании таблицы, применяются следующие параметры:
 
 -   [persistent](../../../operations/settings/settings.md#persistent)
-

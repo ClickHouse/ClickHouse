@@ -64,7 +64,7 @@ $CLICKHOUSE_CLIENT -q "
     settings enable_optimize_predicate_expression=0"
 
 echo "> one condition of filter should be pushed down after aggregating, other two conditions are ANDed"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4
@@ -77,7 +77,7 @@ $CLICKHOUSE_CLIENT -q "
     settings enable_optimize_predicate_expression=0"
 
 echo "> two conditions of filter should be pushed down after aggregating and ANDed, one condition is aliased"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s != 8 and y - 4
@@ -127,7 +127,7 @@ $CLICKHOUSE_CLIENT -q "
     settings enable_optimize_predicate_expression=0"
 
 echo "> filter is pushed down before sorting steps"
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --convert_query_to_cnf=0 -q "
     explain actions = 1 select x, y from (
         select number % 2 as x, number % 3 as y from numbers(6) order by y desc
     ) where x != 0 and y != 0
@@ -172,7 +172,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" | sort
 
 echo "> one condition of filter is pushed down before INNER JOIN"
 $CLICKHOUSE_CLIENT -q "
@@ -196,3 +196,12 @@ $CLICKHOUSE_CLIENT -q "
     select a, b from (
         select number + 1 as a, number + 2 as b from numbers(2) union all select number + 1 as b, number + 2 as a from numbers(2)
     ) where a != 1 settings enable_optimize_predicate_expression = 0"
+
+echo "> function calculation should be done after sorting and limit (if possible)"
+echo "> Expression should be divided into two subexpressions and only one of them should be moved after Sorting"
+$CLICKHOUSE_CLIENT -q "
+    explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5" |
+    sed 's/^ *//g' | grep -o "^ *\(Expression (.*Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
+echo "> this query should be executed without throwing an exception"
+$CLICKHOUSE_CLIENT -q "
+    select throwIf(number = 5) from (select * from numbers(10)) order by number limit 1"

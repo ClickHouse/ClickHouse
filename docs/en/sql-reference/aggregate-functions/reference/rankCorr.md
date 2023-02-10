@@ -1,8 +1,9 @@
 ---
-toc_priority: 145
+slug: /en/sql-reference/aggregate-functions/reference/rankCorr
+sidebar_position: 145
 ---
 
-# rankCorr {#agg_function-rankcorr}
+# rankCorr
 
 Computes a rank correlation coefficient.
 

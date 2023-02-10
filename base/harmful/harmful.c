@@ -182,7 +182,6 @@ TRAP(vlimit)
 TRAP(wcsnrtombs)
 TRAP(wcsrtombs)
 TRAP(wctomb)
-TRAP(wordexp)
 TRAP(basename)
 TRAP(catgets)
 TRAP(dbm_clearerr)
@@ -195,9 +194,8 @@ TRAP(dbm_nextkey)
 TRAP(dbm_open)
 TRAP(dbm_store)
 TRAP(dirname)
-#if !defined(SANITIZER)
-TRAP(dlerror) // Used by tsan
-#endif
+// TRAP(dlerror) // It is not thread-safe. But it is used by dynamic linker to load some name resolution plugins. Also used by TSan.
+/// Note: we should better get rid of glibc, dynamic linking and all that sort of annoying garbage altogether.
 TRAP(ftw)
 TRAP(getc_unlocked)
 //TRAP(getenv) // Ok at program startup
@@ -244,5 +242,53 @@ TRAP(lgammaf32)
 TRAP(lgammaf32x)
 TRAP(lgammaf64)
 TRAP(lgammaf64x)
+
+/// These functions are unused by ClickHouse and we should be aware if they are accidentally get used.
+/// Sometimes people report that these function contain vulnerabilities (these reports are bogus for ClickHouse).
+TRAP(mq_close)
+TRAP(mq_getattr)
+TRAP(mq_setattr)
+TRAP(mq_notify)
+TRAP(mq_open)
+TRAP(mq_receive)
+TRAP(mq_send)
+TRAP(mq_unlink)
+TRAP(mq_timedsend)
+TRAP(mq_timedreceive)
+
+/// These functions are also unused by ClickHouse.
+TRAP(wordexp)
+TRAP(wordfree)
+
+/// C11 threading primitives are not supported by ThreadSanitizer.
+/// Also we should avoid using them for compatibility with old libc.
+TRAP(thrd_create)
+TRAP(thrd_equal)
+TRAP(thrd_current)
+TRAP(thrd_sleep)
+TRAP(thrd_yield)
+TRAP(thrd_exit)
+TRAP(thrd_detach)
+TRAP(thrd_join)
+
+TRAP(mtx_init)
+TRAP(mtx_lock)
+TRAP(mtx_timedlock)
+TRAP(mtx_trylock)
+TRAP(mtx_unlock)
+TRAP(mtx_destroy)
+TRAP(call_once)
+
+TRAP(cnd_init)
+TRAP(cnd_signal)
+TRAP(cnd_broadcast)
+TRAP(cnd_wait)
+TRAP(cnd_timedwait)
+TRAP(cnd_destroy)
+
+TRAP(tss_create)
+TRAP(tss_get)
+TRAP(tss_set)
+TRAP(tss_delete)
 
 #endif

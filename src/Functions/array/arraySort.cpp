@@ -1,6 +1,7 @@
 #include "FunctionArrayMapped.h"
-#include <Functions/FunctionFactory.h>
 
+#include <base/sort.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -10,6 +11,9 @@ namespace DB
 template <bool positive>
 struct ArraySortImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -49,7 +53,7 @@ struct ArraySortImpl
         for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
-            std::sort(&permutation[current_offset], &permutation[next_offset], Less(*mapped));
+            ::sort(&permutation[current_offset], &permutation[next_offset], Less(*mapped));
             current_offset = next_offset;
         }
 
@@ -63,7 +67,7 @@ struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; }
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false>, NameArrayReverseSort>;
 
-void registerFunctionsArraySort(FunctionFactory & factory)
+REGISTER_FUNCTION(ArraySort)
 {
     factory.registerFunction<FunctionArraySort>();
     factory.registerFunction<FunctionArrayReverseSort>();

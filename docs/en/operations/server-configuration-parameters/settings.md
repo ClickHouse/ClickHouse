@@ -1,9 +1,10 @@
 ---
-toc_priority: 57
-toc_title: Server Settings
+slug: /en/operations/server-configuration-parameters/settings
+sidebar_position: 57
+sidebar_label: Server Settings
 ---
 
-# Server Settings {#server-settings}
+# Server Settings
 
 ## builtin_dictionaries_reload_interval {#builtin-dictionaries-reload-interval}
 
@@ -23,8 +24,9 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-!!! warning "Warning"
-    Don’t use it if you have just started using ClickHouse.
+:::warning
+Don’t use it if you have just started using ClickHouse.
+:::
 
 Configuration template:
 
@@ -44,7 +46,7 @@ Configuration template:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
+-   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 -   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
@@ -69,8 +71,6 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
-<!--
-
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
@@ -89,8 +89,9 @@ Loading from config:
 </encryption_codecs>
 ```
 
-!!! note "NOTE"
-    Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+:::note
+Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+:::
 
 Loading from config, when the key is in hex:
 
@@ -107,7 +108,7 @@ Loading key from the environment variable:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key_hex from_env="KEY"></key_hex>
+        <key_hex from_env="ENVVAR"></key_hex>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -120,7 +121,7 @@ Each of these methods can be applied for multiple keys:
 <encryption_codecs>
     <aes_128_gcm_siv>
         <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
-        <key_hex id="1" from_env=".."></key_hex>
+        <key_hex id="1" from_env="ENVVAR"></key_hex>
         <current_key_id>1</current_key_id>
     </aes_128_gcm_siv>
 </encryption_codecs>
@@ -150,7 +151,6 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
--->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -176,8 +176,9 @@ Possible values:
 
 Default value: `1073741824` (1 GB).
 
-!!! info "Note"
-    Hard limit is configured via system tools
+:::note
+Hard limit is configured via system tools
+:::
 
 **Example**
 
@@ -192,6 +193,35 @@ Default value: `1073741824` (1 GB).
 Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
 
 Default value: `480` (8 minute).
+
+## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and this directory was not modified for last
+`database_catalog_unused_dir_hide_timeout_sec` seconds, the task will "hide" this directory by
+removing all access rights. It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "immediately".
+
+Default value: `3600` (1 hour).
+
+## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and it was previousely "hidden"
+(see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec))
+and this directory was not modified for last
+`database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory.
+It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "never".
+
+Default value: `2592000` (30 days).
+
+## database_catalog_unused_dir_cleanup_period_sec {#database_catalog_unused_dir_cleanup_period_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+Sets scheduling period of the task. Zero means "never".
+
+Default value: `86400` (1 day).
 
 ## default_database {#default-database}
 
@@ -238,19 +268,36 @@ The path to the table in ZooKeeper.
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
-The path to the config file for external dictionaries.
+The path to the config file for dictionaries.
 
 Path:
 
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
 
 **Example**
 
 ``` xml
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
+```
+
+## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
+
+The path to the config file for executable user defined functions.
+
+Path:
+
+-   Specify the absolute path or the path relative to the server config file.
+-   The path can contain wildcards \* and ?.
+
+See also “[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).”.
+
+**Example**
+
+``` xml
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
@@ -369,12 +416,12 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 <http_server_default_response>
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
-```  
-## hsts_max_age  
-  
-Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
-  
-**Example**  
+```
+## hsts_max_age  {#hsts-max-age}
+
+Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.
+
+**Example**
 
 ```xml
 <hsts_max_age>600000</hsts_max_age>
@@ -390,6 +437,20 @@ For more information, see the section “[Configuration files](../../operations/
 
 ``` xml
 <include_from>/etc/metrica.xml</include_from>
+```
+
+## interserver_listen_host {#interserver-listen-host}
+
+Restriction on hosts that can exchange data between ClickHouse servers.
+If Keeper is used, the same restriction will be applied to the communication
+between different Keeper instances.
+The default value equals to `listen_host` setting.
+
+Examples:
+
+``` xml
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
 ```
 
 ## interserver_http_port {#interserver-http-port}
@@ -413,7 +474,7 @@ Useful for breaking away from a specific network interface.
 **Example**
 
 ``` xml
-<interserver_http_host>example.yandex.ru</interserver_http_host>
+<interserver_http_host>example.clickhouse.com</interserver_http_host>
 ```
 
 ## interserver_https_port {#interserver-https-port}
@@ -433,30 +494,64 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 **Example**
 
 ``` xml
-<interserver_https_host>example.yandex.ru</interserver_https_host>
+<interserver_https_host>example.clickhouse.com</interserver_https_host>
 ```
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-The username and password used to authenticate during [replication](../../engines/table-engines/mergetree-family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
-By default, the authentication is not used.
+A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticates other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
 
-!!! note "Note"
-    These credentials are common for replication through `HTTP` and `HTTPS`.
+By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
-This section contains the following parameters:
+:::note
+`interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+:::
 
--   `user` — username.
--   `password` — password.
+:::note
+These credentials are common for replication via `HTTP` and `HTTPS`.
+:::
 
-**Example**
+The section contains the following parameters:
+
+-   `user` — Username.
+-   `password` — Password.
+-   `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default value: `false`.
+-   `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
+
+**Credentials Rotation**
+
+ClickHouse supports dynamic interserver credentials rotation without stopping all replicas at the same time to update their configuration. Credentials can be changed in several steps.
+
+To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
+
+``` xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
+
+To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials.
 
 ``` xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
 </interserver_http_credentials>
 ```
+
+When new credentials are applied to all replicas, old credentials may be removed.
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
@@ -508,8 +603,9 @@ Keys:
 -   `level` – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
 -   `log` – The log file. Contains all the entries according to `level`.
 -   `errorlog` – Error log file.
--   `size` – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+-   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
+-   `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
 
 **Example**
 
@@ -520,6 +616,15 @@ Keys:
     <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
+</logger>
+```
+
+Writing to the console can be configured. Config example:
+
+``` xml
+<logger>
+    <level>information</level>
+    <console>1</console>
 </logger>
 ```
 
@@ -561,6 +666,7 @@ Keys:
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
 -   `tmp_path` - Filesystem path for temporary crash report state.
+-   `environment` - An arbitrary name of an environment in which the ClickHouse server is running. It will be mentioned in each crash report. The default value is `test` or `prod` depending on the version of ClickHouse.
 
 **Recommended way to use**
 
@@ -588,7 +694,7 @@ For more information, see the section [Creating replicated tables](../../engines
 
 Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family.
 
-The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+The cache is shared for the server and memory is allocated as needed.
 
 **Example**
 
@@ -641,22 +747,99 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 -   [max_server_memory_usage](#max_server_memory_usage)
 
-## max_concurrent_queries {#max-concurrent-queries}
-
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
-
-!!! info "Note"
-	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+## concurrent_threads_soft_limit_num {#concurrent_threads_soft_limit_num}
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run. Query can upscale to desired number of threads during execution if more threads become available.
 
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
+
+**See Also**
+
+-   [Concurrency Control](/docs/en/development/architecture.md#concurrency-control)
+
+## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
+The maximum number of query processing threads as multiple of number of logical cores.
+More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
 ``` xml
-<max_concurrent_queries>100</max_concurrent_queries>
+<concurrent_threads_soft_limit_ratio_to_cores>3</concurrent_threads_soft_limit_ratio_to_cores>
+```
+
+## max_concurrent_queries {#max-concurrent-queries}
+
+The maximum number of simultaneously processed queries.
+Note that other limits also apply: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users).
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `100`.
+
+**Example**
+
+``` xml
+<max_concurrent_queries>200</max_concurrent_queries>
+```
+
+## max_concurrent_insert_queries {#max-concurrent-insert-queries}
+
+The maximum number of simultaneously processed `INSERT` queries.
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
+```
+
+## max_concurrent_select_queries {#max-concurrent-select-queries}
+
+The maximum number of simultaneously processed `SELECT` queries.
+
+:::note
+These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
+:::
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_select_queries>100</max_concurrent_select_queries>
 ```
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
@@ -666,7 +849,9 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -682,7 +867,12 @@ Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users a
 
 Modifying the setting for one query or user does not affect other queries.
 
-Default value: `0` that means no limit.
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -693,21 +883,6 @@ Default value: `0` that means no limit.
 **See Also**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
-
-## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
-
-The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting.
-
-Possible values:
-
--   Positive integer.
--   0 — Disabled.
-
-**Example**
-
-``` xml
-<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
-```
 
 ## max_connections {#max-connections}
 
@@ -725,7 +900,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
+We recommend using this option in macOS since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 
@@ -753,15 +928,137 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## max_thread_pool_size {#max-thread-pool-size}
 
-The maximum number of threads in the Global Thread pool.
+ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
-Default value: 10000.
+Possible values:
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
 ``` xml
 <max_thread_pool_size>12000</max_thread_pool_size>
 ```
+
+## max_thread_pool_free_size {#max-thread-pool-free-size}
+
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+**Example**
+
+``` xml
+<max_thread_pool_free_size>1200</max_thread_pool_free_size>
+```
+
+## thread_pool_queue_size {#thread-pool-queue-size}
+
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [max_thread_pool_size](#max-thread-pool-size).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `10000`.
+
+**Example**
+
+``` xml
+<thread_pool_queue_size>12000</thread_pool_queue_size>
+```
+
+## background_pool_size {#background_pool_size}
+
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**Example**
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
+
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operation could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 2.
+
+**Example**
+
+```xml
+<background_merges_mutations_concurrency_ratio>3</background_merges_mutations_concurrency_ratio>
+```
+
+## background_move_pool_size {#background_move_pool_size}
+
+Sets the number of threads performing background moves for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_move_pool_size>36</background_move_pool_size>
+```
+
+## background_fetches_pool_size {#background_fetches_pool_size}
+
+Sets the number of threads performing background fetches for tables with ReplicatedMergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_fetches_pool_size>36</background_fetches_pool_size>
+```
+
+## background_common_pool_size {#background_common_pool_size}
+
+Sets the number of threads performing background non-specialized operations like cleaning the filesystem etc. for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8.
+
+**Example**
+
+```xml
+<background_common_pool_size>36</background_common_pool_size>
+```
+
+
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
 
@@ -826,30 +1123,30 @@ For more information, see the MergeTreeSettings.h header file.
 
 SSL client/server configuration.
 
-Support for SSL is provided by the `libpoco` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Support for SSL is provided by the `libpoco` library. The available configuration options are explained in [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Default values can be found in [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
 
 Keys for server/client settings:
 
 -   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 -   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.
--   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
--   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
--   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
--   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
--   cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
--   sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
--   sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
--   sessionTimeout – Time for caching the session on the server.
--   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
--   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
--   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
--   disableProtocols – Protocols that are not allowed to use.
--   preferServerCiphers – Preferred server ciphers on the client.
+-   caConfig (default: none) – The path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html).
+-   verificationMode (default: relaxed) – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
+-   verificationDepth (default: 9) – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
+-   loadDefaultCAFile (default: true) – Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).
+-   cipherList (default: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`) - Supported OpenSSL encryptions.
+-   cacheSessions (default: false) – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
+-   sessionIdContext (default: `${application.name}`) – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
+-   sessionCacheSize (default: [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)) – The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.
+-   sessionTimeout (default: [2h](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1926)) – Time for caching the session on the server.
+-   extendedVerification (default: false) – If enabled, verify that the certificate CN or SAN matches the peer hostname.
+-   requireTLSv1 (default: false) – Require a TLSv1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_1 (default: false) – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 (default: false) – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   fips (default: false) – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+-   privateKeyPassphraseHandler (default: `KeyConsoleHandler`)– Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
+-   invalidCertificateHandler (default: `ConsoleCertificateHandler`) – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
+-   disableProtocols (default: "") – Protocols that are not allowed to use.
+-   preferServerCiphers (default: false) – Preferred server ciphers on the client.
 
 **Example of settings:**
 
@@ -894,6 +1191,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
 
@@ -910,8 +1208,9 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-!!! warning "Warning"
-    The trailing slash is mandatory.
+:::note
+The trailing slash is mandatory.
+:::
 
 **Example**
 
@@ -956,6 +1255,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -968,6 +1268,34 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
 </query_log>
+```
+
+## query_cache {#server_configuration_parameters_query-cache}
+
+[Query cache](../query-cache.md) configuration.
+
+The following settings are available:
+
+-   `size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
+-   `max_entries`: The maximum number of `SELECT` query results stored in the cache. Default value: `1024`.
+-   `max_entry_size`: The maximum size in bytes `SELECT` query results may have to be saved in the cache. Default value: `1048576` (1 MiB).
+-   `max_entry_rows`: The maximum number of rows `SELECT` query results may have to be saved in the cache. Default value: `30000000` (30 mil).
+
+Changed settings take effect immediately.
+
+:::warning
+Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `size` or disable the query cache altogether.
+:::
+
+**Example**
+
+```xml
+<query_cache>
+    <size>1073741824</size>
+    <max_entries>1024</max_entries>
+    <max_entry_size>1048576</max_entry_size>
+    <max_entry_rows>30000000</max_entry_rows>
+</query_cache>
 ```
 
 ## query_thread_log {#server_configuration_parameters-query_thread_log}
@@ -983,6 +1311,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1010,6 +1339,7 @@ Use the following parameters to configure logging:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 If the table does not exist, ClickHouse will create it. If the structure of the query views log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1036,6 +1366,7 @@ Parameters:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 **Example**
 ```xml
@@ -1063,6 +1394,7 @@ Parameters:
 -   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
 -   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/index.md) for a system table. Can't be used if `partition_by` defined.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -1132,7 +1464,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 **Example**
 
 ``` xml
-<timezone>Europe/Moscow</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 ## tcp_port {#server_configuration_parameters-tcp_port}
@@ -1165,7 +1497,7 @@ Port for communicating with clients over MySQL protocol.
 
 **Possible values**
 
-Positive integer.
+Positive integer to specify the port number to listen to or empty value to disable.
 
 Example
 
@@ -1173,12 +1505,27 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
+## postgresql_port {#server_configuration_parameters-postgresql_port}
+
+Port for communicating with clients over PostgreSQL protocol.
+
+**Possible values**
+
+Positive integer to specify the port number to listen to or empty value to disable.
+
+Example
+
+``` xml
+<postgresql_port>9005</postgresql_port>
+```
+
 ## tmp_path {#tmp-path}
 
 Path to temporary data for processing large queries.
 
-!!! warning "Note"
-    The trailing slash is mandatory.
+:::note
+The trailing slash is mandatory.
+:::
 
 **Example**
 
@@ -1192,11 +1539,27 @@ Policy from [storage_configuration](../../engines/table-engines/mergetree-family
 
 If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
-!!! note "Note"
-    - `move_factor` is ignored.
-    - `keep_free_space_bytes` is ignored.
-    - `max_data_part_size_bytes` is ignored.
-    - Уou must have exactly one volume in that policy.
+:::note
+- `move_factor` is ignored.
+- `keep_free_space_bytes` is ignored.
+- `max_data_part_size_bytes` is ignored.
+- Policy should have exactly one volume with local disks.
+:::
+
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
+
+Limit the amount of disk space consumed by temporary files in `tmp_path` for the server.
+Queries that exceed this limit will fail with an exception.
+
+Default value: `0`.
+
+**See also**
+
+-   [max_temporary_data_on_disk_size_for_user](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_user)
+-   [max_temporary_data_on_disk_size_for_query](../../operations/settings/query-complexity.md#settings_max_temporary_data_on_disk_size_for_query)
+-   [tmp_path](#tmp-path)
+-   [tmp_policy](#tmp-policy)
+-   [max_server_memory_usage](#max_server_memory_usage)
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -1220,6 +1583,26 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 
 ``` xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
+## user_scripts_path {#server_configuration_parameters-user_scripts_path}
+
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
+
+**Example**
+
+``` xml
+<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
+```
+
+## user_defined_path {#server_configuration_parameters-user_defined_path}
+
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+
+**Example**
+
+``` xml
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
 ## users_config {#users-config}
@@ -1313,10 +1696,11 @@ This setting only applies to the `MergeTree` family. It can be specified:
 
 If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../../engines/table-engines/mergetree-family/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
 
-!!! attention "Attention"
-    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+:::note
+After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
 
-      Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+:::
 
 **Default value:** 0.
 
@@ -1422,7 +1806,7 @@ You can also define sections `memory` — means storing information only in memo
 
 To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
 -   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.
--   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authenthication attept will fail as if the provided password was incorrect.
+-   `roles` — section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server. If no roles are specified, user will not be able to perform any actions after authentication. If any of the listed roles is not defined locally at the time of authentication, the authentication attempt will fail as if the provided password was incorrect.
 
 **Example**
 
@@ -1436,4 +1820,53 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+## total_memory_profiler_step {#total-memory-profiler-step}
+
+Sets the memory size (in bytes) for a stack trace at every peak allocation step. The data is stored in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `query_id` equal to an empty string.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `4194304`.
+
+## total_memory_tracker_sample_probability {#total-memory-tracker-sample-probability}
+
+Allows to collect random allocations and deallocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Writing of random allocations and deallocations in the `system.trace_log` system table is disabled.
+
+Default value: `0`.
+
+## mmap_cache_size {#mmap-cache-size}
+
+Sets the cache size (in bytes) for mapped files. This setting allows to avoid frequent open/[mmap/munmap](https://en.wikipedia.org/wiki/Mmap)/close calls (which are very expensive due to consequent page faults) and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). The amount of data in mapped files can be monitored in [system.metrics](../../operations/system-tables/metrics.md), [system.metric_log](../../operations/system-tables/metric_log.md) system tables by the `MMappedFiles` and `MMappedFileBytes` metrics, in [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md), [system.asynchronous_metrics_log](../../operations/system-tables/asynchronous_metric_log.md) by the `MMapCacheCells` metric, and also in [system.events](../../operations/system-tables/events.md), [system.processes](../../operations/system-tables/processes.md), [system.query_log](../../operations/system-tables/query_log.md), [system.query_thread_log](../../operations/system-tables/query_thread_log.md), [system.query_views_log](../../operations/system-tables/query_views_log.md) by the `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` events. Note that the amount of data in mapped files does not consume memory directly and is not accounted in query or server memory usage — because this memory can be discarded similar to OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+## compiled_expression_cache_size {#compiled-expression-cache-size}
+
+Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `134217728`.
+
+## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
+
+Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `10000`.

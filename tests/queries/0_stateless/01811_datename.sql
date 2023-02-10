@@ -1,44 +1,51 @@
 WITH
     toDate('2021-04-14') AS date_value,
+    toDate32('2021-04-14') AS date_32_value,
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
     toDateTime64('2021-04-14 11:22:33', 3) AS date_time_64_value
-SELECT dateName('year', date_value), dateName('year', date_time_value), dateName('year', date_time_64_value);
+SELECT dateName('year', date_value), dateName('year', date_32_value), dateName('year', date_time_value), dateName('year', date_time_64_value);
 
 WITH
     toDate('2021-04-14') AS date_value,
+    toDate32('2021-04-14') AS date_32_value,
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
     toDateTime64('2021-04-14 11:22:33', 3) AS date_time_64_value
-SELECT dateName('quarter', date_value), dateName('quarter', date_time_value), dateName('quarter', date_time_64_value);
+SELECT dateName('quarter', date_value), dateName('quarter', date_32_value), dateName('quarter', date_time_value), dateName('quarter', date_time_64_value);
 
 WITH
     toDate('2021-04-14') AS date_value,
+    toDate32('2021-04-14') AS date_32_value,
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
     toDateTime64('2021-04-14 11:22:33', 3) AS date_time_64_value
-SELECT dateName('month', date_value), dateName('month', date_time_value), dateName('month', date_time_64_value);
+SELECT dateName('month', date_value), dateName('month', date_32_value), dateName('month', date_time_value), dateName('month', date_time_64_value);
 
 WITH
     toDate('2021-04-14') AS date_value,
+    toDate32('2021-04-14') AS date_32_value,
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
     toDateTime64('2021-04-14 11:22:33', 3) AS date_time_64_value
-SELECT dateName('dayofyear', date_value), dateName('dayofyear', date_time_value), dateName('dayofyear', date_time_64_value);
+SELECT dateName('dayofyear', date_value), dateName('dayofyear', date_32_value), dateName('dayofyear', date_time_value), dateName('dayofyear', date_time_64_value);
 
 WITH
     toDate('2021-04-14') AS date_value,
+    toDate32('2021-04-14') AS date_32_value,
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
     toDateTime64('2021-04-14 11:22:33', 3) AS date_time_64_value
-SELECT dateName('day', date_value), dateName('day', date_time_value), dateName('day', date_time_64_value);
+SELECT dateName('day', date_value), dateName('day', date_32_value), dateName('day', date_time_value), dateName('day', date_time_64_value);
 
 WITH
     toDate('2021-04-14') AS date_value,
+    toDate32('2021-04-14') AS date_32_value,
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
     toDateTime64('2021-04-14 11:22:33', 3) AS date_time_64_value
-SELECT dateName('week', date_value), dateName('week', date_time_value), dateName('week', date_time_64_value);
+SELECT dateName('week', date_value), dateName('week', date_32_value), dateName('week', date_time_value), dateName('week', date_time_64_value);
 
 WITH
     toDate('2021-04-14') AS date_value,
+    toDate32('2021-04-14') AS date_32_value,
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
     toDateTime64('2021-04-14 11:22:33', 3) AS date_time_64_value
-SELECT dateName('weekday', date_value), dateName('weekday', date_time_value), dateName('weekday', date_time_64_value);
+SELECT dateName('weekday', date_value), dateName('weekday', date_32_value), dateName('weekday', date_time_value), dateName('weekday', date_time_64_value);
 
 WITH
     toDateTime('2021-04-14 11:22:33') AS date_time_value,
@@ -66,7 +73,7 @@ SELECT
 WITH
     toDateTime('2021-04-14 23:22:33', 'UTC') as date
 SELECT
-    dateName('weekday', date, 'Europe/Moscow'),
-    dateName('hour', date, 'Europe/Moscow'),
-    dateName('minute', date, 'Europe/Moscow'),
-    dateName('second', date, 'Europe/Moscow');
+    dateName('weekday', date, 'Asia/Istanbul'),
+    dateName('hour', date, 'Asia/Istanbul'),
+    dateName('minute', date, 'Asia/Istanbul'),
+    dateName('second', date, 'Asia/Istanbul');

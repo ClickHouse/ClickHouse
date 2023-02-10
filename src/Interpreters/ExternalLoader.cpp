@@ -10,7 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
 #include <base/chrono_io.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -56,7 +56,7 @@ namespace
             static_assert(std::is_same_v<ReturnType, ExternalLoader::Loadables>);
             ExternalLoader::Loadables objects;
             objects.reserve(results.size());
-            for (const auto & result : results)
+            for (auto && result : results)
             {
                 if (auto object = std::move(result.object))
                     objects.push_back(std::move(object));
@@ -714,7 +714,10 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    else
+                    {
+                        LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    }
                 }
             }
         }
@@ -966,13 +969,13 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupStatusPtr thread_group = {})
     {
-        if (thread_group)
-            CurrentThread::attachTo(thread_group);
-
         SCOPE_EXIT_SAFE(
             if (thread_group)
                 CurrentThread::detachQueryIfNotDetached();
         );
+
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
@@ -997,7 +1000,7 @@ private:
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
-                throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
 
             /// Saving the result of the loading.
             {
@@ -1299,6 +1302,7 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     return [this, ptr, name]()
     {
         config_files_reader->removeConfigRepository(ptr);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
 }
@@ -1436,7 +1440,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.object && (!check_no_errors || !result.exception))
         return;
     if (result.status == ExternalLoader::Status::LOADING)
-        throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' is still loading", type_name, result.name);
     if (result.exception)
     {
         // Exception is shared for multiple threads.
@@ -1462,9 +1466,9 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         }
     }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
-        throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", type_name, result.name);
     if (result.status == ExternalLoader::Status::NOT_LOADED)
-        throw Exception(type_name + " '" + result.name + "' not tried to load", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not tried to load", type_name, result.name);
 }
 
 void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,

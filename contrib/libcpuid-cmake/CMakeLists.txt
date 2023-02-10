@@ -6,10 +6,7 @@ elseif(ENABLE_CPUID)
 endif()
 
 if (NOT ENABLE_CPUID)
-    add_library (cpuid INTERFACE)
-
-    target_compile_definitions (cpuid INTERFACE USE_CPUID=0)
-
+    message(STATUS "Not using cpuid")
     return()
 endif()
 
@@ -26,13 +23,9 @@ set (SRCS
     "${LIBRARY_DIR}/libcpuid/recog_intel.c"
 )
 
-add_library (cpuid ${SRCS})
+add_library (_cpuid ${SRCS})
 
-target_include_directories (cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
-target_compile_definitions (cpuid PUBLIC USE_CPUID=1)
-target_compile_definitions (cpuid PRIVATE VERSION="v0.4.1")
-if (COMPILER_CLANG)
-    target_compile_options (cpuid PRIVATE -Wno-reserved-id-macro)
-endif ()
+target_include_directories (_cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
+target_compile_definitions (_cpuid PRIVATE VERSION="v0.4.1")
 
-message (STATUS "Using cpuid")
+add_library(ch_contrib::cpuid ALIAS _cpuid)

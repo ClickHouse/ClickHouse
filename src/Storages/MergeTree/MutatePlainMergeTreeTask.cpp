@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
-
+#include <Interpreters/TransactionLog.h>
 
 namespace DB
 {
@@ -32,9 +32,7 @@ void MutatePlainMergeTreeTask::prepare()
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        settings.memory_profiler_step,
-        settings.memory_profiler_sample_probability,
-        settings.max_untracked_memory);
+        settings);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -57,12 +55,11 @@ void MutatePlainMergeTreeTask::prepare()
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
-            time(nullptr), fake_query_context, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            time(nullptr), fake_query_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
-
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
@@ -70,13 +67,13 @@ bool MutatePlainMergeTreeTask::executeStep()
 
     switch (state)
     {
-        case State::NEED_PREPARE :
+        case State::NEED_PREPARE:
         {
             prepare();
             state = State::NEED_EXECUTE;
             return true;
         }
-        case State::NEED_EXECUTE :
+        case State::NEED_EXECUTE:
         {
             try
             {
@@ -84,8 +81,15 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
+                auto & data_part_storage = new_part->getDataPartStorage();
+                if (data_part_storage.hasActiveTransaction())
+                    data_part_storage.precommitTransaction();
 
-                storage.renameTempPartAndReplace(new_part);
+                MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
+                /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
+                storage.renameTempPartAndReplace(new_part, transaction);
+                transaction.commit();
+
                 storage.updateMutationEntriesErrors(future_part, true, "");
                 write_part_log({});
 
@@ -94,12 +98,17 @@ bool MutatePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
-                storage.updateMutationEntriesErrors(future_part, false, getCurrentExceptionMessage(false));
-                write_part_log(ExecutionStatus::fromCurrentException());
+                if (merge_mutate_entry->txn)
+                    merge_mutate_entry->txn->onException();
+                PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), exception_message);
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
+                write_part_log(ExecutionStatus::fromCurrentException("", true));
+                tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
             }
         }
-        case State::NEED_FINISH :
+        case State::NEED_FINISH:
         {
             // Nothing to do
             state = State::SUCCESS;

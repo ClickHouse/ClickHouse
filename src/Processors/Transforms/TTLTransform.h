@@ -7,7 +7,7 @@
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 
 namespace DB
 {

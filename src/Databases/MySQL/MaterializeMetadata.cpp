@@ -30,11 +30,15 @@ namespace ErrorCodes
 
 static std::unordered_map<String, String> fetchTablesCreateQuery(
     const mysqlxx::PoolWithFailover::Entry & connection, const String & database_name,
-    const std::vector<String> & fetch_tables, const Settings & global_settings)
+    const std::vector<String> & fetch_tables, std::unordered_set<String> & materialized_tables_list,
+    const Settings & global_settings)
 {
     std::unordered_map<String, String> tables_create_query;
     for (const auto & fetch_table_name : fetch_tables)
     {
+        if (!materialized_tables_list.empty() && !materialized_tables_list.contains(fetch_table_name))
+            continue;
+
         Block show_create_table_header{
             {std::make_shared<DataTypeString>(), "Table"},
             {std::make_shared<DataTypeString>(), "Create Table"},
@@ -51,7 +55,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
         PullingPipelineExecutor executor(pipeline);
         executor.pull(create_query_block);
         if (!create_query_block || create_query_block.rows() != 1)
-            throw Exception("LOGICAL ERROR mysql show create return more rows.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR mysql show create return more rows.");
 
         tables_create_query[fetch_table_name] = create_query_block.getByName("Create Table").column->getDataAt(0).toString();
     }
@@ -103,7 +107,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
     executor.pull(master_status);
 
     if (!master_status || master_status.rows() != 1)
-        throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to get master status from MySQL.");
 
     data_version = 1;
     binlog_file = (*master_status.getByPosition(0).column)[0].safeGet<String>();
@@ -182,10 +186,9 @@ static void checkSyncUserPriv(const mysqlxx::PoolWithFailover::Entry & connectio
     WriteBufferFromOwnString out;
 
     if (!checkSyncUserPrivImpl(connection, global_settings, out))
-        throw Exception("MySQL SYNC USER ACCESS ERR: mysql sync user needs "
-                        "at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
-                        "and SELECT PRIVILEGE on MySQL Database."
-                        "But the SYNC USER grant query is: " + out.str(), ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR);
+        throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
+                        "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
+                        "and SELECT PRIVILEGE on MySQL Database.But the SYNC USER grant query is: {}", out.str());
 }
 
 bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover::Entry & connection) const
@@ -253,7 +256,7 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
         out.close();
     }
 
-    commitMetadata(std::move(fun), persistent_tmp_path, persistent_path);
+    commitMetadata(fun, persistent_tmp_path, persistent_path);
 }
 
 MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & settings_) : persistent_path(path_), settings(settings_)
@@ -276,7 +279,8 @@ MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & 
 
 void MaterializeMetadata::startReplication(
     mysqlxx::PoolWithFailover::Entry & connection, const String & database,
-    bool & opened_transaction, std::unordered_map<String, String> & need_dumping_tables)
+    bool & opened_transaction, std::unordered_map<String, String> & need_dumping_tables,
+    std::unordered_set<String> & materialized_tables_list)
 {
     checkSyncUserPriv(connection, settings);
 
@@ -297,7 +301,7 @@ void MaterializeMetadata::startReplication(
         connection->query("START TRANSACTION /*!40100 WITH CONSISTENT SNAPSHOT */;").execute();
 
         opened_transaction = true;
-        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database, settings), settings);
+        need_dumping_tables = fetchTablesCreateQuery(connection, database, fetchTablesInDB(connection, database, settings), materialized_tables_list, settings);
         connection->query("UNLOCK TABLES;").execute();
     }
     catch (...)

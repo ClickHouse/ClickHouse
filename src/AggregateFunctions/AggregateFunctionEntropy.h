@@ -91,15 +91,15 @@ private:
     size_t num_args;
 
 public:
-    AggregateFunctionEntropy(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {})
+    explicit AggregateFunctionEntropy(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {}, createResultType())
         , num_args(argument_types_.size())
     {
     }
 
     String getName() const override { return "entropy"; }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
@@ -125,12 +125,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

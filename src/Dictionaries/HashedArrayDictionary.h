@@ -5,8 +5,6 @@
 #include <variant>
 #include <optional>
 
-#include <Common/SparseHashMap.h>
-
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Core/Block.h>
@@ -73,7 +71,7 @@ public:
         return std::make_shared<HashedArrayDictionary<dictionary_key_type>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
@@ -111,10 +109,15 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
+    DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const override;
+
+    size_t getHierarchicalIndexBytesAllocated() const override { return hierarchical_index_bytes_allocated; }
+
     ColumnPtr getDescendants(
         ColumnPtr key_column,
         const DataTypePtr & key_type,
-        size_t level) const override;
+        size_t level,
+        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
@@ -149,15 +152,17 @@ private:
             AttributeContainerType<Decimal64>,
             AttributeContainerType<Decimal128>,
             AttributeContainerType<Decimal256>,
+            AttributeContainerType<DateTime64>,
             AttributeContainerType<Float32>,
             AttributeContainerType<Float64>,
             AttributeContainerType<UUID>,
+            AttributeContainerType<IPv4>,
+            AttributeContainerType<IPv6>,
             AttributeContainerType<StringRef>,
             AttributeContainerType<Array>>
             container;
 
         std::optional<std::vector<bool>> is_index_null;
-        std::unique_ptr<Arena> string_arena;
     };
 
     struct KeyAttribute final
@@ -174,6 +179,8 @@ private:
     void updateData();
 
     void loadData();
+
+    void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
 
@@ -207,8 +214,6 @@ private:
 
     void resize(size_t added_rows);
 
-    StringRef copyKeyInArena(StringRef key);
-
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedArrayDictionaryStorageConfiguration configuration;
@@ -218,13 +223,15 @@ private:
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
+    size_t hierarchical_index_bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    Arena complex_key_arena;
+    Arena string_arena;
+    DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
 extern template class HashedArrayDictionary<DictionaryKeyType::Simple>;

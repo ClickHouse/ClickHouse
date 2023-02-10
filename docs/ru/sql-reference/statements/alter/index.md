@@ -1,6 +1,7 @@
 ---
-toc_priority: 35
-toc_title: ALTER
+slug: /ru/sql-reference/statements/alter/
+sidebar_position: 35
+sidebar_label: ALTER
 ---
 
 ## ALTER {#query_language_queries_alter}
@@ -25,9 +26,9 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [CONSTRAINT](../../../sql-reference/statements/alter/constraint.md)
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
-!!! note "Note"
+    :::note
     Запрос `ALTER TABLE` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
-
+    :::
 Следующие запросы `ALTER` управляют представлениями:
 
 -   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — изменяет структуру [Materialized view](../create/view.md#materialized).
@@ -40,6 +41,8 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [QUOTA](../../../sql-reference/statements/alter/quota.md)
 -   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
+
+Выражение [ALTER TABLE ... MODIFY COMMENT](../../../sql-reference/statements/alter/comment.md) добавляет, изменяет или удаляет комментарий к таблице, независимо от того, был ли он установлен раньше или нет.
 
 ### Мутации {#mutations}
 
@@ -73,7 +76,8 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 Вы можете указать время ожидания (в секундах) выполнения всех запросов `ALTER` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
 
-!!! info "Примечание"
+:::info "Примечание"
     Для всех запросов `ALTER` при `replication_alter_partitions_sync = 2` и неактивности некоторых реплик больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
+:::
 
 Для запросов `ALTER TABLE ... UPDATE|DELETE` синхронность выполнения определяется настройкой [mutations_sync](../../../operations/settings/settings.md#mutations_sync).

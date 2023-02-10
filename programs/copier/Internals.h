@@ -13,7 +13,7 @@
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <boost/algorithm/string.hpp>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -119,7 +119,7 @@ struct TaskStateWithOwner
         rb >> state >> "\n" >> escape >> res.owner;
 
         if (state >= static_cast<int>(TaskState::Unknown))
-            throw Exception("Unknown state " + data, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state {}", data);
 
         res.state = static_cast<TaskState>(state);
         return res;
@@ -161,7 +161,7 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
         const String & cluster_name, const String & database, const String & table,
         const ASTPtr & sharding_key_ast = nullptr);
 
-Block getBlockWithAllStreamData(QueryPipeline pipeline);
+Block getBlockWithAllStreamData(QueryPipelineBuilder builder);
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 

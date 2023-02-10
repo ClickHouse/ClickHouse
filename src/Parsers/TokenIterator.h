@@ -1,7 +1,10 @@
 #pragma once
 
-#include <vector>
+#include <Core/Defines.h>
 #include <Parsers/Lexer.h>
+
+#include <cassert>
+#include <vector>
 
 
 namespace DB
@@ -18,34 +21,19 @@ class Tokens
 {
 private:
     std::vector<Token> data;
-    Lexer lexer;
+    std::size_t last_accessed_index = 0;
 
 public:
-    Tokens(const char * begin, const char * end, size_t max_query_size = 0) : lexer(begin, end, max_query_size) {}
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0);
 
-    const Token & operator[] (size_t index)
+    ALWAYS_INLINE inline const Token & operator[](size_t index)
     {
-        while (true)
-        {
-            if (index < data.size())
-                return data[index];
-
-            if (!data.empty() && data.back().isEnd())
-                return data.back();
-
-            Token token = lexer.nextToken();
-
-            if (token.isSignificant())
-                data.emplace_back(token);
-        }
+        assert(index < data.size());
+        last_accessed_index = std::max(last_accessed_index, index);
+        return data[index];
     }
 
-    const Token & max()
-    {
-        if (data.empty())
-            return (*this)[0];
-        return data.back();
-    }
+    ALWAYS_INLINE inline const Token & max() { return data[last_accessed_index]; }
 };
 
 
@@ -59,22 +47,30 @@ private:
 public:
     explicit TokenIterator(Tokens & tokens_) : tokens(&tokens_) {}
 
-    const Token & get() { return (*tokens)[index]; }
-    const Token & operator*() { return get(); }
-    const Token * operator->() { return &get(); }
+    ALWAYS_INLINE const Token & get() { return (*tokens)[index]; }
+    ALWAYS_INLINE const Token & operator*() { return get(); }
+    ALWAYS_INLINE const Token * operator->() { return &get(); }
 
-    TokenIterator & operator++() { ++index; return *this; }
-    TokenIterator & operator--() { --index; return *this; }
+    ALWAYS_INLINE TokenIterator & operator++()
+    {
+        ++index;
+        return *this;
+    }
+    ALWAYS_INLINE TokenIterator & operator--()
+    {
+        --index;
+        return *this;
+    }
 
-    bool operator< (const TokenIterator & rhs) const { return index < rhs.index; }
-    bool operator<= (const TokenIterator & rhs) const { return index <= rhs.index; }
-    bool operator== (const TokenIterator & rhs) const { return index == rhs.index; }
-    bool operator!= (const TokenIterator & rhs) const { return index != rhs.index; }
+    ALWAYS_INLINE bool operator<(const TokenIterator & rhs) const { return index < rhs.index; }
+    ALWAYS_INLINE bool operator<=(const TokenIterator & rhs) const { return index <= rhs.index; }
+    ALWAYS_INLINE bool operator==(const TokenIterator & rhs) const { return index == rhs.index; }
+    ALWAYS_INLINE bool operator!=(const TokenIterator & rhs) const { return index != rhs.index; }
 
-    bool isValid() { return get().type < TokenType::EndOfStream; }
+    ALWAYS_INLINE bool isValid() { return get().type < TokenType::EndOfStream; }
 
     /// Rightmost token we had looked.
-    const Token & max() { return tokens->max(); }
+    ALWAYS_INLINE const Token & max() { return tokens->max(); }
 };
 
 

@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -68,11 +69,11 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(
-                "First argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be String or FixedString",
+                getName());
 
         if (!arguments[1].column || !isFloat(arguments[1].type))
-            throw Exception("Second argument of function " + getName() + " must be constant float", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be constant float", getName());
 
         return arguments[0].type;
     }
@@ -87,7 +88,7 @@ public:
 
         if (inverse_probability < 0.0 || 1.0 < inverse_probability)
         {
-            throw Exception("Second argument of function " + getName() + " must be from `0.0` to `1.0`", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of function {} must be from `0.0` to `1.0`", getName());
         }
 
         if (const ColumnConst * col_in_untyped_const = checkAndGetColumnConstStringOrFixedString(col_in_untyped.get()))
@@ -142,33 +143,42 @@ public:
         else if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
             const auto n = col_in_fixed->getN();
+            const auto col_in_rows = col_in_fixed->size();
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
             size_t total_size;
             if (common::mulOverflow(input_rows_count, n, total_size))
-                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
             chars_to.resize(total_size);
 
             const auto * ptr_in = col_in_fixed->getChars().data();
             auto * ptr_to = chars_to.data();
-            fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
+
+            if (col_in_rows >= input_rows_count)
+                fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
+            else if (col_in_rows != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "1 != col_in_rows {} < input_rows_count {}", col_in_rows, input_rows_count);
+            else
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    fuzzBits(ptr_in, ptr_to + i * n, n, inverse_probability);
 
             return col_to;
         }
         else
         {
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
         }
     }
 };
 
 }
 
-void registerFunctionFuzzBits(FunctionFactory & factory)
+REGISTER_FUNCTION(FuzzBits)
 {
     factory.registerFunction<FunctionFuzzBits>();
 }

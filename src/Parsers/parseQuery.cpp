@@ -3,6 +3,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -236,7 +237,8 @@ ASTPtr tryParseQuery(
 {
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size);
-    IParser::Pos token_iterator(tokens, max_parser_depth);
+    /// NOTE: consider use UInt32 for max_parser_depth setting.
+    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth));
 
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
@@ -262,7 +264,19 @@ ASTPtr tryParseQuery(
 
     ASTInsertQuery * insert = nullptr;
     if (parse_res)
-        insert = res->as<ASTInsertQuery>();
+    {
+        if (auto * explain = res->as<ASTExplainQuery>())
+        {
+            if (auto explained_query = explain->getExplainedQuery())
+            {
+                insert = explained_query->as<ASTInsertQuery>();
+            }
+        }
+        else
+        {
+            insert = res->as<ASTInsertQuery>();
+        }
+    }
 
     // If parsed query ends at data for insertion. Data for insertion could be
     // in any format and not necessary be lexical correct, so we can't perform
@@ -345,7 +359,7 @@ ASTPtr parseQueryAndMovePosition(
     if (res)
         return res;
 
-    throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+    throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
 }
 
 
@@ -386,7 +400,8 @@ std::pair<const char *, bool> splitMultipartQuery(
     const std::string & queries,
     std::vector<std::string> & queries_list,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    bool allow_settings_after_format_in_insert)
 {
     ASTPtr ast;
 
@@ -394,7 +409,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     const char * pos = begin; /// parser moves pos from begin to the end of current query
     const char * end = begin + queries.size();
 
-    ParserQuery parser(end);
+    ParserQuery parser(end, allow_settings_after_format_in_insert);
 
     queries_list.clear();
 

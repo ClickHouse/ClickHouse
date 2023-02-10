@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
+#include <Interpreters/Context.h>
 #include <pcg_random.hpp>
 #include <random>
 
@@ -24,7 +25,9 @@ void BackgroundJobsAssignee::trigger()
     if (!holder)
         return;
 
-    no_work_done_count = 0;
+    /// Do not reset backoff factor if some task has appeared,
+    /// but decrease it exponentially on every new task.
+    no_work_done_count /= 2;
     /// We have background jobs, schedule task as soon as possible
     holder->schedule();
 }
@@ -36,22 +39,24 @@ void BackgroundJobsAssignee::postpone()
     if (!holder)
         return;
 
-    auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
+    no_work_done_count += 1;
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
-    size_t next_time_to_execute = 1000 * (std::min(
+    size_t next_time_to_execute = static_cast<size_t>(
+        1000 * (std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
-            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
-        + random_addition);
+            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
+        + random_addition));
 
     holder->scheduleAfter(next_time_to_execute, false);
 }
 
 
-void BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
+bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
 {
     bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
     res ? trigger() : postpone();
+    return res;
 }
 
 
@@ -69,9 +74,9 @@ void BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 }
 
 
-void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task)
+void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
 {
-    bool res = getContext()->getCommonExecutor()->trySchedule(common_task);
+    bool res = getContext()->getCommonExecutor()->trySchedule(common_task) && need_trigger;
     res ? trigger() : postpone();
 }
 
@@ -85,7 +90,7 @@ String BackgroundJobsAssignee::toString(Type type)
         case Type::Moving:
             return "Moving";
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void BackgroundJobsAssignee::start()

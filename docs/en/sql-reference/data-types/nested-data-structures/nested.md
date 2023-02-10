@@ -1,11 +1,12 @@
 ---
-toc_priority: 57
-toc_title: Nested(Name1 Type1, Name2 Type2, ...)
+slug: /en/sql-reference/data-types/nested-data-structures/nested
+sidebar_position: 57
+sidebar_label: Nested(Name1 Type1, Name2 Type2, ...)
 ---
 
-# Nested {#nested}
+# Nested
 
-## Nested(name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
+## Nested(name1 Type1, Name2 Type2, …)
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
@@ -102,5 +103,3 @@ For an INSERT query, you should pass all the component column arrays of a nested
 For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
 
 The ALTER query for elements in a nested data structure has limitations.
-
-[Original article](https://clickhouse.com/docs/en/data_types/nested_data_structures/nested/) <!--hide-->

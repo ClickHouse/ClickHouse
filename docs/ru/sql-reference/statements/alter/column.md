@@ -1,6 +1,7 @@
 ---
-toc_priority: 37
-toc_title: "Манипуляции со столбцами"
+slug: /ru/sql-reference/statements/alter/column
+sidebar_position: 37
+sidebar_label: "Манипуляции со столбцами"
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
@@ -10,7 +11,7 @@ toc_title: "Манипуляции со столбцами"
 Синтаксис:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|MODIFY|MATERIALIZE COLUMN ...
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
 В запросе можно указать сразу несколько действий над одной таблицей через запятую.
@@ -75,8 +76,9 @@ DROP COLUMN [IF EXISTS] name
 
 Запрос удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
-!!! warning "Предупреждение"
+:::warning "Предупреждение"
     Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
+:::
 
 Пример:
 
@@ -126,7 +128,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 
 Каждый столбец может содержать только один комментарий. При выполнении запроса существующий комментарий заменяется на новый.
 
-Посмотреть комментарии можно в столбце `comment_expression` из запроса [DESCRIBE TABLE](../misc.md#misc-describe-table).
+Посмотреть комментарии можно в столбце `comment_expression` из запроса [DESCRIBE TABLE](../describe-table.md).
 
 Пример:
 
@@ -138,6 +140,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
+ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
 ```
 
 Запрос изменяет следующие свойства столбца `name`:
@@ -196,12 +199,13 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 ## MATERIALIZE COLUMN {#materialize-column}
 
-Материализует столбец таблицы в кусках, в которых отсутствуют значения. Используется, если необходимо создать новый столбец со сложным материализованным выражением или выражением для заполнения по умолчанию (`DEFAULT`), потому как вычисление такого столбца прямо во время выполнения запроса `SELECT` оказывается ощутимо затратным. Чтобы совершить ту же операцию для существующего столбца, используйте модификатор `FINAL`.
+Материализует или обновляет столбец таблицы с выражением для значения по умолчанию (`DEFAULT` или `MATERIALIZED`).
+Используется, если необходимо добавить или обновить столбец со сложным выражением, потому как вычисление такого выражения прямо во время выполнения запроса `SELECT` оказывается ощутимо затратным.
 
 Синтаксис:
 
 ```sql
-ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
+ALTER TABLE table MATERIALIZE COLUMN col;
 ```
 
 **Пример**
@@ -210,18 +214,39 @@ ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
 DROP TABLE IF EXISTS tmp;
 SET mutations_sync = 2;
 CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
-INSERT INTO tmp SELECT * FROM system.numbers LIMIT 10;
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5;
 ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM (select x,s from tmp order by x);
+
+┌─groupArray(x)─┬─groupArray(s)─────────┐
+│ [0,1,2,3,4]   │ ['0','1','2','3','4'] │
+└───────────────┴───────────────────────┘
+
+ALTER TABLE tmp MODIFY COLUMN s String MATERIALIZED toString(round(100/x));
+
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5,5;
+
 SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)──────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['0','1','2','3','4','20','17','14','12','11'] │
+└───────────────────────┴────────────────────────────────────────────────┘
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)─────────────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['inf','100','50','33','25','20','17','14','12','11'] │
+└───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-**Результат:**
+**Смотрите также**
 
-```sql
-┌─groupArray(x)─────────┬─groupArray(s)─────────────────────────────┐
-│ [0,1,2,3,4,5,6,7,8,9] │ ['0','1','2','3','4','5','6','7','8','9'] │
-└───────────────────────┴───────────────────────────────────────────┘
-```
+- [MATERIALIZED](../../statements/create/table.md#materialized).
 
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 
@@ -229,7 +254,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 Отсутствует возможность удалять столбцы, входящие в первичный ключ или ключ для сэмплирования (в общем, входящие в выражение `ENGINE`). Изменение типа у столбцов, входящих в первичный ключ возможно только в том случае, если это изменение не приводит к изменению данных (например, разрешено добавление значения в Enum или изменение типа с `DateTime` на `UInt32`).
 
-Если возможностей запроса `ALTER` не хватает для нужного изменения таблицы, вы можете создать новую таблицу, скопировать туда данные с помощью запроса [INSERT SELECT](../insert-into.md#insert_query_insert-select), затем поменять таблицы местами с помощью запроса [RENAME](../misc.md#misc_operations-rename), и удалить старую таблицу. В качестве альтернативы для запроса `INSERT SELECT`, можно использовать инструмент [clickhouse-copier](../../../sql-reference/statements/alter/index.md).
+Если возможностей запроса `ALTER` не хватает для нужного изменения таблицы, вы можете создать новую таблицу, скопировать туда данные с помощью запроса [INSERT SELECT](../insert-into.md#inserting-the-results-of-select), затем поменять таблицы местами с помощью запроса [RENAME](../rename.md#rename-table), и удалить старую таблицу. В качестве альтернативы для запроса `INSERT SELECT`, можно использовать инструмент [clickhouse-copier](../../../sql-reference/statements/alter/index.md).
 
 Запрос `ALTER` блокирует все чтения и записи для таблицы. То есть если на момент запроса `ALTER` выполнялся долгий `SELECT`, то запрос `ALTER` сначала дождётся его выполнения. И в это время все новые запросы к той же таблице будут ждать, пока завершится этот `ALTER`.
 

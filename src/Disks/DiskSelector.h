@@ -18,8 +18,10 @@ using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class DiskSelector
 {
 public:
-    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
-    DiskSelector(const DiskSelector & from) : disks(from.disks) { }
+    DiskSelector() = default;
+    DiskSelector(const DiskSelector & from) = default;
+
+    void initialize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
 
     DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,
@@ -31,14 +33,17 @@ public:
     DiskPtr get(const String & name) const;
 
     /// Get all disks with names
-    const DisksMap & getDisksMap() const { return disks; }
-    void addToDiskMap(const String & name, DiskPtr disk)
-    {
-        disks.emplace(name, disk);
-    }
+    const DisksMap & getDisksMap() const;
+
+    void addToDiskMap(const String & name, DiskPtr disk);
+
+    void shutdown();
 
 private:
     DisksMap disks;
+    bool is_initialized = false;
+
+    void assertInitialized() const;
 };
 
 }

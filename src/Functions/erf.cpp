@@ -7,11 +7,11 @@ namespace
 {
 
 struct ErfName { static constexpr auto name = "erf"; };
-using FunctionErf = FunctionMathUnary<UnaryFunctionPlain<ErfName, std::erf>>;
+using FunctionErf = FunctionMathUnary<UnaryFunctionVectorized<ErfName, std::erf>>;
 
 }
 
-void registerFunctionErf(FunctionFactory & factory)
+REGISTER_FUNCTION(Erf)
 {
     factory.registerFunction<FunctionErf>();
 }

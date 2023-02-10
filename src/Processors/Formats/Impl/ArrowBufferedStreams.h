@@ -1,16 +1,24 @@
 #pragma once
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
+#include <optional>
+
 #include <arrow/io/interfaces.h>
+
+#define ORC_MAGIC_BYTES "ORC"
+#define PARQUET_MAGIC_BYTES "PAR1"
+#define ARROW_MAGIC_BYTES "ARROW1"
 
 namespace DB
 {
 
 class ReadBuffer;
-class SeekableReadBuffer;
 class WriteBuffer;
+
+class SeekableReadBuffer;
+struct FormatSettings;
 
 class ArrowBufferedOutputStream : public arrow::io::OutputStream
 {
@@ -38,7 +46,9 @@ private:
 class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFile
 {
 public:
-    RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
+    RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, off_t file_size_);
+
+    explicit RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_);
 
     arrow::Result<int64_t> GetSize() override;
 
@@ -52,11 +62,17 @@ public:
 
     arrow::Result<std::shared_ptr<arrow::Buffer>> Read(int64_t nbytes) override;
 
+    /// Override async reading to avoid using internal arrow thread pool.
+    /// In our code we don't use async reading, so implementation is sync,
+    /// we just call ReadAt and return future with ready value.
+    arrow::Future<std::shared_ptr<arrow::Buffer>> ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes) override;
+
     arrow::Status Seek(int64_t position) override;
 
 private:
-    SeekableReadBuffer & in;
-    off_t file_size;
+    ReadBuffer & in;
+    SeekableReadBuffer & seekable_in;
+    std::optional<off_t> file_size;
     bool is_open = false;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
@@ -80,7 +96,12 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
 };
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in);
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
+    ReadBuffer & in,
+    const FormatSettings & settings,
+    std::atomic<int> & is_cancelled,
+    const std::string & format_name,
+    const std::string & magic_bytes);
 
 }
 

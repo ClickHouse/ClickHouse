@@ -1,9 +1,10 @@
 ---
-toc_priority: 46
-toc_title: input
+slug: /en/sql-reference/table-functions/input
+sidebar_position: 46
+sidebar_label: input
 ---
 
-# input {#input}
+# input
 
 `input(structure)` - table function that allows effectively convert and insert data sent to the
 server with given structure to the table with another structure.
@@ -41,4 +42,3 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1),
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
-

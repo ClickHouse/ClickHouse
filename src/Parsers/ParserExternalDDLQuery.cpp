@@ -1,21 +1,23 @@
-#include "config_core.h"
+#include "config.h"
 
 #include <Parsers/ASTExternalDDLQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserExternalDDLQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 
-#ifdef USE_MYSQL
+#if USE_MYSQL
 #    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
+#    include <Parsers/MySQL/ASTDropQuery.h>
 #endif
 
 namespace DB
 {
 
-#ifdef USE_MYSQL
+#if USE_MYSQL
 namespace ErrorCodes
 {
     extern const int MYSQL_SYNTAX_ERROR;
@@ -41,8 +43,8 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     bool res = false;
     if (external_ddl_query->from->name == "MySQL")
     {
-#ifdef USE_MYSQL
-        ParserDropQuery p_drop_query;
+#if USE_MYSQL
+        MySQLParser::ParserDropQuery p_drop_query;
         ParserRenameQuery p_rename_query;
         MySQLParser::ParserAlterQuery p_alter_query;
         MySQLParser::ParserCreateQuery p_create_query;
@@ -60,16 +62,16 @@ bool ParserExternalDDLQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
             /// Syntax error is ignored, so we need to convert the error code for parsing failure
 
             if (ParserKeyword("ALTER TABLE").ignore(pos))
-                throw Exception("Cannot parse MySQL alter query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+                throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL alter query.");
 
             if (ParserKeyword("RENAME TABLE").ignore(pos))
-                throw Exception("Cannot parse MySQL rename query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+                throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL rename query.");
 
             if (ParserKeyword("DROP TABLE").ignore(pos) || ParserKeyword("TRUNCATE").ignore(pos))
-                throw Exception("Cannot parse MySQL drop query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+                throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL drop query.");
 
             if (ParserKeyword("CREATE TABLE").ignore(pos) || ParserKeyword("CREATE TEMPORARY TABLE").ignore(pos))
-                throw Exception("Cannot parse MySQL create query.", ErrorCodes::MYSQL_SYNTAX_ERROR);
+                throw Exception(ErrorCodes::MYSQL_SYNTAX_ERROR, "Cannot parse MySQL create query.");
         }
 #endif
     }

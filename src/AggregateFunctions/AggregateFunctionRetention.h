@@ -44,7 +44,7 @@ struct AggregateFunctionRetentionData
 
     void serialize(WriteBuffer & buf) const
     {
-        UInt32 event_value = events.to_ulong();
+        UInt32 event_value = static_cast<UInt32>(events.to_ulong());
         writeBinary(event_value, buf);
     }
 
@@ -75,25 +75,19 @@ public:
         return "retention";
     }
 
-    AggregateFunctionRetention(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
+    explicit AggregateFunctionRetention(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {}, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()))
     {
         for (const auto i : collections::range(0, arguments.size()))
         {
-            auto cond_arg = arguments[i].get();
+            const auto * cond_arg = arguments[i].get();
             if (!isUInt8(cond_arg))
-                throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i) + " of aggregate function "
-                        + getName() + ", must be UInt8",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of argument {} of aggregate function {}, must be UInt8",
+                                cond_arg->getName(), i, getName());
         }
 
         events_size = static_cast<UInt8>(arguments.size());
-    }
-
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -115,12 +109,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

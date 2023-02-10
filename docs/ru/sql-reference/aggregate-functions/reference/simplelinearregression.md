@@ -1,5 +1,6 @@
 ---
-toc_priority: 220
+slug: /ru/sql-reference/aggregate-functions/reference/simplelinearregression
+sidebar_position: 220
 ---
 
 # simpleLinearRegression {#simplelinearregression}
@@ -40,4 +41,3 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 │ (1,3)                                                             │
 └───────────────────────────────────────────────────────────────────┘
 ```
-

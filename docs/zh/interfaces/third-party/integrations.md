@@ -1,12 +1,13 @@
 ---
-toc_priority: 27
-toc_title: 第三方集成库
+slug: /zh/interfaces/third-party/integrations
+sidebar_position: 27
+sidebar_label: 第三方集成库
 ---
 
 # 第三方集成库 {#integration-libraries-from-third-party-developers}
 
 !!! warning "声明"
-Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
+    ClickHouse, Inc.**没有**维护下面列出的库，也没有做过任何广泛的测试来确保它们的质量。
 
 ## 基础设施 {#infrastructure-products}
 
@@ -104,5 +105,3 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
         -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
-
-[源文章](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->

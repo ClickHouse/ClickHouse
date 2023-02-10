@@ -16,6 +16,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Core/SettingsEnums.h>
 
@@ -46,8 +47,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ExpressionActions::~ExpressionActions() = default;
-
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
@@ -68,7 +67,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag->dumpNames(), std::to_string(settings.max_temporary_columns));
+                        actions_dag->dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
@@ -158,9 +157,12 @@ static void setLazyExecutionInfo(
 
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
-    /// If node is used in result, we can't enable lazy execution.
-    if (node_info.used_in_result)
+    /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
+    if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
+    {
         lazy_execution_info.can_be_lazy_executed = false;
+        return;
+    }
 
     /// To fill lazy execution info for current node we need to create it for all it's parents.
     for (const auto & parent : node_info.parents)
@@ -171,7 +173,7 @@ static void setLazyExecutionInfo(
         {
             /// Use set, because one node can be more than one argument.
             /// Example: expr1 AND expr2 AND expr1.
-            std::set<size_t> indexes;
+            std::unordered_set<size_t> indexes;
             for (size_t i = 0; i != parent->children.size(); ++i)
             {
                 if (node == parent->children[i])
@@ -293,7 +295,11 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             short_circuit_nodes[&node] = short_circuit_settings;
     }
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
+    /// If there are no short-circuit functions, no need to do anything.
+    if (short_circuit_nodes.empty())
+        return {};
+
+    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getOutputs());
 
     /// For each node we fill LazyExecutionInfo.
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
@@ -327,10 +333,10 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & index = actions_dag->getIndex();
+    const auto & outputs = actions_dag->getOutputs();
     const auto & inputs = actions_dag->getInputs();
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, index);
+    auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
     for (const auto & node : nodes)
         data.push_back({.node = &node});
@@ -420,9 +426,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         }
     }
 
-    result_positions.reserve(index.size());
+    result_positions.reserve(outputs.size());
 
-    for (const auto & node : index)
+    for (const auto & node : outputs)
     {
         auto pos = data[reverse_info.reverse_index[node]].position;
 
@@ -530,9 +536,9 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                 if (column.column && !isColumnConst(*column.column))
                     list_of_non_const_columns << "\n" << column.name;
 
-            throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
-                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
+            throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS,
+                "Too many temporary non-const columns:{}. Maximum: {}",
+                list_of_non_const_columns.str(), settings.max_temporary_non_const_columns);
         }
     }
 }
@@ -569,7 +575,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
         {
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
-                throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
 
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
@@ -614,9 +620,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(array_join_key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
-                throw Exception("ARRAY JOIN of not array: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", action.node->result_name);
 
             for (auto & column : columns)
                 if (column.column)
@@ -629,7 +635,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             auto & res_column = columns[action.result_position];
 
             res_column.column = array->getDataPtr();
-            res_column.type = assert_cast<const DataTypeArray &>(*array_join_key.type).getNestedType();
+            res_column.type = getArrayJoinDataType(array_join_key.type)->getNestedType();
             res_column.name = action.node->result_name;
 
             num_rows = res_column.column->size();
@@ -735,7 +741,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     }
     else
     {
-        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
+        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
         for (auto input : execution_context.inputs_pos)
             if (input >= 0)
                 block.erase(input);
@@ -747,7 +753,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (const auto & item : block)
+    for (auto && item : block)
         res.insert(std::move(item));
 
     block.swap(res);
@@ -784,10 +790,10 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
     std::optional<size_t> min_size;
-    String res;
+    NameAndTypePair result;
 
     for (const auto & column : columns)
     {
@@ -801,14 +807,14 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
         if (!min_size || size < *min_size)
         {
             min_size = size;
-            res = column.name;
+            result = column;
         }
     }
 
     if (!min_size)
-        throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No available columns");
 
-    return res;
+    return result;
 }
 
 std::string ExpressionActions::dumpActions() const
@@ -924,11 +930,11 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 {
     if (steps.empty())
-        throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add action to empty ExpressionActionsChain");
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     for (auto & column : columns)
-        if (column.column && isColumnConst(*column.column) && non_constant_inputs.count(column.name))
+        if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
@@ -949,7 +955,7 @@ void ExpressionActionsChain::finalize()
             const NameSet & additional_input = steps[i + 1]->additional_input;
             for (const auto & it : steps[i + 1]->getRequiredColumns())
             {
-                if (additional_input.count(it.name) == 0)
+                if (!additional_input.contains(it.name))
                 {
                     auto iter = required_output.find(it.name);
                     if (iter == required_output.end())
@@ -1000,9 +1006,9 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.count(column.name) > 0)
+        if (array_join->columns.contains(column.name))
         {
-            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
+            const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
             /// Arrays are materialized
             column.column = nullptr;
@@ -1017,12 +1023,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
+        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
@@ -1033,7 +1039,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 ExpressionActionsChain::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
-    ColumnsWithTypeAndName required_columns_)
+    const ColumnsWithTypeAndName & required_columns_)
     : Step({})
     , analyzed_join(std::move(analyzed_join_))
     , join(std::move(join_))
@@ -1041,11 +1047,8 @@ ExpressionActionsChain::JoinStep::JoinStep(
     for (const auto & column : required_columns_)
         required_columns.emplace_back(column.name, column.type);
 
-    NamesAndTypesList result_names_and_types = required_columns;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types, true);
-    for (const auto & [name, type] : result_names_and_types)
-        /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
-        result_columns.emplace_back(nullptr, type, name);
+    result_columns = required_columns_;
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
 void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
@@ -1065,17 +1068,17 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : required_columns)
     {
-        if (required_names.count(column.name) != 0)
+        if (required_names.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
     /// Result will also contain joined columns.
-    for (const auto & column_name : analyzed_join->columnsAddedByJoin())
-        required_names.emplace(column_name);
+    for (const auto & column : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column.name);
 
     for (const auto & column : result_columns)
     {
-        if (required_names.count(column.name) != 0)
+        if (required_names.contains(column.name))
             new_result_columns.emplace_back(column);
     }
 

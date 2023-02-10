@@ -1,6 +1,7 @@
 ---
-toc_folder_title: ClickHouse事迹
-toc_priority: 82
+slug: /zh/whats-new/
+sidebar_label: ClickHouse事迹
+sidebar_position: 82
 ---
 
 # ClickHouse变更及改动? {#whats-new-in-clickhouse}

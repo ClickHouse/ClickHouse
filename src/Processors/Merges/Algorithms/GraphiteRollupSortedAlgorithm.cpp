@@ -1,12 +1,19 @@
+#include <Processors/Merges/Algorithms/Graphite.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <base/DateLUTImpl.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header, const Graphite::Params & params)
@@ -25,16 +32,23 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
         if (i != def.time_column_num && i != def.value_column_num && i != def.version_column_num)
             def.unmodified_column_numbers.push_back(i);
 
+    if (!WhichDataType(header.getByPosition(def.value_column_num).type).isFloat64())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only `Float64` data type is allowed for the value column of GraphiteMergeTree");
+
     return def;
 }
 
 GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
-    const Block & header, size_t num_inputs,
-    SortDescription description_, size_t max_block_size,
-    Graphite::Params params_, time_t time_of_merge_)
-    : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), nullptr, max_row_refs)
-    , merged_data(header.cloneEmptyColumns(), false, max_block_size)
-    , params(std::move(params_)), time_of_merge(time_of_merge_)
+    const Block & header_,
+    size_t num_inputs,
+    SortDescription description_,
+    size_t max_block_size,
+    Graphite::Params params_,
+    time_t time_of_merge_)
+    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), nullptr, max_row_refs)
+    , merged_data(header_.cloneEmptyColumns(), false, max_block_size)
+    , params(std::move(params_))
+    , time_of_merge(time_of_merge_)
 {
     size_t max_size_of_aggregate_state = 0;
     size_t max_alignment_of_aggregate_state = 1;
@@ -49,63 +63,7 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
     }
 
     merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
-    columns_definition = defineColumns(header, params);
-}
-
-Graphite::RollupRule GraphiteRollupSortedAlgorithm::selectPatternForPath(StringRef path) const
-{
-    const Graphite::Pattern * first_match = &undef_pattern;
-
-    for (const auto & pattern : params.patterns)
-    {
-        if (!pattern.regexp)
-        {
-            /// Default pattern
-            if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
-            {
-                /// There is only default pattern for both retention and aggregation
-                return std::pair(&pattern, &pattern);
-            }
-            if (pattern.type != first_match->type)
-            {
-                if (first_match->type == first_match->TypeRetention)
-                {
-                    return std::pair(first_match, &pattern);
-                }
-                if (first_match->type == first_match->TypeAggregation)
-                {
-                    return std::pair(&pattern, first_match);
-                }
-            }
-        }
-        else if (pattern.regexp->match(path.data, path.size))
-        {
-            /// General pattern with matched path
-            if (pattern.type == pattern.TypeAll)
-            {
-                /// Only for not default patterns with both function and retention parameters
-                return std::pair(&pattern, &pattern);
-            }
-            if (first_match->type == first_match->TypeUndef)
-            {
-                first_match = &pattern;
-                continue;
-            }
-            if (pattern.type != first_match->type)
-            {
-                if (first_match->type == first_match->TypeRetention)
-                {
-                    return std::pair(first_match, &pattern);
-                }
-                if (first_match->type == first_match->TypeAggregation)
-                {
-                    return std::pair(&pattern, first_match);
-                }
-            }
-        }
-    }
-
-    return {nullptr, nullptr};
+    columns_definition = defineColumns(header_, params);
 }
 
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
@@ -171,7 +129,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        StringRef next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
+        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow()).toView();
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;
@@ -188,7 +146,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
             Graphite::RollupRule next_rule = merged_data.currentRule();
             if (new_path)
-                next_rule = selectPatternForPath(next_path);
+                next_rule = selectPatternForPath(this->params, next_path);
 
             const Graphite::RetentionPattern * retention_pattern = std::get<0>(next_rule);
             time_t next_time_rounded;
@@ -241,7 +199,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             current_subgroup_newest_row.set(current, sources[current.impl->order].chunk);
 
             /// Small hack: group and subgroups have the same path, so we can set current_group_path here instead of startNextGroup
-            /// But since we keep in memory current_subgroup_newest_row's block, we could use StringRef for current_group_path and don't
+            /// But since we keep in memory current_subgroup_newest_row's block, we could use string_view for current_group_path and don't
             ///  make deep copy of the path.
             current_group_path = next_path;
         }

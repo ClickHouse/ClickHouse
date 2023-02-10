@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <unistd.h>
 
@@ -18,6 +18,7 @@ protected:
     bool use_pread = false;               /// To access one fd from multiple threads, use 'pread' syscall instead of 'read'.
 
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
+
     int fd;
 
     bool nextImpl() override;
@@ -27,8 +28,15 @@ protected:
     std::string getFileName() const override;
 
 public:
-    ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileBase(buf_size, existing_memory, alignment), required_alignment(alignment), fd(fd_)
+    explicit ReadBufferFromFileDescriptor(
+        int fd_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
+        , required_alignment(alignment)
+        , fd(fd_)
     {
     }
 
@@ -42,19 +50,21 @@ public:
         return file_offset_of_buffer_end - (working_buffer.end() - pos);
     }
 
+    Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
+
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
+
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
     off_t seek(off_t off, int whence) override;
 
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
-    off_t size();
-
-    void setProgressCallback(ContextPtr context);
+    size_t getFileSize() override;
 
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-    bool poll(size_t timeout_microseconds);
+    bool poll(size_t timeout_microseconds) const;
 };
 
 
@@ -63,8 +73,13 @@ private:
 class ReadBufferFromFileDescriptorPRead : public ReadBufferFromFileDescriptor
 {
 public:
-    ReadBufferFromFileDescriptorPRead(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment)
+    explicit ReadBufferFromFileDescriptorPRead(
+        int fd_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0,
+        std::optional<size_t> file_size_ = std::nullopt)
+        : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
     {
         use_pread = true;
     }

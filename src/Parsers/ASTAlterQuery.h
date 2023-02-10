@@ -204,9 +204,11 @@ public:
     /// Which property user want to remove
     String remove_property;
 
-    String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
+
+    static const char * typeToString(Type type);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -241,12 +243,12 @@ public:
 
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
-        return removeOnCluster<ASTAlterQuery>(clone(), new_database);
+        return removeOnCluster<ASTAlterQuery>(clone(), params.default_database);
     }
 
-    const char * getQueryKindString() const override { return "Alter"; }
+    QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

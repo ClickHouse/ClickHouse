@@ -1,65 +1,20 @@
 #pragma once
 
+#include <cmath>
+
+#include <base/sort.h>
+#include <base/TypeName.h>
+#include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/TypeId.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnVectorHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
-#include <Common/typeid_cast.h>
-#include <base/sort.h>
-#include <Core/TypeId.h>
-#include <base/TypeName.h>
-
-#include <cmath>
 
 
 namespace DB
 {
-
-/// PaddedPODArray extended by Decimal scale
-template <typename T>
-class DecimalPaddedPODArray : public PaddedPODArray<T>
-{
-public:
-    using Base = PaddedPODArray<T>;
-    using Base::operator[];
-
-    DecimalPaddedPODArray(size_t size, UInt32 scale_)
-    :   Base(size),
-        scale(scale_)
-    {}
-
-    DecimalPaddedPODArray(const DecimalPaddedPODArray & other)
-    :   Base(other.begin(), other.end()),
-        scale(other.scale)
-    {}
-
-    DecimalPaddedPODArray(DecimalPaddedPODArray && other)
-    {
-        this->swap(other);
-        std::swap(scale, other.scale);
-    }
-
-    DecimalPaddedPODArray & operator=(DecimalPaddedPODArray && other)
-    {
-        this->swap(other);
-        std::swap(scale, other.scale);
-        return *this;
-    }
-
-    UInt32 getScale() const { return scale; }
-
-private:
-    UInt32 scale;
-};
-
-/// Prevent implicit template instantiation of DecimalPaddedPODArray for common decimal types
-
-extern template class DecimalPaddedPODArray<Decimal32>;
-extern template class DecimalPaddedPODArray<Decimal64>;
-extern template class DecimalPaddedPODArray<Decimal128>;
-extern template class DecimalPaddedPODArray<Decimal256>;
-extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
 template <is_decimal T>
@@ -72,22 +27,22 @@ private:
 public:
     using ValueType = T;
     using NativeT = typename T::NativeType;
-    using Container = DecimalPaddedPODArray<T>;
+    using Container = PaddedPODArray<T>;
 
 private:
     ColumnDecimal(const size_t n, UInt32 scale_)
-    :   data(n, scale_),
+    :   data(n),
         scale(scale_)
     {}
 
     ColumnDecimal(const ColumnDecimal & src)
-    :   data(src.data),
+    :   data(src.data.begin(), src.data.end()),
         scale(src.scale)
     {}
 
 public:
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeId<T>; }
+    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
@@ -104,11 +59,8 @@ public:
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
-    virtual void insertManyDefaults(size_t length) override
-    {
-        data.resize_fill(data.size() + length);
-    }
-    void insert(const Field & x) override { data.push_back(DB::get<T>(x)); }
+    void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
+    void insert(const Field & x) override { data.push_back(x.get<T>()); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override
@@ -116,9 +68,9 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    StringRef getRawData() const override
+    std::string_view getRawData() const override
     {
-        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
+        return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
     StringRef getDataAt(size_t n) const override
@@ -139,15 +91,17 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
     bool hasEqualValues() const override;
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_range) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     bool getBool(size_t n) const override { return bool(data[n].value); }
-    Int64 getInt(size_t n) const override { return Int64(data[n].value) * scale; }
+    Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
@@ -177,8 +131,17 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
 
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    {
+        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
+    }
+
+    ColumnPtr compress() const override;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
@@ -186,29 +149,11 @@ public:
     const T & getElement(size_t n) const { return data[n]; }
     T & getElement(size_t n) { return data[n]; }
 
-    UInt32 getScale() const {return scale;}
+    UInt32 getScale() const { return scale; }
 
 protected:
     Container data;
     UInt32 scale;
-
-    template <typename U>
-    void permutation(bool reverse, size_t limit, PaddedPODArray<U> & res) const
-    {
-        size_t s = data.size();
-        res.resize(s);
-        for (U i = 0; i < s; ++i)
-            res[i] = i;
-
-        auto sort_end = res.end();
-        if (limit && limit < s)
-            sort_end = res.begin() + limit;
-
-        if (reverse)
-            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
-        else
-            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
-    }
 };
 
 template <class> class ColumnVector;

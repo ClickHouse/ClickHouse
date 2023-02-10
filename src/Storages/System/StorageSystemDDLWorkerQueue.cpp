@@ -71,13 +71,18 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
 {
     const char * begin = task.entry.query.data();
     const char * end = begin + task.entry.query.size();
-    String cluster_name;
-    ParserQuery parser_query(end);
+    const auto & settings = context->getSettingsRef();
+
     String description = fmt::format("from {}", task.entry_path);
+    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     ASTPtr query = parseQuery(parser_query, begin, end, description,
-                              context->getSettingsRef().max_query_size, context->getSettingsRef().max_parser_depth);
+                              settings.max_query_size,
+                              settings.max_parser_depth);
+
+    String cluster_name;
     if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
         cluster_name = query_on_cluster->cluster;
+
     return cluster_name;
 }
 
@@ -200,9 +205,9 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 
 void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
-    fs::path ddl_zookeeper_path = context->getConfigRef().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-
+    auto& ddl_worker = context->getDDLWorker();
+    fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
+    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
     GetResponseFutures ddl_task_futures;

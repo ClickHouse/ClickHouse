@@ -10,19 +10,21 @@ class SquashingChunksTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingChunksTransform(
-        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, bool reserve_memory = false);
+        const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SquashingTransform"; }
 
     void work() override;
 
 protected:
-    void transform(Chunk & chunk) override;
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override;
     void onFinish() override;
 
 
 private:
     SquashingTransform squashing;
+    Chunk cur_chunk;
     Chunk finish_chunk;
 };
 

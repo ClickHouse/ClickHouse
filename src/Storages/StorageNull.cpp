@@ -25,11 +25,10 @@ void registerStorageNull(StorageFactory & factory)
     factory.registerStorage("Null", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, args.engine_args.size());
 
-        return StorageNull::create(args.table_id, args.columns, args.constraints, args.comment);
+        return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
     },
     {
         .supports_parallel_insert = true,
@@ -54,10 +53,10 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
             const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                    backQuoteIfNeed(command.column_name), toString(deps_mv)
+                    );
             }
         }
     }

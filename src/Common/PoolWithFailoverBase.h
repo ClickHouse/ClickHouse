@@ -7,6 +7,7 @@
 #include <functional>
 #include <base/types.h>
 #include <base/scope_guard.h>
+#include <base/sort.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -178,7 +179,7 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
         shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, 0});
-    std::sort(
+    ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [](const ShuffledPool & lhs, const ShuffledPool & rhs)
         {
@@ -210,9 +211,8 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
         max_ignored_errors, fallback_to_stale_replicas,
         try_get_entry, get_priority);
     if (results.empty() || results[0].entry.isNull())
-        throw DB::Exception(
-                "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
-                DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
+                "PoolWithFailoverBase::getMany() returned less than min_entries entries.");
     return results[0].entry;
 }
 
@@ -291,15 +291,10 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     }
 
     if (usable_count < min_entries)
-        throw DB::NetException(
-                "All connection tries failed. Log: \n\n" + fail_messages + "\n",
-                DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
+        throw DB::NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-    try_results.erase(
-            std::remove_if(
-                    try_results.begin(), try_results.end(),
-                    [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
-            try_results.end());
+    std::erase_if(try_results, [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; });
 
     /// Sort so that preferred items are near the beginning.
     std::stable_sort(
@@ -324,10 +319,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         try_results.resize(up_to_date_count);
     }
     else
-        throw DB::Exception(
-                "Could not find enough connections to up-to-date replicas. Got: " + std::to_string(up_to_date_count)
-                + ", needed: " + std::to_string(min_entries),
-                DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
+        throw DB::Exception(DB::ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}", up_to_date_count, max_entries);
 
     return try_results;
 }
@@ -342,7 +335,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     Int64 config_priority = 1;
     /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
-    UInt32 random = 0;
+    UInt64 random = 0;
 
     void randomize()
     {
@@ -356,7 +349,7 @@ struct PoolWithFailoverBase<TNestedPool>::PoolState
     }
 
 private:
-    std::minstd_rand rng = std::minstd_rand(randomSeed());
+    std::minstd_rand rng = std::minstd_rand(static_cast<uint_fast32_t>(randomSeed()));
 };
 
 template <typename TNestedPool>
@@ -394,8 +387,8 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 
         if (delta >= 0)
         {
-            const UInt64 MAX_BITS = sizeof(UInt64) * CHAR_BIT;
-            size_t shift_amount = MAX_BITS;
+            const UInt64 max_bits = sizeof(UInt64) * CHAR_BIT;
+            size_t shift_amount = max_bits;
             /// Divide error counts by 2 every decrease_error_period seconds.
             if (decrease_error_period)
                 shift_amount = delta / decrease_error_period;
@@ -404,7 +397,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
             if (shift_amount)
                 last_decrease_time = current_time;
 
-            if (shift_amount >= MAX_BITS)
+            if (shift_amount >= max_bits)
             {
                 for (auto & state : states)
                 {

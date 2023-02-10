@@ -1,5 +1,6 @@
 #include "HashedArrayDictionary.h"
 
+#include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -36,6 +37,7 @@ HashedArrayDictionary<dictionary_key_type>::HashedArrayDictionary(
 {
     createAttributes();
     loadData();
+    buildHierarchyParentToChildIndexIfNeeded();
     calculateBytesAllocated();
 }
 
@@ -158,12 +160,6 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::hasKeys(const Colum
     auto result = ColumnUInt8::create(keys_size, false);
     auto & out = result->getData();
 
-    if (attributes.empty())
-    {
-        query_count.fetch_add(keys_size, std::memory_order_relaxed);
-        return result;
-    }
-
     size_t keys_found = 0;
 
     for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
@@ -195,9 +191,12 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const auto & key_attribute_container = key_attribute.container;
+        std::optional<UInt64> null_value;
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const auto & key_attribute_container = key_attribute.container;
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return key_attribute_container.find(key) != key_attribute_container.end(); };
@@ -210,15 +209,25 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key
 
             auto it = key_attribute_container.find(hierarchy_key);
 
-            if (it != key_attribute_container.end())
-                result = parent_keys_container[it->getMapped()];
+            if (it == key_attribute_container.end())
+                return result;
 
-            keys_found += result.has_value();
+            size_t key_index = it->getMapped();
+
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+                return result;
+
+            UInt64 parent_key = parent_keys_container[key_index];
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_func);
+        auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -250,9 +259,12 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const auto & key_attribute_container = key_attribute.container;
+        std::optional<UInt64> null_value;
 
-        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
+        if (!dictionary_attribute.null_value.isNull())
+            null_value = dictionary_attribute.null_value.get<UInt64>();
+
+        const auto & key_attribute_container = key_attribute.container;
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return key_attribute_container.find(key) != key_attribute_container.end(); };
@@ -265,15 +277,25 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 
             auto it = key_attribute_container.find(hierarchy_key);
 
-            if (it != key_attribute_container.end())
-                result = parent_keys_container[it->getMapped()];
+            if (it == key_attribute_container.end())
+                return result;
 
-            keys_found += result.has_value();
+            size_t key_index = it->getMapped();
+
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[key_index])
+                return result;
+
+            UInt64 parent_key = parent_keys_container[key_index];
+            if (null_value && *null_value == parent_key)
+                return result;
+
+            result = parent_key;
+            keys_found += 1;
 
             return result;
         };
 
-        auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
+        auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_func);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -287,18 +309,14 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
-    ColumnPtr key_column [[maybe_unused]],
-    const DataTypePtr &,
-    size_t level [[maybe_unused]]) const
+DictionaryHierarchicalParentToChildIndexPtr HashedArrayDictionary<dictionary_key_type>::getHierarchicalIndex() const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        PaddedPODArray<UInt64> keys_backup;
-        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+        if (hierarchical_index)
+            return hierarchical_index;
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
-
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
         const AttributeContainerType<UInt64> & parent_keys_container = std::get<AttributeContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -311,20 +329,45 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
             index_to_key[value] = key;
 
         HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+        parent_to_child.reserve(index_to_key.size());
 
-        for (size_t i = 0; i < parent_keys_container.size(); ++i)
+        size_t parent_keys_container_size = parent_keys_container.size();
+        for (size_t i = 0; i < parent_keys_container_size; ++i)
         {
+            if (unlikely(hierarchical_attribute.is_index_null) && (*hierarchical_attribute.is_index_null)[i])
+                continue;
+
             const auto * it = index_to_key.find(i);
             if (it == index_to_key.end())
                 continue;
 
-            auto parent_key = it->getMapped();
-            auto child_key = parent_keys_container[i];
+            auto child_key = it->getMapped();
+            auto parent_key = parent_keys_container[i];
             parent_to_child[parent_key].emplace_back(child_key);
         }
 
+        return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnPtr HashedArrayDictionary<dictionary_key_type>::getDescendants(
+    ColumnPtr key_column [[maybe_unused]],
+    const DataTypePtr &,
+    size_t level [[maybe_unused]],
+    DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        PaddedPODArray<UInt64> keys_backup;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
         size_t keys_found = 0;
-        auto result = getKeysDescendantsArray(keys, parent_to_child, level, keys_found);
+        auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -352,8 +395,7 @@ void HashedArrayDictionary<dictionary_key_type>::createAttributes()
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<std::vector<bool>>() : std::optional<std::vector<bool>>{};
-            std::unique_ptr<Arena> string_arena = std::is_same_v<AttributeType, String> ? std::make_unique<Arena>() : nullptr;
-            Attribute attribute{dictionary_attribute.underlying_type, AttributeContainerType<ValueType>(), std::move(is_index_null), std::move(string_arena)};
+            Attribute attribute{dictionary_attribute.underlying_type, AttributeContainerType<ValueType>(), std::move(is_index_null)};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -431,7 +473,7 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
         }
 
         if constexpr (std::is_same_v<KeyType, StringRef>)
-            key = copyKeyInArena(key);
+            key = copyStringInArena(string_arena, key);
 
         key_attribute.container.insert({key, element_count});
 
@@ -466,16 +508,12 @@ void HashedArrayDictionary<dictionary_key_type>::blockToAttributes(const Block &
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
                     String & value_to_insert = column_value_to_insert.get<String>();
-                    size_t value_to_insert_size = value_to_insert.size();
-
-                    const char * string_in_arena = attribute.string_arena->insert(value_to_insert.data(), value_to_insert_size);
-
-                    StringRef string_in_arena_reference = StringRef{string_in_arena, value_to_insert_size};
+                    StringRef string_in_arena_reference = copyStringInArena(string_arena, value_to_insert);
                     attribute_container.back() = string_in_arena_reference;
                 }
                 else
                 {
-                    auto value_to_insert = column_value_to_insert.get<NearestFieldType<AttributeValueType>>();
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
                     attribute_container.back() = value_to_insert;
                 }
             };
@@ -547,7 +585,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
                 getItemsImpl<ValueType, true>(
                     attribute,
                     keys_object,
-                    [&](size_t row, const StringRef value, bool is_null)
+                    [&](size_t row, StringRef value, bool is_null)
                     {
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
@@ -557,7 +595,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
                 getItemsImpl<ValueType, false>(
                     attribute,
                     keys_object,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_value_extractor);
         }
         else
@@ -588,7 +626,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
 
     return result;
 }
@@ -677,16 +715,6 @@ void HashedArrayDictionary<dictionary_key_type>::getItemsImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-StringRef HashedArrayDictionary<dictionary_key_type>::copyKeyInArena(StringRef key)
-{
-    size_t key_size = key.size;
-    char * place_for_key = complex_key_arena.alloc(key_size);
-    memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
-    StringRef updated_key{place_for_key, key_size};
-    return updated_key;
-}
-
-template <DictionaryKeyType dictionary_key_type>
 void HashedArrayDictionary<dictionary_key_type>::loadData()
 {
     if (!source_ptr->hasUpdateField())
@@ -710,7 +738,17 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
-            full_name);
+            getFullName());
+}
+
+template <DictionaryKeyType dictionary_key_type>
+void HashedArrayDictionary<dictionary_key_type>::buildHierarchyParentToChildIndexIfNeeded()
+{
+    if (!dict_struct.hierarchical_attribute_index)
+        return;
+
+    if (dict_struct.attributes[*dict_struct.hierarchical_attribute_index].bidirectional)
+        hierarchical_index = getHierarchicalIndex();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -742,24 +780,24 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
             }
 
             bucket_count = container.capacity();
-
-            if constexpr (std::is_same_v<ValueType, StringRef>)
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
-
-        if (attribute.string_arena)
-            bytes_allocated += attribute.string_arena->size();
 
         if (attribute.is_index_null.has_value())
             bytes_allocated += (*attribute.is_index_null).size();
     }
 
-    bytes_allocated += complex_key_arena.size();
-
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    if (hierarchical_index)
+    {
+        hierarchical_index_bytes_allocated = hierarchical_index->getSizeInBytes();
+        bytes_allocated += hierarchical_index_bytes_allocated;
+    }
+
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -774,22 +812,20 @@ Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names
     ColumnsWithTypeAndName key_columns;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    {
+        auto keys_column = getColumnFromPODArray(std::move(keys));
+        key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    }
     else
+    {
         key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
+    }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
 
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 }
 
 template class HashedArrayDictionary<DictionaryKeyType::Simple>;

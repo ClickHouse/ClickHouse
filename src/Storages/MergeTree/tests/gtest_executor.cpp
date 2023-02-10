@@ -64,7 +64,7 @@ TEST(Executor, RemoveTasks)
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    auto executor = DB::OrdinaryBackgroundExecutor::create
+    auto executor = std::make_shared<DB::OrdinaryBackgroundExecutor>
     (
         "GTest",
         tasks_kinds,
@@ -105,7 +105,7 @@ TEST(Executor, RemoveTasksStress)
     const size_t schedulers_count = 5;
     const size_t removers_count = 5;
 
-    auto executor = DB::OrdinaryBackgroundExecutor::create
+    auto executor = std::make_shared<DB::OrdinaryBackgroundExecutor>
     (
         "GTest",
         tasks_kinds,
@@ -147,7 +147,7 @@ TEST(Executor, RemoveTasksStress)
     for (size_t j = 0; j < tasks_kinds; ++j)
         executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
 
-    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
-
     executor->wait();
+
+    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
 }

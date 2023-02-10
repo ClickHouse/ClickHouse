@@ -1,7 +1,5 @@
 ---
-toc_priority: 62
-toc_folder_title: "Гео-данные"
-toc_title: hidden
+slug: /ru/sql-reference/functions/geo/
+sidebar_position: 62
+sidebar_label: "Гео-данные"
 ---
-
-

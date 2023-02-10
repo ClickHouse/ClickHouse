@@ -12,9 +12,8 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     bool with_names_,
     bool with_types_,
     bool is_raw_,
-    const RowOutputFormatParams & params_,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), with_names(with_names_), with_types(with_types_), is_raw(is_raw_), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_), with_names(with_names_), with_types(with_types_), is_raw(is_raw_), format_settings(format_settings_)
 {
 }
 
@@ -22,15 +21,17 @@ void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {
-        writeEscapedString(values[i], out);
-        if (i + 1 == values.size())
-            writeRowEndDelimiter();
+        if (is_raw)
+            writeString(values[i], out);
         else
+            writeEscapedString(values[i], out);
+        if (i + 1 != values.size())
             writeFieldDelimiter();
     }
+    writeRowEndDelimiter();
 }
 
-void TabSeparatedRowOutputFormat::doWritePrefix()
+void TabSeparatedRowOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
 
@@ -74,7 +75,6 @@ void TabSeparatedRowOutputFormat::writeBeforeExtremes()
     writeChar('\n', out);
 }
 
-
 void registerOutputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -84,10 +84,9 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             factory.registerOutputFormat(format_name, [is_raw, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
-                const RowOutputFormatParams & params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, with_names, with_types, is_raw, params, settings);
+                return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, with_names, with_types, is_raw, settings);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
@@ -95,6 +94,8 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("LineAsString", register_func);
     }
 }
 

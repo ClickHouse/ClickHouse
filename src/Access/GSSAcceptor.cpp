@@ -6,6 +6,7 @@
 
 #include <mutex>
 #include <tuple>
+#include <filesystem>
 
 
 namespace DB
@@ -18,7 +19,7 @@ namespace ErrorCodes
     extern const int KERBEROS_ERROR;
 }
 
-GSSAcceptorContext::GSSAcceptorContext(const GSSAcceptorContext::Params& params_)
+GSSAcceptorContext::GSSAcceptorContext(const GSSAcceptorContext::Params & params_)
     : params(params_)
 {
 }
@@ -50,7 +51,6 @@ std::recursive_mutex gss_global_mutex;
 struct PrincipalName
 {
     explicit PrincipalName(String principal);
-//  operator String() const;
 
     String name;
     std::vector<String> instances;
@@ -74,24 +74,6 @@ PrincipalName::PrincipalName(String principal)
         instances.assign(++it, st.end());
     }
 }
-
-/*
-PrincipalName::operator String() const
-{
-    String principal = name;
-
-    for (const auto & instance : instances)
-    {
-        principal += '/';
-        principal += instance;
-    }
-
-    principal += '@';
-    principal += realm;
-
-    return principal;
-}
-*/
 
 String bufferToString(const gss_buffer_desc & buf)
 {
@@ -280,10 +262,19 @@ void GSSAcceptorContext::initHandles()
 
     resetHandles();
 
+    if (!params.keytab.empty())
+    {
+        if (!std::filesystem::exists(params.keytab))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Keytab file not found");
+
+        if (krb5_gss_register_acceptor_identity(params.keytab.c_str()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to register keytab file");
+    }
+
     if (!params.principal.empty())
     {
         if (!params.realm.empty())
-            throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Realm and principal name cannot be specified simultaneously");
 
         gss_buffer_desc acceptor_name_buf;
         acceptor_name_buf.length = params.principal.size();
@@ -314,7 +305,7 @@ void GSSAcceptorContext::initHandles()
         if (GSS_ERROR(major_status))
         {
             const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
-            throw Exception("gss_import_name() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
+            throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_import_name() failed{}", (messages.empty() ? "" : ": " + messages));
         }
 
         minor_status = 0;
@@ -332,7 +323,7 @@ void GSSAcceptorContext::initHandles()
         if (GSS_ERROR(major_status))
         {
             const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
-            throw Exception("gss_acquire_cred() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
+            throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_acquire_cred() failed{}", (messages.empty() ? "" : ": " + messages));
         }
     }
 }
@@ -396,21 +387,26 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
         if (major_status == GSS_S_COMPLETE)
         {
             if (!params.mechanism.empty() && !equalMechanisms(params.mechanism, mech_type))
-                throw Exception("gss_accept_sec_context() succeeded, but: the authentication mechanism is not what was expected", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR,
+                                "gss_accept_sec_context() succeeded, but: "
+                                "the authentication mechanism is not what was expected");
 
             if (flags & GSS_C_ANON_FLAG)
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated");
 
             std::tie(user_name, realm) = extractNameAndRealm(initiator_name);
 
             if (user_name.empty())
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator name cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator name cannot be extracted");
 
             if (realm.empty())
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted");
 
             if (!params.realm.empty() && params.realm != realm)
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator realm is not what was expected (expected: " + params.realm + ", actual: " + realm + ")", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR,
+                                "gss_accept_sec_context() succeeded, but: "
+                                "the initiator realm is not what was expected (expected: {}, actual: {})",
+                                params.realm, realm);
 
             output_token = bufferToString(output_token_buf);
 
@@ -429,7 +425,7 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
         else
         {
             const auto messages = extractStatusMessages(major_status, minor_status, mech_type);
-            throw Exception("gss_accept_sec_context() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
+            throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() failed{}", (messages.empty() ? "" : ": " + messages));
         }
     }
     catch (...)
@@ -461,7 +457,7 @@ void GSSAcceptorContext::initHandles()
 
 String GSSAcceptorContext::processToken(const String &, Poco::Logger *)
 {
-    throw Exception("ClickHouse was built without GSS-API/Kerberos support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without GSS-API/Kerberos support");
 }
 
 #endif // USE_KRB5

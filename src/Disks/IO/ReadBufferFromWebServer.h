@@ -1,9 +1,10 @@
 #pragma once
 
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Context.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 
 
 namespace DB
@@ -14,14 +15,15 @@ namespace DB
  *
  * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
-class ReadBufferFromWebServer : public SeekableReadBuffer
+class ReadBufferFromWebServer : public ReadBufferFromFileBase
 {
 public:
     explicit ReadBufferFromWebServer(
-        const String & url_, ContextPtr context_,
+        const String & url_,
+        ContextPtr context_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
-        size_t last_offset = 0);
+        size_t read_until_position = 0);
 
     bool nextImpl() override;
 
@@ -29,10 +31,18 @@ public:
 
     off_t getPosition() override;
 
+    String getFileName() const override { return url; }
+
+    void setReadUntilPosition(size_t position) override;
+
+    size_t getFileOffsetOfBufferEnd() const override { return offset; }
+
+    Range getRemainingReadRange() const override;
+
+    bool supportsRightBoundedReads() const override { return true; }
+
 private:
     std::unique_ptr<ReadBuffer> initialize();
-
-    void initializeWithRetry();
 
     Poco::Logger * log;
     ContextPtr context;
@@ -42,13 +52,14 @@ private:
 
     std::unique_ptr<ReadBuffer> impl;
 
-    off_t offset = 0;
-
     ReadSettings read_settings;
+
+    Poco::Net::HTTPBasicCredentials credentials{};
 
     bool use_external_buffer;
 
-    off_t last_offset = 0;
+    off_t offset = 0;
+    off_t read_until_position = 0;
 };
 
 }

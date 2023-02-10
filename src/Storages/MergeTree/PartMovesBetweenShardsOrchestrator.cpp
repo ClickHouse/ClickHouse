@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -385,7 +386,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 else
                 {
                     // Need to remove ATTACH_PART from the queue or drop data.
-                    // Similar to `StorageReplicatedMergeTree::dropPart` w/o extra
+                    // Similar to `StorageReplicatedMergeTree::dropPart` without extra
                     // checks as we know drop shall be possible.
                     ReplicatedMergeTreeLogEntryData attach_rollback_log_entry;
 
@@ -472,7 +473,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     log_entry.log_entry_id = attach_log_entry_barrier_path;
                     log_entry.part_checksum = part->checksums.getTotalChecksumHex();
                     log_entry.create_time = std::time(nullptr);
-                    log_entry.new_part_name = part_info.getPartName();
+                    log_entry.new_part_name = part_info.getPartNameAndCheckFormat(storage.format_version);
 
                     ops.emplace_back(zkutil::makeCreateRequest(attach_log_entry_barrier_path, log_entry.toString(), -1));
                     ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
@@ -608,7 +609,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
         }
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil::ZooKeeperPtr zk)
@@ -701,7 +702,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::ge
             return entry;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", toString(task_uuid));
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", task_uuid);
 }
 
 String PartMovesBetweenShardsOrchestrator::Entry::toString() const

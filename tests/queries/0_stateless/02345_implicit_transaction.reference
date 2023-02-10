@@ -1,0 +1,14 @@
+no_transaction_landing	10000
+no_transaction_target	0
+after_transaction_landing	0
+after_transaction_target	0
+after_implicit_txn_in_query_settings_landing	0
+after_implicit_txn_in_query_settings_target	0
+after_implicit_txn_in_session_landing	0
+after_implicit_txn_in_session_target	0
+inside_txn_and_implicit	1
+inside_txn_and_implicit	1
+in_transaction	10000
+out_transaction	0
+{"'implicit_True'":"implicit_True","all":"2","is_empty":0}
+{"'implicit_False'":"implicit_False","all":"2","is_empty":1}

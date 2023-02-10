@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 
@@ -40,7 +40,7 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
@@ -49,15 +49,19 @@ public:
 
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
-    StoragePtr detachTable(const String & table_name) override;
+    void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
-    void dropTable(ContextPtr local_context, const String & name, bool no_delay) override;
+    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
+
+    void dropTable(ContextPtr local_context, const String & name, bool sync) override;
 
     void drop(ContextPtr local_context) override;
 
-    void stopReplication();
+    bool hasReplicationThread() const override { return true; }
+
+    void stopReplication() override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
@@ -84,6 +88,9 @@ private:
     std::map<std::string, StoragePtr> materialized_tables;
     mutable std::mutex tables_mutex;
     mutable std::mutex handler_mutex;
+
+    BackgroundSchedulePool::TaskHolder startup_task;
+    bool shutdown_called = false;
 };
 
 }

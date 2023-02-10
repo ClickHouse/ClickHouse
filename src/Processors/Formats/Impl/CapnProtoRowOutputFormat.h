@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 #if USE_CAPNP
 
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -15,7 +15,7 @@ namespace DB
 class CapnProtoOutputStream : public kj::OutputStream
 {
 public:
-    CapnProtoOutputStream(WriteBuffer & out_);
+    explicit CapnProtoOutputStream(WriteBuffer & out_);
 
     void write(const void * buffer, size_t size) override;
 
@@ -23,23 +23,22 @@ private:
     WriteBuffer & out;
 };
 
-class CapnProtoRowOutputFormat : public IRowOutputFormat
+class CapnProtoRowOutputFormat final : public IRowOutputFormat
 {
 public:
     CapnProtoRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
-        const RowOutputFormatParams & params_,
         const FormatSchemaInfo & info,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "CapnProtoRowOutputFormat"; }
 
+private:
     void write(const Columns & columns, size_t row_num) override;
 
     void writeField(const IColumn &, const ISerialization &, size_t) override { }
 
-private:
     Names column_names;
     DataTypes column_types;
     capnp::StructSchema schema;

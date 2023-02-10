@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 #include <string>
 #include <vector>
@@ -29,14 +30,14 @@ class LogicalExpressionsOptimizer final
     {
         const UInt64 optimize_min_equality_disjunction_chain_length;
 
-        ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
+        explicit ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
         :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_)
         {}
     };
 
 public:
     /// Constructor. Accepts the root of the query DAG.
-    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, UInt64 optimize_min_equality_disjunction_chain_length);
+    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const TablesWithColumns & tables_with_columns_, UInt64 optimize_min_equality_disjunction_chain_length);
 
     /** Replace all rather long homogeneous OR-chains expr = x1 OR ... OR expr = xN
       * on the expressions `expr` IN (x1, ..., xN).
@@ -68,7 +69,6 @@ private:
     using DisjunctiveEqualityChainsMap = std::map<OrWithExpression, Equalities>;
     using DisjunctiveEqualityChain = DisjunctiveEqualityChainsMap::value_type;
 
-private:
     /** Collect information about all the equations in the OR chains (not necessarily homogeneous).
       * This information is grouped by the expression that is on the left side of the equation.
       */
@@ -79,6 +79,9 @@ private:
       * 2. x1, ... xN have the same type
       */
     bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
+
+    /// Check if is LowCardinality OR chain
+    bool isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const;
 
     /// Insert the IN expression into the OR chain.
     static void addInExpression(const DisjunctiveEqualityChain & chain);
@@ -92,13 +95,12 @@ private:
     /// Restore the original column order after optimization.
     void reorderColumns();
 
-private:
     using ParentNodes = std::vector<IAST *>;
     using FunctionParentMap = std::unordered_map<const IAST *, ParentNodes>;
     using ColumnToPosition = std::unordered_map<const IAST *, size_t>;
 
-private:
     ASTSelectQuery * select_query;
+    const TablesWithColumns & tables_with_columns;
     const ExtractedSettings settings;
     /// Information about the OR-chains inside the query.
     DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;

@@ -1,6 +1,9 @@
-# system.replication_queue {#system_tables-replication_queue}
+---
+slug: /en/operations/system-tables/replication_queue
+---
+# replication_queue
 
-Contains information about tasks from replication queues stored in ZooKeeper for tables in the `ReplicatedMergeTree` family.
+Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
 
 Columns:
 
@@ -8,11 +11,11 @@ Columns:
 
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
 
--   `replica_name` ([String](../../sql-reference/data-types/string.md)) — Replica name in ZooKeeper. Different replicas of the same table have different names.
+-   `replica_name` ([String](../../sql-reference/data-types/string.md)) — Replica name in ClickHouse Keeper. Different replicas of the same table have different names.
 
 -   `position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Position of the task in the queue.
 
--   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ZooKeeper.
+-   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ClickHouse Keeper.
 
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Type of the task in the queue, one of:
 
@@ -26,7 +29,7 @@ Columns:
     -   `MUTATE_PART` — Apply one or several mutations to the part.
     -   `ALTER_METADATA` — Apply alter modification according to global /metadata and /columns paths.
 
--   `create_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was submitted for execution.
+-   `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was submitted for execution.
 
 -   `required_quorum` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of replicas waiting for the task to complete with confirmation of completion. This column is only relevant for the `GET_PARTS` task.
 
@@ -44,13 +47,13 @@ Columns:
 
 -   `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text message about the last error that occurred (if any).
 
--   `last_attempt_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last attempted.
+-   `last_attempt_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last attempted.
 
 -   `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of postponed tasks.
 
 -   `postpone_reason` ([String](../../sql-reference/data-types/string.md)) — The reason why the task was postponed.
 
--   `last_postpone_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last postponed.
+-   `last_postpone_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last postponed.
 
 -   `merge_type` ([String](../../sql-reference/data-types/string.md)) — Type of the current merge. Empty if it's a mutation.
 
@@ -65,13 +68,13 @@ Row 1:
 ──────
 database:               merge
 table:                  visits_v2
-replica_name:           mtgiga001-1t.metrika.yandex.net
+replica_name:           mtgiga001-1t
 position:               15
 node_name:              queue-0009325559
 type:                   MERGE_PARTS
 create_time:            2020-12-07 14:04:21
 required_quorum:        0
-source_replica:         mtgiga001-1t.metrika.yandex.net
+source_replica:         mtgiga001-1t
 new_part_name:          20201130_121373_121384_2
 parts_to_merge:         ['20201130_121373_121378_1','20201130_121379_121379_0','20201130_121380_121380_0','20201130_121381_121381_0','20201130_121382_121382_0','20201130_121383_121383_0','20201130_121384_121384_0']
 is_detach:              0
@@ -87,5 +90,3 @@ last_postpone_time:     1970-01-01 03:00:00
 **See Also**
 
 -   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md#query-language-system-replicated)
-
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/replication_queue) <!--hide-->

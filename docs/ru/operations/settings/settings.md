@@ -1,6 +1,7 @@
 ---
-toc_priority: 60
-toc_title: "Настройки"
+sidebar_position: 60
+sidebar_label: "Настройки"
+slug: /ru/operations/settings/settings
 ---
 
 # Настройки {#settings}
@@ -373,9 +374,9 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 -   [CSV](../../interfaces/formats.md#csv)
 -   [TabSeparated](../../interfaces/formats.md#tabseparated)
 
-!!! note "Примечание"
+    :::note "Примечание"
     Когда опция включена, сервер отправляет клиенту расширенные метаданные. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
-
+    :::
 Возможные значения:
 
 -   0 — выключена.
@@ -391,12 +392,14 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата TSV.
+Включает или отключает парсинг значений перечислений как порядковых номеров.
+
+Если режим включен, то во входящих данных в формате `TCV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
 
 Возможные значения:
 
--   0 — парсинг значений перечисления как значений.
--   1 — парсинг значений перечисления как идентификаторов перечисления.
+-   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
+-   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
 
 Значение по умолчанию: 0.
 
@@ -410,10 +413,39 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_tsv_enum_as_number`:
 
+Запрос:
+
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Запрос:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+```
+
+сгенерирует исключение.
+
+При отключенной настройке `input_format_tsv_enum_as_number`:
+
+Запрос:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -427,15 +459,6 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 │ 103 │ first  │
 └─────┴────────┘
 ```
-
-При отключенной настройке `input_format_tsv_enum_as_number` запрос `INSERT`:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-```
-
-сгенерирует исключение.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -456,7 +479,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
-Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
+Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
 
 Возможные значения:
 
@@ -504,7 +527,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 -   [Использование вложенных структур](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
 
-## input_format_with_names_use_header {#settings-input-format-with-names-use-header}
+## input_format_with_names_use_header {#input_format_with_names_use_header}
 
 Включает или отключает проверку порядка столбцов при вставке данных.
 
@@ -512,8 +535,38 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 Поддерживаемые форматы:
 
--   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
--   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes)
+- [CustomSeparatedWithNames](../../interfaces/formats.md#customseparatedwithnames)
+- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
+
+Возможные значения:
+
+-   0 — выключена.
+-   1 — включена.
+
+Значение по умолчанию: 1.
+
+## input_format_with_types_use_header {#input_format_with_types_use_header}
+
+Определяет, должен ли синтаксический анализатор формата проверять, соответствуют ли типы данных из входных данных типам данных из целевой таблицы.
+
+Поддерживаемые форматы:
+
+- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
+- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
 
 Возможные значения:
 
@@ -603,8 +656,9 @@ ClickHouse может парсить только базовый формат `Y
 
 Изменяет поведение операций, выполняемых со строгостью `ANY`.
 
-!!! warning "Внимание"
+:::warning "Внимание"
     Настройка применяется только для операций `JOIN`, выполняемых над таблицами с движком [Join](../../engines/table-engines/special/join.md).
+:::
 
 Возможные значения:
 
@@ -684,9 +738,9 @@ ClickHouse может парсить только базовый формат `Y
 
 Включает устаревшее поведение сервера ClickHouse при выполнении операций `ANY INNER|LEFT JOIN`.
 
-!!! note "Внимание"
+    :::note "Внимание"
     Используйте этот параметр только в целях обратной совместимости, если ваши варианты использования требуют устаревшего поведения `JOIN`.
-
+    :::
 Когда включено устаревшее поведение:
 
 -   Результаты операций "t1 ANY LEFT JOIN t2" и "t2 ANY RIGHT JOIN t1" не равны, поскольку ClickHouse использует логику с сопоставлением ключей таблицы "многие к одному слева направо".
@@ -739,9 +793,20 @@ ClickHouse может парсить только базовый формат `Y
 
 Возможные значения:
 
--   Любое положительное целое число.
+-   Положительное целое число.
 
-Значение по умолчанию: 163840.
+Значение по умолчанию: `163840`.
+
+
+## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge-tree-min-rows-for-concurrent-read-for-remote-filesystem}
+
+Минимальное количество строк для чтения из одного файла, прежде чем движок [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) может выполнять параллельное чтение из удаленной файловой системы.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `163840`.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
@@ -751,7 +816,17 @@ ClickHouse может парсить только базовый формат `Y
 
 -   Положительное целое число.
 
-Значение по умолчанию: 251658240.
+Значение по умолчанию: `251658240`.
+
+## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
+
+Минимальное количество байтов для чтения из одного файла, прежде чем движок [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) может выполнять параллельное чтение из удаленной файловой системы.
+
+Возможное значение:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `251658240`.
 
 ## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
@@ -806,26 +881,6 @@ ClickHouse может парсить только базовый формат `Y
 -   Положительное целое число.
 
 Значение по умолчанию: 2013265920.
-
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `60` секунд.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `1` секунда.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -912,21 +967,39 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 ## log_query_threads {#settings-log-query-threads}
 
-Установка логирования информации о потоках выполнения запроса.
+Управляет логированием информации о потоках выполнения запросов.
 
-Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
+Информация о потоках выполнения запросов сохраняется в системной таблице [system.query_thread_log](../../operations/system-tables/query_thread_log.md). Работает только в том случае, если включена настройка [log_queries](#settings-log-queries). Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
-Пример:
+Возможные значения:
+
+-   0 — отключено.
+-   1 — включено.
+
+Значение по умолчанию: `1`.
+
+**Пример**
 
 ``` text
 log_query_threads=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Позволяет регистрировать отформатированные запросы в системной таблице [system.query_log](../../operations/system-tables/query_log.md).
+
+Возможные значения:
+
+-   0 — отформатированные запросы не регистрируются в системной таблице.
+-   1 — отформатированные запросы регистрируются в системной таблице.
+
+Значение по умолчанию: `0`.
+
 ## log_comment {#settings-log-comment}
 
 Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
 
-Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.md).
+Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.mdx).
 
 Возможные значения:
 
@@ -1029,9 +1102,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Максимальный размер блоков несжатых данных перед сжатием при записи в таблицу. По умолчанию - 1 048 576 (1 MiB). При уменьшении размера, незначительно уменьшается коэффициент сжатия, незначительно возрастает скорость сжатия и разжатия за счёт кэш-локальности, и уменьшается потребление оперативной памяти.
 
-!!! note "Предупреждение"
+    :::note "Предупреждение"
     Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
-
+    :::
 Не путайте блоки для сжатия (кусок памяти, состоящий из байт) и блоки для обработки запроса (пачка строк из таблицы).
 
 ## min_compress_block_size {#min-compress-block-size}
@@ -1046,9 +1119,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Пусть мы записываем столбец URL типа String (средний размер - 60 байт на значение). При записи 8192 строк, будет, в среднем, чуть меньше 500 КБ данных. Так как это больше 65 536 строк, то сжатый блок будет сформирован на каждую засечку. В этом случае, при чтении с диска данных из диапазона в одну засечку, не будет разжато лишних данных.
 
-!!! note "Предупреждение"
+    :::note "Предупреждение"
     Эта настройка экспертного уровня, не используйте ее, если вы только начинаете работать с Clickhouse.
-
+    :::
 ## max_query_size {#settings-max_query_size}
 
 Максимальный кусок запроса, который будет считан в оперативку для разбора парсером языка SQL.
@@ -1135,6 +1208,10 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
+    :::note
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
+    :::
+
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
@@ -1151,6 +1228,10 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 **Использование**
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
+    :::note
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8).
+    :::
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1311,7 +1392,7 @@ load_balancing = round_robin
 
 Значение по умолчанию: 1.
 
-!!! warning "Warning"
+:::danger "Warning"
     Отключайте эту настройку при использовании [max_parallel_replicas](#settings-max_parallel_replicas).
 
 ## totals_mode {#totals-mode}
@@ -1341,7 +1422,7 @@ load_balancing = round_robin
 - Ключ сэмплирования является выражением, которое сложно вычисляется.
 - У распределения сетевых задержек в кластере длинный «хвост», из-за чего при параллельных запросах к нескольким серверам увеличивается среднее время задержки.
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
 
 ## compile_expressions {#compile-expressions}
@@ -1372,13 +1453,13 @@ load_balancing = round_robin
 
 Значение по умолчанию: `1`.
 
-**См. также** 
+**См. также**
 
 -   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
 
 ## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
 
-Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).  
+Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).
 
 Возможные значения:
 
@@ -1507,12 +1588,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата CSV.
+Включает или отключает парсинг значений перечислений как порядковых номеров.
+Если режим включен, то во входящих данных в формате `CSV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
 
 Возможные значения:
 
--   0 — парсинг значений перечисления как значений.
--   1 — парсинг значений перечисления как идентификаторов перечисления.
+-   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
+-   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
 
 Значение по умолчанию: 0.
 
@@ -1526,10 +1608,11 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_csv_enum_as_number`:
 
+Запрос:
+
 ```sql
 SET input_format_csv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 Результат:
@@ -1540,14 +1623,36 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 └─────┴────────┘
 ```
 
-При отключенной настройке `input_format_csv_enum_as_number` запрос `INSERT`:
+Запрос:
 
 ```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 ```
 
 сгенерирует исключение.
+
+При отключенной настройке `input_format_csv_enum_as_number`:
+
+Запрос:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+SELECT * FROM table_with_enum_column_for_csv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value─┐
+│ 103 │ first │
+└─────┴───────┘
+```
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -1570,18 +1675,19 @@ INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
 
 `INSERT` завершается успешно только в том случае, когда ClickHouse смог без ошибки записать данные в `insert_quorum` реплик за время `insert_quorum_timeout`. Если по любой причине количество реплик с успешной записью не достигнет `insert_quorum`, то запись считается не состоявшейся и ClickHouse удалит вставленный блок из всех реплик, куда уже успел записать данные.
 
-Все реплики в кворуме консистентны, т.е. содержат данные всех более ранних запросов `INSERT`. Последовательность `INSERT` линеаризуется.
+Когда `insert_quorum_parallel` выключена, все реплики кворума консистентны, то есть содержат данные всех предыдущих запросов `INSERT` (последовательность `INSERT` линеаризуется). При чтении с диска данных, записанных с помощью `insert_quorum` и при выключенной `insert_quorum_parallel`, можно включить последовательную консистентность для запросов `SELECT` с помощью [select_sequential_consistency](#settings-select_sequential_consistency).
 
-При чтении данных, записанных с `insert_quorum` можно использовать настройку [select_sequential_consistency](#settings-select_sequential_consistency).
-
-ClickHouse генерирует исключение
+ClickHouse генерирует исключение:
 
 -   Если количество доступных реплик на момент запроса меньше `insert_quorum`.
 -   При попытке записать данные в момент, когда предыдущий блок ещё не вставлен в `insert_quorum` реплик. Эта ситуация может возникнуть, если пользователь вызвал `INSERT` прежде, чем завершился предыдущий с `insert_quorum`.
 
+-   При выключенной `insert_quorum_parallel` и при попытке записать данные в момент, когда предыдущий блок еще не вставлен в `insert_quorum` реплик (несколько параллельных `INSERT`-запросов). Эта ситуация может возникнуть при попытке пользователя выполнить очередной запрос `INSERT` к той же таблице, прежде чем завершится предыдущий с `insert_quorum`.
+
 См. также:
 
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
@@ -1593,11 +1699,29 @@ ClickHouse генерирует исключение
 См. также:
 
 -   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
+
+## insert_quorum_parallel {#settings-insert_quorum_parallel}
+
+Включает и выключает параллелизм для кворумных вставок (`INSERT`-запросы). Когда опция включена, возможно выполнять несколько кворумных `INSERT`-запросов одновременно, при этом запросы не дожидаются окончания друг друга . Когда опция выключена, одновременные записи с кворумом в одну и ту же таблицу будут отклонены (будет выполнена только одна из них).
+
+Возможные значения:
+
+-   0 — Выключена.
+-   1 — Включена.
+
+Значение по умолчанию: 1.
+
+См. также:
+
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
 
-Включает или выключает последовательную консистентность для запросов `SELECT`.
+Включает или выключает последовательную консистентность для запросов `SELECT`. Необходимо, чтобы `insert_quorum_parallel` была выключена (по умолчанию включена), а опция `insert_quorum` включена.
 
 Возможные значения:
 
@@ -1610,10 +1734,13 @@ ClickHouse генерирует исключение
 
 Когда последовательная консистентность включена, то ClickHouse позволит клиенту выполнить запрос `SELECT` только к тем репликам, которые содержат данные всех предыдущих запросов `INSERT`, выполненных с `insert_quorum`. Если клиент обратится к неполной реплике, то ClickHouse сгенерирует исключение. В запросе SELECT не будут участвовать данные, которые ещё не были записаны на кворум реплик.
 
+Если `insert_quorum_parallel` включена (по умолчанию это так), тогда `select_sequential_consistency` не будет работать. Причина в том, что параллельные запросы `INSERT` можно записать в разные наборы реплик кворума, поэтому нет гарантии того, что в отдельно взятую реплику будут сделаны все записи.
+
 См. также:
 
 -   [insert_quorum](#settings-insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
 ## insert_deduplicate {#settings-insert-deduplicate}
 
@@ -1642,6 +1769,48 @@ ClickHouse генерирует исключение
 По умолчанию проверка дедупликации у материализованных представлений не производится, а наследуется от Replicated\* (основной) таблицы, за которой «следит» материализованное представление.
 Т.е. если `INSERT` в основную таблицу д.б. пропущен (сдедуплицирован), то автоматически не будет вставки и в материализованные представления. Это имплементировано для того, чтобы работали материализованные представления, которые сильно группируют данные основных `INSERT`, до такой степени что блоки вставляемые в материализованные представления получаются одинаковыми для разных `INSERT` в основную таблицу.
 Одновременно это «ломает» идемпотентность вставки в материализованные представления. Т.е. если `INSERT` был успешен в основную таблицу и неуспешен в таблицу материализованного представления (напр. из-за сетевого сбоя при коммуникации с Zookeeper), клиент получит ошибку и попытается повторить `INSERT`. Но вставки в материализованные представления произведено не будет, потому что дедупликация сработает на основной таблице. Настройка `deduplicate_blocks_in_dependent_materialized_views` позволяет это изменить. Т.е. при повторном `INSERT` будет произведена дедупликация на таблице материализованного представления, и повторный инсерт вставит данные в таблицу материализованного представления, которые не удалось вставить из-за сбоя первого `INSERT`.
+
+## insert_deduplication_token {#insert_deduplication_token}
+
+Этот параметр позволяет пользователю указать собственную семантику дедупликации в MergeTree/ReplicatedMergeTree.
+Например, предоставляя уникальное значение параметра в каждом операторе INSERT,
+пользователь может избежать дедупликации одних и тех же вставленных данных.
+
+Возможные значения:
+
+-  Любая строка
+
+Значение по умолчанию: пустая строка (выключено).
+
+`insert_deduplication_token` используется для дедупликации _только_ когда значение не пустое
+
+Example:
+
+```sql
+CREATE TABLE test_table
+( A Int64 )
+ENGINE = MergeTree
+ORDER BY A
+SETTINGS non_replicated_deduplication_window = 100;
+
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
+
+-- следующая вставка не будет дедуплицирована, потому что insert_deduplication_token отличается
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
+
+-- следующая вставка будет дедуплицирована, потому что insert_deduplication_token
+-- тот же самый, что и один из предыдущих
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
+
+SELECT * FROM test_table
+
+┌─A─┐
+│ 1 │
+└───┘
+┌─A─┐
+│ 1 │
+└───┘
+```
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
@@ -1733,7 +1902,7 @@ ClickHouse генерирует исключение
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности. 
+Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности.
 
 Это позволяет избежать:
 - отправки дополнительных строк по сети;
@@ -1817,7 +1986,7 @@ ClickHouse генерирует исключение
 
 ## optimize_throw_if_noop {#setting-optimize_throw_if_noop}
 
-Включает или отключает генерирование исключения в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) не выполняет мёрж.
+Включает или отключает генерирование исключения в случаях, когда запрос [OPTIMIZE](../../sql-reference/statements/optimize.md) не выполняет мёрж.
 
 По умолчанию, `OPTIMIZE` завершается успешно и в тех случаях, когда он ничего не сделал. Настройка позволяет отделить подобные случаи и включает генерирование исключения с поясняющим сообщением.
 
@@ -1825,6 +1994,21 @@ ClickHouse генерирует исключение
 
 -   1 — генерирование исключения включено.
 -   0 — генерирование исключения выключено.
+
+Значение по умолчанию: 0.
+
+## optimize_skip_merged_partitions {#optimize-skip-merged-partitions}
+
+Включает или отключает оптимизацию для запроса [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md), когда есть только один парт с level > 0 и неистекший TTL.
+
+- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
+
+По умолчанию, `OPTIMIZE TABLE ... FINAL` перезапишет даже один парт.
+
+Возможные значения:
+
+-   1 - Включена
+-   0 - Выключена
 
 Значение по умолчанию: 0.
 
@@ -1858,7 +2042,7 @@ ClickHouse генерирует исключение
 
    - 0 — оптимизация отключена.
    - 1 — оптимизация включена.
-   
+
 Значение по умолчанию: `1`.
 
 См. также:
@@ -1944,8 +2128,9 @@ ClickHouse генерирует исключение
 
 Устанавливает приоритет ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) для потоков, исполняющих запросы. Планировщик ОС учитывает эти приоритеты при выборе следующего потока для исполнения на доступном ядре CPU.
 
-!!! warning "Предупреждение"
+:::warning "Предупреждение"
     Для использования этой настройки необходимо установить свойство `CAP_SYS_NICE`. Пакет `clickhouse-server` устанавливает его во время инсталляции. Некоторые виртуальные окружения не позволяют установить `CAP_SYS_NICE`. В этом случае, `clickhouse-server` выводит сообщение при запуске.
+:::
 
 Допустимые значения:
 
@@ -2026,7 +2211,7 @@ ClickHouse генерирует исключение
 -   1 — включен режим параллельного разбора.
 -   0 — отключен режим параллельного разбора.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
@@ -2037,7 +2222,7 @@ ClickHouse генерирует исключение
 -   1 — включен режим параллельного форматирования.
 -   0 — отключен режим параллельного форматирования.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
@@ -2069,16 +2254,6 @@ ClickHouse генерирует исключение
 Возможные значения: 32 (32 байта) - 1073741824 (1 GiB)
 
 Значение по умолчанию: 32768 (32 KiB)
-
-## background_pool_size {#background_pool_size}
-
-Задает количество потоков для выполнения фоновых операций в движках таблиц (например, слияния в таблицах c движком [MergeTree](../../engines/table-engines/mergetree-family/index.md)). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во пользовательском сеансе. Настройка позволяет управлять загрузкой процессора и диска. Чем меньше пул, тем ниже нагрузка на CPU и диск, при этом фоновые процессы работают с меньшей интенсивностью, что в конечном итоге может повлиять на производительность запросов, потому что сервер будет обрабатывать больше кусков.
-
-Допустимые значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
@@ -2304,7 +2479,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 Разрешает или запрещает использование типа данных `LowCardinality` с форматом данных [Native](../../interfaces/formats.md#native).
 
-Если использование типа `LowCardinality` ограничено, сервер CLickHouse преобразует столбцы `LowCardinality` в обычные столбцы для запросов `SELECT`, а обычные столбцы - в столбцы `LowCardinality` для запросов `INSERT`.
+Если использование типа `LowCardinality` ограничено, сервер ClickHouse преобразует столбцы `LowCardinality` в обычные столбцы для запросов `SELECT`, а обычные столбцы - в столбцы `LowCardinality` для запросов `INSERT`.
 
 В основном настройка используется для сторонних клиентов, не поддерживающих тип данных `LowCardinality`.
 
@@ -2736,7 +2911,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `1`.
 
-## output_format_csv_null_representation {#output_format_csv_null_representation}
+## format_csv_null_representation {#format_csv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [CSV](../../interfaces/formats.md#csv). Пользователь может установить в качестве значения любую строку, например, `My NULL`.
 
@@ -2761,7 +2936,7 @@ SELECT * FROM csv_custom_null FORMAT CSV;
 Запрос:
 
 ```sql
-SET output_format_csv_null_representation = 'My NULL';
+SET format_csv_null_representation = 'My NULL';
 SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
@@ -2773,7 +2948,7 @@ My NULL
 My NULL
 ```
 
-## output_format_tsv_null_representation {#output_format_tsv_null_representation}
+## format_tsv_null_representation {#format_tsv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
 
@@ -2798,7 +2973,7 @@ SELECT * FROM tsv_custom_null FORMAT TSV;
 Запрос
 
 ```sql
-SET output_format_tsv_null_representation = 'My NULL';
+SET format_tsv_null_representation = 'My NULL';
 SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 
@@ -3097,12 +3272,6 @@ SELECT * FROM test2;
 Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
 
 Значение по умолчанию: `64`.
-
-## temporary_live_view_timeout {#temporary-live-view-timeout}
-
-Задает время в секундах, после которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) удаляется.
-
-Значение по умолчанию: `5`.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
@@ -3544,7 +3713,7 @@ SETTINGS index_granularity = 8192 │
 
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
-Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
+Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке.
 
 Возможные значения:
 
@@ -3630,14 +3799,14 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md). Если вы хотите использовать номера столбцов вместо названий в выражениях этих операторов, установите `enable_positional_arguments = 1`.
+Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
 Возможные значения:
 
 -   0 — Позиционные аргументы не поддерживаются.
 -   1 — Позиционные аргументы поддерживаются: можно использовать номера столбцов вместо названий столбцов.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 **Пример**
 
@@ -3647,8 +3816,6 @@ Exception: Total regexp lengths too large.
 CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
 
 INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SET enable_positional_arguments = 1;
 
 SELECT * FROM positional_arguments ORDER BY 2,3;
 ```
@@ -3662,6 +3829,19 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
 ```
+
+## enable_extended_results_for_datetime_functions {#enable-extended-results-for-datetime-functions}
+
+Включает или отключает возвращение результатов типа:
+-   `Date32` с расширенным диапазоном (по сравнению с типом `Date`) для функций [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday) и [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth).
+-   `DateTime64` с расширенным диапазоном (по сравнению с типом `DateTime`) для функций [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) и [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
+
+Возможные значения:
+
+-   0 — Функции возвращают результаты типа `Date` или `DateTime` для всех типов аргументов.
+-   1 — Функции возвращают результаты типа `Date32` или `DateTime64` для аргументов типа `Date32` или `DateTime64` и возвращают `Date` или `DateTime` в других случаях.
+
+Значение по умолчанию: `0`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 
@@ -3791,3 +3971,110 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
+## alter_partition_verbose_result {#alter-partition-verbose-result}
+
+Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
+
+Возможные значения:
+
+-   0 — отображение отключено.
+-   1 — отображение включено.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+```sql
+CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
+INSERT INTO test VALUES(1, '2021-01-01', '');
+INSERT INTO test VALUES(1, '2021-01-01', '');
+ALTER TABLE test DETACH PARTITION ID '202101';
+
+ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─────┬─partition_id─┬─part_name────┬─old_part_name─┐
+│ ATTACH PARTITION │ 202101       │ 202101_7_7_0 │ 202101_5_5_0  │
+│ ATTACH PARTITION │ 202101       │ 202101_8_8_0 │ 202101_6_6_0  │
+└──────────────────┴──────────────┴──────────────┴───────────────┘
+
+ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─┬─partition_id─┬─part_name────┬─backup_name─┬─backup_path───────────────────┬─part_backup_path────────────────────────────────────────────┐
+│ FREEZE ALL   │ 202101       │ 202101_7_7_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 │
+│ FREEZE ALL   │ 202101       │ 202101_8_8_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 │
+└──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
+
+## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
+
+Определяет, как сопоставить тип данных ClickHouse `Enum` и тип данных `Enum` формата [CapnProto](../../interfaces/formats.md#capnproto) из схемы.
+
+Возможные значения:
+
+-   `'by_values'` — значения в перечислениях должны быть одинаковыми, а имена могут быть разными.
+-   `'by_names'` — имена в перечислениях должны быть одинаковыми, а значения могут быть разными.
+-   `'by_name_case_insensitive'` — имена в перечислениях должны быть одинаковыми без учета регистра, а значения могут быть разными.
+
+Значение по умолчанию: `'by_values'`.
+
+## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
+
+Это экспериментальная настройка. Устанавливает минимальный объем памяти для чтения больших файлов без копирования данных из ядра в пространство пользователей. Рекомендуемый лимит составляет около 64 MB, поскольку [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) работает медленно. Это имеет смысл только для больших файлов и помогает только в том случае, если данные находятся в кеше страниц.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — большие файлы считываются только с копированием данных из ядра в пространство пользователей.
+
+Значение по умолчанию: `0`.
+
+## format_custom_escaping_rule {#format-custom-escaping-rule}
+
+Устанавливает правило экранирования данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Возможные значения:
+
+-   `'Escaped'` — как в формате [TSV](../../interfaces/formats.md#tabseparated).
+-   `'Quoted'` — как в формате [Values](../../interfaces/formats.md#data-format-values).
+-   `'CSV'` — как в формате [CSV](../../interfaces/formats.md#csv).
+-   `'JSON'` — как в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `'XML'` — как в формате [XML](../../interfaces/formats.md#xml).
+-   `'Raw'` — данные импортируются как есть, без экранирования, как в формате [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
+
+Значение по умолчанию: `'Escaped'`.
+
+## format_custom_field_delimiter {#format-custom-field-delimiter}
+
+Задает символ, который интерпретируется как разделитель между полями данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `'\t'`.
+
+## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
+
+Задает символ, который интерпретируется как разделитель перед полем первого столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
+
+Задает символ, который интерпретируется как разделитель после поля последнего столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `'\n'`.
+
+## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
+
+Задает символ, который интерпретируется как разделитель между строками данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
+
+Задает символ, который интерпретируется как префикс перед результирующим набором данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
+
+Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.

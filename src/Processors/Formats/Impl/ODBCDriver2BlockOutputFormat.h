@@ -24,30 +24,21 @@ public:
 
     String getName() const override { return "ODBCDriver2BlockOutputFormat"; }
 
-    void consume(Chunk) override;
-    void consumeTotals(Chunk) override;
-    void finalize() override;
-
     std::string getContentType() const override
     {
         return "application/octet-stream";
     }
 
 private:
+    void consume(Chunk) override;
+    void consumeTotals(Chunk) override;
+    void writePrefix() override;
+
     const FormatSettings format_settings;
-    bool prefix_written = false;
+    Serializations serializations;
 
-    void writePrefixIfNot()
-    {
-        if (!prefix_written)
-            writePrefix();
-
-        prefix_written = true;
-    }
-
-    void writeRow(const Serializations & serializations, const Columns & columns, size_t row_idx, std::string & buffer);
+    void writeRow(const Columns & columns, size_t row_idx, std::string & buffer);
     void write(Chunk chunk, PortKind port_kind);
-    void writePrefix();
 };
 
 

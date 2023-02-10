@@ -1,6 +1,7 @@
 #if defined(OS_LINUX)
 #include <Common/TimerDescriptor.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
 
 #include <sys/timerfd.h>
 #include <fcntl.h>
@@ -27,7 +28,7 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
         throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
 }
 
-TimerDescriptor::TimerDescriptor(TimerDescriptor && other) : timer_fd(other.timer_fd)
+TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(other.timer_fd)
 {
     other.timer_fd = -1;
 }
@@ -36,7 +37,10 @@ TimerDescriptor::~TimerDescriptor()
 {
     /// Do not check for result cause cannot throw exception.
     if (timer_fd != -1)
-        close(timer_fd);
+    {
+        int err = close(timer_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 void TimerDescriptor::reset() const

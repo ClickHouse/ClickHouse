@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -52,6 +53,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -99,7 +101,7 @@ public:
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
-        ColumnWithTypeAndName column_to_cast_non_const { std::move(non_const_column_to_cast), column_to_cast.type, column_to_cast.name };
+        ColumnWithTypeAndName column_to_cast_non_const { non_const_column_to_cast, column_to_cast.type, column_to_cast.name };
 
         auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
 
@@ -107,48 +109,61 @@ public:
         const auto & null_map_data = cast_result_nullable.getNullMapData();
         size_t null_map_data_size = null_map_data.size();
         const auto & nested_column = cast_result_nullable.getNestedColumn();
-        IColumn::MutablePtr result = return_type->createColumn();
+        auto result = return_type->createColumn();
         result->reserve(null_map_data_size);
+
+        ColumnNullable * result_nullable = nullptr;
+        if (result->isNullable())
+            result_nullable = assert_cast<ColumnNullable *>(&*result);
 
         size_t start_insert_index = 0;
 
-        /// Created separate branch because cast and inserting field from other column is slower
+        Field default_value;
+        ColumnPtr default_column;
+
         if (arguments.size() == 3)
         {
-            const auto & default_column_with_type = arguments[2];
-            auto default_column = default_column_with_type.column->convertToFullColumnIfConst();
+            auto default_values_column = arguments[2].column;
 
-            for (size_t i = 0; i < null_map_data_size; ++i)
-            {
-                bool is_current_index_null = null_map_data[i];
-                if (!is_current_index_null)
-                    continue;
-
-                if (i != start_insert_index)
-                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
-
-                result->insertFrom(*default_column, i);
-                start_insert_index = i + 1;
-            }
+            if (isColumnConst(*default_values_column))
+                default_value = (*default_values_column)[0];
+            else
+                default_column = default_values_column->convertToFullColumnIfConst();
         }
         else
         {
-            for (size_t i = 0; i < null_map_data_size; ++i)
+            default_value = return_type->getDefault();
+        }
+
+        for (size_t i = 0; i < null_map_data_size; ++i)
+        {
+            bool is_current_index_null = null_map_data[i];
+            if (!is_current_index_null)
+                continue;
+
+            if (i != start_insert_index)
             {
-                bool is_current_index_null = null_map_data[i];
-                if (!is_current_index_null)
-                    continue;
-
-                if (i != start_insert_index)
+                if (result_nullable)
+                    result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, i - start_insert_index);
+                else
                     result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
-
-                result->insertDefault();
-                start_insert_index = i + 1;
             }
+
+            if (default_column)
+                result->insertFrom(*default_column, i);
+            else
+                result->insert(default_value);
+
+            start_insert_index = i + 1;
         }
 
         if (null_map_data_size != start_insert_index)
-            result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+        {
+            if (result_nullable)
+                result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+            else
+                result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+        }
 
         return result;
     }
@@ -181,6 +196,7 @@ private:
     bool isVariadic() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForNothing() const override { return impl.useDefaultImplementationForNothing(); }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns();}
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants();}
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -218,7 +234,7 @@ private:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Function {} decimal scale should have native UInt type. Actual {}",
-                    scale_argument.type->getName());
+                    getName(), scale_argument.type->getName());
             }
 
             scale = arguments[additional_argument_index].column->getUInt(0);
@@ -319,6 +335,8 @@ struct NameToDecimal64OrDefault { static constexpr auto name = "toDecimal64OrDef
 struct NameToDecimal128OrDefault { static constexpr auto name = "toDecimal128OrDefault"; };
 struct NameToDecimal256OrDefault { static constexpr auto name = "toDecimal256OrDefault"; };
 struct NameToUUIDOrDefault { static constexpr auto name = "toUUIDOrDefault"; };
+struct NameToIPv4OrDefault { static constexpr auto name = "toIPv4OrDefault"; };
+struct NameToIPv6OrDefault { static constexpr auto name = "toIPv6OrDefault"; };
 
 using FunctionToUInt8OrDefault = FunctionCastOrDefaultTyped<DataTypeUInt8, NameToUInt8OrDefault>;
 using FunctionToUInt16OrDefault = FunctionCastOrDefaultTyped<DataTypeUInt16, NameToUInt16OrDefault>;
@@ -347,8 +365,10 @@ using FunctionToDecimal128OrDefault = FunctionCastOrDefaultTyped<DataTypeDecimal
 using FunctionToDecimal256OrDefault = FunctionCastOrDefaultTyped<DataTypeDecimal<Decimal256>, NameToDecimal256OrDefault>;
 
 using FunctionToUUIDOrDefault = FunctionCastOrDefaultTyped<DataTypeUUID, NameToUUIDOrDefault>;
+using FunctionToIPv4OrDefault = FunctionCastOrDefaultTyped<DataTypeIPv4, NameToIPv4OrDefault>;
+using FunctionToIPv6OrDefault = FunctionCastOrDefaultTyped<DataTypeIPv6, NameToIPv6OrDefault>;
 
-void registerFunctionCastOrDefault(FunctionFactory & factory)
+REGISTER_FUNCTION(CastOrDefault)
 {
     factory.registerFunction<FunctionCastOrDefault>();
 
@@ -379,6 +399,8 @@ void registerFunctionCastOrDefault(FunctionFactory & factory)
     factory.registerFunction<FunctionToDecimal256OrDefault>();
 
     factory.registerFunction<FunctionToUUIDOrDefault>();
+    factory.registerFunction<FunctionToIPv4OrDefault>();
+    factory.registerFunction<FunctionToIPv6OrDefault>();
 }
 
 }

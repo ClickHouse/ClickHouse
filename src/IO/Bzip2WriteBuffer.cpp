@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_BZIP2
 #    include <IO/Bzip2WriteBuffer.h>
@@ -40,17 +40,14 @@ public:
 };
 
 Bzip2WriteBuffer::Bzip2WriteBuffer(std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
     , bz(std::make_unique<Bzip2StateWrapper>(compression_level))
-    , out(std::move(out_))
 {
 }
 
 Bzip2WriteBuffer::~Bzip2WriteBuffer()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finish();
+    finalize();
 }
 
 void Bzip2WriteBuffer::nextImpl()
@@ -61,7 +58,7 @@ void Bzip2WriteBuffer::nextImpl()
     }
 
     bz->stream.next_in = working_buffer.begin();
-    bz->stream.avail_in = offset();
+    bz->stream.avail_in = static_cast<unsigned>(offset());
 
     try
     {
@@ -69,7 +66,7 @@ void Bzip2WriteBuffer::nextImpl()
         {
             out->nextIfAtEnd();
             bz->stream.next_out = out->position();
-            bz->stream.avail_out = out->buffer().end() - out->position();
+            bz->stream.avail_out = static_cast<unsigned>(out->buffer().end() - out->position());
 
             int ret = BZ2_bzCompress(&bz->stream, BZ_RUN);
 
@@ -92,33 +89,13 @@ void Bzip2WriteBuffer::nextImpl()
     }
 }
 
-void Bzip2WriteBuffer::finish()
-{
-    if (finished)
-        return;
-
-    try
-    {
-        finishImpl();
-        out->finalize();
-        finished = true;
-    }
-    catch (...)
-    {
-        /// Do not try to flush next time after exception.
-        out->position() = out->buffer().begin();
-        finished = true;
-        throw;
-    }
-}
-
-void Bzip2WriteBuffer::finishImpl()
+void Bzip2WriteBuffer::finalizeBefore()
 {
     next();
 
     out->nextIfAtEnd();
     bz->stream.next_out = out->position();
-    bz->stream.avail_out = out->buffer().end() - out->position();
+    bz->stream.avail_out = static_cast<unsigned>(out->buffer().end() - out->position());
 
     int ret = BZ2_bzCompress(&bz->stream, BZ_FINISH);
 

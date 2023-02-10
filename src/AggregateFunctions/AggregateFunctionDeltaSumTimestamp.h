@@ -1,7 +1,6 @@
 #pragma once
 
 #include <type_traits>
-#include <experimental/type_traits>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -39,7 +38,7 @@ public:
         : IAggregateFunctionDataHelper<
             AggregationFunctionDeltaSumTimestampData<ValueType, TimestampType>,
             AggregationFunctionDeltaSumTimestamp<ValueType, TimestampType>
-        >{arguments, params}
+        >{arguments, params, createResultType()}
     {}
 
     AggregationFunctionDeltaSumTimestamp()
@@ -53,7 +52,7 @@ public:
 
     String getName() const override { return "deltaSumTimestamp"; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<ValueType>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<ValueType>>(); }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -143,7 +142,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeIntBinary(this->data(place).sum, buf);
         writeIntBinary(this->data(place).first, buf);
@@ -153,7 +152,7 @@ public:
         writePODBinary<bool>(this->data(place).seen, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readIntBinary(this->data(place).sum, buf);
         readIntBinary(this->data(place).first, buf);

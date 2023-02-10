@@ -8,6 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 $CLICKHOUSE_CLIENT -n --query="
+    set allow_deprecated_database_ordinary=1;
     DROP DATABASE IF EXISTS 01280_db;
     CREATE DATABASE 01280_db Engine = Ordinary;
     DROP TABLE IF EXISTS 01280_db.table_for_dict;
@@ -41,7 +42,7 @@ $CLICKHOUSE_CLIENT -n --query="
     LIFETIME(MIN 1000 MAX 2000)
     LAYOUT(COMPLEX_KEY_SSD_CACHE(FILE_SIZE 8192 PATH '$USER_FILES_PATH/0d'));"
 
-$CLICKHOUSE_CLIENT --testmode -nq "SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 43 }"
+$CLICKHOUSE_CLIENT -nq "SELECT dictHas('01280_db.ssd_dict', 'a', tuple('1')); -- { serverError 43 }"
 
 $CLICKHOUSE_CLIENT -n --query="
     SELECT 'TEST_SMALL';
@@ -65,7 +66,7 @@ $CLICKHOUSE_CLIENT -n --query="
     SELECT dictGetInt32('01280_db.ssd_dict', 'b', tuple('10', toInt32(-20)));
     SELECT dictGetString('01280_db.ssd_dict', 'c', tuple('10', toInt32(-20)));"
 
-$CLICKHOUSE_CLIENT --testmode -nq "SELECT dictGetUInt64('01280_db.ssd_dict', 'a', tuple(toInt32(3))); -- { serverError 53 }"
+$CLICKHOUSE_CLIENT -nq "SELECT dictGetUInt64('01280_db.ssd_dict', 'a', tuple(toInt32(3))); -- { serverError 53 }"
 
 $CLICKHOUSE_CLIENT -n --query="DROP DICTIONARY 01280_db.ssd_dict;
     DROP TABLE IF EXISTS 01280_db.keys_table;

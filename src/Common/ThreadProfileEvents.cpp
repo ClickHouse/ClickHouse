@@ -1,6 +1,6 @@
 #include "ThreadProfileEvents.h"
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include "TaskStatsInfoGetter.h"
 #include "ProcfsMetricsProvider.h"
@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
-#include <sstream>
 #include <unordered_set>
 
 #include <fcntl.h>
@@ -21,18 +20,71 @@
 #include <sys/types.h>
 #include <dirent.h>
 
+#include <boost/algorithm/string/split.hpp>
+
 #include <base/errnoToString.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event OSIOWaitMicroseconds;
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
+    extern const Event OSReadChars;
+    extern const Event OSWriteChars;
+    extern const Event OSReadBytes;
+    extern const Event OSWriteBytes;
+
+    extern const Event PerfCpuCycles;
+    extern const Event PerfInstructions;
+    extern const Event PerfCacheReferences;
+    extern const Event PerfCacheMisses;
+    extern const Event PerfBranchInstructions;
+    extern const Event PerfBranchMisses;
+    extern const Event PerfBusCycles;
+    extern const Event PerfStalledCyclesFrontend;
+    extern const Event PerfStalledCyclesBackend;
+    extern const Event PerfRefCpuCycles;
+
+    extern const Event PerfCpuClock;
+    extern const Event PerfTaskClock;
+    extern const Event PerfContextSwitches;
+    extern const Event PerfCpuMigrations;
+    extern const Event PerfAlignmentFaults;
+    extern const Event PerfEmulationFaults;
+    extern const Event PerfMinEnabledTime;
+    extern const Event PerfMinEnabledRunningTime;
+    extern const Event PerfDataTLBReferences;
+    extern const Event PerfDataTLBMisses;
+    extern const Event PerfInstructionTLBReferences;
+    extern const Event PerfInstructionTLBMisses;
+    extern const Event PerfLocalMemoryReferences;
+    extern const Event PerfLocalMemoryMisses;
+}
+
 namespace DB
 {
+
+const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
+{
+    switch (provider)
+    {
+        case MetricsProvider::None:
+            return "none";
+        case MetricsProvider::Procfs:
+            return "procfs";
+        case MetricsProvider::Netlink:
+            return "netlink";
+    }
+    UNREACHABLE();
+}
 
 bool TasksStatsCounters::checkIfAvailable()
 {
     return findBestAvailableProvider() != MetricsProvider::None;
 }
 
-std::unique_ptr<TasksStatsCounters> TasksStatsCounters::create(const UInt64 tid)
+std::unique_ptr<TasksStatsCounters> TasksStatsCounters::create(UInt64 tid)
 {
     std::unique_ptr<TasksStatsCounters> instance;
     if (checkIfAvailable())
@@ -69,7 +121,7 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
         stats_getter = [metrics_provider = std::make_shared<TaskStatsInfoGetter>(), tid]()
                 {
                     ::taskstats result{};
-                    metrics_provider->getStat(result, tid);
+                    metrics_provider->getStat(result, static_cast<pid_t>(tid));
                     return result;
                 };
         break;
@@ -125,7 +177,7 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
 
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 namespace DB
 {
@@ -208,9 +260,9 @@ static_assert(sizeof(raw_events_info) / sizeof(raw_events_info[0]) == NUMBER_OF_
 #undef CACHE_EVENT
 
 // A map of event name -> event index, to parse event list in settings.
-static std::unordered_map<std::string, size_t> populateEventMap()
+static std::unordered_map<std::string_view, size_t> populateEventMap()
 {
-    std::unordered_map<std::string, size_t> name_to_index;
+    std::unordered_map<std::string_view, size_t> name_to_index;
     name_to_index.reserve(NUMBER_OF_RAW_EVENTS);
 
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
@@ -249,7 +301,7 @@ static void enablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't enable perf event with file descriptor {}: '{}' ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, errnoToString(), errno);
     }
 }
 
@@ -259,7 +311,7 @@ static void disablePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't disable perf event with file descriptor {}: '{}' ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, errnoToString(), errno);
     }
 }
 
@@ -269,7 +321,7 @@ static void releasePerfEvent(int event_fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Can't close perf event file descriptor {}: {} ({})",
-            event_fd, errnoToString(errno), errno);
+            event_fd, errnoToString(), errno);
     }
 }
 
@@ -287,7 +339,7 @@ static bool validatePerfEventDescriptor(int & fd)
     {
         LOG_WARNING(&Poco::Logger::get("PerfEvents"),
             "Error while checking availability of event descriptor {}: {} ({})",
-            fd, errnoToString(errno), errno);
+            fd, errnoToString(), errno);
 
         disablePerfEvent(fd);
         releasePerfEvent(fd);
@@ -394,7 +446,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Failed to open perf event {} (event_type={}, event_config={}): "
                 "'{}' ({})", event_info.settings_name, event_info.event_type,
-                event_info.event_config, errnoToString(errno), errno);
+                event_info.event_config, errnoToString(), errno);
         }
     }
 
@@ -416,10 +468,10 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
         return result;
     }
 
+    std::vector<std::string> event_names;
+    boost::split(event_names, events_list, [](char c) { return c == ','; });
 
-    std::istringstream iss(events_list);        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    std::string event_name;
-    while (std::getline(iss, event_name, ','))
+    for (auto & event_name : event_names)
     {
         // Allow spaces at the beginning of the token, so that you can write 'a, b'.
         event_name.erase(0, event_name.find_first_not_of(' '));
@@ -474,13 +526,13 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
             continue;
 
         constexpr ssize_t bytes_to_read = sizeof(current_values[0]);
-        const int bytes_read = read(fd, &current_values[i], bytes_to_read);
+        const ssize_t bytes_read = read(fd, &current_values[i], bytes_to_read);
 
         if (bytes_read != bytes_to_read)
         {
             LOG_WARNING(&Poco::Logger::get("PerfEvents"),
                 "Can't read event value from file descriptor {}: '{}' ({})",
-                fd, errnoToString(errno), errno);
+                fd, errnoToString(), errno);
             current_values[i] = {};
         }
     }
@@ -506,8 +558,8 @@ void PerfEventsCounters::finalizeProfileEvents(ProfileEvents::Counters & profile
         // deltas from old values.
         const auto enabled = current_value.time_enabled - previous_value.time_enabled;
         const auto running = current_value.time_running - previous_value.time_running;
-        const UInt64 delta = (current_value.value - previous_value.value)
-            * enabled / std::max(1.f, float(running));
+        const UInt64 delta = static_cast<UInt64>(
+            (current_value.value - previous_value.value) * enabled / std::max(1.f, float(running)));
 
         if (min_enabled_time > enabled)
         {

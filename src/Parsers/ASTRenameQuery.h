@@ -25,6 +25,7 @@ public:
     {
         Table from;
         Table to;
+        bool if_exists{false};   /// If this directive is used, one will not get an error if the table/database/dictionary to be renamed/exchanged doesn't exist.
     };
 
     using Elements = std::vector<Element>;
@@ -47,7 +48,7 @@ public:
         return res;
     }
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
         auto query_ptr = clone();
         auto & query = query_ptr->as<ASTRenameQuery &>();
@@ -56,15 +57,15 @@ public:
         for (Element & elem : query.elements)
         {
             if (elem.from.database.empty())
-                elem.from.database = new_database;
+                elem.from.database = params.default_database;
             if (elem.to.database.empty())
-                elem.to.database = new_database;
+                elem.to.database = params.default_database;
         }
 
         return query_ptr;
     }
 
-    const char * getQueryKindString() const override { return "Rename"; }
+    QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
@@ -72,6 +73,10 @@ protected:
         if (database)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
+
+            if (elements.at(0).if_exists)
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+
             settings.ostr << backQuoteIfNeed(elements.at(0).from.database);
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
             settings.ostr << backQuoteIfNeed(elements.at(0).to.database);
@@ -96,6 +101,8 @@ protected:
             if (it != elements.cbegin())
                 settings.ostr << ", ";
 
+            if (it->if_exists)
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
             settings.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table)
                 << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "")
                 << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);

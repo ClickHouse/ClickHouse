@@ -24,14 +24,14 @@ public:
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
-    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
+    NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool skip_unknown_columns_ = false);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
         IndexForNativeFormat::Blocks::const_iterator index_block_it_,
         IndexForNativeFormat::Blocks::const_iterator index_block_end_);
 
-    static void readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
+    static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
 
     Block getHeader() const;
 
@@ -43,6 +43,7 @@ private:
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
+    bool skip_unknown_columns;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;

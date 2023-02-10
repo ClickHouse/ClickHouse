@@ -1,16 +1,18 @@
-#include <Common/typeid_cast.h>
-#include <Common/quoteString.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTQueryParameter.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQueryParameter.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -25,12 +27,19 @@ namespace ErrorCodes
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
+    checkStackSize();
+
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
     else
-        visitChildren(ast);
+    {
+        if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
+            visitChildren(describe_query->table_expression);
+        else
+            visitChildren(ast);
+    }
 }
 
 
@@ -46,7 +55,7 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     if (search != query_parameters.end())
         return search->second;
     else
-        throw Exception("Substitution " + backQuote(name) + " is not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
@@ -69,7 +78,14 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
             " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
             value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
-    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(temp_column[0]), type_name);
+    Field literal;
+    /// If data type has custom serialization, we should use CAST from String,
+    /// because CAST from field may not work correctly (for example for type IPv6).
+    if (data_type->getCustomSerialization())
+        literal = value;
+    else
+        literal = temp_column[0];
+    ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);

@@ -15,17 +15,17 @@ using Strings = std::vector<String>;
 class AccessFlags
 {
 public:
-    AccessFlags(AccessType type);
+    AccessFlags(AccessType type); /// NOLINT
 
     /// The same as AccessFlags(AccessType::NONE).
     AccessFlags() = default;
 
     /// Constructs from a string like "SELECT".
-    AccessFlags(const std::string_view & keyword);
+    AccessFlags(std::string_view keyword); /// NOLINT
 
     /// Constructs from a list of strings like "SELECT, UPDATE, INSERT".
-    AccessFlags(const std::vector<std::string_view> & keywords);
-    AccessFlags(const Strings & keywords);
+    AccessFlags(const std::vector<std::string_view> & keywords); /// NOLINT
+    AccessFlags(const Strings & keywords); /// NOLINT
 
     AccessFlags(const AccessFlags & src) = default;
     AccessFlags(AccessFlags && src) = default;
@@ -104,12 +104,12 @@ public:
     /// The same as allColumnFlags().
     static AccessFlags allFlagsGrantableOnColumnLevel();
 
-    static constexpr size_t SIZE = 128;
+    static constexpr size_t SIZE = 256;
 private:
     using Flags = std::bitset<SIZE>;
     Flags flags;
 
-    AccessFlags(const Flags & flags_) : flags(flags_) {}
+    AccessFlags(const Flags & flags_) : flags(flags_) {} /// NOLINT
 };
 
 AccessFlags operator |(AccessType left, AccessType right);

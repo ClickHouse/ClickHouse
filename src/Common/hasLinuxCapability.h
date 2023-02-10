@@ -1,5 +1,5 @@
 #pragma once
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include <linux/capability.h>
 

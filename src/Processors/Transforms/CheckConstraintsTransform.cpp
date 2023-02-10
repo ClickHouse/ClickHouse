@@ -29,13 +29,13 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     ContextPtr context_)
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
-    , constraints(constraints_)
+    , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
     , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
 {
 }
 
 
-void CheckConstraintsTransform::transform(Chunk & chunk)
+void CheckConstraintsTransform::onConsume(Chunk chunk)
 {
     if (chunk.getNumRows() > 0)
     {
@@ -45,7 +45,7 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
             auto constraint_expr = expressions[i];
             constraint_expr->execute(block_to_calculate);
 
-            auto * constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
+            auto * constraint_ptr = constraints_to_check[i]->as<ASTConstraintDeclaration>();
 
             ColumnWithTypeAndName res_column = block_to_calculate.getByName(constraint_ptr->expr->getColumnName());
 
@@ -64,7 +64,7 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
                 /// Check if constraint value is nullable
                 const auto & null_map = column_nullable->getNullMapColumn();
                 const PaddedPODArray<UInt8> & null_map_data = null_map.getData();
-                bool null_map_contains_null = !memoryIsZero(null_map_data.raw_data(), null_map_data.size() * sizeof(UInt8));
+                bool null_map_contains_null = !memoryIsZero(null_map_data.raw_data(), 0, null_map_data.size() * sizeof(UInt8));
 
                 if (null_map_contains_null)
                     throw Exception(
@@ -84,7 +84,7 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
             size_t size = res_column_uint8.size();
 
             /// Is violated.
-            if (!memoryIsByte(res_data, size, 1))
+            if (!memoryIsByte(res_data, 0, size, 1))
             {
                 size_t row_idx = 0;
                 for (; row_idx < size; ++row_idx)
@@ -123,6 +123,7 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
     }
 
     rows_written += chunk.getNumRows();
+    cur_chunk = std::move(chunk);
 }
 
 }

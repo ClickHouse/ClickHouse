@@ -1,6 +1,5 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 
-#include <Interpreters/Context.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/HTTPChunkedReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
@@ -13,13 +12,19 @@
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
 
+#if USE_SSL
+#include <Poco/Net/SecureStreamSocketImpl.h>
+#include <Poco/Net/SSLException.h>
+#include <Poco/Net/X509Certificate.h>
+#endif
+
 namespace DB
 {
-HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
-    : max_uri_size(context->getSettingsRef().http_max_uri_size)
-    , max_fields_number(context->getSettingsRef().http_max_fields)
-    , max_field_name_size(context->getSettingsRef().http_max_field_name_size)
-    , max_field_value_size(context->getSettingsRef().http_max_field_value_size)
+HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+    : max_uri_size(context->getMaxUriSize())
+    , max_fields_number(context->getMaxFields())
+    , max_field_name_size(context->getMaxFieldNameSize())
+    , max_field_value_size(context->getMaxFieldValueSize())
 {
     response.attachRequest(this);
 
@@ -28,8 +33,8 @@ HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & re
     server_address = session.serverAddress();
     secure = session.socket().secure();
 
-    auto receive_timeout = context->getSettingsRef().http_receive_timeout;
-    auto send_timeout = context->getSettingsRef().http_send_timeout;
+    auto receive_timeout = context->getReceiveTimeout();
+    auto send_timeout = context->getSendTimeout();
 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
@@ -40,7 +45,7 @@ HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & re
     readRequest(*in);  /// Try parse according to RFC7230
 
     if (getChunkedTransferEncoding())
-        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in));
+        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), context->getMaxChunkSize());
     else if (hasContentLength())
         stream = std::make_unique<LimitReadBuffer>(std::move(in), getContentLength(), false);
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
@@ -68,6 +73,31 @@ bool HTTPServerRequest::checkPeerConnected() const
 
     return true;
 }
+
+#if USE_SSL
+bool HTTPServerRequest::havePeerCertificate() const
+{
+    if (!secure)
+        return false;
+
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    if (!secure_socket)
+        return false;
+
+    return secure_socket->havePeerCertificate();
+}
+
+Poco::Net::X509Certificate HTTPServerRequest::peerCertificate() const
+{
+    if (secure)
+    {
+        const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+        if (secure_socket)
+            return secure_socket->peerCertificate();
+    }
+    throw Poco::Net::SSLException("No certificate available");
+}
+#endif
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {

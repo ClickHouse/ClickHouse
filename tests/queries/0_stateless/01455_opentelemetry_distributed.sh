@@ -20,7 +20,7 @@ select attribute['db.statement'] as query,
        attribute['clickhouse.tracestate'] as tracestate,
        1 as sorted_by_start_time
     from system.opentelemetry_span_log
-    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     order by start_time_us
     ;
@@ -31,7 +31,7 @@ select attribute['db.statement'] as query,
        attribute['clickhouse.tracestate'] as tracestate,
        1 as sorted_by_finish_time
     from system.opentelemetry_span_log
-    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     order by finish_time_us
     ;
@@ -43,26 +43,21 @@ select count(*) "'"'"total spans"'"'",
         uniqExactIf(parent_span_id, parent_span_id != 0)
             "'"'"unique non-zero parent spans"'"'"
     from system.opentelemetry_span_log
-    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
     ;
 
 -- Also check that the initial query span in ClickHouse has proper parent span.
+-- the first span should be child of input trace context
+-- the 2nd span should be the 'query' span
 select count(*) "'"'"initial query spans with proper parent"'"'"
-    from
-        (select *, attribute_name, attribute_value
-            from system.opentelemetry_span_log
-                array join mapKeys(attribute) as attribute_name,
-                     mapValues(attribute) as attribute_value) o
-        join system.query_log on query_id = o.attribute_value
+    from system.opentelemetry_span_log
     where
-        trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
-        and current_database = currentDatabase()
+        trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
-        and parent_span_id = reinterpretAsUInt64(unhex('73'))
-        and o.attribute_name = 'clickhouse.query_id'
-        and is_initial_query
-        and type = 'QueryFinish'
+        and parent_span_id in ( 
+           select span_id from system.opentelemetry_span_log where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) and parent_span_id = reinterpretAsUInt64(unhex('73'))
+        )
     ;
 
 -- Check that the tracestate header was propagated. It must have exactly the
@@ -71,7 +66,7 @@ select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
     from system.opentelemetry_span_log
         array join mapKeys(attribute) as name,  mapValues(attribute) as value
     where
-        trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
+        trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
         and name = 'clickhouse.tracestate'
         and length(value) > 0
@@ -136,7 +131,6 @@ ${CLICKHOUSE_CLIENT} -q "
     select if(2 <= count() and count() <= 18, 'OK', 'Fail')
     from system.opentelemetry_span_log
     where operation_name = 'query'
-        and parent_span_id = 0  -- only account for the initial queries
         and attribute['clickhouse.query_id'] like '$query_id-%'
     ;
 "

@@ -1,4 +1,4 @@
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 
 #include <Core/Field.h>
 
@@ -53,7 +53,6 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
@@ -84,7 +83,7 @@ public:
 
 }
 
-void registerFunctionToday(FunctionFactory & factory)
+REGISTER_FUNCTION(Today)
 {
     factory.registerFunction<TodayOverloadResolver>();
 }

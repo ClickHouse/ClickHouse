@@ -1,9 +1,12 @@
 #pragma once
 
+#include "Common/NamePrompter.h"
+#include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -12,6 +15,8 @@
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+
 
 namespace po = boost::program_options;
 
@@ -33,11 +38,22 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+enum ProgressOption
+{
+    DEFAULT,
+    OFF,
+    TTY,
+    ERR,
+};
+ProgressOption toProgressOption(std::string progress);
+std::istream& operator>> (std::istream & in, ProgressOption & progress);
+
 void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
+class WriteBufferFromFileDescriptor;
 
-class ClientBase : public Poco::Util::Application
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -48,16 +64,17 @@ public:
 
     void init(int argc, char ** argv);
 
+    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
+
 protected:
     void runInteractive();
     void runNonInteractive();
 
     virtual bool processWithFuzzing(const String &)
     {
-        throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
-    virtual bool executeMultiQuery(const String & all_queries_text) = 0;
     virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
@@ -69,17 +86,15 @@ protected:
     void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
 
-    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth);
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth);
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     static void setupSignalHandler();
 
+    bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
-        std::optional<Exception> & current_exception);
-
-    /// For non-interactive multi-query mode get queries text prefix.
-    virtual String getQueryTextPrefix() { return ""; }
+        std::unique_ptr<Exception> & current_exception);
 
     static void clearTerminal();
     void showClientVersion();
@@ -91,23 +106,37 @@ protected:
     {
         std::optional<ProgramOptionsDescription> main_description;
         std::optional<ProgramOptionsDescription> external_description;
+        std::optional<ProgramOptionsDescription> hosts_and_ports_description;
     };
 
+    virtual void updateLoggerLevel(const String &) {}
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
-                                const std::vector<Arguments> & external_tables_arguments) = 0;
+                                const std::vector<Arguments> & external_tables_arguments,
+                                const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
-private:
     bool processQueryText(const String & text);
 
+    virtual void readArguments(
+        int argc,
+        char ** argv,
+        Arguments & common_arguments,
+        std::vector<Arguments> & external_tables_arguments,
+        std::vector<Arguments> & hosts_and_ports_arguments) = 0;
+
+    void setInsertionTable(const ASTInsertQuery & insert_query);
+
+
+private:
     void receiveResult(ASTPtr parsed_query);
-    bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
-    void receiveLogs(ASTPtr parsed_query);
+    bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
+    void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQuery();
+    void cancelQuery();
 
     void onProgress(const Progress & value);
     void onData(Block & block, ASTPtr parsed_query);
@@ -121,44 +150,58 @@ private:
 
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
-                      const ColumnsDescription & columns_description, ASTPtr parsed_query);
-    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query);
+                      const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data = false);
+    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_more_data = false);
+    void sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
-    void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
+    void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    inline String prompt() const
-    {
-        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
+    String prompt() const;
 
     void resetOutput();
-    void outputQueryInfo(bool echo_query_);
-    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
+    void updateSuggest(const ASTPtr & ast);
+
+    void initQueryIdFormats();
+    bool addMergeTreeSettings(ASTCreateQuery & ast_create);
+
 protected:
+    static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
+    bool processMultiQueryFromFile(const String & file_name);
+
+    void initTtyBuffer(ProgressOption progress);
+
+    /// Should be one of the first, to be destroyed the last,
+    /// since other members can use them.
+    SharedContextHolder shared_context;
+    ContextMutablePtr global_context;
+
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
+    bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
+
+    std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<String> cmd_options;
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
+    bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
-
-    ServerConnectionPtr connection;
-    ConnectionParameters connection_parameters;
 
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
+    bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
@@ -172,9 +215,13 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
+    MergeTreeSettings cmd_merge_tree_settings;
 
-    SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
+    /// thread status should be destructed before shared context because it relies on process list.
+    std::optional<ThreadStatus> thread_status;
+
+    ServerConnectionPtr connection;
+    ConnectionParameters connection_parameters;
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -191,6 +238,10 @@ protected:
     String server_logs_file;
     std::unique_ptr<InternalTextLogs> logs_out_stream;
 
+    /// /dev/tty if accessible or std::cerr - for progress bar.
+    /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
+    std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
+
     String home_path;
     String history_file; /// Path to a file containing command history.
 
@@ -203,8 +254,10 @@ protected:
 
     ProgressIndication progress_indication;
     bool need_render_progress = true;
+    bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
+    bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
@@ -223,6 +276,7 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
+    int create_query_fuzzer_runs = 0;
 
     struct
     {
@@ -235,6 +289,24 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+    ClientInfo::QueryKind query_kind;
+
+    bool fake_drop = false;
+
+    struct HostAndPort
+    {
+        String host;
+        std::optional<UInt16> port;
+    };
+
+    std::vector<HostAndPort> hosts_and_ports{};
+
+    bool allow_repeated_settings = false;
+    bool allow_merge_tree_settings = false;
+
+    bool cancelled = false;
+
+    bool logging_initialized = false;
 };
 
 }

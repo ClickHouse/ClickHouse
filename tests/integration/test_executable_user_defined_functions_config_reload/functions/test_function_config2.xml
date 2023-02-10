@@ -7,8 +7,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>while read read_data; do printf "Key_2 $read_data\n"; done</command>
-        <lifetime>0</lifetime>
+        <command>test_input_2.sh</command>
     </function>
 </functions>
 

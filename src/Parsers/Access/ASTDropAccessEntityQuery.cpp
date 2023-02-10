@@ -8,8 +8,6 @@ namespace DB
 {
 namespace
 {
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
-
     void formatNames(const Strings & names, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
@@ -31,18 +29,23 @@ String ASTDropAccessEntityQuery::getID(char) const
 
 ASTPtr ASTDropAccessEntityQuery::clone() const
 {
-    return std::make_shared<ASTDropAccessEntityQuery>(*this);
+    auto res = std::make_shared<ASTDropAccessEntityQuery>(*this);
+
+    if (row_policy_names)
+        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
+
+    return res;
 }
 
 
 void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << EntityTypeInfo::get(type).name
+                  << "DROP " << AccessEntityTypeInfo::get(type).name
                   << (if_exists ? " IF EXISTS" : "")
                   << (settings.hilite ? hilite_none : "");
 
-    if (type == EntityType::ROW_POLICY)
+    if (type == AccessEntityType::ROW_POLICY)
     {
         settings.ostr << " ";
         row_policy_names->format(settings);

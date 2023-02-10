@@ -80,13 +80,13 @@ public:
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
 
-    AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
+    explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
         , src_scale(0)
     {}
 
     AggregateFunctionVarianceSimple(const IDataType & data_type, const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
         , src_scale(getDecimalScale(data_type))
     {}
 
@@ -114,12 +114,7 @@ public:
             return "covarSamp";
         if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
             return "corr";
-        __builtin_unreachable();
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeNumber<ResultType>>();
+        UNREACHABLE();
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -148,12 +143,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf);
     }
@@ -225,7 +220,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -234,7 +229,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -243,7 +238,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }
@@ -252,7 +247,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
             }

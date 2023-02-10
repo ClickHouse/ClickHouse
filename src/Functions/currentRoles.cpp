@@ -1,3 +1,4 @@
+#include <base/sort.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -48,12 +49,12 @@ namespace
             {
                 static_assert(kind == Kind::DEFAULT_ROLES);
                 const auto & manager = context->getAccessControl();
-                if (auto user = context->getUser())
-                    role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
+                auto user = context->getUser();
+                role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.
-            std::sort(role_names.begin(), role_names.end());
+            ::sort(role_names.begin(), role_names.end());
         }
 
         size_t getNumberOfArguments() const override { return 0; }
@@ -80,7 +81,7 @@ namespace
     };
 }
 
-void registerFunctionCurrentRoles(FunctionFactory & factory)
+REGISTER_FUNCTION(CurrentRoles)
 {
     factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>();
     factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>();

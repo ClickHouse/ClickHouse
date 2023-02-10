@@ -1,50 +1,74 @@
 #!/usr/bin/env python3
-import logging
-import subprocess
-import os
+import argparse
+import atexit
 import csv
-import time
-import json
-from github import Github
-from report import create_test_html_report
-from s3_helper import S3Helper
-from pr_info import PRInfo
+import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Tuple
+
+
+from clickhouse_helper import (
+    ClickHouseHelper,
+    mark_flaky_tests,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import post_commit_status, update_mergeable_check
+from docker_pull_helper import get_image_with_version
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
+from github_helper import GitHub
+from git_helper import git_runner
+from pr_info import PRInfo
+from report import TestResults, read_test_results
+from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from ssh import SSHKey
+from stopwatch import Stopwatch
+from upload_result_helper import upload_results
 
-NAME = "Style Check (actions)"
+NAME = "Style Check"
+
+GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+    "git -c user.email=robot-clickhouse@users.noreply.github.com "
+    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    "-c core.sshCommand="
+    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+)
 
 
-def process_logs(s3_client, additional_logs, s3_path_prefix):
-    additional_urls = []
-    for log_path in additional_logs:
-        if log_path:
-            additional_urls.append(
-                s3_client.upload_test_report_to_s3(
-                    log_path,
-                    s3_path_prefix + "/" + os.path.basename(log_path)))
-
-    return additional_urls
-
-
-def process_result(result_folder):
-    test_results = []
+def process_result(
+    result_folder: str,
+) -> Tuple[str, str, TestResults, List[str]]:
+    test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
-    # If task provides processed results, then it's responsible for content of result_folder.
+    # If task provides processed results, then it's responsible
+    # for content of result_folder.
     if os.path.exists(result_folder):
-        test_files = [f for f in os.listdir(result_folder) if os.path.isfile(os.path.join(result_folder, f))]
+        test_files = [
+            f
+            for f in os.listdir(result_folder)
+            if os.path.isfile(os.path.join(result_folder, f))
+        ]
         additional_files = [os.path.join(result_folder, f) for f in test_files]
 
+    status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
-    logging.info("Found test_results.tsv")
-    status = list(csv.reader(open(status_path, 'r'), delimiter='\t'))
+    if os.path.exists(status_path):
+        logging.info("Found check_status.tsv")
+        with open(status_path, "r", encoding="utf-8") as status_file:
+            status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     try:
-        results_path = os.path.join(result_folder, "test_results.tsv")
-        test_results = list(csv.reader(open(results_path, 'r'), delimiter='\t'))
+        results_path = Path(result_folder) / "test_results.tsv"
+        test_results = read_test_results(results_path)
         if len(test_results) == 0:
             raise Exception("Empty results")
 
@@ -54,76 +78,134 @@ def process_result(result_folder):
             state, description = "error", "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
-def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
-    s3_path_prefix = f"{pr_number}/{commit_sha}/style_check"
-    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
 
-    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
-    branch_name = "master"
-    if pr_number != 0:
-        branch_name = "PR #{}".format(pr_number)
-        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_number)
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
-
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-
-    raw_log_url = additional_urls[0]
-    additional_urls.pop(0)
-
-    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
-    with open('report.html', 'w') as f:
-        f.write(html_report)
-
-    url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
-    logging.info("Search result in url %s", url)
-    return url
+def parse_args():
+    parser = argparse.ArgumentParser("Check and report style issues in the repository")
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--no-push",
+        action="store_false",
+        dest="push",
+        help="do not commit and push automatic fixes",
+        default=argparse.SUPPRESS,
+    )
+    return parser.parse_args()
 
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
+def checkout_head(pr_info: PRInfo) -> None:
+    # It works ONLY for PRs, and only over ssh, so either
+    # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
+    assert pr_info.number
+    if not pr_info.head_name == pr_info.base_name:
+        # We can't push to forks, sorry folks
+        return
+    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
+    fetch_cmd = (
+        f"{GIT_PREFIX} fetch --depth=1 "
+        f"{remote_url} {pr_info.head_ref}:head-{pr_info.head_ref}"
+    )
+    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+            git_runner(fetch_cmd)
+    else:
+        git_runner(fetch_cmd)
+    git_runner(f"git checkout -f head-{pr_info.head_ref}")
 
-if __name__ == "__main__":
+
+def commit_push_staged(pr_info: PRInfo) -> None:
+    # It works ONLY for PRs, and only over ssh, so either
+    # ROBOT_CLICKHOUSE_SSH_KEY should be set or ssh-agent should work
+    assert pr_info.number
+    if not pr_info.head_name == pr_info.base_name:
+        # We can't push to forks, sorry folks
+        return
+    git_staged = git_runner("git diff --cached --name-only")
+    if not git_staged:
+        return
+    remote_url = pr_info.event["pull_request"]["base"]["repo"]["ssh_url"]
+    git_runner(f"{GIT_PREFIX} commit -m 'Automatic style fix'")
+    push_cmd = (
+        f"{GIT_PREFIX} push {remote_url} head-{pr_info.head_ref}:{pr_info.head_ref}"
+    )
+    if os.getenv("ROBOT_CLICKHOUSE_SSH_KEY", ""):
+        with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+            git_runner(push_cmd)
+    else:
+        git_runner(push_cmd)
+
+
+def main():
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
-    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
+    logging.getLogger("git_helper").setLevel(logging.DEBUG)
+    args = parse_args()
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-    pr_info = PRInfo(event)
+    stopwatch = Stopwatch()
+
+    repo_path = GITHUB_WORKSPACE
+    temp_path = os.path.join(RUNNER_TEMP, "style_check")
+
+    pr_info = PRInfo()
+    if args.push:
+        checkout_head(pr_info)
+
+    gh = GitHub(get_best_robot_token(), per_page=100, create_cache_dir=False)
+
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        # Finish with the same code as previous
+        state = rerun_helper.get_finished_status().state  # type: ignore
+        # state == "success" -> code = 0
+        code = int(state != "success")
+        sys.exit(code)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    gh = Github(get_best_robot_token())
+    docker_image = get_image_with_version(temp_path, "clickhouse/style-test")
+    s3_helper = S3Helper()
 
-    images_path = os.path.join(temp_path, 'changed_images.json')
-    docker_image = 'clickhouse/style-test'
-    if os.path.exists(images_path):
-        logging.info("Images file exists")
-        with open(images_path, 'r') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            if 'clickhouse/style-test' in images:
-                docker_image += ':' + images['clickhouse/style-test']
+    cmd = (
+        f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
+        f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
+        f"{docker_image}"
+    )
 
-    logging.info("Got docker image %s", docker_image)
-    for i in range(10):
-        try:
-            subprocess.check_output(f"docker pull {docker_image}", shell=True)
-            break
-        except Exception as ex:
-            time.sleep(i * 3)
-            logging.info("Got execption pulling docker %s", ex)
-    else:
-        raise Exception(f"Cannot pull dockerhub for image {docker_image}")
+    logging.info("Is going to run the command: %s", cmd)
+    subprocess.check_call(
+        cmd,
+        shell=True,
+    )
 
-    s3_helper = S3Helper('https://s3.amazonaws.com')
+    if args.push:
+        commit_push_staged(pr_info)
 
-    subprocess.check_output(f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output {docker_image}", shell=True)
     state, description, test_results, additional_files = process_result(temp_path)
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_files)
-    print("::notice ::Report url: {}".format(report_url))
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=state, target_url=report_url)
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, NAME, test_results)
+
+    report_url = upload_results(
+        s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
+    )
+    print(f"::notice ::Report url: {report_url}")
+    post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        state,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        NAME,
+    )
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    if state in ["error", "failure"]:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

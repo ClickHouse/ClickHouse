@@ -18,6 +18,7 @@
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
+#include <base/extended_types.h>
 
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
@@ -31,6 +32,13 @@
         v2 += v1; v1 = ROTL(v1, 17); v1 ^= v2; v2 = ROTL(v2, 32); \
     } while(0)
 
+/// Define macro CURRENT_BYTES_IDX for building index used in current_bytes array
+/// to ensure correct byte order on different endian machines
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define CURRENT_BYTES_IDX(i) (7 - i)
+#else
+#define CURRENT_BYTES_IDX(i) (i)
+#endif
 
 class SipHash
 {
@@ -54,7 +62,7 @@ private:
     ALWAYS_INLINE void finalize()
     {
         /// In the last free byte, we write the remainder of the division by 256.
-        current_bytes[7] = cnt;
+        current_bytes[CURRENT_BYTES_IDX(7)] = static_cast<UInt8>(cnt);
 
         v3 ^= current_word;
         SIPROUND;
@@ -70,19 +78,19 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 k0 = 0, UInt64 k1 = 0)
+    SipHash(UInt64 key0 = 0, UInt64 key1 = 0) /// NOLINT
     {
         /// Initialize the state with some random bytes and seed.
-        v0 = 0x736f6d6570736575ULL ^ k0;
-        v1 = 0x646f72616e646f6dULL ^ k1;
-        v2 = 0x6c7967656e657261ULL ^ k0;
-        v3 = 0x7465646279746573ULL ^ k1;
+        v0 = 0x736f6d6570736575ULL ^ key0;
+        v1 = 0x646f72616e646f6dULL ^ key1;
+        v2 = 0x6c7967656e657261ULL ^ key0;
+        v3 = 0x7465646279746573ULL ^ key1;
 
         cnt = 0;
         current_word = 0;
     }
 
-    void update(const char * data, UInt64 size)
+    ALWAYS_INLINE void update(const char * data, UInt64 size)
     {
         const char * end = data + size;
 
@@ -91,7 +99,7 @@ public:
         {
             while (cnt & 7 && data < end)
             {
-                current_bytes[cnt & 7] = *data;
+                current_bytes[CURRENT_BYTES_IDX(cnt & 7)] = *data;
                 ++data;
                 ++cnt;
             }
@@ -110,7 +118,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = unalignedLoad<UInt64>(data);
+            current_word = unalignedLoadLE<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -124,26 +132,31 @@ public:
         current_word = 0;
         switch (end - data)
         {
-            case 7: current_bytes[6] = data[6]; [[fallthrough]];
-            case 6: current_bytes[5] = data[5]; [[fallthrough]];
-            case 5: current_bytes[4] = data[4]; [[fallthrough]];
-            case 4: current_bytes[3] = data[3]; [[fallthrough]];
-            case 3: current_bytes[2] = data[2]; [[fallthrough]];
-            case 2: current_bytes[1] = data[1]; [[fallthrough]];
-            case 1: current_bytes[0] = data[0]; [[fallthrough]];
+            case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
+            case 6: current_bytes[CURRENT_BYTES_IDX(5)] = data[5]; [[fallthrough]];
+            case 5: current_bytes[CURRENT_BYTES_IDX(4)] = data[4]; [[fallthrough]];
+            case 4: current_bytes[CURRENT_BYTES_IDX(3)] = data[3]; [[fallthrough]];
+            case 3: current_bytes[CURRENT_BYTES_IDX(2)] = data[2]; [[fallthrough]];
+            case 2: current_bytes[CURRENT_BYTES_IDX(1)] = data[1]; [[fallthrough]];
+            case 1: current_bytes[CURRENT_BYTES_IDX(0)] = data[0]; [[fallthrough]];
             case 0: break;
         }
     }
 
     template <typename T>
-    void update(const T & x)
+    ALWAYS_INLINE void update(const T & x)
     {
-        update(reinterpret_cast<const char *>(&x), sizeof(x));
+        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
     }
 
-    void update(const std::string & x)
+    ALWAYS_INLINE void update(const std::string & x)
     {
         update(x.data(), x.length());
+    }
+
+    ALWAYS_INLINE void update(const std::string_view x)
+    {
+        update(x.data(), x.size());
     }
 
     /// Get the result in some form. This can only be done once!
@@ -151,8 +164,13 @@ public:
     void get128(char * out)
     {
         finalize();
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        unalignedStore<UInt64>(out + 8, v0 ^ v1);
+        unalignedStore<UInt64>(out, v2 ^ v3);
+#else
         unalignedStore<UInt64>(out, v0 ^ v1);
         unalignedStore<UInt64>(out + 8, v2 ^ v3);
+#endif
     }
 
     template <typename T>
@@ -176,6 +194,13 @@ public:
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
     }
+
+    UInt128 get128()
+    {
+        UInt128 res;
+        get128(res);
+        return res;
+    }
 };
 
 
@@ -191,11 +216,28 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     hash.get128(out);
 }
 
-inline UInt64 sipHash64(const char * data, const size_t size)
+inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
 {
-    SipHash hash;
+    SipHash hash(key0, key1);
+    hash.update(data, size);
+    return hash.get128();
+}
+
+inline UInt128 sipHash128(const char * data, const size_t size)
+{
+    return sipHash128Keyed(0, 0, data, size);
+}
+
+inline UInt64 sipHash64Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
+{
+    SipHash hash(key0, key1);
     hash.update(data, size);
     return hash.get64();
+}
+
+inline UInt64 sipHash64(const char * data, const size_t size)
+{
+    return sipHash64Keyed(0, 0, data, size);
 }
 
 template <typename T>
@@ -210,3 +252,5 @@ inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());
 }
+
+#undef CURRENT_BYTES_IDX

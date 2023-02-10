@@ -1,3 +1,7 @@
+if (NOT ENABLE_LIBPQXX)
+    return()
+endif()
+
 set(LIBPQ_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpq")
 
 set(SRCS
@@ -53,10 +57,25 @@ set(SRCS
         "${LIBPQ_SOURCE_DIR}/port/explicit_bzero.c"
         )
 
-add_library(libpq ${SRCS})
+add_library(_libpq ${SRCS})
 
-target_include_directories (libpq PUBLIC ${LIBPQ_SOURCE_DIR})
-target_include_directories (libpq PUBLIC "${LIBPQ_SOURCE_DIR}/include")
-target_include_directories (libpq PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
+if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
+    add_definitions(-DHAVE_BIO_METH_NEW)
+    add_definitions(-DHAVE_HMAC_CTX_NEW)
+    add_definitions(-DHAVE_HMAC_CTX_FREE)
+endif ()
 
-target_link_libraries (libpq PRIVATE ssl)
+target_include_directories (_libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
+target_include_directories (_libpq SYSTEM PUBLIC "${LIBPQ_SOURCE_DIR}/include")
+target_include_directories (_libpq SYSTEM PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
+
+# NOTE: this is a dirty hack to avoid and instead pg_config.h should be shipped
+# for different OS'es like for jemalloc, not one generic for all OS'es like
+# now.
+if (OS_DARWIN OR OS_FREEBSD OR USE_MUSL)
+    target_compile_definitions(_libpq PRIVATE -DSTRERROR_R_INT=1)
+endif()
+
+target_link_libraries (_libpq PRIVATE OpenSSL::SSL)
+
+add_library(ch_contrib::libpq ALIAS _libpq)

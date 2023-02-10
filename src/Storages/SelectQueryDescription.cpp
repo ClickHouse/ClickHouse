@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
@@ -12,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
-extern const int LOGICAL_ERROR;
 }
 
 SelectQueryDescription::SelectQueryDescription(const SelectQueryDescription & other)
@@ -60,12 +60,11 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception("Logical error while creating StorageMaterializedView. "
-                            "Could not retrieve table name from select query.",
-                            DB::ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW,
+                            "StorageMaterializedView cannot be created from table functions ({})",
+                            serializeAST(*subquery));
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for MATERIALIZED VIEW",
-                  ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "UNION is not supported for MATERIALIZED VIEW");
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 
@@ -79,7 +78,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
 void checkAllowedQueries(const ASTSelectQuery & query)
 {
     if (query.prewhere() || query.final() || query.sampleSize())
-        throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+        throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.");
 
     ASTPtr subquery = extractTableExpression(query, 0);
     if (!subquery)
@@ -88,7 +87,7 @@ void checkAllowedQueries(const ASTSelectQuery & query)
     if (const auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
     {
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "UNION is not supported for MATERIALIZED VIEW");
 
         const auto & inner_query = ast_select->list_of_selects->children.at(0);
 
@@ -119,7 +118,7 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
     ASTPtr new_inner_query;
 
     if (!isSingleSelect(select, new_inner_query))
-        throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "UNION is not supported for MATERIALIZED VIEW");
 
     auto & select_query = new_inner_query->as<ASTSelectQuery &>();
     checkAllowedQueries(select_query);

@@ -78,14 +78,14 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(pqxx::from_string<double>(value));
             break;
-        case ExternalResultDescription::ValueType::vtEnum8:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtEnum16:[[fallthrough]];
-        case ExternalResultDescription::ValueType::vtFixedString:[[fallthrough]];
+        case ExternalResultDescription::ValueType::vtEnum8:
+        case ExternalResultDescription::ValueType::vtEnum16:
+        case ExternalResultDescription::ValueType::vtFixedString:
         case ExternalResultDescription::ValueType::vtString:
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
         case ExternalResultDescription::ValueType::vtUUID:
-            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.data(), value.size()));
             break;
         case ExternalResultDescription::ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
@@ -100,7 +100,7 @@ void insertPostgreSQLValue(
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
-            assert_cast<ColumnUInt32 &>(column).insertValue(time);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
             break;
         }
         case ExternalResultDescription::ValueType::vtDateTime64:
@@ -108,8 +108,6 @@ void insertPostgreSQLValue(
             ReadBufferFromString in(value);
             DateTime64 time = 0;
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
-            if (time < 0)
-                time = 0;
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
@@ -134,7 +132,7 @@ void insertPostgreSQLValue(
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
                 if ((parsed.first == pqxx::array_parser::juncture::row_start) && (++dimension > expected_dimensions))
-                    throw Exception("Got more dimensions than expected", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got more dimensions than expected");
 
                 else if (parsed.first == pqxx::array_parser::juncture::string_value)
                     dimensions[dimension].emplace_back(parse_value(parsed.second));

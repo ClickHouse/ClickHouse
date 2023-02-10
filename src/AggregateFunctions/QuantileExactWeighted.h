@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/sort.h>
+
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
@@ -101,7 +103,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 threshold = std::ceil(sum_weight * level);
         Float64 accumulated = 0;
@@ -151,7 +153,7 @@ struct QuantileExactWeighted
             ++i;
         }
 
-        std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
+        ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
         Float64 accumulated = 0;
 
@@ -189,12 +191,12 @@ struct QuantileExactWeighted
     /// The same, but in the case of an empty state, NaN is returned.
     Float64 getFloat(Float64) const
     {
-        throw Exception("Method getFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileExact");
     }
 
     void getManyFloat(const Float64 *, const size_t *, size_t, Float64 *) const
     {
-        throw Exception("Method getManyFloat is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for QuantileExact");
     }
 };
 

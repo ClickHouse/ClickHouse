@@ -1,5 +1,8 @@
 #include <Processors/DelayedPortsProcessor.h>
 
+#include <base/sort.h>
+
+
 namespace DB
 {
 
@@ -18,7 +21,7 @@ InputPorts createInputPorts(
         return InputPorts(num_ports, header);
 
     InputPorts res;
-    std::sort(delayed_ports.begin(), delayed_ports.end());
+    ::sort(delayed_ports.begin(), delayed_ports.end());
     size_t next_delayed_port = 0;
     for (size_t i = 0; i < num_ports; ++i)
     {

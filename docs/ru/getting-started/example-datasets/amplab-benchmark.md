@@ -1,6 +1,7 @@
 ---
-toc_priority: 19
-toc_title: AMPLab Big Data Benchmark
+slug: /ru/getting-started/example-datasets/amplab-benchmark
+sidebar_position: 19
+sidebar_label: AMPLab Big Data Benchmark
 ---
 
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
@@ -124,4 +125,3 @@ GROUP BY sourceIP
 ORDER BY totalRevenue DESC
 LIMIT 1
 ```
-
