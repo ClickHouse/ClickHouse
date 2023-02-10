@@ -558,6 +558,12 @@ void HTTPHandler::processQuery(
     auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));
 
+    if (params.has("client_protocol_version")) {
+        String version_param = params.get("client_protocol_version");
+        char * end;
+        context->setClientProtocolVersion(strtol(&version_param.front(), &end, 10));
+    }
+
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
     CompressionMethod http_response_compression_method = CompressionMethod::None;
@@ -663,7 +669,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version"};
 
     Names reserved_param_suffixes;
 
