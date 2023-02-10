@@ -327,11 +327,14 @@ struct MultiMatchAnyImpl
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
-            for (auto needle : needles)
+            if (reject_expensive_hyperscan_regexps)
             {
-                SlowWithHyperscanChecker checker;
-                if (checker.isSlow(needle))
-                    throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
+                for (auto needle : needles)
+                {
+                    SlowWithHyperscanChecker checker;
+                    if (checker.isSlow(needle))
+                        throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
+                }
             }
 
             for (size_t j = 0; j < needles.size(); ++j)
