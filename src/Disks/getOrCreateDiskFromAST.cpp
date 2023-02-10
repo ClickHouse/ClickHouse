@@ -32,7 +32,7 @@ std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr 
     /// after table is reattached or server is restarted, so take a hash of the disk
     /// configuration serialized ast as a disk name suffix.
     auto disk_setting_string = serializeAST(function, true);
-    auto disk_name = DiskSelector::TMP_DISK_PREFIX
+    auto disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX
         + toString(sipHash128(disk_setting_string.data(), disk_setting_string.size()));
 
     LOG_TRACE(

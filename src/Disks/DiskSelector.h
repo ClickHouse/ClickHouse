@@ -18,7 +18,7 @@ using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class DiskSelector
 {
 public:
-    static constexpr auto TMP_DISK_PREFIX = "__tmp_";
+    static constexpr auto TMP_INTERNAL_DISK_PREFIX = "__tmp_internal_";
 
     DiskSelector() = default;
     DiskSelector(const DiskSelector & from) = default;
