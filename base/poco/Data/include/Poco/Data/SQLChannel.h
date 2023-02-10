@@ -52,7 +52,7 @@ class Data_API SQLChannel: public Poco::Channel
 	/// Other than DateTime filed name used for optiona time-based archiving purposes, currently the 
 	/// field names are not mandated. However, it is recommended to use names as specified above.
 	/// 
-	/// To provide as non-intrusive operation as possbile, the log entries are cached and 
+	/// To provide as non-intrusive operation as possible, the log entries are cached and 
 	/// inserted into the target database asynchronously by default . The blocking, however, will occur 
 	/// before the next entry insertion with default timeout of 1 second. The default settings can be 
 	/// overridden (see async, timeout and throw properties for details).
