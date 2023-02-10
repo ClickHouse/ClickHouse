@@ -69,7 +69,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -231,6 +230,11 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotReadonl
     auto res = getZooKeeper();
     assertNotReadonly();
     return res;
+}
+
+static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
+{
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
 }
 
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
@@ -2356,7 +2360,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     return true;
 }
 
-
 void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entry)
 {
     auto zookeeper = getZooKeeper();
@@ -2385,7 +2388,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         auto metadata_snapshot = getInMemoryMetadataPtr();
         String source_replica_path = entry.source_shard + "/replicas/" + replica;
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext());
+        auto timeouts = getHTTPTimeouts(getContext());
         auto credentials = getContext()->getInterserverCredentials();
         String interserver_scheme = getContext()->getInterserverScheme();
 
@@ -3614,7 +3617,7 @@ void StorageReplicatedMergeTree::stopBeingLeader()
 
 ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(ContextPtr local_context)
 {
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(local_context);
+    auto timeouts = getHTTPTimeouts(local_context);
     auto settings = getSettings();
 
     if (settings->replicated_fetches_http_connection_timeout.changed)
@@ -4261,7 +4264,7 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     std::function<MutableDataPartPtr()> get_part;
 
     ReplicatedMergeTreeAddress address(zookeeper->get(fs::path(source_replica_path) / "host"));
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext());
+    auto timeouts = getHTTPTimeouts(getContext());
     auto credentials = getContext()->getInterserverCredentials();
     String interserver_scheme = getContext()->getInterserverScheme();
 
