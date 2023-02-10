@@ -5314,6 +5314,7 @@ size_t MergeTreeData::getAllPartsCount() const
 size_t MergeTreeData::getTotalMarksCount() const
 {
     size_t total_marks = 0;
+    auto lock = lockParts();
     for (auto & part : data_parts_by_info)
     {
         total_marks += part->getMarksCount();
