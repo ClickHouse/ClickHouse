@@ -1320,3 +1320,4 @@ select a, b, ntile(2) over (partition by a order by b) from(select intDiv(number
 1	7	2
 1	8	2
 1	9	2
+
