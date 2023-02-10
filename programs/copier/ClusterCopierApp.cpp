@@ -3,7 +3,7 @@
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <unistd.h>
 #include <filesystem>
 
@@ -160,17 +160,25 @@ void ClusterCopierApp::mainImpl()
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
     static const std::string default_database = "_local";
     DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, context));
     context->setCurrentDatabase(default_database);
 
-    /// Initialize query scope just in case.
-    CurrentThread::QueryScope query_scope(context);
+    /// Disable queries logging, since:
+    /// - There are bits that is not allowed for global context, like adding factories info (for the query_log)
+    /// - And anyway it is useless for copier.
+    context->setSetting("log_queries", false);
 
-    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context, log);
+    auto local_context = Context::createCopy(context);
+
+    /// Initialize query scope just in case.
+    CurrentThread::QueryScope query_scope(local_context);
+
+    auto copier = std::make_unique<ClusterCopier>(
+        task_path, host_id, default_database, local_context, log);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);

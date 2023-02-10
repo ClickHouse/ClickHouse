@@ -11,13 +11,17 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/defines.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <queue>
 #include <mutex>
+#include <Coordination/FourLetterCommand.h>
+#include <Common/hex.h>
+
 
 #ifdef POCO_HAVE_FD_EPOLL
     #include <sys/epoll.h>
@@ -29,6 +33,16 @@
 namespace DB
 {
 
+struct LastOp
+{
+public:
+    String name{"NA"};
+    int64_t last_cxid{-1};
+    int64_t last_zxid{-1};
+    int64_t last_response_time{0};
+};
+
+static const LastOp EMPTY_LAST_OP {"NA", -1, -1, 0};
 
 namespace ErrorCodes
 {
@@ -74,14 +88,18 @@ struct SocketInterruptablePollWrapper
         socket_event.data.fd = sockfd;
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
         {
-            ::close(epollfd);
+            int err = ::close(epollfd);
+            chassert(!err || errno == EINTR);
+
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
-            ::close(epollfd);
+            int err = ::close(epollfd);
+            chassert(!err || errno == EINTR);
+
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
 #endif
@@ -113,7 +131,8 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
+                /// TODO: use epoll_pwait() for more precise timers
+                rc = epoll_wait(epollfd, evout, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == EINTR)
                 {
                     Poco::Timestamp end;
@@ -143,7 +162,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
+                rc = ::poll(poll_buf, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == POCO_EINTR)
                 {
                     Poco::Timestamp end;
@@ -158,7 +177,7 @@ struct SocketInterruptablePollWrapper
 
             if (rc >= 1 && poll_buf[0].revents & POLLIN)
                 socket_ready = true;
-            if (rc >= 1 && poll_buf[1].revents & POLLIN)
+            if (rc >= 2 && poll_buf[1].revents & POLLIN)
                 fd_ready = true;
 #endif
         }
@@ -184,31 +203,56 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
     ~SocketInterruptablePollWrapper()
     {
-        ::close(epollfd);
+        int err = ::close(epollfd);
+        chassert(!err || errno == EINTR);
     }
 #endif
 };
 
-KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+KeeperTCPHandler::KeeperTCPHandler(
+    const Poco::Util::AbstractConfiguration & config_ref,
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
+    Poco::Timespan receive_timeout_,
+    Poco::Timespan send_timeout_,
+    const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
-    , server(server_)
     , log(&Poco::Logger::get("KeeperTCPHandler"))
-    , global_context(Context::createCopy(server.context()))
-    , keeper_dispatcher(global_context->getKeeperDispatcher())
-    , operation_timeout(0, global_context->getConfigRef().getUInt("keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
-    , session_timeout(0, global_context->getConfigRef().getUInt("keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
+    , keeper_dispatcher(keeper_dispatcher_)
+    , operation_timeout(
+          0,
+          config_ref.getUInt(
+              "keeper_server.coordination_settings.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
+    , min_session_timeout(
+          0,
+          config_ref.getUInt(
+              "keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
+    , max_session_timeout(
+          0,
+          config_ref.getUInt(
+              "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
+    , send_timeout(send_timeout_)
+    , receive_timeout(receive_timeout_)
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
+    , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
+    KeeperTCPHandler::registerConnection(this);
 }
 
 void KeeperTCPHandler::sendHandshake(bool has_leader)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
+    {
         Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
-    else /// Specially ignore connections if we are not leader, client will throw exception
-        Coordination::write(42, *out);
+    }
+    else
+    {
+        /// Ignore connections if we are not leader, client will throw exception
+        /// and reconnect to another replica faster. ClickHouse client provide
+        /// clear message for such protocol version.
+        Coordination::write(Coordination::KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT, *out);
+    }
 
     Coordination::write(static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
     Coordination::write(session_id, *out);
@@ -222,22 +266,21 @@ void KeeperTCPHandler::run()
     runImpl();
 }
 
-Poco::Timespan KeeperTCPHandler::receiveHandshake()
+Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
 {
-    int32_t handshake_length;
     int32_t protocol_version;
     int64_t last_zxid_seen;
     int32_t timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
-    Coordination::read(handshake_length, *in);
-    if (handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH && handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
-        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+
+    if (!isHandShake(handshake_length))
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected handshake length received: {}", toString(handshake_length));
 
     Coordination::read(protocol_version, *in);
 
     if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -256,13 +299,11 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake()
 
 void KeeperTCPHandler::runImpl()
 {
-    setThreadName("TstKprHandler");
+    setThreadName("KeeperHandler");
     ThreadStatus thread_status;
-    auto global_receive_timeout = global_context->getSettingsRef().receive_timeout;
-    auto global_send_timeout = global_context->getSettingsRef().send_timeout;
 
-    socket().setReceiveTimeout(global_receive_timeout);
-    socket().setSendTimeout(global_send_timeout);
+    socket().setReceiveTimeout(receive_timeout);
+    socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -274,11 +315,37 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
+    int32_t header;
     try
     {
-        auto client_timeout = receiveHandshake();
-        if (client_timeout != 0)
-            session_timeout = std::min(client_timeout, session_timeout);
+        Coordination::read(header, *in);
+    }
+    catch (const Exception & e)
+    {
+        LOG_WARNING(log, "Error while read connection header {}", e.displayText());
+        return;
+    }
+
+    /// All four letter word command code is larger than 2^24 or lower than 0.
+    /// Hand shake package length must be lower than 2^24 and larger than 0.
+    /// So collision never happens.
+    int32_t four_letter_cmd = header;
+    if (!isHandShake(four_letter_cmd))
+    {
+        connected.store(true, std::memory_order_relaxed);
+        tryExecuteFourLetterWordCmd(four_letter_cmd);
+        return;
+    }
+
+    try
+    {
+        int32_t handshake_length = header;
+        auto client_timeout = receiveHandshake(handshake_length);
+
+        if (client_timeout == 0)
+            client_timeout = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
+        session_timeout = std::max(client_timeout, min_session_timeout);
+        session_timeout = std::min(session_timeout, max_session_timeout);
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {
@@ -286,7 +353,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
+    if (keeper_dispatcher->isServerActive())
     {
         try
         {
@@ -306,15 +373,7 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        String reason;
-        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
-            reason = "server is not initialized yet and no alive leader exists";
-        else if (!keeper_dispatcher->checkInit())
-            reason = "server is not initialized yet";
-        else
-            reason = "no alive leader exists";
-
-        LOG_WARNING(log, "Ignoring user request, because {}", reason);
+        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
         sendHandshake(false);
         return;
     }
@@ -329,12 +388,24 @@ void KeeperTCPHandler::runImpl()
                 response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
+        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
+    Stopwatch logging_stopwatch;
+    auto log_long_operation = [&](const String & operation)
+    {
+        constexpr UInt64 operation_max_ms = 500;
+        auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
+        if (operation_max_ms < elapsed_ms)
+            LOG_TEST(log, "{} for session {} took {} ms", operation, session_id, elapsed_ms);
+        logging_stopwatch.restart();
+    };
+
     session_stopwatch.start();
+    connected.store(true, std::memory_order_release);
     bool close_received = false;
+
     try
     {
         while (true)
@@ -342,9 +413,19 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, in);
+            log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
+                if (in->eof())
+                {
+                    LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
+                    keeper_dispatcher->finishSession(session_id);
+                    break;
+                }
+
                 auto [received_op, received_xid] = receiveRequest();
+                packageReceived();
+                log_long_operation("Receiving request");
 
                 if (received_op == Coordination::OpNum::Close)
                 {
@@ -356,6 +437,8 @@ void KeeperTCPHandler::runImpl()
                 {
                     LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
                 }
+                else
+                    operations[received_xid] = Poco::Timestamp();
 
                 /// Each request restarts session stopwatch
                 session_stopwatch.restart();
@@ -370,6 +453,7 @@ void KeeperTCPHandler::runImpl()
 
                 if (!responses->tryPop(response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
+                log_long_operation("Waiting for response to be ready");
 
                 if (response->xid == close_xid)
                 {
@@ -377,7 +461,11 @@ void KeeperTCPHandler::runImpl()
                     return;
                 }
 
+                updateStats(response);
+                packageSent();
+
                 response->write(*out);
+                log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
                     LOG_DEBUG(log, "Session #{} expired because server shutting down or quorum is not alive", session_id);
@@ -389,7 +477,7 @@ void KeeperTCPHandler::runImpl()
             }
 
             if (result.error)
-                throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Exception happened while reading from socket");
 
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
@@ -401,8 +489,48 @@ void KeeperTCPHandler::runImpl()
     }
     catch (const Exception & ex)
     {
+        log_long_operation("Unknown operation");
+        LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
         keeper_dispatcher->finishSession(session_id);
+    }
+}
+
+bool KeeperTCPHandler::isHandShake(int32_t handshake_length)
+{
+    return handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH
+    || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
+}
+
+bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
+{
+    if (!FourLetterCommandFactory::instance().isKnown(command))
+    {
+        LOG_WARNING(log, "invalid four letter command {}", IFourLetterCommand::toName(command));
+        return false;
+    }
+    else if (!FourLetterCommandFactory::instance().isEnabled(command))
+    {
+        LOG_WARNING(log, "Not enabled four letter command {}", IFourLetterCommand::toName(command));
+        return false;
+    }
+    else
+    {
+        auto command_ptr = FourLetterCommandFactory::instance().get(command);
+        LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
+
+        try
+        {
+            String res = command_ptr->run();
+            out->write(res.data(), res.size());
+            out->next();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
+        }
+
+        return true;
     }
 }
 
@@ -423,6 +551,140 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     if (!keeper_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
+}
+
+void KeeperTCPHandler::packageSent()
+{
+    conn_stats.incrementPacketsSent();
+    keeper_dispatcher->incrementPacketsSent();
+}
+
+void KeeperTCPHandler::packageReceived()
+{
+    conn_stats.incrementPacketsReceived();
+    keeper_dispatcher->incrementPacketsReceived();
+}
+
+void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response)
+{
+    /// update statistics ignoring watch response and heartbeat.
+    if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
+    {
+        Int64 elapsed = (Poco::Timestamp() - operations[response->xid]) / 1000;
+        conn_stats.updateLatency(elapsed);
+
+        operations.erase(response->xid);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed);
+
+        last_op.set(std::make_unique<LastOp>(LastOp{
+            .name = Coordination::toString(response->getOpNum()),
+            .last_cxid = response->xid,
+            .last_zxid = response->zxid,
+            .last_response_time = Poco::Timestamp().epochMicroseconds() / 1000,
+        }));
+    }
+
+}
+
+KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
+{
+    return conn_stats;
+}
+
+void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
+{
+    if (!connected.load(std::memory_order_acquire))
+        return;
+
+    auto & stats = getConnectionStats();
+
+    writeText(' ', buf);
+    writeText(socket().peerAddress().toString(), buf);
+    writeText("(recved=", buf);
+    writeIntText(stats.getPacketsReceived(), buf);
+    writeText(",sent=", buf);
+    writeIntText(stats.getPacketsSent(), buf);
+    if (!brief)
+    {
+        if (session_id != 0)
+        {
+            writeText(",sid=0x", buf);
+            writeText(getHexUIntLowercase(session_id), buf);
+
+            writeText(",lop=", buf);
+            LastOpPtr op = last_op.get();
+            writeText(op->name, buf);
+            writeText(",est=", buf);
+            writeIntText(established.epochMicroseconds() / 1000, buf);
+            writeText(",to=", buf);
+            writeIntText(session_timeout.totalMilliseconds(), buf);
+            int64_t last_cxid = op->last_cxid;
+            if (last_cxid >= 0)
+            {
+                writeText(",lcxid=0x", buf);
+                writeText(getHexUIntLowercase(last_cxid), buf);
+            }
+            writeText(",lzxid=0x", buf);
+            writeText(getHexUIntLowercase(op->last_zxid), buf);
+            writeText(",lresp=", buf);
+            writeIntText(op->last_response_time, buf);
+
+            writeText(",llat=", buf);
+            writeIntText(stats.getLastLatency(), buf);
+            writeText(",minlat=", buf);
+            writeIntText(stats.getMinLatency(), buf);
+            writeText(",avglat=", buf);
+            writeIntText(stats.getAvgLatency(), buf);
+            writeText(",maxlat=", buf);
+            writeIntText(stats.getMaxLatency(), buf);
+        }
+    }
+    writeText(')', buf);
+    writeText('\n', buf);
+}
+
+void KeeperTCPHandler::resetStats()
+{
+    conn_stats.reset();
+    last_op.set(std::make_unique<LastOp>(EMPTY_LAST_OP));
+}
+
+KeeperTCPHandler::~KeeperTCPHandler()
+{
+    KeeperTCPHandler::unregisterConnection(this);
+}
+
+std::mutex KeeperTCPHandler::conns_mutex;
+std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
+
+void KeeperTCPHandler::registerConnection(KeeperTCPHandler * conn)
+{
+    std::lock_guard lock(conns_mutex);
+    connections.insert(conn);
+}
+
+void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
+{
+    std::lock_guard lock(conns_mutex);
+    connections.erase(conn);
+}
+
+void KeeperTCPHandler::dumpConnections(WriteBufferFromOwnString & buf, bool brief)
+{
+    std::lock_guard lock(conns_mutex);
+    for (auto * conn : connections)
+    {
+        conn->dumpStats(buf, brief);
+    }
+}
+
+void KeeperTCPHandler::resetConnsStats()
+{
+    std::lock_guard lock(conns_mutex);
+    for (auto * conn : connections)
+    {
+        conn->resetStats();
+    }
 }
 
 }

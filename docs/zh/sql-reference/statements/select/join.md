@@ -1,5 +1,6 @@
 ---
-toc_title: JOIN
+slug: /zh/sql-reference/statements/select/join
+sidebar_label: JOIN
 ---
 
 # JOIN子句 {#select-join}

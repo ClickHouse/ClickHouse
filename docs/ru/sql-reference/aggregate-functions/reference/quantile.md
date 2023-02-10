@@ -1,5 +1,6 @@
 ---
-toc_priority: 200
+slug: /ru/sql-reference/aggregate-functions/reference/quantile
+sidebar_position: 200
 ---
 
 # quantile {#quantile}
@@ -64,4 +65,3 @@ SELECT quantile(val) FROM t
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
-

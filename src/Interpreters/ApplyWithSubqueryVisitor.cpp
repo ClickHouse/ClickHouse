@@ -1,17 +1,24 @@
+#include <Common/checkStackSize.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 
+
 namespace DB
 {
+
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
+    checkStackSize();
+
     if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, data);
     else

@@ -1,26 +1,27 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 #include "PostgreSQLReplicationHandler.h"
 #include "MaterializedPostgreSQLSettings.h"
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <base/shared_ptr_helper.h>
 #include <memory>
 
 
 namespace DB
 {
+
+/** TODO list:
+ * - Actually I think we can support ddl even though logical replication does not fully support it.
+ *   But some basic ddl like adding/dropping columns, changing column type, column names -- is manageable.
+ */
 
 /** Case of single MaterializedPostgreSQL table engine.
  *
@@ -59,10 +60,8 @@ namespace DB
  *
 **/
 
-class StorageMaterializedPostgreSQL final : public shared_ptr_helper<StorageMaterializedPostgreSQL>, public IStorage, WithContext
+class StorageMaterializedPostgreSQL final : public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageMaterializedPostgreSQL>;
-
 public:
     StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
@@ -70,34 +69,47 @@ public:
     StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
                                 const String & postgres_database_name, const String & postgres_table_name);
 
-    String getName() const override { return "MaterializedPostgreSQL"; }
+    StorageMaterializedPostgreSQL(
+        const StorageID & table_id_,
+        bool is_attach_,
+        const String & remote_database_name,
+        const String & remote_table_name,
+        const postgres::ConnectionInfo & connection_info,
+        const StorageInMemoryMetadata & storage_metadata,
+        ContextPtr context_,
+        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
-    void startup() override;
+    String getName() const override { return "MaterializedPostgreSQL"; }
 
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
-    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
+    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
     NamesAndTypesList getVirtuals() const override;
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
     /// only once - when nested table is successfully created and is never changed afterwards.
     bool hasNested() { return has_nested.load(); }
 
-    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
+    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
+
+    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
+
+    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(const NamesAndTypesList & columns) const;
 
     StoragePtr getNested() const;
 
@@ -112,32 +124,15 @@ public:
 
     StorageID getNestedStorageID() const;
 
-    void setNestedStorageID(const StorageID & id) { nested_table_id.emplace(id); }
+    void set(StoragePtr nested_storage);
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
-    /// Get nested table (or throw if it does not exist), set in-memory metadata (taken from nested table)
-    /// for current table, set has_nested = true.
-    StoragePtr prepare();
-
     bool supportsFinal() const override { return true; }
-
-    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure);
-
-protected:
-    StorageMaterializedPostgreSQL(
-        const StorageID & table_id_,
-        bool is_attach_,
-        const String & remote_database_name,
-        const String & remote_table_name,
-        const postgres::ConnectionInfo & connection_info,
-        const StorageInMemoryMetadata & storage_metadata,
-        ContextPtr context_,
-        std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
-            const String name, const String type, UInt64 default_value);
+            String name, String type, UInt64 default_value);
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 

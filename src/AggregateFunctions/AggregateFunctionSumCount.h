@@ -8,18 +8,19 @@
 namespace DB
 {
 template <typename T>
-class AggregateFunctionSumCount final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionSumCount<T>>
+class AggregateFunctionSumCount final : public AggregateFunctionAvg<T>
 {
 public:
-    using Base = AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionSumCount<T>>;
+    using Base = AggregateFunctionAvg<T>;
 
-    AggregateFunctionSumCount(const DataTypes & argument_types_, UInt32 num_scale_ = 0)
-         : Base(argument_types_, num_scale_), scale(num_scale_) {}
+    explicit AggregateFunctionSumCount(const DataTypes & argument_types_, UInt32 num_scale_ = 0)
+        : Base(argument_types_, createResultType(num_scale_), num_scale_)
+    {}
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(UInt32 num_scale_)
     {
         auto second_elem = std::make_shared<DataTypeUInt64>();
-        return std::make_shared<DataTypeTuple>(DataTypes{getReturnTypeFirstElement(), std::move(second_elem)});
+        return std::make_shared<DataTypeTuple>(DataTypes{getReturnTypeFirstElement(num_scale_), std::move(second_elem)});
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const final
@@ -29,12 +30,6 @@ public:
 
         assert_cast<ColumnUInt64 &>((assert_cast<ColumnTuple &>(to)).getColumn(1)).getData().push_back(
             this->data(place).denominator);
-    }
-
-    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
-    {
-        this->data(place).numerator += static_cast<const ColumnVectorOrDecimal<T> &>(*columns[0]).getData()[row_num];
-        ++this->data(place).denominator;
     }
 
     String getName() const final { return "sumCount"; }
@@ -49,9 +44,7 @@ public:
 #endif
 
 private:
-    UInt32 scale;
-
-    auto getReturnTypeFirstElement() const
+    static auto getReturnTypeFirstElement(UInt32 num_scale_)
     {
         using FieldType = AvgFieldType<T>;
 
@@ -60,7 +53,7 @@ private:
         else
         {
             using DataType = DataTypeDecimal<FieldType>;
-            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
+            return std::make_shared<DataType>(DataType::maxPrecision(), num_scale_);
         }
     }
 };

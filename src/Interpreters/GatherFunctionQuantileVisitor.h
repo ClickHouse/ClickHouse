@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/IAST.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
+
+class ASTFunction;
 
 /// Gather all the `quantile*` functions
 class GatherFunctionQuantileData
@@ -24,6 +24,8 @@ public:
     std::unordered_map<String, FuseQuantileAggregatesData> fuse_quantile;
 
     void visit(ASTFunction & function, ASTPtr & ast);
+
+    static String toFusedNameOrSelf(const String & func_name);
 
     static String getFusedName(const String & func_name);
 

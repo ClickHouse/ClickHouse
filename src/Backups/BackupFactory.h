@@ -1,38 +1,54 @@
 #pragma once
 
+#include <Backups/IBackup.h>
+#include <Backups/BackupInfo.h>
 #include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
+#include <optional>
+#include <unordered_map>
 
 
 namespace DB
 {
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
-using BackupMutablePtr = std::shared_ptr<IBackup>;
+class IBackupCoordination;
 class Context;
-using ContextMutablePtr = std::shared_ptr<Context>;
-class IVolume;
-using VolumePtr = std::shared_ptr<IVolume>;
-
+using ContextPtr = std::shared_ptr<const Context>;
 
 /// Factory for implementations of the IBackup interface.
 class BackupFactory : boost::noncopyable
 {
 public:
+    using OpenMode = IBackup::OpenMode;
+
+    struct CreateParams
+    {
+        OpenMode open_mode = OpenMode::WRITE;
+        BackupInfo backup_info;
+        std::optional<BackupInfo> base_backup_info;
+        String compression_method;
+        int compression_level = -1;
+        String password;
+        ContextPtr context;
+        bool is_internal_backup = false;
+        std::shared_ptr<IBackupCoordination> backup_coordination;
+        std::optional<UUID> backup_uuid;
+        bool deduplicate_files = true;
+    };
+
     static BackupFactory & instance();
 
-    /// Must be called to initialize the backup factory.
-    void setBackupsVolume(VolumePtr backups_volume_);
+    /// Creates a new backup or opens it.
+    BackupMutablePtr createBackup(const CreateParams & params) const;
 
-    /// Creates a new backup and open it for writing.
-    BackupMutablePtr createBackup(const String & backup_name, UInt64 estimated_backup_size, const BackupPtr & base_backup = {}) const;
-
-    /// Opens an existing backup for reading.
-    BackupPtr openBackup(const String & backup_name, const BackupPtr & base_backup = {}) const;
+    using CreatorFn = std::function<BackupMutablePtr(const CreateParams & params)>;
+    void registerBackupEngine(const String & engine_name, const CreatorFn & creator_fn);
 
 private:
-    VolumePtr backups_volume;
+    BackupFactory();
+
+    std::unordered_map<String, CreatorFn> creators;
 };
 
 }

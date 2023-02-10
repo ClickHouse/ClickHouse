@@ -14,10 +14,12 @@
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
+#include <Access/Quota.h>
 #include <Access/QuotaUsage.h>
-#include <Access/User.h>
 #include <Access/Role.h>
+#include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
+#include <Access/User.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
@@ -25,7 +27,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <base/range.h>
-#include <boost/range/algorithm/sort.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -60,10 +62,7 @@ namespace
         }
 
         if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
-        {
             query->auth_data = user.auth_data;
-            query->show_password = attach_mode; /// We don't show password unless it's an ATTACH statement.
-        }
 
         if (!user.settings.empty())
         {
@@ -148,7 +147,7 @@ namespace
         query->names.emplace_back(quota.getName());
         query->attach = attach_mode;
 
-        if (quota.key_type != Quota::KeyType::NONE)
+        if (quota.key_type != QuotaKeyType::NONE)
             query->key_type = quota.key_type;
 
         query->all_limits.reserve(quota.all_limits.size());
@@ -158,8 +157,11 @@ namespace
             ASTCreateQuotaQuery::Limits create_query_limits;
             create_query_limits.duration = limits.duration;
             create_query_limits.randomize_interval = limits.randomize_interval;
-            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
-                create_query_limits.max[resource_type] = limits.max[resource_type];
+            for (auto quota_type : collections::range(QuotaType::MAX))
+            {
+                auto quota_type_i = static_cast<size_t>(quota_type);
+                create_query_limits.max[quota_type_i] = limits.max[quota_type_i];
+            }
             query->all_limits.push_back(create_query_limits);
         }
 
@@ -182,20 +184,20 @@ namespace
     {
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
         query->names = std::make_shared<ASTRowPolicyNames>();
-        query->names->name_parts.emplace_back(policy.getNameParts());
+        query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
 
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto type : collections::range(RowPolicy::MAX_CONDITION_TYPE))
+        for (auto type : collections::range(RowPolicyFilterType::MAX))
         {
-            const auto & condition = policy.conditions[static_cast<size_t>(type)];
-            if (!condition.empty())
+            const auto & filter = policy.filters[static_cast<size_t>(type)];
+            if (!filter.empty())
             {
                 ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-                query->conditions.emplace_back(type, std::move(expr));
+                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                query->filters.emplace_back(type, std::move(expr));
             }
         }
 
@@ -225,10 +227,8 @@ namespace
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
             return getCreateQueryImpl(*profile, access_control, attach_mode);
-        throw Exception(entity.outputTypeAndName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", entity.formatTypeWithName());
     }
-
-    using EntityType = IAccessEntity::Type;
 }
 
 
@@ -253,19 +253,12 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    WriteBufferFromOwnString create_query_buf;
     for (const auto & create_query : create_queries)
-    {
-        formatAST(*create_query, create_query_buf, false, true);
-        column->insert(create_query_buf.str());
-        create_query_buf.restart();
-    }
+        column->insert(create_query->formatWithSecretsHidden());
 
     /// Prepare description of the result column.
-    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    formatAST(show_query, desc_buf, false, true);
-    String desc = desc_buf.str();
+    String desc = serializeAST(show_query);
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
@@ -293,8 +286,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_user)
     {
-        if (auto user = getContext()->getUser())
-            entities.push_back(user);
+        entities.push_back(getContext()->getUser());
     }
     else if (show_query.current_quota)
     {
@@ -302,7 +294,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
         if (usage)
             entities.push_back(access_control.read<Quota>(usage->quota_id));
     }
-    else if (show_query.type == EntityType::ROW_POLICY)
+    else if (show_query.type == AccessEntityType::ROW_POLICY)
     {
         auto ids = access_control.findAll<RowPolicy>();
         if (show_query.row_policy_names)
@@ -338,7 +330,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
             entities.push_back(access_control.read(access_control.getID(show_query.type, name)));
     }
 
-    boost::range::sort(entities, IAccessEntity::LessByName{});
+    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByName{});
     return entities;
 }
 
@@ -374,13 +366,49 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
     AccessRightsElements res;
     switch (show_query.type)
     {
-        case EntityType::USER: res.emplace_back(AccessType::SHOW_USERS); return res;
-        case EntityType::ROLE: res.emplace_back(AccessType::SHOW_ROLES); return res;
-        case EntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES); return res;
-        case EntityType::ROW_POLICY: res.emplace_back(AccessType::SHOW_ROW_POLICIES); return res;
-        case EntityType::QUOTA: res.emplace_back(AccessType::SHOW_QUOTAS); return res;
-        case EntityType::MAX: break;
+        case AccessEntityType::USER:
+        {
+            res.emplace_back(AccessType::SHOW_USERS);
+            return res;
+        }
+        case AccessEntityType::ROLE:
+        {
+            res.emplace_back(AccessType::SHOW_ROLES);
+            return res;
+        }
+        case AccessEntityType::SETTINGS_PROFILE:
+        {
+            res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES);
+            return res;
+        }
+        case AccessEntityType::ROW_POLICY:
+        {
+            if (show_query.row_policy_names)
+            {
+                for (const auto & row_policy_name : show_query.row_policy_names->full_names)
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
+            }
+            else if (show_query.database_and_table_name)
+            {
+                if (show_query.database_and_table_name->second.empty())
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
+                else
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
+            }
+            else
+            {
+                res.emplace_back(AccessType::SHOW_ROW_POLICIES);
+            }
+            return res;
+        }
+        case AccessEntityType::QUOTA:
+        {
+            res.emplace_back(AccessType::SHOW_QUOTAS);
+            return res;
+        }
+        case AccessEntityType::MAX:
+            break;
     }
-    throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
 }

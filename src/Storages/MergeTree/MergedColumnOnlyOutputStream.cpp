@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteSettings.h>
 
 namespace DB
 {
@@ -10,7 +11,7 @@ namespace ErrorCodes
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    const MergeTreeDataPartPtr & data_part,
+    const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
     CompressionCodecPtr default_codec,
@@ -18,7 +19,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
@@ -26,21 +27,22 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     MergeTreeWriterSettings writer_settings(
         global_settings,
+        data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
-        index_granularity_info ? index_granularity_info->is_adaptive : data_part->storage.canUseAdaptiveGranularity(),
-        /* rewrite_primary_key = */false);
+        index_granularity_info ? index_granularity_info->mark_type.adaptive : data_part->storage.canUseAdaptiveGranularity(),
+        /* rewrite_primary_key = */ false);
 
     writer = data_part->getWriter(
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        std::move(writer_settings),
+        writer_settings,
         index_granularity);
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
     if (!writer_on_disk)
-        throw Exception("MergedColumnOnlyOutputStream supports only parts stored on disk", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergedColumnOnlyOutputStream supports only parts stored on disk");
 
     writer_on_disk->setWrittenOffsetColumns(offset_columns_);
 }
@@ -51,17 +53,17 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
+    new_serialization_infos.add(block);
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
+MergedColumnOnlyOutputStream::fillChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums,
-    bool sync)
+    MergeTreeData::DataPart::Checksums & all_checksums)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finish(checksums, sync);
+    writer->fillChecksums(checksums);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -70,14 +72,27 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
             projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
+    auto serialization_infos = new_part->getSerializationInfos();
+    serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+
     for (const String & removed_file : removed_files)
-        if (all_checksums.files.count(removed_file))
-            all_checksums.files.erase(removed_file);
+    {
+        new_part->getDataPartStorage().removeFileIfExists(removed_file);
 
-    new_part->setColumns(columns);
+        if (all_checksums.files.contains(removed_file))
+            all_checksums.files.erase(removed_file);
+    }
+
+    new_part->setColumns(columns, serialization_infos);
+
     return checksums;
+}
+
+void MergedColumnOnlyOutputStream::finish(bool sync)
+{
+    writer->finish(sync);
 }
 
 }

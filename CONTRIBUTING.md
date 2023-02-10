@@ -2,7 +2,13 @@
 
 ClickHouse is an open project, and you can contribute to it in many ways. You can help with ideas, code, or documentation. We appreciate any efforts that help us to make the project better.
 
-Thank you.
+Thank you!
+
+## Legal Info
+
+When you open your first pull-request to ClickHouse repo, a bot will invite you to accept ClickHouse Individual CLA (Contributor License Agreement). It is a simple few click process. For subsequent pull-requests the bot will check if you have already signed it and won't bother you again.
+
+Optionally, to make contributions even more tight legally, your employer as a legal entity may want to sign a ClickHouse Corporate CLA with ClickHouse, Inc. If you're interested to do so, contact us at [legal@clickhouse.com](mailto:legal@clickhouse.com).
 
 ## Technical Info
 

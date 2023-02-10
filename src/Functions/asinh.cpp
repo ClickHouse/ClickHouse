@@ -13,7 +13,7 @@ namespace
 
 }
 
-void registerFunctionAsinh(FunctionFactory & factory)
+REGISTER_FUNCTION(Asinh)
 {
     factory.registerFunction<FunctionAsinh>();
 }

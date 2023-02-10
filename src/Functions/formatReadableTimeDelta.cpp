@@ -51,28 +51,26 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
+                getName(), arguments.size());
 
         if (arguments.size() > 2)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at most 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at most 2.",
+                getName(), arguments.size());
 
         const IDataType & type = *arguments[0];
 
         if (!isNativeNumber(type))
-            throw Exception("Cannot format " + type.getName() + " as time delta", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() == 2)
         {
             const auto * maximum_unit_arg = arguments[1].get();
             if (!isStringOrFixedString(maximum_unit_arg))
-                throw Exception("Illegal type " + maximum_unit_arg->getName() + " of argument maximum_unit of function "
-                                + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
+                                maximum_unit_arg->getName(), getName());
         }
 
         return std::make_shared<DataTypeString>();
@@ -94,19 +92,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        StringRef maximum_unit_str;
+        std::string_view maximum_unit_str;
         if (arguments.size() == 2)
         {
             const ColumnPtr & maximum_unit_column = arguments[1].column;
             const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
             if (maximum_unit_const_col)
-                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0);
+                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0).toView();
         }
 
         Unit max_unit;
 
         /// Default means "use all available units".
-        if (maximum_unit_str.size == 0 || maximum_unit_str == "years")
+        if (maximum_unit_str.empty() || maximum_unit_str == "years")
             max_unit = Years;
         else if (maximum_unit_str == "months")
             max_unit = Months;
@@ -122,7 +120,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected value of maximum unit argument ({}) for function {}, the only allowed values are:"
                 " 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-                maximum_unit_str.toString(), getName());
+                maximum_unit_str, getName());
 
         auto col_to = ColumnString::create();
 
@@ -157,7 +155,7 @@ public:
                 switch (max_unit) /// A kind of Duff Device.
                 {
                     case Years:     processUnit(365 * 24 * 3600, " year", 5, value, buf_to, has_output); [[fallthrough]];
-                    case Months:    processUnit(30.5 * 24 * 3600, " month", 6, value, buf_to, has_output); [[fallthrough]];
+                    case Months:    processUnit(static_cast<UInt64>(30.5 * 24 * 3600), " month", 6, value, buf_to, has_output); [[fallthrough]];
                     case Days:      processUnit(24 * 3600, " day", 4, value, buf_to, has_output); [[fallthrough]];
                     case Hours:     processUnit(3600, " hour", 5, value, buf_to, has_output); [[fallthrough]];
                     case Minutes:   processUnit(60, " minute", 7, value, buf_to, has_output); [[fallthrough]];
@@ -188,7 +186,7 @@ public:
             return;
         }
 
-        UInt64 num_units = value / unit_size;
+        UInt64 num_units = static_cast<UInt64>(value / unit_size);
 
         if (!num_units)
         {
@@ -222,10 +220,9 @@ public:
 
 }
 
-void registerFunctionFormatReadableTimeDelta(FunctionFactory & factory)
+REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
     factory.registerFunction<FunctionFormatReadableTimeDelta>();
 }
 
 }
-

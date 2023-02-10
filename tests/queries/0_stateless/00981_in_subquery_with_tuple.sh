@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bug";
-$CLICKHOUSE_CLIENT --query="CREATE TABLE bug (d Date, s String) ENGINE = MergeTree(d, s, 8192)";
+$CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 --query="CREATE TABLE bug (d Date, s String) ENGINE = MergeTree(d, s, 8192)";
 $CLICKHOUSE_CLIENT --query="INSERT INTO bug VALUES ('2019-08-09', 'hello'), ('2019-08-10', 'world'), ('2019-08-11', 'world'), ('2019-08-12', 'hello')";
 
 #SET force_primary_key = 1;

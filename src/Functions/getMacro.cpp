@@ -27,15 +27,19 @@ class FunctionGetMacro : public IFunction
 {
 private:
     MultiVersion<Macros>::Version macros;
+    bool is_distributed;
 
 public:
     static constexpr auto name = "getMacro";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionGetMacro>(context->getMacros());
+        return std::make_shared<FunctionGetMacro>(context->getMacros(), context->isDistributed());
     }
 
-    explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}
+    explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_, bool is_distributed_)
+        : macros(std::move(macros_)), is_distributed(is_distributed_)
+    {
+    }
 
     String getName() const override
     {
@@ -46,10 +50,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
-    }
+    /// getMacro may return different values on different shards/replicas, so it's not constant for distributed query
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     size_t getNumberOfArguments() const override
     {
@@ -59,29 +61,25 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("The argument of function " + getName() + " must have String type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must have String type", getName());
         return std::make_shared<DataTypeString>();
     }
 
-    /** convertToFullColumn needed because in distributed query processing,
-      *    each server returns its own value.
-      */
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * arg_column = arguments[0].column.get();
         const ColumnString * arg_string = checkAndGetColumnConstData<ColumnString>(arg_column);
 
         if (!arg_string)
-            throw Exception("The argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant String", getName());
 
-        return result_type->createColumnConst(
-            input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()))->convertToFullColumnIfConst();
+        return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()));
     }
 };
 
 }
 
-void registerFunctionGetMacro(FunctionFactory & factory)
+REGISTER_FUNCTION(GetMacro)
 {
     factory.registerFunction<FunctionGetMacro>();
 }

@@ -1,5 +1,4 @@
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Transforms/SelectorInfo.h>
 
 namespace DB
 {
@@ -22,15 +21,34 @@ IMergingTransformBase::IMergingTransformBase(
 {
 }
 
+static InputPorts createPorts(const Blocks & blocks)
+{
+    InputPorts ports;
+    for (const auto & block : blocks)
+        ports.emplace_back(block);
+    return ports;
+}
+
+IMergingTransformBase::IMergingTransformBase(
+    const Blocks & input_headers,
+    const Block & output_header,
+    bool have_all_inputs_,
+    UInt64 limit_hint_)
+    : IProcessor(createPorts(input_headers), {output_header})
+    , have_all_inputs(have_all_inputs_)
+    , limit_hint(limit_hint_)
+{
+}
+
 void IMergingTransformBase::onNewInput()
 {
-    throw Exception("onNewInput is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "onNewInput is not implemented for {}", getName());
 }
 
 void IMergingTransformBase::addInput()
 {
     if (have_all_inputs)
-        throw Exception("IMergingTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IMergingTransform already have all inputs.");
 
     inputs.emplace_back(outputs.front().getHeader(), this);
     onNewInput();
@@ -39,7 +57,7 @@ void IMergingTransformBase::addInput()
 void IMergingTransformBase::setHaveAllInputs()
 {
     if (have_all_inputs)
-        throw Exception("IMergingTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IMergingTransform already have all inputs.");
 
     have_all_inputs = true;
 }
@@ -131,7 +149,7 @@ IProcessor::Status IMergingTransformBase::prepare()
         return Status::Finished;
     }
 
-    /// Do not disable inputs, so it will work in the same way as with AsynchronousBlockInputStream, like before.
+    /// Do not disable inputs, so they can be executed in parallel.
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
@@ -171,6 +189,10 @@ IProcessor::Status IMergingTransformBase::prepare()
 
             state.has_input = true;
         }
+        else
+        {
+            state.no_data = true;
+        }
 
         state.need_data = false;
     }
@@ -180,69 +202,5 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     return Status::Ready;
 }
-
-static void filterChunk(IMergingAlgorithm::Input & input, size_t selector_position)
-{
-    if (!input.chunk.getChunkInfo())
-        throw Exception("IMergingTransformBase expected ChunkInfo for input chunk", ErrorCodes::LOGICAL_ERROR);
-
-    const auto * chunk_info = typeid_cast<const SelectorInfo *>(input.chunk.getChunkInfo().get());
-    if (!chunk_info)
-        throw Exception("IMergingTransformBase expected SelectorInfo for input chunk", ErrorCodes::LOGICAL_ERROR);
-
-    const auto & selector = chunk_info->selector;
-
-    IColumn::Filter filter;
-    filter.resize_fill(selector.size());
-
-    size_t num_rows = input.chunk.getNumRows();
-    auto columns = input.chunk.detachColumns();
-
-    size_t num_result_rows = 0;
-
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        if (selector[row] == selector_position)
-        {
-            ++num_result_rows;
-            filter[row] = 1;
-        }
-    }
-
-    if (!filter.empty() && filter.back() == 0)
-    {
-        filter.back() = 1;
-        ++num_result_rows;
-        input.skip_last_row = true;
-    }
-
-    for (auto & column : columns)
-        column = column->filter(filter, num_result_rows);
-
-    input.chunk.clear();
-    input.chunk.setColumns(std::move(columns), num_result_rows);
-}
-
-void IMergingTransformBase::filterChunks()
-{
-    if (state.selector_position < 0)
-        return;
-
-    if (!state.init_chunks.empty())
-    {
-        for (size_t i = 0; i < input_states.size(); ++i)
-        {
-            auto & input = state.init_chunks[i];
-            if (!input.chunk)
-                continue;
-
-            filterChunk(input, state.selector_position);
-        }
-    }
-
-    if (state.has_input)
-        filterChunk(state.input_chunk, state.selector_position);
-}
-
 
 }

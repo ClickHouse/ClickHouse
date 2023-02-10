@@ -9,7 +9,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
 
@@ -82,6 +82,8 @@ public:
         String format_name;
         size_t max_threads;
         size_t min_chunk_bytes;
+        size_t max_block_size;
+        bool is_server;
     };
 
     explicit ParallelParsingInputFormat(Params params)
@@ -90,6 +92,8 @@ public:
         , file_segmentation_engine(params.file_segmentation_engine)
         , format_name(params.format_name)
         , min_chunk_bytes(params.min_chunk_bytes)
+        , max_block_size(params.max_block_size)
+        , is_server(params.is_server)
         , pool(params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
@@ -107,7 +111,7 @@ public:
 
     void resetParser() override final
     {
-        throw Exception("resetParser() is not allowed for " + getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
     }
 
     const BlockMissingValues & getMissingValues() const override final
@@ -117,7 +121,7 @@ public:
 
     String getName() const override final { return "ParallelParsingBlockInputFormat"; }
 
-protected:
+private:
 
     Chunk generate() override final;
 
@@ -136,8 +140,6 @@ protected:
 
         finishAndWait();
     }
-
-private:
 
     class InternalParser
     {
@@ -170,8 +172,8 @@ private:
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
                     case IProcessor::Status::ExpandPipeline:
-                        throw Exception("One of the parsers returned status " + IProcessor::statusToName(status) +
-                                             " during parallel parsing", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
+                                             IProcessor::statusToName(status));
                 }
             }
         }
@@ -188,6 +190,7 @@ private:
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const size_t min_chunk_bytes;
+    const size_t max_block_size;
 
     BlockMissingValues last_block_missing_values;
 
@@ -196,7 +199,19 @@ private:
     size_t segmentator_ticket_number{0};
     size_t reader_ticket_number{0};
 
+    /// Mutex for internal synchronization between threads
     std::mutex mutex;
+
+    /// finishAndWait can be called concurrently from
+    /// multiple threads. Atomic flag is not enough
+    /// because if finishAndWait called before destructor it can check the flag
+    /// and destroy object immediately.
+    std::mutex finish_and_wait_mutex;
+    /// We don't use parsing_finished flag because it can be setup from multiple
+    /// place in code. For example in case of bad data. It doesn't mean that we
+    /// don't need to finishAndWait our class.
+    bool finish_and_wait_called = false;
+
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
@@ -204,6 +219,8 @@ private:
 
     std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
+
+    const bool is_server;
 
     /// There are multiple "parsers", that's why we use thread pool.
     ThreadPool pool;
@@ -225,7 +242,7 @@ private:
 
     struct ProcessingUnit
     {
-        explicit ProcessingUnit()
+        ProcessingUnit()
             : status(ProcessingUnitStatus::READY_TO_INSERT)
         {
         }
@@ -261,10 +278,21 @@ private:
 
     void finishAndWait()
     {
+        /// Defending concurrent segmentator thread join
+        std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
+
+        /// We shouldn't execute this logic twice
+        if (finish_and_wait_called)
+            return;
+
+        finish_and_wait_called = true;
+
+        /// Signal background threads to finish
         parsing_finished = true;
 
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            /// Additionally notify condvars
+            std::lock_guard<std::mutex> lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
         }

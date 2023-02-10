@@ -1,9 +1,10 @@
 ---
-toc_priority: 9
-toc_title: EmbeddedRocksDB
+slug: /en/engines/table-engines/integrations/embedded-rocksdb
+sidebar_position: 9
+sidebar_label: EmbeddedRocksDB
 ---
 
-# EmbeddedRocksDB Engine {#EmbeddedRocksDB-engine}
+# EmbeddedRocksDB Engine
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 
@@ -15,11 +16,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = EmbeddedRocksDB PRIMARY KEY(primary_key_name)
+) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
 ```
 
-Required parameters:
+Engine parameters:
 
+- `ttl` - time to live for values. TTL is accepted in seconds. If TTL is 0, regular RocksDB instance is used (without TTL).
+- `rocksdb_dir` - path to the directory of an existed RocksDB or the destination path of the created RocksDB. Open the table with the specified `rocksdb_dir`.
+- `read_only` - when `read_only` is set to true, read-only mode is used. For storage with TTL, compaction will not be triggered (neither manual nor automatic), so no expired entries are removed.
 - `primary_key_name` – any column name in the column list.
 - `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
 - columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
@@ -33,7 +37,7 @@ CREATE TABLE test
     `key` String,
     `v1` UInt32,
     `v2` String,
-    `v3` Float32,
+    `v3` Float32
 )
 ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
@@ -80,5 +84,3 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
     </tables>
 </rocksdb>
 ```
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->

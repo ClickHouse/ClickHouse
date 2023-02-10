@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
@@ -16,29 +17,47 @@
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <base/scope_guard.h>
 extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
+
+/// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
         bool _allocations_flag_prev_val##n = memory_tracker_always_throw_logical_error_on_allocation; \
         memory_tracker_always_throw_logical_error_on_allocation = val; \
         SCOPE_EXIT({ memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
+
+/// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL(n, val) ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val)
+
+/// NOLINTNEXTLINE
 #define DENY_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, true)
+
+/// NOLINTNEXTLINE
 #define ALLOW_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, false)
 #else
 #define DENY_ALLOCATIONS_IN_SCOPE static_assert(true)
 #define ALLOW_ALLOCATIONS_IN_SCOPE static_assert(true)
 #endif
 
+struct OvercommitRatio;
+struct OvercommitTracker;
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
+  *
+  * @see LockMemoryExceptionInThread
+  * @see MemoryTrackerBlockerInThread
   */
 class MemoryTracker
 {
 private:
     std::atomic<Int64> amount {0};
     std::atomic<Int64> peak {0};
+    std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
+    std::atomic_bool allow_use_jemalloc_memory {true};
+
+    static std::atomic<Int64> free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
 
@@ -58,11 +77,21 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
+    std::atomic<std::chrono::microseconds> max_wait_time;
+
+    std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
+
+    bool log_peak_memory_usage_in_destructor = true;
+
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
+    /// allocImpl(...) and free(...) should not be used directly
+    friend struct CurrentMemoryTracker;
+    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
+    void free(Int64 size);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
@@ -74,26 +103,7 @@ public:
 
     VariableContext level;
 
-    /** Call the following functions before calling of corresponding operations with memory allocators.
-      */
-    void alloc(Int64 size);
-
-    void allocNoThrow(Int64 size);
-
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded);
-
-    void realloc(Int64 old_size, Int64 new_size)
-    {
-        Int64 addition = new_size - old_size;
-        if (addition > 0)
-            alloc(addition);
-        else
-            free(-addition);
-    }
-
-    /** This function should be called after memory deallocation.
-      */
-    void free(Int64 size);
+    void adjustWithUntrackedMemory(Int64 untracked_memory);
 
     Int64 get() const
     {
@@ -105,7 +115,21 @@ public:
         return peak.load(std::memory_order_relaxed);
     }
 
+    void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);
+
+    Int64 getHardLimit() const
+    {
+        return hard_limit.load(std::memory_order_relaxed);
+    }
+    Int64 getSoftLimit() const
+    {
+        return soft_limit.load(std::memory_order_relaxed);
+    }
+    void setAllowUseJemallocMemory(bool value)
+    {
+        allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
+    }
 
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
@@ -156,75 +180,39 @@ public:
         description_ptr.store(description, std::memory_order_relaxed);
     }
 
+    OvercommitRatio getOvercommitRatio();
+    OvercommitRatio getOvercommitRatio(Int64 limit);
+
+    std::chrono::microseconds getOvercommitWaitingTime()
+    {
+        return max_wait_time.load(std::memory_order_relaxed);
+    }
+
+    void setOvercommitWaitingTime(UInt64 wait_time);
+
+    void setOvercommitTracker(OvercommitTracker * tracker) noexcept
+    {
+        overcommit_tracker.store(tracker, std::memory_order_relaxed);
+    }
+
+    void resetOvercommitTracker() noexcept
+    {
+        overcommit_tracker.store(nullptr, std::memory_order_relaxed);
+    }
+
     /// Reset the accumulated data
     void resetCounters();
 
-    /// Reset the accumulated data and the parent.
+    /// Reset the accumulated data.
     void reset();
 
-    /// Reset current counter to a new value.
-    void set(Int64 to);
+    /// Reset current counter to an RSS value.
+    /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
+    /// We can free this arenas in case of exception to avoid OOM.
+    static void setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_);
 
     /// Prints info about peak memory consumption into log.
-    void logPeakMemoryUsage() const;
-
-    /// To be able to temporarily stop memory tracking from current thread.
-    struct BlockerInThread
-    {
-    private:
-        static thread_local uint64_t counter;
-        static thread_local VariableContext level;
-
-        VariableContext previous_level;
-    public:
-        /// level_ - block in level and above
-        explicit BlockerInThread(VariableContext level_ = VariableContext::User);
-        ~BlockerInThread();
-
-        BlockerInThread(const BlockerInThread &) = delete;
-        BlockerInThread & operator=(const BlockerInThread &) = delete;
-
-        static bool isBlocked(VariableContext current_level)
-        {
-            return counter > 0 && current_level >= level;
-        }
-    };
-
-    /// To be able to avoid MEMORY_LIMIT_EXCEEDED Exception in destructors:
-    /// - either configured memory limit reached
-    /// - or fault injected
-    ///
-    /// So this will simply ignore the configured memory limit (and avoid fault injection).
-    ///
-    /// NOTE: exception will be silently ignored, no message in log
-    /// (since logging from MemoryTracker::alloc() is tricky)
-    ///
-    /// NOTE: MEMORY_LIMIT_EXCEEDED Exception implicitly blocked if
-    /// stack unwinding is currently in progress in this thread (to avoid
-    /// std::terminate()), so you don't need to use it in this case explicitly.
-    struct LockExceptionInThread
-    {
-    private:
-        static thread_local uint64_t counter;
-        static thread_local VariableContext level;
-        static thread_local bool block_fault_injections;
-
-        VariableContext previous_level;
-        bool previous_block_fault_injections;
-    public:
-        /// level_ - block in level and above
-        /// block_fault_injections_ - block in fault injection too
-        explicit LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
-        ~LockExceptionInThread();
-
-        LockExceptionInThread(const LockExceptionInThread &) = delete;
-        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
-
-        static bool isBlocked(VariableContext current_level, bool fault_injection)
-        {
-            return counter > 0 && current_level >= level && (!fault_injection || block_fault_injections);
-        }
-    };
+    void logPeakMemoryUsage();
 };
 
 extern MemoryTracker total_memory_tracker;

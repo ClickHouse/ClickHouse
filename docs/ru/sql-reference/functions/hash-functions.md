@@ -1,6 +1,7 @@
 ---
-toc_priority: 50
-toc_title: "Функции хэширования"
+slug: /ru/sql-reference/functions/hash-functions
+sidebar_position: 50
+sidebar_label: "Функции хэширования"
 ---
 
 # Функции хэширования {#funktsii-kheshirovaniia}
@@ -13,7 +14,7 @@ Simhash – это хеш-функция, которая для близких �
 
 [Интерпретирует](../../sql-reference/functions/hash-functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш [MD5](https://ru.wikipedia.org/wiki/MD5) для каждой из них. Затем объединяет хэши, берет первые 8 байт хэша результирующей строки и интерпретирует их как значение типа `UInt64` с big-endian порядком байтов.
 
-``` sql
+```sql
 halfMD5(par1, ...)
 ```
 
@@ -30,11 +31,11 @@ halfMD5(par1, ...)
 
 **Пример**
 
-``` sql
+```sql
 SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type;
 ```
 
-``` text
+```response
 ┌────────halfMD5hash─┬─type───┐
 │ 186182704141653334 │ UInt64 │
 └────────────────────┴────────┘
@@ -54,7 +55,7 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 
 Генерирует 64-х битное значение [SipHash](https://131002.net/siphash/).
 
-``` sql
+```sql
 sipHash64(par1,...)
 ```
 
@@ -77,11 +78,11 @@ sipHash64(par1,...)
 
 **Пример**
 
-``` sql
+```sql
 SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
 ```
 
-``` text
+```response
 ┌──────────────SipHash─┬─type───┐
 │ 13726873534472839665 │ UInt64 │
 └──────────────────────┴────────┘
@@ -89,15 +90,45 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash128 {#hash_functions-siphash128}
 
-Вычисляет SipHash от строки.
-Принимает аргумент типа String. Возвращает FixedString(16).
-Отличается от sipHash64 тем, что финальный xor-folding состояния делается только до 128 бит.
+Генерирует 128-битное хеш-значение [SipHash](https://131002.net/siphash/). Отличается от [sipHash64](#hash_functions-siphash64) тем, что финальный xor-folding состояния делается до 128 бит.
+
+**Синтаксис**
+
+```sql
+sipHash128(par1,...)
+```
+
+**Аргументы**
+
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+
+**Возвращаемое значение**
+
+128-битное хеш-значение `SipHash`.
+
+Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT hex(sipHash128('foo', '\x01', 3));
+```
+
+Результат:
+
+```response
+┌─hex(sipHash128('foo', '', 3))────┐
+│ 9DE516A64A414D4B1B609415E4523F24 │
+└──────────────────────────────────┘
+```
 
 ## cityHash64 {#cityhash64}
 
 Генерирует 64-х битное значение [CityHash](https://github.com/google/cityhash).
 
-``` sql
+```sql
 cityHash64(par1,...)
 ```
 
@@ -115,11 +146,11 @@ cityHash64(par1,...)
 
 Пример вызова:
 
-``` sql
+```sql
 SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type;
 ```
 
-``` text
+```response
 ┌─────────────CityHash─┬─type───┐
 │ 12072650598913549138 │ UInt64 │
 └──────────────────────┴────────┘
@@ -127,7 +158,7 @@ SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 А вот так вы можете вычислить чексумму всей таблицы с точностью до порядка строк:
 
-``` sql
+```sql
 SELECT groupBitXor(cityHash64(*)) FROM table
 ```
 
@@ -147,7 +178,7 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 
 **Синтаксис**
 
-``` sql
+```sql
 SHA1('s')
 ...
 SHA512('s')
@@ -173,16 +204,54 @@ SHA512('s')
 
 Запрос:
 
-``` sql
+```sql
 SELECT hex(SHA1('abc'));
 ```
 
 Результат:
 
-``` text
+```response
 ┌─hex(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
+```
+
+## BLAKE3 {#blake3}
+
+Вычисляет BLAKE3 хеш строки и возвращает полученный набор байт в виде [FixedString](../data-types/fixedstring.md).
+
+**Синтаксис**
+
+```sql
+BLAKE3('s')
+```
+
+Данная криптографическая функция интегрирована в ClickHouse из Rust-библиотеки. Функция работает сравнительно быстро, показывая в 2 раза более быстрые результаты по сравнению с SHA-2, генерируя хеши аналогичной SHA-256 длины.
+
+**Параметры**
+
+- s - входная строка для вычисления хеша BLAKE3. [String](../data-types/string.md).
+
+**Возвращаемое значение**
+
+- Хеш BLAKE3 в виде шестнадцатеричной строки, имеющей тип FixedString(32).
+
+Тип: [FixedString](../data-types/fixedstring.md).
+
+**Пример**
+
+Используйте функцию [hex](../functions/encoding-functions.md#hex) для представления результата в виде строки с шестнадцатеричной кодировкой.
+
+Запрос:
+```sql
+SELECT hex(BLAKE3('ABC'))
+```
+
+Результат:
+```response
+┌─hex(BLAKE3('ABC'))───────────────────────────────────────────────┐
+│ D1717274597CF0289694F75D96D444B992A096F1AFD8E7BBFA6EBB1D360FEDFC │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## URLHash(url\[, N\]) {#urlhashurl-n}
@@ -198,7 +267,7 @@ SELECT hex(SHA1('abc'));
 
 Создает 64-битное значение [FarmHash](https://github.com/google/farmhash), независимое от платформы (архитектуры сервера), что важно, если значения сохраняются или используются для разбиения данных на группы.
 
-``` sql
+```sql
 farmFingerprint64(par1, ...)
 farmHash64(par1, ...)
 ```
@@ -215,11 +284,11 @@ farmHash64(par1, ...)
 
 **Пример**
 
-``` sql
+```sql
 SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type;
 ```
 
-``` text
+```response
 ┌─────────────FarmHash─┬─type───┐
 │ 17790458267262532859 │ UInt64 │
 └──────────────────────┴────────┘
@@ -229,7 +298,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки. `JavaHash` не отличается ни скоростью, ни качеством, поэтому эту функцию следует считать устаревшей. Используйте эту функцию, если вам необходимо получить значение хэша по такому же алгоритму.
 
-``` sql
+```sql
 SELECT javaHash('')
 ```
 
@@ -243,13 +312,13 @@ SELECT javaHash('')
 
 Запрос:
 
-``` sql
+```sql
 SELECT javaHash('Hello, world!');
 ```
 
 Результат:
 
-``` text
+```response
 ┌─javaHash('Hello, world!')─┐
 │               -1880044555 │
 └───────────────────────────┘
@@ -261,7 +330,7 @@ SELECT javaHash('Hello, world!');
 
 **Синтаксис**
 
-``` sql
+```sql
 javaHashUTF16LE(stringUtf16le)
 ```
 
@@ -281,13 +350,13 @@ javaHashUTF16LE(stringUtf16le)
 
 Запрос:
 
-``` sql
+```sql
 SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'));
 ```
 
 Результат:
 
-``` text
+```response
 ┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
 │                                                      3556498 │
 └──────────────────────────────────────────────────────────────┘
@@ -297,7 +366,7 @@ SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'));
 
 Вычисляет `HiveHash` от строки.
 
-``` sql
+```sql
 SELECT hiveHash('')
 ```
 
@@ -313,13 +382,13 @@ SELECT hiveHash('')
 
 Запрос:
 
-``` sql
+```sql
 SELECT hiveHash('Hello, world!');
 ```
 
 Результат:
 
-``` text
+```response
 ┌─hiveHash('Hello, world!')─┐
 │                 267439093 │
 └───────────────────────────┘
@@ -329,7 +398,7 @@ SELECT hiveHash('Hello, world!');
 
 Генерирует 64-х битное значение [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/).
 
-``` sql
+```sql
 metroHash64(par1, ...)
 ```
 
@@ -343,11 +412,11 @@ metroHash64(par1, ...)
 
 **Пример**
 
-``` sql
+```sql
 SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type;
 ```
 
-``` text
+```response
 ┌────────────MetroHash─┬─type───┐
 │ 14235658766382344533 │ UInt64 │
 └──────────────────────┴────────┘
@@ -363,7 +432,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 
 Генерирует значение [MurmurHash2](https://github.com/aappleby/smhasher).
 
-``` sql
+```sql
 murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
@@ -379,11 +448,11 @@ murmurHash2_64(par1, ...)
 
 **Пример**
 
-``` sql
+```sql
 SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;
 ```
 
-``` text
+```response
 ┌──────────MurmurHash2─┬─type───┐
 │ 11832096901709403633 │ UInt64 │
 └──────────────────────┴────────┘
@@ -395,7 +464,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 **Синтаксис**
 
-``` sql
+```sql
 gccMurmurHash(par1, ...);
 ```
 
@@ -413,7 +482,7 @@ gccMurmurHash(par1, ...);
 
 Запрос:
 
-``` sql
+```sql
 SELECT
     gccMurmurHash(1, 2, 3) AS res1,
     gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
@@ -421,7 +490,7 @@ SELECT
 
 Результат:
 
-``` text
+```response
 ┌─────────────────res1─┬────────────────res2─┐
 │ 12384823029245979431 │ 1188926775431157506 │
 └──────────────────────┴─────────────────────┘
@@ -431,7 +500,7 @@ SELECT
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
 
-``` sql
+```sql
 murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
@@ -447,11 +516,11 @@ murmurHash3_64(par1, ...)
 
 **Пример**
 
-``` sql
+```sql
 SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
-``` text
+```response
 ┌─MurmurHash3─┬─type───┐
 │     2152717 │ UInt32 │
 └─────────────┴────────┘
@@ -459,37 +528,45 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## murmurHash3_128 {#murmurhash3-128}
 
-Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
+Генерирует 128-битное хеш-значение [MurmurHash3](https://github.com/aappleby/smhasher).
 
-``` sql
-murmurHash3_128( expr )
+**Синтаксис**
+
+```sql
+murmurHash3_128(expr)
 ```
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/hash-functions.md).
+-   `expr` — список [выражений](../../sql-reference/syntax.md#syntax-expressions). [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
-Хэш-значение типа [FixedString(16)](../../sql-reference/functions/hash-functions.md).
+128-битное значение хеш-значение `MurmurHash3`.
+
+Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 **Пример**
 
-``` sql
-SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
+Запрос:
+
+```sql
+SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 ```
 
-``` text
-┌─MurmurHash3──────────────────────┬─type───┐
-│ 368A1A311CB7342253354B548E7E7E71 │ String │
-└──────────────────────────────────┴────────┘
+Результат:
+
+```response
+┌─hex(murmurHash3_128('foo', 'foo', 'foo'))─┐
+│ F8F7AD9B6CD4CF117A71E277E2EC2931          │
+└───────────────────────────────────────────┘
 ```
 
 ## xxHash32, xxHash64 {#hash-functions-xxhash32-xxhash64}
 
 Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
 
-``` sql
+```sql
 SELECT xxHash32('')
 
 OR
@@ -507,13 +584,13 @@ SELECT xxHash64('')
 
 Запрос:
 
-``` sql
+```sql
 SELECT xxHash32('Hello, world!');
 ```
 
 Результат:
 
-``` text
+```response
 ┌─xxHash32('Hello, world!')─┐
 │                 834093149 │
 └───────────────────────────┘
@@ -531,7 +608,7 @@ SELECT xxHash32('Hello, world!');
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramSimHash(string[, ngramsize])
 ```
 
@@ -550,13 +627,13 @@ ngramSimHash(string[, ngramsize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramSimHash('ClickHouse') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌───────Hash─┐
 │ 1627567969 │
 └────────────┘
@@ -570,7 +647,7 @@ SELECT ngramSimHash('ClickHouse') AS Hash;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramSimHashCaseInsensitive(string[, ngramsize])
 ```
 
@@ -589,13 +666,13 @@ ngramSimHashCaseInsensitive(string[, ngramsize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramSimHashCaseInsensitive('ClickHouse') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌──────Hash─┐
 │ 562180645 │
 └───────────┘
@@ -609,7 +686,7 @@ SELECT ngramSimHashCaseInsensitive('ClickHouse') AS Hash;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramSimHashUTF8(string[, ngramsize])
 ```
 
@@ -628,13 +705,13 @@ ngramSimHashUTF8(string[, ngramsize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌───────Hash─┐
 │ 1628157797 │
 └────────────┘
@@ -648,7 +725,7 @@ SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 ```
 
@@ -667,13 +744,13 @@ ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramSimHashCaseInsensitiveUTF8('ClickHouse') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌───────Hash─┐
 │ 1636742693 │
 └────────────┘
@@ -687,7 +764,7 @@ SELECT ngramSimHashCaseInsensitiveUTF8('ClickHouse') AS Hash;
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleSimHash(string[, shinglesize])
 ```
 
@@ -706,13 +783,13 @@ wordShingleSimHash(string[, shinglesize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌───────Hash─┐
 │ 2328277067 │
 └────────────┘
@@ -726,7 +803,7 @@ SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleSimHashCaseInsensitive(string[, shinglesize])
 ```
 
@@ -745,13 +822,13 @@ wordShingleSimHashCaseInsensitive(string[, shinglesize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleSimHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
@@ -765,7 +842,7 @@ SELECT wordShingleSimHashCaseInsensitive('ClickHouse® is a column-oriented data
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleSimHashUTF8(string[, shinglesize])
 ```
 
@@ -784,13 +861,13 @@ wordShingleSimHashUTF8(string[, shinglesize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleSimHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌───────Hash─┐
 │ 2328277067 │
 └────────────┘
@@ -804,7 +881,7 @@ SELECT wordShingleSimHashUTF8('ClickHouse® is a column-oriented database manage
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 ```
 
@@ -823,13 +900,13 @@ wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleSimHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Результат:
 
-``` text
+```response
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
@@ -843,7 +920,7 @@ SELECT wordShingleSimHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented 
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramMinHash(string[, ngramsize, hashnum])
 ```
 
@@ -863,13 +940,13 @@ ngramMinHash(string[, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHash('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple──────────────────────────────────────┐
 │ (18333312859352735453,9054248444481805918) │
 └────────────────────────────────────────────┘
@@ -883,7 +960,7 @@ SELECT ngramMinHash('ClickHouse') AS Tuple;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
 ```
 
@@ -903,13 +980,13 @@ ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHashCaseInsensitive('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple──────────────────────────────────────┐
 │ (2106263556442004574,13203602793651726206) │
 └────────────────────────────────────────────┘
@@ -922,7 +999,7 @@ SELECT ngramMinHashCaseInsensitive('ClickHouse') AS Tuple;
 Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
-``` sql
+```sql
 ngramMinHashUTF8(string[, ngramsize, hashnum])
 ```
 
@@ -942,13 +1019,13 @@ ngramMinHashUTF8(string[, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHashUTF8('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple──────────────────────────────────────┐
 │ (18333312859352735453,6742163577938632877) │
 └────────────────────────────────────────────┘
@@ -962,7 +1039,7 @@ SELECT ngramMinHashUTF8('ClickHouse') AS Tuple;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 ```
 
@@ -982,13 +1059,13 @@ ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHashCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple───────────────────────────────────────┐
 │ (12493625717655877135,13203602793651726206) │
 └─────────────────────────────────────────────┘
@@ -1000,7 +1077,7 @@ SELECT ngramMinHashCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramMinHashArg(string[, ngramsize, hashnum])
 ```
 
@@ -1020,13 +1097,13 @@ ngramMinHashArg(string[, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHashArg('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ous','ick','lic','Hou','kHo','use'),('Hou','lic','ick','ous','ckH','Cli')) │
 └───────────────────────────────────────────────────────────────────────────────┘
@@ -1038,7 +1115,7 @@ SELECT ngramMinHashArg('ClickHouse') AS Tuple;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
 ```
 
@@ -1058,13 +1135,13 @@ ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHashArgCaseInsensitive('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ous','ick','lic','kHo','use','Cli'),('kHo','lic','ick','ous','ckH','Hou')) │
 └───────────────────────────────────────────────────────────────────────────────┘
@@ -1076,7 +1153,7 @@ SELECT ngramMinHashArgCaseInsensitive('ClickHouse') AS Tuple;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramMinHashArgUTF8(string[, ngramsize, hashnum])
 ```
 
@@ -1096,13 +1173,13 @@ ngramMinHashArgUTF8(string[, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ous','ick','lic','Hou','kHo','use'),('kHo','Hou','lic','ick','ous','ckH')) │
 └───────────────────────────────────────────────────────────────────────────────┘
@@ -1114,7 +1191,7 @@ SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
 
 **Синтаксис**
 
-``` sql
+```sql
 ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
 ```
 
@@ -1134,13 +1211,13 @@ ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT ngramMinHashArgCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ckH','ous','ick','lic','kHo','use'),('kHo','lic','ick','ous','ckH','Hou')) │
 └───────────────────────────────────────────────────────────────────────────────┘
@@ -1154,7 +1231,7 @@ SELECT ngramMinHashArgCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHash(string[, shinglesize, hashnum])
 ```
 
@@ -1174,13 +1251,13 @@ wordShingleMinHash(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple──────────────────────────────────────┐
 │ (16452112859864147620,5844417301642981317) │
 └────────────────────────────────────────────┘
@@ -1194,7 +1271,7 @@ SELECT wordShingleMinHash('ClickHouse® is a column-oriented database management
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
 ```
 
@@ -1214,13 +1291,13 @@ wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────┐
 │ (3065874883688416519,1634050779997673240) │
 └───────────────────────────────────────────┘
@@ -1234,7 +1311,7 @@ SELECT wordShingleMinHashCaseInsensitive('ClickHouse® is a column-oriented data
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHashUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1254,13 +1331,13 @@ wordShingleMinHashUTF8(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple──────────────────────────────────────┐
 │ (16452112859864147620,5844417301642981317) │
 └────────────────────────────────────────────┘
@@ -1274,7 +1351,7 @@ SELECT wordShingleMinHashUTF8('ClickHouse® is a column-oriented database manage
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1294,13 +1371,13 @@ wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────┐
 │ (3065874883688416519,1634050779997673240) │
 └───────────────────────────────────────────┘
@@ -1312,7 +1389,7 @@ SELECT wordShingleMinHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented 
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHashArg(string[, shinglesize, hashnum])
 ```
 
@@ -1332,13 +1409,13 @@ wordShingleMinHashArg(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHashArg('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────────────────────────────────┐
 │ (('OLAP','database','analytical'),('online','oriented','processing')) │
 └───────────────────────────────────────────────────────────────────────┘
@@ -1350,7 +1427,7 @@ SELECT wordShingleMinHashArg('ClickHouse® is a column-oriented database managem
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
 ```
 
@@ -1370,13 +1447,13 @@ wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHashArgCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple──────────────────────────────────────────────────────────────────┐
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘
@@ -1388,7 +1465,7 @@ SELECT wordShingleMinHashArgCaseInsensitive('ClickHouse® is a column-oriented d
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1408,13 +1485,13 @@ wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHashArgUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple─────────────────────────────────────────────────────────────────┐
 │ (('OLAP','database','analytical'),('online','oriented','processing')) │
 └───────────────────────────────────────────────────────────────────────┘
@@ -1426,7 +1503,7 @@ SELECT wordShingleMinHashArgUTF8('ClickHouse® is a column-oriented database man
 
 **Синтаксис**
 
-``` sql
+```sql
 wordShingleMinHashArgCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1446,13 +1523,13 @@ wordShingleMinHashArgCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 
 Запрос:
 
-``` sql
+```sql
 SELECT wordShingleMinHashArgCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Результат:
 
-``` text
+```response
 ┌─Tuple──────────────────────────────────────────────────────────────────┐
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘

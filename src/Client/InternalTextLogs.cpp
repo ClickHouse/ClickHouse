@@ -105,7 +105,7 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
     const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
     const auto & array_type = typeid_cast<const ColumnInt8 &>(*block.getByName("type").column).getData();
     const auto & column_name = typeid_cast<const ColumnString &>(*block.getByName("name").column);
-    const auto & array_value = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+    const auto & array_value = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
     for (size_t row_num = 0; row_num < block.rows(); ++row_num)
     {
@@ -146,7 +146,7 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
         writeCString(": ", wb);
 
         /// value
-        UInt64 value = array_value[row_num];
+        Int64 value = array_value[row_num];
         writeIntText(value, wb);
 
         //// type

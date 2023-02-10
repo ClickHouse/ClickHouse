@@ -1,6 +1,7 @@
 ---
-toc_priority: 36
-toc_title: CollapsingMergeTree
+slug: /ru/engines/table-engines/mergetree-family/collapsingmergetree
+sidebar_position: 36
+sidebar_label: CollapsingMergeTree
 ---
 
 # CollapsingMergeTree {#table_engine-collapsingmergetree}
@@ -42,8 +43,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-!!! attention "Attention"
-    Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
+:::note "Attention"
+Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -58,7 +60,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 -   `sign` — Имя столбца с типом строки: `1` — строка состояния, `-1` — строка отмены состояния.
 
-        Тип данных столбца — `Int8`.
+    Тип данных столбца — `Int8`.
 
 </details>
 
@@ -303,4 +305,3 @@ select * FROM UAct
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
-

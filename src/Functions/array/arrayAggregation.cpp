@@ -1,11 +1,17 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
-#include "FunctionArrayMapped.h"
-#include <Functions/FunctionFactory.h>
 #include <base/defines.h>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsNumber.h>
+
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+
+#include <Functions/FunctionFactory.h>
+
+#include "FunctionArrayMapped.h"
 
 
 namespace DB
@@ -83,6 +89,9 @@ using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, ope
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -123,9 +132,8 @@ struct ArrayAggregateImpl
 
         if (!callOnIndexAndDataType<void>(expression_return->getTypeId(), call))
         {
-            throw Exception(
-                "array aggregation function cannot be performed on type " + expression_return->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregation function cannot be performed on type {}",
+                expression_return->getName());
         }
 
         return result;
@@ -157,11 +165,11 @@ struct ArrayAggregateImpl
                 return false;
 
             const AggregationType x = column_const->template getValue<Element>(); // NOLINT
-            const auto & data = checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
+            const ColVecType * column_typed = checkAndGetColumn<ColVecType>(&column_const->getDataColumn());
 
             typename ColVecResultType::MutablePtr res_column;
             if constexpr (is_decimal<Element>)
-                res_column = ColVecResultType::create(offsets.size(), data.getScale());
+                res_column = ColVecResultType::create(offsets.size(), column_typed->getScale());
             else
                 res_column = ColVecResultType::create(offsets.size());
 
@@ -174,7 +182,7 @@ struct ArrayAggregateImpl
                 {
                     size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
-                    res[i] = x * ResultType(array_size);
+                    res[i] = x * static_cast<ResultType>(array_size);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::min ||
                                 aggregate_operation == AggregateOperation::max)
@@ -185,7 +193,7 @@ struct ArrayAggregateImpl
                 {
                     if constexpr (is_decimal<Element>)
                     {
-                        res[i] = DecimalUtils::convertTo<ResultType>(x, data.getScale());
+                        res[i] = DecimalUtils::convertTo<ResultType>(x, column_typed->getScale());
                     }
                     else
                     {
@@ -210,11 +218,11 @@ struct ArrayAggregateImpl
                                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
                         }
 
-                        auto result_scale = data.getScale() * array_size;
+                        auto result_scale = column_typed->getScale() * array_size;
                         if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
-                        res[i] = DecimalUtils::convertTo<ResultType>(product, data.getScale() * array_size);
+                        res[i] = DecimalUtils::convertTo<ResultType>(product, static_cast<UInt32>(result_scale));
                     }
                     else
                     {
@@ -236,7 +244,7 @@ struct ArrayAggregateImpl
 
         typename ColVecResultType::MutablePtr res_column;
         if constexpr (is_decimal<Element>)
-            res_column = ColVecResultType::create(offsets.size(), data.getScale());
+            res_column = ColVecResultType::create(offsets.size(), column->getScale());
         else
             res_column = ColVecResultType::create(offsets.size());
 
@@ -309,7 +317,7 @@ struct ArrayAggregateImpl
                 if constexpr (is_decimal<Element>)
                 {
                     aggregate_value = aggregate_value / AggregationType(count);
-                    res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, data.getScale());
+                    res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, column->getScale());
                 }
                 else
                 {
@@ -318,12 +326,12 @@ struct ArrayAggregateImpl
             }
             else if constexpr (aggregate_operation == AggregateOperation::product && is_decimal<Element>)
             {
-                auto result_scale = data.getScale() * count;
+                auto result_scale = column->getScale() * count;
 
                 if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
 
-                res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, result_scale);
+                res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, static_cast<UInt32>(result_scale));
             }
             else
             {
@@ -359,7 +367,7 @@ struct ArrayAggregateImpl
             executeType<Decimal128>(mapped, offsets, res))
             return res;
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}" + mapped->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
     }
 };
 
@@ -378,7 +386,7 @@ using FunctionArrayAverage = FunctionArrayMapped<ArrayAggregateImpl<AggregateOpe
 struct NameArrayProduct { static constexpr auto name = "arrayProduct"; };
 using FunctionArrayProduct = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::product>, NameArrayProduct>;
 
-void registerFunctionArrayAggregation(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayAggregation)
 {
     factory.registerFunction<FunctionArrayMin>();
     factory.registerFunction<FunctionArrayMax>();

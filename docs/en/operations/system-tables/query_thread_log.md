@@ -1,4 +1,7 @@
-# system.query_thread_log {#system_tables-query_thread_log}
+---
+slug: /en/operations/system-tables/query_thread_log
+---
+# query_thread_log
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
@@ -115,5 +118,3 @@ ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'Compr
 
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 -   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/query_thread_log) <!--hide-->

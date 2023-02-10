@@ -30,7 +30,7 @@ private:
 
 public:
     AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_)
+        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
         , nested_func(nested_)
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
@@ -45,9 +45,24 @@ public:
         return nested_func->getName() + "Merge";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
     {
-        return nested_func->getReturnType();
+        return nested_->getResultType();
+    }
+
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     DataTypePtr getStateType() const override
@@ -63,6 +78,11 @@ public:
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_func->destroy(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_func->destroyUpToState(place);
     }
 
     bool hasTrivialDestructor() const override
@@ -90,14 +110,14 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        nested_func->serialize(place, buf);
+        nested_func->serialize(place, buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        nested_func->deserialize(place, buf, arena);
+        nested_func->deserialize(place, buf, version, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
@@ -111,6 +131,11 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
 };
 
 }

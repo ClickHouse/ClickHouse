@@ -4,6 +4,9 @@
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
+#include <Access/CachedAccessChecking.h>
+#include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
@@ -11,8 +14,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
+#include <base/sort.h>
 
 
 namespace DB
@@ -91,7 +94,7 @@ namespace
             return getGrantQueriesImpl(*user, access_control, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, access_control, attach_mode);
-        throw Exception(entity.outputTypeAndName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
     }
 
 }
@@ -135,19 +138,38 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
 
 std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 {
-    const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
+    const auto & access = getContext()->getAccess();
     const auto & access_control = getContext()->getAccessControl();
+
+    const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
     auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
+
+    CachedAccessChecking show_users(access, AccessType::SHOW_USERS);
+    CachedAccessChecking show_roles(access, AccessType::SHOW_ROLES);
+    bool throw_if_access_denied = !show_query.for_roles->all;
+
+    auto current_user = access->getUser();
+    auto roles_info = access->getRolesInfo();
 
     std::vector<AccessEntityPtr> entities;
     for (const auto & id : ids)
     {
         auto entity = access_control.tryRead(id);
-        if (entity)
+        if (!entity)
+            continue;
+
+        bool is_current_user = (id == access->getUserID());
+        bool is_enabled_or_granted_role = entity->isTypeOf<Role>()
+            && (current_user->granted_roles.isGranted(id) || roles_info->enabled_roles.contains(id));
+
+        if ((is_current_user /* Any user can see his own grants */)
+            || (is_enabled_or_granted_role /* and grants from the granted roles */)
+            || (entity->isTypeOf<User>() && show_users.checkAccess(throw_if_access_denied))
+            || (entity->isTypeOf<Role>() && show_roles.checkAccess(throw_if_access_denied)))
             entities.push_back(entity);
     }
 
-    boost::range::sort(entities, IAccessEntity::LessByTypeAndName{});
+    ::sort(entities.begin(), entities.end(), IAccessEntity::LessByTypeAndName{});
     return entities;
 }
 

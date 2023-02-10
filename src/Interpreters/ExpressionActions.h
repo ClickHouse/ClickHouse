@@ -7,7 +7,7 @@
 
 #include <variant>
 
-#include "config_core.h"
+#include "config.h"
 
 
 namespace DB
@@ -83,7 +83,6 @@ private:
 
 public:
     ExpressionActions() = delete;
-    ~ExpressionActions();
     explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
@@ -112,7 +111,7 @@ public:
     std::string dumpActions() const;
     JSONBuilder::ItemPtr toTree() const;
 
-    static std::string getSmallestColumn(const NamesAndTypesList & columns);
+    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
 
     /// Check if column is always zero. True if it's definite, false if we can't say for sure.
     /// Call it only after subqueries for sets were executed.
@@ -233,7 +232,7 @@ struct ExpressionActionsChain : WithContext
         NamesAndTypesList required_columns;
         ColumnsWithTypeAndName result_columns;
 
-        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
+        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, const ColumnsWithTypeAndName & required_columns_);
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
         void finalize(const NameSet & required_output_) override;
@@ -261,7 +260,7 @@ struct ExpressionActionsChain : WithContext
         {
             if (allow_empty)
                 return {};
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
         }
 
         return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_dag;
@@ -270,7 +269,7 @@ struct ExpressionActionsChain : WithContext
     Step & getLastStep()
     {
         if (steps.empty())
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
 
         return *steps.back();
     }

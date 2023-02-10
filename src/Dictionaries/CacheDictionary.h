@@ -4,16 +4,16 @@
 #include <chrono>
 #include <cmath>
 #include <mutex>
-#include <shared_mutex>
 #include <utility>
 #include <vector>
 
 #include <pcg_random.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
+#include <Common/SharedMutex.h>
 #include <Common/CurrentMetrics.h>
 
 #include <Dictionaries/IDictionary.h>
@@ -104,7 +104,7 @@ public:
                 allow_read_expired_keys);
     }
 
-    const IDictionarySource * getSource() const override;
+    DictionarySourcePtr getSource() const override;
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -172,7 +172,7 @@ private:
     /// MultiVersion is not used here because it works with constant pointers.
     /// For some reason almost all methods in IDictionarySource interface are
     /// not constant.
-    SharedDictionarySourcePtr getSourceAndUpdateIfNeeded() const
+    DictionarySourcePtr getSourceAndUpdateIfNeeded() const
     {
         std::lock_guard lock(source_mutex);
         if (error_count)
@@ -190,7 +190,7 @@ private:
 
     /// Dictionary source should be used with mutex
     mutable std::mutex source_mutex;
-    mutable SharedDictionarySourcePtr source_ptr;
+    mutable DictionarySourcePtr source_ptr TSA_GUARDED_BY(source_mutex);
 
     CacheDictionaryStoragePtr cache_storage_ptr;
     mutable CacheDictionaryUpdateQueue<dictionary_key_type> update_queue;
@@ -206,7 +206,7 @@ private:
     /// This lock is used for the inner cache state update function lock it for
     /// write, when it need to update cache state all other functions just
     /// readers. Surprisingly this lock is also used for last_exception pointer.
-    mutable std::shared_mutex rw_lock;
+    mutable SharedMutex rw_lock;
 
     mutable std::exception_ptr last_exception;
     mutable std::atomic<size_t> error_count {0};

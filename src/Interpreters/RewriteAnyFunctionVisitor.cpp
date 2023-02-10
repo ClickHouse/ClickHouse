@@ -1,11 +1,9 @@
 #include <Common/typeid_cast.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
@@ -43,8 +41,7 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
             // be inside `any`, but this check in GetAggregatesMatcher happens
             // later, so we have to explicitly skip these nested functions here.
             if (arg_func->is_window_function
-                || AggregateFunctionFactory::instance().isAggregateFunctionName(
-                    arg_func->name))
+                || AggregateUtils::isAggregateFunction(*arg_func))
             {
                 return false;
             }
@@ -65,7 +62,12 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
 void RewriteAnyFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
+    {
+        if (func->is_window_function)
+            return;
+
         visit(*func, ast, data);
+    }
 }
 
 void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
@@ -86,7 +88,7 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
         return;
 
     /// We have rewritten this function. Just unwrap its argument.
-    if (data.rewritten.count(ast.get()))
+    if (data.rewritten.contains(ast.get()))
     {
         func_arguments[0]->setAlias(func.alias);
         ast = func_arguments[0];

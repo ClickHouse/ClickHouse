@@ -1,0 +1,24 @@
+0	Value
+{
+	"meta":
+	[
+		{
+			"name": "dictGet(02154_test_dictionary, 'value', toUInt64(0))",
+			"type": "String"
+		},
+		{
+			"name": "dictGet(02154_test_dictionary, 'value', toUInt64(1))",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		{
+			"dictGet(02154_test_dictionary, 'value', toUInt64(0))": "Value",
+			"dictGet(02154_test_dictionary, 'value', toUInt64(1))": ""
+		}
+	],
+
+	"rows": 1
+}

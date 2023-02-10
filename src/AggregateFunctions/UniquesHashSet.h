@@ -59,7 +59,7 @@
 
 
 /** This hash function is not the most optimal, but UniquesHashSet states counted with it,
-  * stored in many places on disks (in the Yandex.Metrika), so it continues to be used.
+  * stored in many places on disks (in many companies), so it continues to be used.
   */
 struct UniquesHashSetDefaultHash
 {
@@ -105,8 +105,8 @@ private:
         }
     }
 
-    inline size_t buf_size() const           { return 1ULL << size_degree; }
-    inline size_t max_fill() const           { return 1ULL << (size_degree - 1); }
+    inline size_t buf_size() const           { return 1ULL << size_degree; } /// NOLINT
+    inline size_t max_fill() const           { return 1ULL << (size_degree - 1); } /// NOLINT
     inline size_t mask() const               { return buf_size() - 1; }
     inline size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
@@ -118,7 +118,7 @@ private:
 
     HashValue hash(Value key) const
     {
-        return Hash()(key);
+        return static_cast<HashValue>(Hash()(key));
     }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
@@ -304,8 +304,11 @@ public:
         memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
     }
 
-    UniquesHashSet & operator= (const UniquesHashSet & rhs)
+    UniquesHashSet & operator=(const UniquesHashSet & rhs)
     {
+        if (&rhs == this)
+            return *this;
+
         if (size_degree != rhs.size_degree)
         {
             free();
@@ -326,7 +329,7 @@ public:
         free();
     }
 
-    void insert(Value x)
+    void ALWAYS_INLINE insert(Value x)
     {
         HashValue hash_value = hash(x);
         if (!good(hash_value))
@@ -355,7 +358,7 @@ public:
           *   filled buckets with average of res is obtained.
           */
         size_t p32 = 1ULL << 32;
-        size_t fixed_res = round(p32 * (log(p32) - log(p32 - res)));
+        size_t fixed_res = static_cast<size_t>(round(p32 * (log(p32) - log(p32 - res))));
         return fixed_res;
     }
 
@@ -421,14 +424,30 @@ public:
 
         alloc(new_size_degree);
 
-        for (size_t i = 0; i < m_size; ++i)
+        if (m_size <= 1)
         {
-            HashValue x = 0;
-            DB::readIntBinary(x, rb);
-            if (x == 0)
-                has_zero = true;
-            else
-                reinsertImpl(x);
+            for (size_t i = 0; i < m_size; ++i)
+            {
+                HashValue x = 0;
+                DB::readIntBinary(x, rb);
+                if (x == 0)
+                    has_zero = true;
+                else
+                    reinsertImpl(x);
+            }
+        }
+        else
+        {
+            auto hs = std::make_unique<HashValue[]>(m_size);
+            rb.readStrict(reinterpret_cast<char *>(hs.get()), m_size * sizeof(HashValue));
+
+            for (size_t i = 0; i < m_size; ++i)
+            {
+                if (hs[i] == 0)
+                    has_zero = true;
+                else
+                    reinsertImpl(hs[i]);
+            }
         }
     }
 
@@ -455,11 +474,24 @@ public:
             resize(new_size_degree);
         }
 
-        for (size_t i = 0; i < rhs_size; ++i)
+        if (rhs_size <= 1)
         {
-            HashValue x = 0;
-            DB::readIntBinary(x, rb);
-            insertHash(x);
+            for (size_t i = 0; i < rhs_size; ++i)
+            {
+                HashValue x = 0;
+                DB::readIntBinary(x, rb);
+                insertHash(x);
+            }
+        }
+        else
+        {
+            auto hs = std::make_unique<HashValue[]>(rhs_size);
+            rb.readStrict(reinterpret_cast<char *>(hs.get()), rhs_size * sizeof(HashValue));
+
+            for (size_t i = 0; i < rhs_size; ++i)
+            {
+                insertHash(hs[i]);
+            }
         }
     }
 

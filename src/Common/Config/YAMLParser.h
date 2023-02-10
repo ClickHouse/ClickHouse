@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #include <string>
 
 #include <Poco/DOM/Document.h>
 #include "Poco/DOM/AutoPtr.h"
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #if USE_YAML_CPP
 

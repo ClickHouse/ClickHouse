@@ -1,6 +1,6 @@
-2020-01-01 00:00:00	DateTime	2020-01-01 00:01:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:04:00.220	DateTime64(3, \'Europe/Moscow\')	2020-01-01 00:05:00	DateTime	2020-01-01 00:06:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:06:00	DateTime
-2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:04:00.220	DateTime64(3, \'Europe/Moscow\')	2020-01-01 00:05:00	DateTime
-2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Europe/Moscow\')	2020-01-01 00:04:00.220	DateTime64(3, \'Europe/Moscow\')	2020-01-01 00:05:00	DateTime
+2020-01-01 00:00:00	DateTime	2020-01-01 00:01:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:04:00.220	DateTime64(3, \'Asia/Istanbul\')	2020-01-01 00:05:00	DateTime	2020-01-01 00:06:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:06:00	DateTime
+2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:04:00.220	DateTime64(3, \'Asia/Istanbul\')	2020-01-01 00:05:00	DateTime
+2020-01-01 00:00:00	DateTime	2020-01-01 00:02:00.11	DateTime64(2)	2020-01-01 00:03:00	DateTime(\'Asia/Istanbul\')	2020-01-01 00:04:00.220	DateTime64(3, \'Asia/Istanbul\')	2020-01-01 00:05:00	DateTime
 2020-01-01 00:00:00	DateTime
 parseDateTimeBestEffort
 2020-05-14 03:37:03.000	DateTime64(3, \'UTC\')
@@ -13,6 +13,8 @@ parseDateTimeBestEffort
 2020-05-14 03:37:03.253	DateTime64(3, \'UTC\')
 2020-05-14 06:37:03.253	DateTime64(3, \'Europe/Minsk\')
 2020-05-14 03:37:03.253	DateTime64(3, \'UTC\')
+2021-12-28 00:00:00.123	DateTime64(3, \'UTC\')
+2021-12-28 00:00:00	DateTime(\'UTC\')
 parseDateTimeBestEffortOrNull
 \N	Nullable(DateTime64(3))
 2020-05-14 03:37:03.000	Nullable(DateTime64(3, \'UTC\'))
@@ -25,6 +27,8 @@ parseDateTimeBestEffortOrNull
 2020-05-14 03:37:03.253	Nullable(DateTime64(3, \'UTC\'))
 2020-05-14 06:37:03.253	Nullable(DateTime64(3, \'Europe/Minsk\'))
 2020-05-14 03:37:03.253	Nullable(DateTime64(3, \'UTC\'))
+2021-12-28 00:00:00.123	Nullable(DateTime64(3, \'UTC\'))
+2021-12-28 00:00:00	Nullable(DateTime(\'UTC\'))
 parseDateTimeBestEffortOrZero
 1970-01-01 00:00:00.000	DateTime64(3, \'UTC\')
 2020-05-14 03:37:03.000	DateTime64(3, \'UTC\')
@@ -37,6 +41,8 @@ parseDateTimeBestEffortOrZero
 2020-05-14 03:37:03.253	DateTime64(3, \'UTC\')
 2020-05-14 06:37:03.253	DateTime64(3, \'Europe/Minsk\')
 2020-05-14 03:37:03.253	DateTime64(3, \'UTC\')
+2021-12-28 00:00:00.123	DateTime64(3, \'UTC\')
+2021-12-28 00:00:00	DateTime(\'UTC\')
 parseDateTime32BestEffort
 2020-05-14 03:37:03	DateTime(\'UTC\')
 2020-05-14 03:37:03	DateTime(\'UTC\')
@@ -48,6 +54,7 @@ parseDateTime32BestEffort
 2020-05-14 03:37:03	DateTime(\'UTC\')
 2020-05-14 06:37:03	DateTime(\'Europe/Minsk\')
 2020-05-14 03:37:03	DateTime(\'UTC\')
+2021-12-28 00:00:00	DateTime(\'UTC\')
 parseDateTime32BestEffortOrNull
 \N	Nullable(DateTime)
 2020-05-14 03:37:03	Nullable(DateTime(\'UTC\'))
@@ -60,6 +67,7 @@ parseDateTime32BestEffortOrNull
 2020-05-14 03:37:03	Nullable(DateTime(\'UTC\'))
 2020-05-14 06:37:03	Nullable(DateTime(\'Europe/Minsk\'))
 2020-05-14 03:37:03	Nullable(DateTime(\'UTC\'))
+2021-12-28 00:00:00	Nullable(DateTime(\'UTC\'))
 parseDateTime32BestEffortOrZero
 1970-01-01 00:00:00	DateTime(\'UTC\')
 2020-05-14 03:37:03	DateTime(\'UTC\')
@@ -72,3 +80,4 @@ parseDateTime32BestEffortOrZero
 2020-05-14 03:37:03	DateTime(\'UTC\')
 2020-05-14 06:37:03	DateTime(\'Europe/Minsk\')
 2020-05-14 03:37:03	DateTime(\'UTC\')
+2021-12-28 00:00:00	DateTime(\'UTC\')

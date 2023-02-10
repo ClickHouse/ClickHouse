@@ -24,6 +24,7 @@
 
 #include <base/unaligned.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -174,16 +175,14 @@ public:
                     const auto & offsets_from = col_from->getOffsets();
                     size_t size = offsets_from.size();
                     auto & vec_res = col_res->getData();
-                    vec_res.resize(size);
+                    vec_res.resize_fill(size);
 
                     size_t offset = 0;
                     for (size_t i = 0; i < size; ++i)
                     {
-                        ToFieldType value{};
-                        memcpy(&value,
+                        memcpy(&vec_res[i],
                             &data_from[offset],
                             std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
-                        vec_res[i] = value;
                         offset = offsets_from[i];
                     }
 
@@ -201,15 +200,18 @@ public:
                     size_t step = col_from_fixed->getN();
                     size_t size = data_from.size() / step;
                     auto & vec_res = col_res->getData();
-                    vec_res.resize(size);
 
                     size_t offset = 0;
                     size_t copy_size = std::min(step, sizeof(ToFieldType));
+
+                    if (sizeof(ToFieldType) <= step)
+                        vec_res.resize(size);
+                    else
+                        vec_res.resize_fill(size);
+
                     for (size_t i = 0; i < size; ++i)
                     {
-                        ToFieldType value{};
-                        memcpy(&value, &data_from[offset], copy_size);
-                        vec_res[i] = value;
+                        memcpy(&vec_res[i], &data_from[offset], copy_size);
                         offset += step;
                     }
 
@@ -286,9 +288,9 @@ private:
         ColumnFixedString::Offset offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            StringRef data = src.getDataAt(i);
+            std::string_view data = src.getDataAt(i).toView();
 
-            std::memcpy(&data_to[offset], data.data, std::min(n, data.size));
+            memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
             offset += n;
         }
     }
@@ -299,7 +301,7 @@ private:
         ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * rows);
 
-        memcpy(data_to.data(), src.getRawData().data, data_to.size());
+        memcpy(data_to.data(), src.getRawData().data(), data_to.size());
     }
 
     static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)
@@ -347,9 +349,12 @@ private:
         using To = typename ToContainer::value_type;
 
         size_t size = from.size();
-        to.resize_fill(size);
-
         static constexpr size_t copy_size = std::min(sizeof(From), sizeof(To));
+
+        if (sizeof(To) <= sizeof(From))
+            to.resize(size);
+        else
+            to.resize_fill(size);
 
         for (size_t i = 0; i < size; ++i)
             memcpy(static_cast<void*>(&to[i]), static_cast<const void*>(&from[i]), copy_size);
@@ -466,7 +471,7 @@ using FunctionReinterpretAsFixedString = FunctionReinterpretAs<DataTypeFixedStri
 
 }
 
-void registerFunctionsReinterpretAs(FunctionFactory & factory)
+REGISTER_FUNCTION(ReinterpretAs)
 {
     factory.registerFunction<FunctionReinterpretAsUInt8>();
     factory.registerFunction<FunctionReinterpretAsUInt16>();

@@ -1,14 +1,12 @@
 #include <unistd.h>
-#include <errno.h>
+#include <cerrno>
 #include <cassert>
-#include <sys/types.h>
 #include <sys/stat.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -20,6 +18,8 @@ namespace ProfileEvents
     extern const Event WriteBufferFromFileDescriptorWriteFailed;
     extern const Event WriteBufferFromFileDescriptorWriteBytes;
     extern const Event DiskWriteElapsedMicroseconds;
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -96,25 +96,37 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
+    finalize();
+}
+
+void WriteBufferFromFileDescriptor::finalizeImpl()
+{
     if (fd < 0)
     {
         assert(!offset() && "attempt to write after close");
         return;
     }
 
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     next();
 }
-
 
 void WriteBufferFromFileDescriptor::sync()
 {
     /// If buffer has pending data - write it.
     next();
 
+    ProfileEvents::increment(ProfileEvents::FileSync);
+
+    Stopwatch watch;
+
     /// Request OS to sync data with storage medium.
-    int res = fsync(fd);
+#if defined(OS_DARWIN)
+    int res = ::fsync(fd);
+#else
+    int res = ::fdatasync(fd);
+#endif
+    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
     if (-1 == res)
         throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
 }
@@ -128,7 +140,6 @@ off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence) // NOLINT
                                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
     return res;
 }
-
 
 void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 {

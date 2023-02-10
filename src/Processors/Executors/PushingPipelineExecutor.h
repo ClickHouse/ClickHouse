@@ -47,7 +47,7 @@ public:
 
 private:
     QueryPipeline & pipeline;
-    std::atomic_bool need_data_flag = false;
+    std::atomic_bool input_wait_flag = false;
     std::shared_ptr<PushingSource> pushing_source;
 
     PipelineExecutorPtr executor;

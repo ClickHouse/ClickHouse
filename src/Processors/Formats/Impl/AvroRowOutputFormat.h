@@ -1,5 +1,5 @@
 #pragma once
-#include "config_formats.h"
+#include "config.h"
 #if USE_AVRO
 #include <unordered_map>
 
@@ -9,9 +9,9 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
-#include <avro/DataFile.hh>
-#include <avro/Schema.hh>
-#include <avro/ValidSchema.hh>
+#include <DataFile.hh>
+#include <Schema.hh>
+#include <ValidSchema.hh>
 
 
 namespace DB
@@ -43,27 +43,26 @@ private:
     std::unique_ptr<AvroSerializerTraits> traits;
 };
 
-class AvroRowOutputFormat : public IRowOutputFormat
+class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_);
+    AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
     virtual ~AvroRowOutputFormat() override;
 
-    void consume(Chunk) override;
     String getName() const override { return "AvroRowOutputFormat"; }
+
+private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
     virtual void writePrefix() override;
-    virtual void writeSuffix() override;
+    virtual void finalizeImpl() override;
+    virtual void resetFormatterImpl() override;
 
-private:
+    void createFileWriter();
+
     FormatSettings settings;
     AvroSerializer serializer;
     std::unique_ptr<avro::DataFileWriterBase> file_writer_ptr;
-
-    void consumeImpl(Chunk);
-    void consumeImplWithCallback(Chunk);
-
 };
 
 }

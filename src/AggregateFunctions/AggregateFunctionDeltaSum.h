@@ -1,7 +1,6 @@
 #pragma once
 
 #include <type_traits>
-#include <experimental/type_traits>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -32,7 +31,7 @@ class AggregationFunctionDeltaSum final
 {
 public:
     AggregationFunctionDeltaSum(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{arguments, params}
+        : IAggregateFunctionDataHelper<AggregationFunctionDeltaSumData<T>, AggregationFunctionDeltaSum<T>>{arguments, params, createResultType()}
     {}
 
     AggregationFunctionDeltaSum()
@@ -41,7 +40,7 @@ public:
 
     String getName() const override { return "deltaSum"; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -102,7 +101,7 @@ public:
         // Otherwise lhs either has data or is uninitialized, so we don't need to modify its values.
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeIntBinary(this->data(place).sum, buf);
         writeIntBinary(this->data(place).first, buf);
@@ -110,7 +109,7 @@ public:
         writePODBinary<bool>(this->data(place).seen, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readIntBinary(this->data(place).sum, buf);
         readIntBinary(this->data(place).first, buf);

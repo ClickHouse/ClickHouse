@@ -2,9 +2,12 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/WithFileName.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/time.h>
 
 #include <functional>
+#include <utility>
 #include <string>
 
 #include <sys/stat.h>
@@ -18,13 +21,17 @@
 
 namespace DB
 {
-class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>
+
+class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileName, public WithFileSize
 {
 public:
     ReadBufferFromFileBase();
-    ReadBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment);
+    ReadBufferFromFileBase(
+        size_t buf_size,
+        char * existing_memory,
+        size_t alignment,
+        std::optional<size_t> file_size_ = std::nullopt);
     ~ReadBufferFromFileBase() override;
-    virtual std::string getFileName() const = 0;
 
     /// It is possible to get information about the time of each reading.
     struct ProfileInfo
@@ -43,7 +50,12 @@ public:
         clock_type = clock_type_;
     }
 
+    size_t getFileSize() override;
+
+    void setProgressCallback(ContextPtr context);
+
 protected:
+    std::optional<size_t> file_size;
     ProfileCallback profile_callback;
     clockid_t clock_type{};
 };

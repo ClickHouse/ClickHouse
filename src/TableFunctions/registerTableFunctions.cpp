@@ -19,21 +19,34 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionMongoDB(factory);
+
+    registerTableFunctionMeiliSearch(factory);
 
 #if USE_AWS_S3
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
+    registerTableFunctionHudi(factory);
+    registerTableFunctionDeltaLake(factory);
+    registerTableFunctionOSS(factory);
+
 #endif
 
 #if USE_HDFS
     registerTableFunctionHDFS(factory);
+    registerTableFunctionHDFSCluster(factory);
+#endif
+
+#if USE_HIVE
+    registerTableFunctionHive(factory);
 #endif
 
     registerTableFunctionODBC(factory);
     registerTableFunctionJDBC(factory);
 
     registerTableFunctionView(factory);
+    registerTableFunctionViewIfPermitted(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
@@ -48,6 +61,9 @@ void registerTableFunctions()
 #endif
 
     registerTableFunctionDictionary(factory);
+
+    registerTableFunctionFormat(factory);
+    registerTableFunctionExplain(factory);
 }
 
 }

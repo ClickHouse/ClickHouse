@@ -9,6 +9,8 @@
 #include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <base/types.h>
 
@@ -29,14 +31,15 @@ struct QueryViewsLogElement
     {
         DEFAULT = 1,
         MATERIALIZED = 2,
-        LIVE = 3
+        LIVE = 3,
+        WINDOW = 4,
     };
 
     struct ViewRuntimeStats
     {
         String target_name;
         ViewType type = ViewType::DEFAULT;
-        std::unique_ptr<ThreadStatus> thread_status = nullptr;
+        ThreadStatus * thread_status = nullptr;
         std::atomic_uint64_t elapsed_ms = 0;
         std::chrono::time_point<std::chrono::system_clock> event_time;
         ViewStatus event_status = ViewStatus::QUERY_START;
@@ -76,6 +79,7 @@ struct QueryViewsLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 

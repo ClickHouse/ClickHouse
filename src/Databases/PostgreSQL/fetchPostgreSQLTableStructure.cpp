@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
@@ -15,7 +16,7 @@
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <base/FnTraits.h>
-
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -30,13 +31,36 @@ namespace ErrorCodes
 template<typename T>
 std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
 {
-    std::set<String> tables;
-    std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                    "WHERE schemaname != 'pg_catalog' AND {}",
-                                    postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+    Names schemas;
+    boost::split(schemas, postgres_schema, [](char c){ return c == ','; });
+    for (String & key : schemas)
+        boost::trim(key);
 
-    for (auto table_name : tx.template stream<std::string>(query))
-        tables.insert(std::get<0>(table_name));
+    std::set<std::string> tables;
+    if (schemas.size() <= 1)
+    {
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+
+        for (auto table_name : tx.template stream<std::string>(query))
+            tables.insert(std::get<0>(table_name));
+
+        return tables;
+    }
+
+    /// We add schema to table name only in case of multiple schemas for the whole database engine.
+    /// Because there is no need to add it if there is only one schema.
+    /// If we add schema to table name then table can be accessed only this way: database_name.`schema_name.table_name`
+    for (const auto & schema : schemas)
+    {
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            quoteString(schema));
+
+        for (auto table_name : tx.template stream<std::string>(query))
+            tables.insert(schema + '.' + std::get<0>(table_name));
+    }
 
     return tables;
 }
@@ -76,6 +100,8 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
         res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
         res = std::make_shared<DataTypeDate>();
+    else if (type == "uuid")
+        res = std::make_shared<DataTypeUUID>();
     else if (type.starts_with("numeric"))
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
@@ -134,10 +160,11 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
 
 
 template<typename T>
-std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
-        T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
+PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
+    T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
 {
     auto columns = NamesAndTypes();
+    PostgreSQLTableStructure::Attributes attributes;
 
     try
     {
@@ -159,14 +186,22 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
             }
             else
             {
-                std::tuple<std::string, std::string, std::string, uint16_t> row;
+                std::tuple<std::string, std::string, std::string, uint16_t, std::string, std::string> row;
                 while (stream >> row)
                 {
-                    auto data_type = convertPostgreSQLDataType(std::get<1>(row),
-                                                               recheck_array,
-                                                               use_nulls && (std::get<2>(row) == "f"), /// 'f' means that postgres `not_null` is false, i.e. value is nullable
-                                                               std::get<3>(row));
+                    auto data_type = convertPostgreSQLDataType(
+                        std::get<1>(row), recheck_array,
+                        use_nulls && (std::get<2>(row) == /* not nullable */"f"),
+                        std::get<3>(row));
+
                     columns.push_back(NameAndTypePair(std::get<0>(row), data_type));
+
+                    attributes.emplace_back(
+                    PostgreSQLTableStructure::PGAttribute{
+                        .atttypid = parse<int>(std::get<4>(row)),
+                        .atttypmod = parse<int>(std::get<5>(row)),
+                    });
+
                     ++i;
                 }
             }
@@ -205,7 +240,9 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
         throw;
     }
 
-    return !columns.empty() ? std::make_shared<NamesAndTypesList>(columns.begin(), columns.end()) : nullptr;
+    return !columns.empty()
+        ? std::make_shared<PostgreSQLTableStructure::ColumnsInfo>(NamesAndTypesList(columns.begin(), columns.end()), std::move(attributes))
+        : nullptr;
 }
 
 
@@ -223,15 +260,16 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     std::string query = fmt::format(
            "SELECT attname AS name, format_type(atttypid, atttypmod) AS type, "
-           "attnotnull AS not_null, attndims AS dims "
+           "attnotnull AS not_null, attndims AS dims, atttypid as type_id, atttypmod as type_modifier "
            "FROM pg_attribute "
            "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
            "AND NOT attisdropped AND attnum > 0", where);
 
-    table.columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, false);
+    auto postgres_table_with_schema = postgres_schema.empty() ? postgres_table : doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(postgres_table);
+    table.physical_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, false);
 
-    if (!table.columns)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
+    if (!table.physical_columns)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_with_schema);
 
     if (with_primary_key)
     {
@@ -243,7 +281,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "AND a.attnum = ANY(i.indkey) "
                 "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
+        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -264,11 +302,13 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and a.attnum = ANY(ix.indkey) "
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
+            "{}"
             "and ix.indisreplident = 't' " /// index is is replica identity index
-            "ORDER BY a.attname", /// column names
-        quoteString(postgres_table));
+            "ORDER BY a.attname", /// column name
+            (postgres_schema.empty() ? "" : "and t.relnamespace = " + quoteString(postgres_schema)) + " ",
+            quoteString(postgres_table));
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
+        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);
     }
 
     return table;
@@ -308,7 +348,6 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         pqxx::nontransaction & tx, const String & postgres_table, const String & postrges_schema,
         bool use_nulls, bool with_primary_key, bool with_replica_identity_index);
 
-template
 std::set<String> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
 
 template

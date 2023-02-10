@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
-#include <QueryPipeline/PipelineResourcesHolder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {
@@ -41,13 +42,15 @@ public:
 
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
-    void attachResources(PipelineResourcesHolder holder_) { holder = std::move(holder_); }
-    PipelineResourcesHolder detachResources() { return std::move(holder); }
+    void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
+
+    void attachResources(QueryPlanResourceHolder holder_) { holder = std::move(holder_); }
+    QueryPlanResourceHolder detachResources() { return std::move(holder); }
 
     void reset();
 
 private:
-    PipelineResourcesHolder holder;
+    QueryPlanResourceHolder holder;
 
     /// -> source -> transform -> ... -> transform -> sink ->
     ///  ^        ->           ->     ->           ->       ^

@@ -2,14 +2,24 @@
 
 #include <Common/COW.h>
 #include <Core/Types.h>
+#include <base/demangle.h>
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <memory>
+#include <variant>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+class IDataType;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -22,18 +32,39 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+
 class Field;
 
 struct FormatSettings;
 struct NameAndTypePair;
 
+/** Represents serialization of data type.
+ *  Has methods to serialize/deserialize column in binary and several text formats.
+ *  Every data type has default serialization, but can be serialized in different representations.
+ *  Default serialization can be wrapped to one of the special kind of serializations.
+ *  Currently there is only one special serialization: Sparse.
+ *  Each serialization has its own implementation of IColumn as its in-memory representation.
+ */
 class ISerialization : private boost::noncopyable, public std::enable_shared_from_this<ISerialization>
 {
 public:
     ISerialization() = default;
     virtual ~ISerialization() = default;
 
+    enum class Kind : UInt8
+    {
+        DEFAULT = 0,
+        SPARSE = 1,
+    };
+
+    virtual Kind getKind() const { return Kind::DEFAULT; }
     SerializationPtr getPtr() const { return shared_from_this(); }
+
+    static Kind getKind(const IColumn & column);
+    static String kindToString(Kind kind);
+    static Kind stringToKind(const String & str);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -70,10 +101,34 @@ public:
 
     struct SubstreamData
     {
+        SubstreamData() = default;
+        SubstreamData(SerializationPtr serialization_)
+            : serialization(std::move(serialization_))
+        {
+        }
+
+        SubstreamData & withType(DataTypePtr type_)
+        {
+            type = std::move(type_);
+            return *this;
+        }
+
+        SubstreamData & withColumn(ColumnPtr column_)
+        {
+            column = std::move(column_);
+            return *this;
+        }
+
+        SubstreamData & withSerializationInfo(SerializationInfoPtr serialization_info_)
+        {
+            serialization_info = std::move(serialization_info_);
+            return *this;
+        }
+
+        SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
-        SerializationPtr serialization;
-        SubcolumnCreatorPtr creator;
+        SerializationInfoPtr serialization_info;
     };
 
     struct Substream
@@ -94,6 +149,9 @@ public:
             SparseElements,
             SparseOffsets,
 
+            ObjectStructure,
+            ObjectData,
+
             Regular,
         };
 
@@ -108,10 +166,13 @@ public:
         /// Data for current substream.
         SubstreamData data;
 
+        /// Creator of subcolumn for current substream.
+        SubcolumnCreatorPtr creator = nullptr;
+
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
-        Substream(Type type_) : type(type_) {}
+        Substream(Type type_) : type(type_) {} /// NOLINT
 
         String toString() const;
     };
@@ -127,15 +188,22 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
-    virtual void enumerateStreams(
-        SubstreamPath & path,
-        const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const;
+    struct EnumerateStreamsSettings
+    {
+        SubstreamPath path;
+        bool position_independent_encoding = true;
+    };
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
-    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
+    virtual void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const;
+
+    /// Enumerate streams with default settings.
+    void enumerateStreams(
+        const StreamCallback & callback,
+        const DataTypePtr & type = nullptr,
+        const ColumnPtr & column = nullptr) const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -181,7 +249,9 @@ public:
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    /// Column may be used only to retrieve the structure.
     virtual void serializeBinaryBulkStatePrefix(
+        const IColumn & /*column*/,
         SerializeBinaryBulkSettings & /*settings*/,
         SerializeBinaryBulkStatePtr & /*state*/) const {}
 
@@ -233,17 +303,17 @@ public:
       */
 
     /// There is two variants for binary serde. First variant work with Field.
-    virtual void serializeBinary(const Field & field, WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(Field & field, ReadBuffer & istr) const = 0;
+    virtual void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /// Other variants takes a column, to avoid creating temporary Field object.
     /// Column must be non-constant.
 
     /// Serialize one value of a column at specified row number.
-    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     /// Deserialize one value and insert into a column.
     /// If method will throw an exception, then column will be in same state as before call to method.
-    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization with escaping but without quoting.
       */
@@ -300,13 +370,43 @@ public:
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
-    static size_t getArrayLevel(const SubstreamPath & path);
 
+    static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+
+protected:
+    template <typename State, typename StatePtr>
+    State * checkAndGetState(const StatePtr & state) const;
+
+    [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
+using SerializationByName = std::unordered_map<String, SerializationPtr>;
+
+template <typename State, typename StatePtr>
+State * ISerialization::checkAndGetState(const StatePtr & state) const
+{
+    if (!state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Got empty state for {}", demangle(typeid(*this).name()));
+
+    auto * state_concrete = typeid_cast<State *>(state.get());
+    if (!state_concrete)
+    {
+        auto & state_ref = *state;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid State for {}. Expected: {}, got {}",
+                demangle(typeid(*this).name()),
+                demangle(typeid(State).name()),
+                demangle(typeid(state_ref).name()));
+    }
+
+    return state_concrete;
+}
+
+bool isOffsetsOfNested(const ISerialization::SubstreamPath & path);
 
 }

@@ -1,9 +1,8 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
-
 
 #include <zlib.h>
 
@@ -17,7 +16,7 @@ namespace ErrorCodes
 
 /// Reads compressed data from ReadBuffer in_ and performs decompression using zlib library.
 /// This buffer is able to seamlessly decompress multiple concatenated zlib streams.
-class ZlibInflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+class ZlibInflatingReadBuffer : public CompressedReadBufferWrapper
 {
 public:
     ZlibInflatingReadBuffer(
@@ -32,9 +31,8 @@ public:
 private:
     bool nextImpl() override;
 
-    std::unique_ptr<ReadBuffer> in;
     z_stream zstr;
-    bool eof;
+    bool eof_flag;
 };
 
 }

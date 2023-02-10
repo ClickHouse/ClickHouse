@@ -2,7 +2,10 @@
 
 #include <Server/IServer.h>
 
-#include <daemon/BaseDaemon.h>
+#include <Daemon/BaseDaemon.h>
+#include "Server/HTTP/HTTPContext.h"
+#include <Server/TCPProtocolStackFactory.h>
+#include <Poco/Net/HTTPServerParams.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
@@ -24,6 +27,8 @@ namespace Poco
 
 namespace DB
 {
+class AsynchronousMetrics;
+class ProtocolServerAdapter;
 
 class Server : public BaseDaemon, public IServer
 {
@@ -65,10 +70,50 @@ protected:
 
 private:
     ContextMutablePtr global_context;
-    Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
+    /// Updated/recent config, to compare http_handlers
+    ConfigurationPtr latest_config;
 
-    using CreateServerFunc = std::function<void(UInt16)>;
-    void createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func) const;
+    HTTPContextPtr httpContext() const;
+
+    Poco::Net::SocketAddress socketBindListen(
+        const Poco::Util::AbstractConfiguration & config,
+        Poco::Net::ServerSocket & socket,
+        const std::string & host,
+        UInt16 port,
+        [[maybe_unused]] bool secure = false) const;
+
+    std::unique_ptr<TCPProtocolStackFactory> buildProtocolStackFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & protocol,
+        Poco::Net::HTTPServerParams::Ptr http_params,
+        AsynchronousMetrics & async_metrics,
+        bool & is_secure);
+
+    using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
+    void createServer(
+        Poco::Util::AbstractConfiguration & config,
+        const std::string & listen_host,
+        const char * port_name,
+        bool listen_try,
+        bool start_server,
+        std::vector<ProtocolServerAdapter> & servers,
+        CreateServerFunc && func) const;
+
+    void createServers(
+        Poco::Util::AbstractConfiguration & config,
+        const Strings & listen_hosts,
+        const Strings & interserver_listen_hosts,
+        bool listen_try,
+        Poco::ThreadPool & server_pool,
+        AsynchronousMetrics & async_metrics,
+        std::vector<ProtocolServerAdapter> & servers,
+        bool start_servers = false);
+
+    void updateServers(
+        Poco::Util::AbstractConfiguration & config,
+        Poco::ThreadPool & server_pool,
+        AsynchronousMetrics & async_metrics,
+        std::vector<ProtocolServerAdapter> & servers);
 };
 
 }

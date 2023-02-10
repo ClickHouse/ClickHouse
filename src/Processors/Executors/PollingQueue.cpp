@@ -3,6 +3,7 @@
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
+#include <base/defines.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -31,14 +32,17 @@ PollingQueue::PollingQueue()
 
 PollingQueue::~PollingQueue()
 {
-    close(pipe_fd[0]);
-    close(pipe_fd[1]);
+    int err;
+    err = close(pipe_fd[0]);
+    chassert(!err || errno == EINTR);
+    err = close(pipe_fd[1]);
+    chassert(!err || errno == EINTR);
 }
 
 void PollingQueue::addTask(size_t thread_number, void * data, int fd)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
-    if (tasks.count(key))
+    if (tasks.contains(key))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};

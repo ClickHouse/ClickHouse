@@ -1,9 +1,9 @@
 ---
-toc_priority: 46
-toc_title: QUOTA
+slug: /en/sql-reference/statements/alter/quota
+sidebar_position: 46
+sidebar_label: QUOTA
+title: "ALTER QUOTA"
 ---
-
-# ALTER QUOTA {#alter-quota-statement}
 
 Changes quotas.
 

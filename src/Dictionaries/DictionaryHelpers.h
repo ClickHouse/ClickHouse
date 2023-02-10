@@ -9,6 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -186,7 +187,7 @@ private:
     DataTypes dictionary_attributes_types;
 };
 
-static inline void insertDefaultValuesIntoColumns(
+static inline void insertDefaultValuesIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     size_t row_index)
@@ -205,7 +206,7 @@ static inline void insertDefaultValuesIntoColumns(
 
 /// Deserialize column value and insert it in columns.
 /// Skip unnecessary columns that were not requested from deserialization.
-static inline void deserializeAndInsertIntoColumns(
+static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     const char * place_for_serialized_columns)
@@ -266,6 +267,14 @@ public:
         {
             return ColumnType::create(size);
         }
+        else if constexpr (std::is_same_v<DictionaryAttributeType, IPv4>)
+        {
+            return ColumnType::create(size);
+        }
+        else if constexpr (std::is_same_v<DictionaryAttributeType, IPv6>)
+        {
+            return ColumnType::create(size);
+        }
         else if constexpr (is_decimal<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
@@ -316,7 +325,7 @@ public:
             if (attribute_default_value.isNull())
                 default_value_is_null = true;
             else
-                default_value = attribute_default_value.get<NearestFieldType<DictionaryAttributeType>>();
+                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.get<DictionaryAttributeType>());
         }
         else
         {
@@ -411,7 +420,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            key_columns[0] = key_columns[0]->convertToFullColumnIfConst();
+            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -517,7 +526,7 @@ template <DictionaryKeyType dictionary_key_type>
 void mergeBlockWithPipe(
     size_t key_columns_size,
     Block & block_to_update,
-    Pipe pipe)
+    QueryPipeline pipeline)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
@@ -567,13 +576,13 @@ void mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    QueryPipeline pipeline(std::move(pipe));
-
     PullingPipelineExecutor executor(pipeline);
     Block block;
 
     while (executor.pull(block))
     {
+        convertToFullIfSparse(block);
+
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
 
@@ -633,7 +642,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = column->convertToFullColumnIfConst();
+    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)
@@ -669,6 +678,15 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
 }
 
 template <typename T>
+static ColumnPtr getColumnFromPODArray(PaddedPODArray<T> && array)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData() = std::move(array);
+
+    return column_vector;
+}
+
+template <typename T>
 static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array, size_t start, size_t length)
 {
     auto column_vector = ColumnVector<T>::create();
@@ -679,5 +697,3 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array, size_t s
 }
 
 }
-
-

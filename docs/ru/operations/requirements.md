@@ -1,6 +1,7 @@
 ---
-toc_priority: 44
-toc_title: "Требования"
+slug: /ru/operations/requirements
+sidebar_position: 44
+sidebar_label: "Требования"
 ---
 
 # Требования {#trebovaniia}

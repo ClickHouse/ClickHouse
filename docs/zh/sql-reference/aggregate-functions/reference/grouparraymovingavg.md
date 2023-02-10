@@ -1,5 +1,6 @@
 ---
-toc_priority: 114
+slug: /zh/sql-reference/aggregate-functions/reference/grouparraymovingavg
+sidebar_position: 114
 ---
 
 # groupArrayMovingAvg {#agg_function-grouparraymovingavg}

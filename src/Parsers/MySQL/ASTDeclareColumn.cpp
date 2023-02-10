@@ -1,12 +1,12 @@
 #include <Parsers/MySQL/ASTDeclareColumn.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ParserDataType.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/MySQL/ASTDeclareConstraint.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/MySQL/ASTDeclareReference.h>
-#include <Parsers/MySQL/ASTDeclareConstraint.h>
+#include <Parsers/ParserDataType.h>
 
 namespace DB
 {
@@ -52,6 +52,7 @@ static inline bool parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, 
             OptionDescribe("KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("COMMENT", "comment", std::make_unique<ParserStringLiteral>()),
             OptionDescribe("CHARACTER SET", "charset_name", std::make_unique<ParserCharsetOrCollateName>()),
+             OptionDescribe("CHARSET", "charset", std::make_unique<ParserCharsetOrCollateName>()),
             OptionDescribe("COLLATE", "collate", std::make_unique<ParserCharsetOrCollateName>()),
             OptionDescribe("COLUMN_FORMAT", "column_format", std::make_unique<ParserIdentifier>()),
             OptionDescribe("STORAGE", "storage", std::make_unique<ParserIdentifier>()),
@@ -59,6 +60,7 @@ static inline bool parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, 
             OptionDescribe("GENERATED ALWAYS AS", "generated", std::make_unique<ParserExpression>()),
             OptionDescribe("STORED", "is_stored", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("VIRTUAL", "is_stored", std::make_unique<ParserAlwaysFalse>()),
+            OptionDescribe("INVISIBLE", "", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("", "reference", std::make_unique<ParserDeclareReference>()),
             OptionDescribe("", "constraint", std::make_unique<ParserDeclareConstraint>()),
         }

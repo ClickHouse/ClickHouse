@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -29,71 +30,79 @@ namespace ErrorCodes
 Suggest::Suggest()
 {
     /// Keywords may be not up to date with ClickHouse parser.
-    words = {"CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
-             "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
-             "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
-             "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
-             "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
-             "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
-             "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
-             "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
-             "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
-             "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
-             "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
-             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-             "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
+    addWords({
+        "CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
+        "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
+        "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
+        "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
+        "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
+        "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
+        "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
+        "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
+        "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
+        "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
+        "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
+        "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
+        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",
+    });
 }
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
-    WriteBufferFromOwnString query;
-    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
-        "SELECT name FROM system.functions"
-        " UNION ALL "
-        "SELECT name FROM system.table_engines"
-        " UNION ALL "
-        "SELECT name FROM system.formats"
-        " UNION ALL "
-        "SELECT name FROM system.table_functions"
-        " UNION ALL "
-        "SELECT name FROM system.data_type_families"
-        " UNION ALL "
-        "SELECT name FROM system.merge_tree_settings"
-        " UNION ALL "
-        "SELECT name FROM system.settings"
-        " UNION ALL ";
+    String query;
+
+    auto add_subquery = [&](std::string_view select, std::string_view result_column_name)
+    {
+        if (!query.empty())
+            query += " UNION ALL ";
+        query += fmt::format("SELECT * FROM viewIfPermitted({} ELSE null('{} String'))", select, result_column_name);
+    };
+
+    auto add_column = [&](std::string_view column_name, std::string_view table_name, bool distinct, std::optional<Int64> limit)
+    {
+        add_subquery(
+            fmt::format(
+                "SELECT {}{} FROM system.{}{}",
+                (distinct ? "DISTINCT " : ""),
+                column_name,
+                table_name,
+                (limit ? (" LIMIT " + std::to_string(*limit)) : "")),
+            column_name);
+    };
+
+    add_column("name", "functions", false, {});
+    add_column("name", "table_engines", false, {});
+    add_column("name", "formats", false, {});
+    add_column("name", "table_functions", false, {});
+    add_column("name", "data_type_families", false, {});
+    add_column("name", "merge_tree_settings", false, {});
+    add_column("name", "settings", false, {});
+
     if (!basic_suggestion)
     {
-        query << "SELECT cluster FROM system.clusters"
-                 " UNION ALL "
-                 "SELECT macro FROM system.macros"
-                 " UNION ALL "
-                 "SELECT policy_name FROM system.storage_policies"
-                 " UNION ALL ";
+        add_column("cluster", "clusters", false, {});
+        add_column("macro", "macros", false, {});
+        add_column("policy_name", "storage_policies", false, {});
     }
-    query << "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+
+    add_subquery("SELECT concat(func.name, comb.name) AS x FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate", "x");
+
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
     if (suggestion_limit > 0)
     {
-        String limit_str = toString(suggestion_limit);
-        query << " UNION ALL "
-                 "SELECT name FROM system.databases LIMIT " << limit_str
-              << " UNION ALL "
-                 "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
-              << " UNION ALL ";
-
+        add_column("name", "databases", false, suggestion_limit);
+        add_column("name", "tables", true, suggestion_limit);
         if (!basic_suggestion)
         {
-            query << "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
-                  << " UNION ALL ";
+            add_column("name", "dictionaries", true, suggestion_limit);
         }
-        query << "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
+        add_column("name", "columns", true, suggestion_limit);
     }
-    query << ") WHERE notEmpty(res)";
 
-    return query.str();
+    query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
+    return query;
 }
 
 template <typename ConnectionType>
@@ -101,6 +110,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 {
     loading_thread = std::thread([context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
+        ThreadStatus thread_status;
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
@@ -113,35 +123,31 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
 
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                /// We should not use std::cerr here, because this method works concurrently with the main thread.
+                /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
+
+                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+                out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                out.next();
             }
             catch (...)
             {
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+                out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                out.next();
             }
 
             break;
         }
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
-
-        std::sort(words.begin(), words.end());
-        words_no_case = words;
-        std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
-        {
-            return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
-            {
-                return std::tolower(char1) < std::tolower(char2);
-            });
-        });
-
-        ready = true;
     });
 }
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false);
+    connection.sendQuery(
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
 
     while (true)
     {
@@ -153,15 +159,10 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 continue;
 
             case Protocol::Server::Progress:
-                continue;
             case Protocol::Server::ProfileInfo:
-                continue;
             case Protocol::Server::Totals:
-                continue;
             case Protocol::Server::Extremes:
-                continue;
             case Protocol::Server::Log:
-                continue;
             case Protocol::Server::ProfileEvents:
                 continue;
 
@@ -185,13 +186,18 @@ void Suggest::fillWordsFromBlock(const Block & block)
         return;
 
     if (block.columns() != 1)
-        throw Exception("Wrong number of columns received for query to read words for suggestion", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns received for query to read words for suggestion");
 
     const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
 
     size_t rows = block.rows();
+
+    Words new_words;
+    new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
-        words.emplace_back(column.getDataAt(i).toString());
+        new_words.emplace_back(column[i].get<String>());
+
+    addWords(std::move(new_words));
 }
 
 template

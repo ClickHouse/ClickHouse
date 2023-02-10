@@ -18,13 +18,18 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_storages_system
         clickhouse_table_functions
         string_utils
-        jemalloc
 
     ${LINK_RESOURCE_LIB}
 
     PUBLIC
         daemon
 )
+if (TARGET ch_contrib::jemalloc)
+    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::jemalloc)
+endif()
+if (TARGET ch_contrib::azure_sdk)
+    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::azure_sdk)
+endif()
 
 clickhouse_program_add(server)
 
@@ -32,6 +37,6 @@ install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse
 
 clickhouse_embed_binaries(
     TARGET clickhouse_server_configs
-    RESOURCES config.xml users.xml embedded.xml play.html
+    RESOURCES config.xml users.xml embedded.xml play.html dashboard.html js/uplot.js
 )
 add_dependencies(clickhouse-server-lib clickhouse_server_configs)

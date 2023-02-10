@@ -6,11 +6,17 @@
 
 namespace DB
 {
-size_t EnabledRowPolicies::Hash::operator()(const MixedConditionKey & key) const
+
+bool RowPolicyFilter::empty() const
 {
-    return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.condition_type);
+    bool value;
+    return !expression || (tryGetLiteralBool(expression.get(), value) && value);
 }
 
+size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
+{
+    return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.filter_type);
+}
 
 EnabledRowPolicies::EnabledRowPolicies() : params()
 {
@@ -23,36 +29,46 @@ EnabledRowPolicies::EnabledRowPolicies(const Params & params_) : params(params_)
 EnabledRowPolicies::~EnabledRowPolicies() = default;
 
 
-ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & table_name, ConditionType condition_type) const
+RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     /// We don't lock `mutex` here.
-    auto loaded = map_of_mixed_conditions.load();
-    auto it = loaded->find({database, table_name, condition_type});
+    auto loaded = mixed_filters.load();
+    auto it = loaded->find({database, table_name, filter_type});
     if (it == loaded->end())
         return {};
 
-    auto condition = it->second.ast;
-
-    bool value;
-    if (tryGetLiteralBool(condition.get(), value) && value)
-        return nullptr; /// The condition is always true, no need to check it.
-
-    return condition;
+    return it->second;
 }
 
-ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & table_name, ConditionType type, const ASTPtr & extra_condition) const
+RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
-    ASTPtr condition = getCondition(database, table_name, type);
-    if (condition && extra_condition)
-        condition = makeASTForLogicalAnd({condition, extra_condition});
-    else if (!condition)
-        condition = extra_condition;
+    RowPolicyFilterPtr filter = getFilter(database, table_name, filter_type);
+    if (filter && combine_with_filter)
+    {
+        auto new_filter = std::make_shared<RowPolicyFilter>(*filter);
 
-    bool value;
-    if (tryGetLiteralBool(condition.get(), value) && value)
-        return nullptr;  /// The condition is always true, no need to check it.
+        if (filter->empty())
+        {
+            new_filter->expression = combine_with_filter->expression;
+        }
+        else if (combine_with_filter->empty())
+        {
+            new_filter->expression = filter->expression;
+        }
+        else
+        {
+            new_filter->expression = makeASTForLogicalAnd({filter->expression, combine_with_filter->expression});
+        }
 
-    return condition;
+        std::copy(combine_with_filter->policies.begin(), combine_with_filter->policies.end(), std::back_inserter(new_filter->policies));
+        filter = new_filter;
+    }
+    else if (!filter)
+    {
+        filter = combine_with_filter;
+    }
+
+    return filter;
 }
 
 }

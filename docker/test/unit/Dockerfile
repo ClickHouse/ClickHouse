@@ -1,5 +1,7 @@
+# rebuild in #33610
 # docker build -t clickhouse/unit-test .
-FROM clickhouse/stateless-test
+ARG FROM_TAG=latest
+FROM clickhouse/stateless-test:$FROM_TAG
 
 RUN apt-get install gdb
 

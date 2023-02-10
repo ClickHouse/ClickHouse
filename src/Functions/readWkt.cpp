@@ -41,8 +41,7 @@ public:
     {
         if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
         {
-            throw Exception("First argument should be String",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
         }
 
         return DataTypeFactory::instance().get(DataTypeName().getName());
@@ -55,7 +54,7 @@ public:
         Serializer serializer;
         Geometry geometry;
 
-        for (size_t i = 0; i < input_rows_count; i++)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto & str = column_string->getDataAt(i).toString();
             boost::geometry::read_wkt(str, geometry);
@@ -96,7 +95,7 @@ struct ReadWKTMultiPolygonNameHolder
     static constexpr const char * name = "readWKTMultiPolygon";
 };
 
-void registerFunctionReadWKT(FunctionFactory & factory)
+REGISTER_FUNCTION(ReadWKT)
 {
     factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();

@@ -21,6 +21,7 @@ public:
         const std::vector<TableWithColumnNamesAndTypes> & tables;
         const Aliases & aliases;
         bool done = false;
+        bool try_to_keep_original_names = false;
     };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &);

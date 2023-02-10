@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 
 namespace DB
@@ -61,14 +62,14 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
 Pipe StorageSystemReplicas::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -149,16 +150,33 @@ Pipe StorageSystemReplicas::read(
         col_engine = filtered_block.getByName("engine").column;
     }
 
-    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
 
-    for (size_t i = 0, size = col_database->size(); i < size; ++i)
+    size_t tables_size = col_database->size();
+    std::vector<ReplicatedTableStatus> statuses(tables_size);
+
+    size_t thread_pool_size = std::min(tables_size, static_cast<size_t>(getNumberOfPhysicalCPUCores()));
+    auto settings = context->getSettingsRef();
+    if (settings.max_threads != 0)
+        thread_pool_size = std::min(thread_pool_size, static_cast<size_t>(settings.max_threads));
+
+    ThreadPool thread_pool(thread_pool_size);
+
+    for (size_t i = 0; i < tables_size; ++i)
     {
-        StorageReplicatedMergeTree::Status status;
-        dynamic_cast<StorageReplicatedMergeTree &>(
+        thread_pool.scheduleOrThrowOnError([&, i=i]
+        {
+            dynamic_cast<StorageReplicatedMergeTree &>(
             *replicated_tables
                 [(*col_database)[i].safeGet<const String &>()]
-                [(*col_table)[i].safeGet<const String &>()]).getStatus(status, with_zk_fields);
+                [(*col_table)[i].safeGet<const String &>()]).getStatus(statuses[i], with_zk_fields);
+        });
+    }
 
+    thread_pool.wait();
+
+    for (const auto & status: statuses)
+    {
         size_t col_num = 3;
         res_columns[col_num++]->insert(status.is_leader);
         res_columns[col_num++]->insert(status.can_become_leader);
@@ -203,8 +221,6 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(std::move(replica_is_active_values));
     }
 
-    Block header = metadata_snapshot->getSampleBlock();
-
     Columns fin_columns;
     fin_columns.reserve(res_columns.size());
 
@@ -218,7 +234,7 @@ Pipe StorageSystemReplicas::read(
     UInt64 num_rows = fin_columns.at(0)->size();
     Chunk chunk(std::move(fin_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(storage_snapshot->metadata->getSampleBlock(), std::move(chunk)));
 }
 
 

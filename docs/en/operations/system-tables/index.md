@@ -1,9 +1,11 @@
 ---
-toc_priority: 52
-toc_title: System Tables
+slug: /en/operations/system-tables/
+sidebar_position: 52
+sidebar_label: Overview
+pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
 ---
 
-# System Tables {#system-tables}
+# System Tables
 
 ## Introduction {#system-tables-introduction}
 
@@ -71,4 +73,9 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 -   `OSReadBytes`
 -   `OSWriteBytes`
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->
+## Related content
+
+- Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
+- Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+- Blog: [Essential monitoring queries - part 2 - SELECT queries](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+

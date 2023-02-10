@@ -1,38 +1,47 @@
+# rebuild in #33610
 # docker build -t clickhouse/stateless-test .
-FROM clickhouse/test-base
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
-RUN echo "deb [trusted=yes] http://repo.mysql.com/apt/ubuntu/ bionic mysql-5.7" >> /etc/apt/sources.list \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8C718D3B5072E1F5
-
+# golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
+            awscli \
             brotli \
+            lz4 \
             expect \
-            zstd \
+            golang \
             lsof \
+            mysql-client=8.0* \
             ncdu \
             netcat-openbsd \
+            nodejs \
+            npm \
+            openjdk-11-jre-headless \
             openssl \
+            postgresql-client \
             protobuf-compiler \
             python3 \
             python3-lxml \
+            python3-pip \
             python3-requests \
             python3-termcolor \
-            python3-pip \
             qemu-user-static \
+            sqlite3 \
             sudo \
-            # golang version 1.13 on Ubuntu 20 is enough for tests
-            golang \
             telnet \
             tree \
             unixodbc \
             wget \
-            mysql-client=5.7* \
-            postgresql-client \
-            sqlite3
+            rustc \
+            cargo \
+            zstd \
+            file \
+            pv \
+    && apt-get clean
 
 RUN pip3 install numpy scipy pandas Jinja2
 
@@ -49,16 +58,31 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
+# Unrelated to vars in setup_minio.sh, but should be the same there
+# to have the same binaries for local running scenario
+ARG MINIO_SERVER_VERSION=2022-01-03T18-22-58Z
+ARG MINIO_CLIENT_VERSION=2022-01-05T23-52-51Z
+ARG TARGETARCH
 
 # Download Minio-related binaries
-RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' \
-    && chmod +x ./minio \
-    && wget 'https://dl.min.io/client/mc/release/linux-amd64/mc' \
-    && chmod +x ./mc
+RUN arch=${TARGETARCH:-amd64} \
+    && wget "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -O ./minio \
+    && wget "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -O ./mc \
+    && chmod +x ./mc ./minio
+
+
+RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
+    && tar -xvf hadoop-3.3.1.tar.gz \
+    && rm -rf hadoop-3.3.1.tar.gz
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
+ENV EXPORT_S3_STORAGE_POLICIES=1
+
+RUN npm install -g azurite
+RUN npm install tslib
 
 COPY run.sh /
 COPY setup_minio.sh /
+COPY setup_hdfs_minicluster.sh /
 CMD ["/bin/bash", "/run.sh"]

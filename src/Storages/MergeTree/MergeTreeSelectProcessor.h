@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -13,12 +14,12 @@ namespace DB
 /// Used to read data from single part with select query
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeSelectProcessor : public MergeTreeBaseSelectProcessor
+class MergeTreeSelectAlgorithm : public IMergeTreeSelectAlgorithm
 {
 public:
-    MergeTreeSelectProcessor(
+    MergeTreeSelectAlgorithm(
         const MergeTreeData & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
@@ -29,19 +30,18 @@ public:
         const PrewhereInfoPtr & prewhere_info,
         ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings,
+        MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
         bool has_limit_below_one_block_ = false);
 
-    ~MergeTreeSelectProcessor() override;
-
-    /// Closes readers and unlock part locks
-    void finish();
+    ~MergeTreeSelectAlgorithm() override;
 
 protected:
     /// Defer initialization from constructor, because it may be heavy
-    /// and it's better to do it lazily in `getNewTask`, which is executing in parallel.
+    /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
     void initializeReaders();
+    void finish() final;
 
     /// Used by Task
     Names required_columns;
@@ -64,6 +64,9 @@ protected:
     /// If true, every task will be created only with one range.
     /// It reduces amount of read data for queries with small LIMIT.
     bool has_limit_below_one_block = false;
+
+    /// Pool for reading in order
+    MergeTreeInOrderReadPoolParallelReplicasPtr pool;
 
     size_t total_rows = 0;
 };

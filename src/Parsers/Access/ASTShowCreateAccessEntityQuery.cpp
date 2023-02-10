@@ -8,9 +8,6 @@ namespace DB
 {
 namespace
 {
-    using EntityType = IAccessEntity::Type;
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
-
     void formatNames(const Strings & names, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
@@ -28,7 +25,7 @@ String ASTShowCreateAccessEntityQuery::getKeyword() const
 {
     size_t total_count = (names.size()) + (row_policy_names ? row_policy_names->size() : 0) + current_user + current_quota;
     bool multiple = (total_count != 1) || all || !short_name.empty() || database_and_table_name;
-    const auto & type_info = EntityTypeInfo::get(type);
+    const auto & type_info = AccessEntityTypeInfo::get(type);
     return multiple ? type_info.plural_name : type_info.name;
 }
 
@@ -41,7 +38,12 @@ String ASTShowCreateAccessEntityQuery::getID(char) const
 
 ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 {
-    return std::make_shared<ASTShowCreateAccessEntityQuery>(*this);
+    auto res = std::make_shared<ASTShowCreateAccessEntityQuery>(*this);
+
+    if (row_policy_names)
+        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
+
+    return res;
 }
 
 

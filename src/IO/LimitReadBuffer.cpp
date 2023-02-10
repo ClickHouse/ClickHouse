@@ -22,14 +22,15 @@ bool LimitReadBuffer::nextImpl()
     if (bytes >= limit)
     {
         if (throw_exception)
-            throw Exception("Limit for LimitReadBuffer exceeded: " + exception_message, ErrorCodes::LIMIT_EXCEEDED);
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Limit for LimitReadBuffer exceeded: {}", exception_message);
         else
             return false;
     }
 
     if (!in->next())
     {
-        working_buffer = in->buffer();
+        /// Clearing the buffer with existing data.
+        set(in->position(), 0);
         return false;
     }
 

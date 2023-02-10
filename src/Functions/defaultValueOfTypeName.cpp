@@ -48,8 +48,8 @@ public:
     {
         const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
         if (!col_type_const || !isString(arguments.front().type))
-            throw Exception("The argument of function " + getName() + " must be a constant string describing type.",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
+                getName());
 
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
@@ -63,7 +63,7 @@ public:
 
 }
 
-void registerFunctionDefaultValueOfTypeName(FunctionFactory & factory)
+REGISTER_FUNCTION(DefaultValueOfTypeName)
 {
     factory.registerFunction<FunctionDefaultValueOfTypeName>();
 }

@@ -1,21 +1,9 @@
 {
-    "docker/packager/deb": {
-        "name": "clickhouse/deb-builder",
-        "dependent": [
-            "docker/packager/unbundled"
-        ]
-    },
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
         "dependent": [
-            "docker/test/split_build_smoke_test",
-            "docker/test/pvs",
             "docker/test/codebrowser"
         ]
-    },
-    "docker/packager/unbundled": {
-        "name": "clickhouse/unbundled-builder",
-        "dependent": []
     },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
@@ -37,13 +25,10 @@
         "name": "clickhouse/performance-comparison",
         "dependent": []
     },
-    "docker/test/pvs": {
-        "name": "clickhouse/pvs-test",
-        "dependent": []
-    },
     "docker/test/util": {
         "name": "clickhouse/test-util",
         "dependent": [
+            "docker/packager/binary",
             "docker/test/base",
             "docker/test/fasttest"
         ]
@@ -52,7 +37,6 @@
         "name": "clickhouse/stateless-test",
         "dependent": [
             "docker/test/stateful",
-            "docker/test/coverage",
             "docker/test/unit"
         ]
     },
@@ -62,10 +46,6 @@
             "docker/test/stress"
         ]
     },
-    "docker/test/coverage": {
-        "name": "clickhouse/test-coverage",
-        "dependent": []
-    },
     "docker/test/unit": {
         "name": "clickhouse/unit-test",
         "dependent": []
@@ -74,20 +54,13 @@
         "name": "clickhouse/stress-test",
         "dependent": []
     },
-    "docker/test/split_build_smoke_test": {
-        "name": "clickhouse/split-build-smoke-test",
-        "dependent": []
-    },
     "docker/test/codebrowser": {
         "name": "clickhouse/codebrowser",
         "dependent": []
     },
     "docker/test/integration/runner": {
+        "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
-        "dependent": []
-    },
-    "docker/test/testflows/runner": {
-        "name": "clickhouse/testflows-runner",
         "dependent": []
     },
     "docker/test/fasttest": {
@@ -114,6 +87,10 @@
         "name": "clickhouse/mysql-golang-client",
         "dependent": []
     },
+    "docker/test/integration/dotnet_client": {
+        "name": "clickhouse/dotnet-client",
+        "dependent": []
+    },
     "docker/test/integration/mysql_java_client": {
         "name": "clickhouse/mysql-java-client",
         "dependent": []
@@ -131,6 +108,7 @@
         "dependent": []
     },
     "docker/test/integration/kerberos_kdc": {
+        "only_amd64": true,
         "name": "clickhouse/kerberos-kdc",
         "dependent": []
     },
@@ -138,24 +116,13 @@
          "name": "clickhouse/test-base",
          "dependent": [
             "docker/test/stateless",
-            "docker/test/stateless_unbundled",
             "docker/test/integration/base",
             "docker/test/fuzzer",
             "docker/test/keeper-jepsen"
          ]
     },
-    "docker/packager/unbundled": {
-         "name": "clickhouse/unbundled-builder",
-         "dependent": [
-            "docker/test/stateless_unbundled"
-         ]
-    },
-    "docker/test/stateless_unbundled": {
-         "name": "clickhouse/stateless-unbundled-test",
-         "dependent": [
-         ]
-    },
     "docker/test/integration/kerberized_hadoop": {
+        "only_amd64": true,
         "name": "clickhouse/kerberized-hadoop",
         "dependent": []
     },
@@ -167,16 +134,18 @@
         "name": "clickhouse/keeper-jepsen-test",
         "dependent": []
     },
+    "docker/test/install/deb": {
+        "name": "clickhouse/install-deb-test",
+        "dependent": []
+    },
+    "docker/test/install/rpm": {
+        "name": "clickhouse/install-rpm-test",
+        "dependent": []
+    },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
         "dependent": [
-            "docker/docs/check",
-            "docker/docs/release"
         ]
-    },
-    "docker/docs/check": {
-        "name": "clickhouse/docs-check",
-        "dependent": []
     },
     "docker/docs/release": {
         "name": "clickhouse/docs-release",

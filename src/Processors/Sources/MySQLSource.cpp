@@ -1,7 +1,8 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #include <vector>
+#include <Core/MySQL/MySQLReplication.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,8 +17,9 @@
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -53,8 +55,8 @@ MySQLSource::MySQLSource(
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : SourceWithProgress(sample_block.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLBlockInputStream"))
+    : ISource(sample_block.cloneEmpty())
+    , log(&Poco::Logger::get("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
 {
@@ -62,10 +64,10 @@ MySQLSource::MySQLSource(
     initPositionMappingFromQueryResultStructure();
 }
 
-/// For descendant MySQLWithFailoverBlockInputStream
+/// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
-    : SourceWithProgress(sample_block_.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLBlockInputStream"))
+    : ISource(sample_block_.cloneEmpty())
+    , log(&Poco::Logger::get("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);
@@ -126,7 +128,7 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size)
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type)
     {
         switch (type)
         {
@@ -139,13 +141,27 @@ namespace
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
-                assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.getUInt()));
                 read_bytes_size += 4;
                 break;
             case ValueType::vtUInt64:
-                assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
-                read_bytes_size += 8;
+            {
+                if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
+                {
+                    size_t n = value.size();
+                    UInt64 val = 0UL;
+                    ReadBufferFromMemory payload(const_cast<char *>(value.data()), n);
+                    MySQLReplication::readBigEndianStrict(payload, reinterpret_cast<char *>(&val), n);
+                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
+                    read_bytes_size += n;
+                }
+                else
+                {
+                    assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
+                    read_bytes_size += 8;
+                }
                 break;
+            }
             case ValueType::vtInt8:
                 assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
                 read_bytes_size += 1;
@@ -155,15 +171,38 @@ namespace
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
-                assert_cast<ColumnInt32 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value.getInt()));
                 read_bytes_size += 4;
                 break;
             case ValueType::vtInt64:
-                assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
-                read_bytes_size += 8;
+            {
+                if (mysql_type == enum_field_types::MYSQL_TYPE_TIME)
+                {
+                    String time_str(value.data(), value.size());
+                    bool negative = time_str.starts_with("-");
+                    if (negative) time_str = time_str.substr(1);
+                    std::vector<String> hhmmss;
+                    boost::split(hhmmss, time_str, [](char c) { return c == ':'; });
+                    Int64 v = 0;
+
+                    if (hhmmss.size() == 3)
+                        v = static_cast<Int64>((std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000);
+                    else
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value format");
+
+                    if (negative) v = -v;
+                    assert_cast<ColumnInt64 &>(column).insertValue(v);
+                    read_bytes_size += value.size();
+                }
+                else
+                {
+                    assert_cast<ColumnInt64 &>(column).insertValue(value.getInt());
+                    read_bytes_size += 8;
+                }
                 break;
+            }
             case ValueType::vtFloat32:
-                assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
+                assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value.getDouble()));
                 read_bytes_size += 4;
                 break;
             case ValueType::vtFloat64:
@@ -186,6 +225,10 @@ namespace
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 read_bytes_size += 2;
                 break;
+            case ValueType::vtDate32:
+                assert_cast<ColumnInt32 &>(column).insertValue(Int32(value.getDate().getExtenedDayNum()));
+                read_bytes_size += 4;
+                break;
             case ValueType::vtDateTime:
             {
                 ReadBufferFromString in(value);
@@ -193,7 +236,7 @@ namespace
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
                 if (time < 0)
                     time = 0;
-                assert_cast<ColumnUInt32 &>(column).insertValue(time);
+                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                 read_bytes_size += 4;
                 break;
             }
@@ -217,7 +260,7 @@ namespace
                 read_bytes_size += column.sizeOfValueIfFixed();
                 break;
             default:
-                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
         }
     }
 
@@ -258,12 +301,12 @@ Chunk MySQLSource::generate()
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size);
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
                     column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size);
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
                 }
             }
             else
@@ -294,8 +337,11 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
     if (!settings->fetch_by_name)
     {
         if (description.sample_block.columns() != connection->result.getNumFields())
-            throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
-                + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "mysqlxx::UseQueryResult contains {} columns while {} expected",
+                connection->result.getNumFields(),
+                description.sample_block.columns());
 
         for (const auto idx : collections::range(0, connection->result.getNumFields()))
             position_mapping[idx] = idx;
@@ -319,18 +365,10 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
         }
 
         if (!missing_names.empty())
-        {
-            WriteBufferFromOwnString exception_message;
-            for (auto iter = missing_names.begin(); iter != missing_names.end(); ++iter)
-            {
-                if (iter != missing_names.begin())
-                    exception_message << ", ";
-                exception_message << *iter;
-            }
-
-            throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-        }
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "mysqlxx::UseQueryResult must contain columns: {}",
+                fmt::join(missing_names, ", "));
     }
 }
 

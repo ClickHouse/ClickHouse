@@ -1,7 +1,7 @@
 #include <pthread.h>
 
-#if defined(__APPLE__) || defined(OS_SUNOS)
-#elif defined(__FreeBSD__)
+#if defined(OS_DARWIN) || defined(OS_SUNOS)
+#elif defined(OS_FREEBSD)
     #include <pthread_np.h>
 #else
     #include <sys/prctl.h>
@@ -11,6 +11,8 @@
 
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
+
+#define THREAD_NAME_SIZE 16
 
 
 namespace DB
@@ -23,14 +25,14 @@ namespace ErrorCodes
 
 
 /// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
-static thread_local std::string thread_name;
+static thread_local char thread_name[THREAD_NAME_SIZE]{};
 
 
 void setThreadName(const char * name)
 {
 #ifndef NDEBUG
-    if (strlen(name) > 15)
-        throw DB::Exception("Thread name cannot be longer than 15 bytes", DB::ErrorCodes::PTHREAD_ERROR);
+    if (strlen(name) > THREAD_NAME_SIZE - 1)
+        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Thread name cannot be longer than 15 bytes");
 #endif
 
 #if defined(OS_FREEBSD)
@@ -45,28 +47,25 @@ void setThreadName(const char * name)
 #endif
         DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
 
-    thread_name = name;
+    memcpy(thread_name, name, 1 + strlen(name));
 }
 
-const std::string & getThreadName()
+const char * getThreadName()
 {
-    if (!thread_name.empty())
+    if (thread_name[0])
         return thread_name;
 
-    thread_name.resize(16);
-
-#if defined(__APPLE__) || defined(OS_SUNOS)
-    if (pthread_getname_np(pthread_self(), thread_name.data(), thread_name.size()))
-        throw DB::Exception("Cannot get thread name with pthread_getname_np()", DB::ErrorCodes::PTHREAD_ERROR);
-#elif defined(__FreeBSD__)
+#if defined(OS_DARWIN) || defined(OS_SUNOS)
+    if (pthread_getname_np(pthread_self(), thread_name, THREAD_NAME_SIZE))
+        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_getname_np()");
+#elif defined(OS_FREEBSD)
 // TODO: make test. freebsd will have this function soon https://freshbsd.org/commit/freebsd/r337983
-//    if (pthread_get_name_np(pthread_self(), thread_name.data(), thread_name.size()))
-//        throw DB::Exception("Cannot get thread name with pthread_get_name_np()", DB::ErrorCodes::PTHREAD_ERROR);
+//    if (pthread_get_name_np(pthread_self(), thread_name, THREAD_NAME_SIZE))
+//        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_get_name_np()");
 #else
-    if (0 != prctl(PR_GET_NAME, thread_name.data(), 0, 0, 0))
+    if (0 != prctl(PR_GET_NAME, thread_name, 0, 0, 0))
         DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)", DB::ErrorCodes::PTHREAD_ERROR);
 #endif
 
-    thread_name.resize(std::strlen(thread_name.data()));
     return thread_name;
 }

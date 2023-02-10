@@ -14,7 +14,7 @@ struct BlockIO
     BlockIO() = default;
     BlockIO(BlockIO &&) = default;
 
-    BlockIO & operator= (BlockIO && rhs);
+    BlockIO & operator= (BlockIO && rhs) noexcept;
     ~BlockIO();
 
     BlockIO(const BlockIO &) = delete;
@@ -31,20 +31,11 @@ struct BlockIO
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
 
-    /// Call these functions if you want to log the request.
-    void onFinish()
-    {
-        if (finish_callback)
-        {
-            finish_callback(pipeline);
-        }
-    }
+    void onFinish();
+    void onException();
 
-    void onException() const
-    {
-        if (exception_callback)
-            exception_callback();
-    }
+    /// Set is_all_data_sent in system.processes for this query.
+    void setAllDataSent() const;
 
 private:
     void reset();

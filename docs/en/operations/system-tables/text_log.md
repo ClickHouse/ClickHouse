@@ -1,4 +1,7 @@
-# system.text_log {#system_tables-text_log}
+---
+slug: /en/operations/system-tables/text_log
+---
+# text_log
 
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 
@@ -49,5 +52,3 @@ revision:                54440
 source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void DB::DNSCacheUpdater::start()
 source_line:             45
 ```
-
- [Original article](https://clickhouse.com/docs/en/operations/system-tables/text_log) <!--hide-->

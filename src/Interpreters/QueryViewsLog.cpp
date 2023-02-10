@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <base/types.h>
 
 namespace DB
@@ -28,7 +28,8 @@ NamesAndTypesList QueryViewsLogElement::getNamesAndTypes()
     auto view_type_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
         {"Default", static_cast<Int8>(ViewType::DEFAULT)},
         {"Materialized", static_cast<Int8>(ViewType::MATERIALIZED)},
-        {"Live", static_cast<Int8>(ViewType::LIVE)}});
+        {"Live", static_cast<Int8>(ViewType::LIVE)},
+        {"Window", static_cast<Int8>(ViewType::WINDOW)}});
 
     return {
         {"event_date", std::make_shared<DataTypeDate>()},

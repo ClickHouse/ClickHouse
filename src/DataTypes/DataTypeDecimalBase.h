@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Columns/ColumnDecimal.h>
+#include <cmath>
+#include <type_traits>
+
+#include <Core/TypeId.h>
 #include <Core/DecimalFunctions.h>
+#include <Columns/ColumnDecimal.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
-
-#include <cmath>
-#include <type_traits>
 
 
 namespace DB
@@ -59,6 +60,7 @@ class DataTypeDecimalBase : public IDataType
 public:
     using FieldType = T;
     using ColumnType = ColumnDecimal<T>;
+    static constexpr auto type_id = TypeToTypeIndex<T>;
 
     static constexpr bool is_parametric = true;
 
@@ -69,12 +71,12 @@ public:
         scale(scale_)
     {
         if (unlikely(precision < 1 || precision > maxPrecision()))
-            throw Exception("Precision " + std::to_string(precision) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Precision {} is out of bounds", std::to_string(precision));
         if (unlikely(scale > maxPrecision()))
-            throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", std::to_string(scale));
     }
 
-    TypeIndex getTypeId() const override { return TypeId<T>; }
+    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
 
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;
@@ -127,7 +129,7 @@ public:
     T scaleFactorFor(const DataTypeDecimalBase<U> & x, bool) const
     {
         if (getScale() < x.getScale())
-            throw Exception("Decimal result's scale is less than argument's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Decimal result's scale is less than argument's one");
         UInt32 scale_delta = getScale() - x.getScale(); /// scale_delta >= 0
         return getScaleMultiplier(scale_delta);
     }
@@ -170,14 +172,14 @@ inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & 
 }
 
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
 {
     const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
     return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
 }
 
 template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline const DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
 {
     const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
     return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
@@ -187,10 +189,11 @@ template <template <typename> typename DecimalType>
 inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
     if (precision_value < DecimalUtils::min_precision || precision_value > DecimalUtils::max_precision<Decimal256>)
-        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision: it must be between {} and {}, got {}",
+                        DecimalUtils::min_precision, DecimalUtils::max_precision<Decimal256>, precision_value);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
-        throw Exception("Negative scales and scales larger than precision are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative scales and scales larger than precision are not supported");
 
     if (precision_value <= DecimalUtils::max_precision<Decimal32>)
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);

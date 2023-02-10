@@ -49,6 +49,20 @@ void FieldVisitorHash::operator() (const UUID & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const IPv4 & x) const
+{
+    UInt8 type = Field::Types::IPv4;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const IPv6 & x) const
+{
+    UInt8 type = Field::Types::IPv6;
+    hash.update(type);
+    hash.update(x);
+}
+
 void FieldVisitorHash::operator() (const Float64 & x) const
 {
     UInt8 type = Field::Types::Float64;
@@ -92,6 +106,19 @@ void FieldVisitorHash::operator() (const Array & x) const
 
     for (const auto & elem : x)
         applyVisitor(*this, elem);
+}
+
+void FieldVisitorHash::operator() (const Object & x) const
+{
+    UInt8 type = Field::Types::Object;
+    hash.update(type);
+    hash.update(x.size());
+
+    for (const auto & [key, value]: x)
+    {
+        hash.update(key);
+        applyVisitor(*this, value);
+    }
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal32> & x) const
@@ -142,6 +169,13 @@ void FieldVisitorHash::operator() (const UInt256 & x) const
 void FieldVisitorHash::operator() (const Int256 & x) const
 {
     UInt8 type = Field::Types::Int256;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const bool & x) const
+{
+    UInt8 type = Field::Types::Bool;
     hash.update(type);
     hash.update(x);
 }

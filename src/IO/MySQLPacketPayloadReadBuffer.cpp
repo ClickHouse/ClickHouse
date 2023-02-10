@@ -30,7 +30,7 @@ bool MySQLPacketPayloadReadBuffer::nextImpl()
                 "Received packet with payload larger than max_packet_size: {}", payload_length);
 
         size_t packet_sequence_id = 0;
-        in.read(reinterpret_cast<char &>(packet_sequence_id));
+        in.readStrict(reinterpret_cast<char &>(packet_sequence_id));
         if (packet_sequence_id != sequence_id)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                 "Received packet with wrong sequence-id: {}. Expected: {}.", packet_sequence_id, static_cast<unsigned int>(sequence_id));

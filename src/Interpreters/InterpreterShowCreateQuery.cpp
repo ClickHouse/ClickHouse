@@ -64,26 +64,28 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         {
             if (!ast_create_query.isView())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a VIEW",
-                    backQuote(ast_create_query.database), backQuote(ast_create_query.table));
+                    backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
         }
         else if (is_dictionary)
         {
             if (!ast_create_query.is_dictionary)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a DICTIONARY",
-                    backQuote(ast_create_query.database), backQuote(ast_create_query.table));
+                    backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
         }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->temporary)
-            throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-        show_query->database = getContext()->resolveDatabase(show_query->database);
-        getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->database);
-        create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDatabaseQuery();
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");
+        show_query->setDatabase(getContext()->resolveDatabase(show_query->getDatabase()));
+        getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->getDatabase());
+        create_query = DatabaseCatalog::instance().getDatabase(show_query->getDatabase())->getCreateDatabaseQuery();
     }
 
     if (!create_query)
-        throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY,
+                        "Unable to show the create query of {}. Maybe it was created by the system.",
+                        show_query->getTable());
 
     if (!getContext()->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
     {
@@ -92,9 +94,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         create.to_inner_uuid = UUIDHelpers::Nil;
     }
 
-    WriteBufferFromOwnString buf;
-    formatAST(*create_query, buf, false, false);
-    String res = buf.str();
+    String res = create_query->formatWithSecretsHidden(/* max_length= */ 0, /* one_line= */ false);
 
     MutableColumnPtr column = ColumnString::create();
     column->insert(res);

@@ -1,8 +1,9 @@
 ---
-toc_priority: 109
+slug: /en/sql-reference/aggregate-functions/reference/topkweighted
+sidebar_position: 109
 ---
 
-# topKWeighted {#topkweighted}
+# topKWeighted
 
 Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves). Additionally, the weight of the value is taken into account.
 
@@ -27,15 +28,16 @@ Returns an array of the values with maximum approximate sum of weights.
 Query:
 
 ``` sql
-SELECT topKWeighted(10)(number, number) FROM numbers(1000)
+SELECT topKWeighted(2)(k, w) FROM
+VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10))
 ```
 
 Result:
 
 ``` text
-┌─topKWeighted(10)(number, number)──────────┐
-│ [999,998,997,996,995,994,993,992,991,990] │
-└───────────────────────────────────────────┘
+┌─topKWeighted(2)(k, w)──┐
+│ ['z','x']              │
+└────────────────────────┘
 ```
 
 **See Also**

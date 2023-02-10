@@ -7,103 +7,78 @@
 namespace DB
 {
 
-
-MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
-    const size_t thread_,
-    const MergeTreeReadPoolPtr & pool_,
-    const size_t min_marks_to_read_,
-    const UInt64 max_block_size_rows_,
+MergeTreeThreadSelectAlgorithm::MergeTreeThreadSelectAlgorithm(
+    size_t thread_,
+    IMergeTreeReadPoolPtr pool_,
+    size_t min_marks_for_concurrent_read_,
+    size_t max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const bool use_uncompressed_cache_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectProcessor{
-        pool_->getHeader(), storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+    IMergeTreeSelectAlgorithm{
+        pool_->getHeader(), storage_, storage_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     thread{thread_},
-    pool{pool_}
+    pool{std::move(pool_)}
 {
-    /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
-    /// If granularity is adaptive it doesn't make sense
-    /// Maybe it will make sense to add settings `max_block_size_bytes`
-    if (max_block_size_rows && !storage.canUseAdaptiveGranularity())
-    {
-        size_t fixed_index_granularity = storage.getSettings()->index_granularity;
-        min_marks_to_read = (min_marks_to_read_ * fixed_index_granularity + max_block_size_rows - 1)
-            / max_block_size_rows * max_block_size_rows / fixed_index_granularity;
-    }
-    else
-        min_marks_to_read = min_marks_to_read_;
-
-    ordered_names = getPort().getHeader().getNames();
+    min_marks_to_read = min_marks_for_concurrent_read_;
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectProcessor::getNewTask()
+bool MergeTreeThreadSelectAlgorithm::getNewTaskImpl()
 {
-    task = pool->getTask(min_marks_to_read, thread, ordered_names);
+    task = pool->getTask(thread);
+    return static_cast<bool>(task);
+}
 
-    if (!task)
-    {
-        /** Close the files (before destroying the object).
-          * When many sources are created, but simultaneously reading only a few of them,
-          * buffers don't waste memory.
-          */
-        reader.reset();
-        pre_reader.reset();
-        return false;
-    }
 
+void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
+{
     const std::string part_name = task->data_part->isProjectionPart() ? task->data_part->getParentPart()->name : task->data_part->name;
 
     /// Allows pool to reduce number of threads in case of too slow reads.
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
+    const auto & metadata_snapshot = storage_snapshot->metadata;
+
+    IMergeTreeReader::ValueSizeMap value_size_map;
 
     if (!reader)
     {
         if (use_uncompressed_cache)
             owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
         owned_mark_cache = storage.getContext()->getMarkCache();
-
-        reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
-            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-            IMergeTreeReader::ValueSizeMap{}, profile_callback);
-
-        if (prewhere_info)
-            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
-    else
+    else if (part_name != last_read_part_name)
     {
-        /// in other case we can reuse readers, anyway they will be "seeked" to required mark
-        if (part_name != last_readed_part_name)
-        {
-            /// retain avg_value_size_hints
-            reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                reader->getAvgValueSizeHints(), profile_callback);
-
-            if (prewhere_info)
-                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                reader->getAvgValueSizeHints(), profile_callback);
-        }
+        value_size_map = reader->getAvgValueSizeHints();
     }
 
-    last_readed_part_name = part_name;
+    const bool init_new_readers = !reader || part_name != last_read_part_name;
+    if (init_new_readers)
+    {
+        initializeMergeTreeReadersForPart(task->data_part, task->task_columns, metadata_snapshot,
+            task->mark_ranges, value_size_map, profile_callback);
+    }
 
-    return true;
+    last_read_part_name = part_name;
 }
 
 
-MergeTreeThreadSelectProcessor::~MergeTreeThreadSelectProcessor() = default;
+void MergeTreeThreadSelectAlgorithm::finish()
+{
+    reader.reset();
+    pre_reader_for_step.clear();
+}
+
+
+MergeTreeThreadSelectAlgorithm::~MergeTreeThreadSelectAlgorithm() = default;
 
 }

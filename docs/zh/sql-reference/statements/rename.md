@@ -1,6 +1,7 @@
 ---
-toc_priority: 48
-toc_title: RENAME
+slug: /zh/sql-reference/statements/rename
+sidebar_position: 48
+sidebar_label: RENAME
 ---
 
 # RENAME语法 {#misc_operations-rename}

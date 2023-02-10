@@ -3,7 +3,7 @@
 #include <memory>
 #include <functional>
 
-#include <base/shared_ptr_helper.h>
+#include <boost/noncopyable.hpp>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -42,17 +42,16 @@ using ExecutableTaskPtr = std::shared_ptr<IExecutableTask>;
 /**
  * Some background operations won't represent a coroutines (don't want to be executed step-by-step). For this we have this wrapper.
  */
-class ExecutableLambdaAdapter : public shared_ptr_helper<ExecutableLambdaAdapter>, public IExecutableTask
+class ExecutableLambdaAdapter : public IExecutableTask, boost::noncopyable
 {
 public:
-
     template <typename Job, typename Callback>
     explicit ExecutableLambdaAdapter(
         Job && job_to_execute_,
         Callback && job_result_callback_,
         StorageID id_)
-        : job_to_execute(job_to_execute_)
-        , job_result_callback(job_result_callback_)
+        : job_to_execute(std::forward<Job>(job_to_execute_))
+        , job_result_callback(std::forward<Callback>(job_result_callback_))
         , id(id_) {}
 
     bool executeStep() override

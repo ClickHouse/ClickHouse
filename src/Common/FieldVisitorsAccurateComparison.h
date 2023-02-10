@@ -32,6 +32,14 @@ public:
                 return l == r;
             return false;
         }
+        else if constexpr (std::is_same_v<T, bool>)
+        {
+            return operator()(UInt8(l), r);
+        }
+        else if constexpr (std::is_same_v<U, bool>)
+        {
+            return operator()(l, UInt8(r));
+        }
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -67,8 +75,8 @@ public:
             }
         }
 
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-            ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Cannot compare {} with {}",
+            demangle(typeid(T).name()), demangle(typeid(U).name()));
     }
 };
 
@@ -90,6 +98,14 @@ public:
         else if constexpr (std::is_same_v<U, Null>)
         {
             return r.isPositiveInfinity();
+        }
+        else if constexpr (std::is_same_v<T, bool>)
+        {
+            return operator()(UInt8(l), r);
+        }
+        else if constexpr (std::is_same_v<U, bool>)
+        {
+            return operator()(l, UInt8(r));
         }
         else
         {
@@ -126,8 +142,8 @@ public:
             }
         }
 
-        throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
-            ErrorCodes::BAD_TYPE_OF_FIELD);
+        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Cannot compare {} with {}",
+            demangle(typeid(T).name()), demangle(typeid(U).name()));
     }
 };
 

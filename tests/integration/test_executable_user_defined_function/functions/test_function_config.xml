@@ -1,0 +1,325 @@
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.sh</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.sh</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_send_chunk_header_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <send_chunk_header>1</send_chunk_header>
+        <command>input_chunk_header.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_send_chunk_header_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <send_chunk_header>1</send_chunk_header>
+        <command>input_chunk_header.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_sum.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_sum_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_sum.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_argument_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_argument.py 1</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_argument_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_argument.py 1</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_slow_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_slow.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_slow_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_slow.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_signalled_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_signalled.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_signalled_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_signalled.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_non_direct_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>while read read_data; do printf "Key $read_data\n"; done</command>
+        <execute_direct>0</execute_direct>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_non_direct_pool_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>while read read_data; do printf "Key $read_data\n"; done</command>
+        <execute_direct>0</execute_direct>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json_unnamed_args_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_unnamed_args.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_sum_json_unnamed_args_pool_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_unnamed_args.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json_partially_named_args_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_partially_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_sum_json_partially_named_args_pool_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_partially_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json_named_args_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_sum_json_named_args_pool_python</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>input_sum_json_named_args.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_nullable_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>Nullable(UInt64)</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_nullable.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_nullable_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>Nullable(UInt64)</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_nullable.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_parameter_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_parameter.py {test_parameter:UInt64}</command>
+    </function>
+
+</functions>

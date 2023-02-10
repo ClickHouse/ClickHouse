@@ -1,4 +1,7 @@
-# system.quotas {#system_tables-quotas}
+---
+slug: /en/operations/system-tables/quotas
+---
+# quotas
 
 Contains information about [quotas](../../operations/system-tables/quotas.md).
 
@@ -23,6 +26,3 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/quotas) <!--hide-->
-

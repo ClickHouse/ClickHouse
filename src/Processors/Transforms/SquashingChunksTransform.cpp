@@ -5,18 +5,26 @@ namespace DB
 {
 
 SquashingChunksTransform::SquashingChunksTransform(
-    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes, bool reserve_memory)
+    const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(min_block_size_rows, min_block_size_bytes, reserve_memory)
+    , squashing(min_block_size_rows, min_block_size_bytes)
 {
 }
 
-void SquashingChunksTransform::transform(Chunk & chunk)
+void SquashingChunksTransform::onConsume(Chunk chunk)
 {
     if (auto block = squashing.add(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns())))
     {
-        chunk.setColumns(block.getColumns(), block.rows());
+        cur_chunk.setColumns(block.getColumns(), block.rows());
     }
+}
+
+SquashingChunksTransform::GenerateResult SquashingChunksTransform::onGenerate()
+{
+    GenerateResult res;
+    res.chunk = std::move(cur_chunk);
+    res.is_done = true;
+    return res;
 }
 
 void SquashingChunksTransform::onFinish()
@@ -27,7 +35,7 @@ void SquashingChunksTransform::onFinish()
 
 void SquashingChunksTransform::work()
 {
-    if (has_exception)
+    if (stage == Stage::Exception)
     {
         data.chunk.clear();
         ready_input = false;

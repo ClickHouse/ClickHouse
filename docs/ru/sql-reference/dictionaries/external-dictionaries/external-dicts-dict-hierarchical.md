@@ -1,6 +1,7 @@
 ---
-toc_priority: 45
-toc_title: "Иерархические словари"
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical
+sidebar_position: 45
+sidebar_label: "Иерархические словари"
 ---
 
 # Иерархические словари {#ierarkhicheskie-slovari}
@@ -35,7 +36,7 @@ ClickHouse поддерживает иерархические словари с
 
 Таблица содержит столбец `parent_region`, содержащий ключ ближайшего предка для текущего элемента.
 
-ClickHouse поддерживает свойство [hierarchical](external-dicts-dict-structure.md#hierarchical-dict-attr) для атрибутов [внешнего словаря](index.md). Это свойство позволяет конфигурировать словари, подобные описанному выше.
+ClickHouse поддерживает свойство [hierarchical](external-dicts-dict-structure.md#hierarchical-dict-attr) для атрибутов [внешнего словаря](./). Это свойство позволяет конфигурировать словари, подобные описанному выше.
 
 С помощью функции [dictGetHierarchy](../../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) можно получить цепочку предков элемента.
 
@@ -64,4 +65,3 @@ ClickHouse поддерживает свойство [hierarchical](external-dic
     </structure>
 </dictionary>
 ```
-

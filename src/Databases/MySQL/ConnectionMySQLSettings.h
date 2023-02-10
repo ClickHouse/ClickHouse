@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MySQL/MySQLSettings.h>
 
 namespace DB
 {
@@ -17,7 +18,11 @@ class ASTStorage;
 #define APPLY_FOR_IMMUTABLE_CONNECTION_MYSQL_SETTINGS(M) \
     M(mysql_datatypes_support_level)
 
-DECLARE_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_CONNECTION_MYSQL_SETTINGS)
+#define LIST_OF_MYSQL_DATABASE_SETTINGS(M) \
+    LIST_OF_CONNECTION_MYSQL_SETTINGS(M) \
+    LIST_OF_MYSQL_SETTINGS(M)
+
+DECLARE_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_MYSQL_DATABASE_SETTINGS)
 
 
 /** Settings for the MySQL database engine.

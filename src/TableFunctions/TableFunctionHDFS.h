@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -12,7 +12,7 @@ namespace DB
 
 class Context;
 
-/* hdfs(name_node_ip:name_node_port, format, structure) - creates a temporary storage from hdfs file
+/* hdfs(URI, format[, structure, compression]) - creates a temporary storage from hdfs files
  *
  */
 class TableFunctionHDFS : public ITableFunctionFileLike
@@ -22,6 +22,13 @@ public:
     std::string getName() const override
     {
         return name;
+    }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    {
+        return {"_path", "_file"};
     }
 
 private:

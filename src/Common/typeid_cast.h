@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 
-#include <base/shared_ptr_helper.h>
 #include <Common/Exception.h>
 #include <base/demangle.h>
 
@@ -19,13 +18,17 @@ namespace DB
     }
 }
 
+template<typename T, typename ... U>
+concept is_any_of = (std::same_as<T, U> || ...);
+
 
 /** Checks type by comparing typeid.
   * The exact match of the type is checked. That is, cast to the ancestor will be unsuccessful.
   * In the rest, behaves like a dynamic_cast.
   */
 template <typename To, typename From>
-std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
+requires std::is_reference_v<To>
+To typeid_cast(From & from)
 {
     try
     {
@@ -34,16 +37,17 @@ std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
-                        DB::ErrorCodes::LOGICAL_ERROR);
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
+                        demangle(typeid(from).name()), demangle(typeid(To).name()));
 }
 
 
 template <typename To, typename From>
-std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
+requires std::is_pointer_v<To>
+To typeid_cast(From * from)
 {
     try
     {
@@ -54,13 +58,31 @@ std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 }
 
+namespace detail
+{
+
+template <typename T>
+struct is_shared_ptr : std::false_type
+{
+};
+
+template <typename T>
+struct is_shared_ptr<std::shared_ptr<T>> : std::true_type
+{
+};
+
+template <typename T>
+inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
+
+}
 
 template <typename To, typename From>
-std::enable_if_t<is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr<From> & from)
+requires detail::is_shared_ptr_v<To>
+To typeid_cast(const std::shared_ptr<From> & from)
 {
     try
     {
@@ -71,6 +93,6 @@ std::enable_if_t<is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr<From
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 }

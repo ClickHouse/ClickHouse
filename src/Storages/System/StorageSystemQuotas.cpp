@@ -2,6 +2,8 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Quota.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -19,16 +21,13 @@ namespace DB
 {
 namespace
 {
-    using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
-
     DataTypeEnum8::Values getKeyTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto key_type : collections::range(KeyType::MAX))
+        for (auto key_type : collections::range(QuotaKeyType::MAX))
         {
-            const auto & type_info = KeyTypeInfo::get(key_type);
-            if ((key_type != KeyType::NONE) && type_info.base_types.empty())
+            const auto & type_info = QuotaKeyTypeInfo::get(key_type);
+            if ((key_type != QuotaKeyType::NONE) && type_info.base_types.empty())
                 enum_values.push_back({type_info.name, static_cast<Int8>(key_type)});
         }
         return enum_values;
@@ -54,8 +53,11 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
 
 void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_QUOTAS);
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_QUOTAS);
+
     std::vector<UUID> ids = access_control.findAll<Quota>();
 
     size_t column_index = 0;
@@ -76,16 +78,16 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
                        const UUID & id,
                        const String & storage_name,
                        const std::vector<Quota::Limits> & all_limits,
-                       KeyType key_type,
+                       QuotaKeyType key_type,
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
-        if (key_type != KeyType::NONE)
+        if (key_type != QuotaKeyType::NONE)
         {
-            const auto & type_info = KeyTypeInfo::get(key_type);
+            const auto & type_info = QuotaKeyTypeInfo::get(key_type);
             for (auto base_type : type_info.base_types)
                 column_key_types.push_back(static_cast<Int8>(base_type));
             if (type_info.base_types.empty())
@@ -94,7 +96,10 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
         column_key_types_offsets.push_back(column_key_types.size());
 
         for (const auto & limits : all_limits)
-            column_durations.push_back(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count());
+        {
+            column_durations.push_back(
+                static_cast<UInt32>(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count()));
+        }
         column_durations_offsets.push_back(column_durations.size());
 
         auto apply_to_ast = apply_to.toASTWithNames(access_control);
@@ -121,4 +126,19 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
         add_row(quota->getName(), id, storage->getStorageName(), quota->all_limits, quota->key_type, quota->to_roles);
     }
 }
+
+void StorageSystemQuotas::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
+    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::QUOTA);
+}
+
+void StorageSystemQuotas::restoreDataFromBackup(
+    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+{
+    auto & access_control = restorer.getContext()->getAccessControl();
+    access_control.restoreFromBackup(restorer);
+}
+
 }

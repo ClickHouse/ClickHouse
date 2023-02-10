@@ -8,19 +8,37 @@ namespace DB
 ASTPtr ASTAsterisk::clone() const
 {
     auto clone = std::make_shared<ASTAsterisk>(*this);
-    clone->cloneChildren();
+
+    if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
+
     return clone;
 }
 
-void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const { ostr.write('*'); }
+void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const
+{
+    if (expression)
+    {
+        expression->appendColumnName(ostr);
+        writeCString(".", ostr);
+    }
+
+    ostr.write('*');
+}
 
 void ASTAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << "*";
-    for (const auto & child : children)
+    if (expression)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        expression->formatImpl(settings, state, frame);
+        settings.ostr << ".";
+    }
+
+    settings.ostr << "*";
+
+    if (transformers)
+    {
+        transformers->formatImpl(settings, state, frame);
     }
 }
 

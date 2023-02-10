@@ -1,8 +1,9 @@
 ---
-toc_priority: 127
+slug: /en/sql-reference/aggregate-functions/reference/groupbitxor
+sidebar_position: 127
 ---
 
-# groupBitXor {#groupbitxor}
+# groupBitXor
 
 Applies bitwise `XOR` for series of numbers.
 

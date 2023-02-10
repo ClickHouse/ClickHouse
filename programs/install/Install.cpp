@@ -1,11 +1,12 @@
 #include <iostream>
 #include <filesystem>
 #include <boost/program_options.hpp>
+#include <Common/filesystemHelpers.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     #include <syscall.h>
     #include <linux/capability.h>
 #endif
@@ -20,7 +21,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/hex.h>
-#include <base/getResource.h>
+#include <Common/getResource.h>
 #include <base/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -68,6 +69,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_KILL;
+    extern const int BAD_ARGUMENTS;
 }
 
 }
@@ -153,10 +155,12 @@ static void createGroup(const String & group_name)
     if (!group_name.empty())
     {
 #if defined(OS_DARWIN)
-
         // TODO: implement.
-
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a group in macOS");
+#elif defined(OS_FREEBSD)
+        std::string command = fmt::format("pw groupadd {}", group_name);
+        fmt::print(" {}\n", command);
+        executeScript(command);
 #else
         std::string command = fmt::format("groupadd -r {}", group_name);
         fmt::print(" {}\n", command);
@@ -170,10 +174,14 @@ static void createUser(const String & user_name, [[maybe_unused]] const String &
     if (!user_name.empty())
     {
 #if defined(OS_DARWIN)
-
         // TODO: implement.
-
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a user in macOS");
+#elif defined(OS_FREEBSD)
+        std::string command = group_name.empty()
+            ? fmt::format("pw useradd -s /bin/false -d /nonexistent -n {}", user_name)
+            : fmt::format("pw useradd -s /bin/false -d /nonexistent -g {} -n {}", group_name, user_name);
+        fmt::print(" {}\n", command);
+        executeScript(command);
 #else
         std::string command = group_name.empty()
             ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user_name)
@@ -182,6 +190,20 @@ static void createUser(const String & user_name, [[maybe_unused]] const String &
         executeScript(command);
 #endif
     }
+}
+
+
+static std::string formatWithSudo(std::string command, bool needed = true)
+{
+    if (!needed)
+        return command;
+
+#if defined(OS_FREEBSD)
+    /// FreeBSD does not have 'sudo' installed.
+    return fmt::format("su -m root -c '{}'", command);
+#else
+    return fmt::format("sudo {}", command);
+#endif
 }
 
 
@@ -207,10 +229,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " install [options]\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
             std::cout << desc << '\n';
             return 1;
         }
@@ -222,17 +241,20 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         uint32_t path_length = 0;
         _NSGetExecutablePath(nullptr, &path_length);
         if (path_length <= 1)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         std::string path(path_length, std::string::value_type());
         auto res = _NSGetExecutablePath(&path[0], &path_length);
         if (res != 0)
-            Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
 
         if (path.back() == '\0')
             path.pop_back();
 
         fs::path binary_self_path(path);
+#elif defined(OS_FREEBSD)
+        /// https://stackoverflow.com/questions/1023306/finding-current-executables-path-without-proc-self-exe
+        fs::path binary_self_path = argc >= 1 ? argv[0] : "/proc/curproc/file";
 #else
         fs::path binary_self_path = "/proc/self/exe";
 #endif
@@ -314,7 +336,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                    std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
+                    std::cerr << "Install must be run as root: " << formatWithSudo("./clickhouse install") << '\n';
                 throw;
             }
 
@@ -344,7 +366,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-git-import",
             "clickhouse-compressor",
             "clickhouse-format",
-            "clickhouse-extract-from-config"
+            "clickhouse-extract-from-config",
+            "clickhouse-keeper",
+            "clickhouse-keeper-converter",
+            "clickhouse-disks",
         };
 
         for (const auto & tool : tools)
@@ -354,10 +379,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                bool is_symlink = fs::is_symlink(symlink_path);
+                bool is_symlink = FS::isSymlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
+                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
                 if (is_symlink && points_to == main_bin_path)
                 {
@@ -421,8 +446,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 fs::path ulimits_file = ulimits_dir / fmt::format("{}.conf", user);
                 fmt::print("Will set ulimits for {} user in {}.\n", user, ulimits_file.string());
                 std::string ulimits_content = fmt::format(
-                    "{0}\tsoft\tnofile\t262144\n"
-                    "{0}\thard\tnofile\t262144\n", user);
+                    "{0}\tsoft\tnofile\t1048576\n"
+                    "{0}\thard\tnofile\t1048576\n", user);
 
                 fs::create_directories(ulimits_dir);
 
@@ -492,8 +517,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 /// Override the default paths.
 
                 /// Data paths.
+                const std::string data_file = config_d / "data-paths.xml";
+                if (!fs::exists(data_file))
                 {
-                    std::string data_file = config_d / "data-paths.xml";
                     WriteBufferFromFile out(data_file);
                     out << "<clickhouse>\n"
                     "    <path>" << data_path.string() << "</path>\n"
@@ -503,12 +529,14 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(data_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("Data path configuration override is saved to file {}.\n", data_file);
                 }
 
                 /// Logger.
+                const std::string logger_file = config_d / "logger.xml";
+                if (!fs::exists(logger_file))
                 {
-                    std::string logger_file = config_d / "logger.xml";
                     WriteBufferFromFile out(logger_file);
                     out << "<clickhouse>\n"
                     "    <logger>\n"
@@ -518,12 +546,14 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(logger_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("Log path configuration override is saved to file {}.\n", logger_file);
                 }
 
                 /// User directories.
+                const std::string user_directories_file = config_d / "user-directories.xml";
+                if (!fs::exists(user_directories_file))
                 {
-                    std::string user_directories_file = config_d / "user-directories.xml";
                     WriteBufferFromFile out(user_directories_file);
                     out << "<clickhouse>\n"
                     "    <user_directories>\n"
@@ -534,12 +564,14 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(user_directories_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("User directory path configuration override is saved to file {}.\n", user_directories_file);
                 }
 
                 /// OpenSSL.
+                const std::string openssl_file = config_d / "openssl.xml";
+                if (!fs::exists(openssl_file))
                 {
-                    std::string openssl_file = config_d / "openssl.xml";
                     WriteBufferFromFile out(openssl_file);
                     out << "<clickhouse>\n"
                     "    <openSSL>\n"
@@ -552,6 +584,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(openssl_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("OpenSSL path configuration override is saved to file {}.\n", openssl_file);
                 }
             }
@@ -675,7 +708,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// dpkg or apt installers can ask for non-interactive work explicitly.
 
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
+        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
         bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
@@ -758,15 +791,16 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
           *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
           */
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
-            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
-            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
-            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
+            " && command -v capsh >/dev/null"
+            " && capsh --has-p=cap_net_admin,cap_ipc_lock,cap_sys_nice,cap_net_bind_service+ep >/dev/null 2>&1"
+            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice,cap_net_bind_service+ep' {0}"
+            " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' or 'net_bind_service' capability for clickhouse binary."
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
-            "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+            fs::canonical(main_bin_path).string());
         executeScript(command);
 #endif
 
@@ -815,9 +849,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fmt::print(
                 "\nClickHouse has been successfully installed.\n"
                 "\nRestart clickhouse-server with:\n"
-                " sudo clickhouse restart\n"
+                " {}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
+                formatWithSudo("clickhouse restart"),
                 maybe_password);
         }
         else
@@ -825,9 +860,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fmt::print(
                 "\nClickHouse has been successfully installed.\n"
                 "\nStart clickhouse-server with:\n"
-                " sudo clickhouse start\n"
+                " {}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
+                formatWithSudo("clickhouse start"),
                 maybe_password);
         }
     }
@@ -836,7 +872,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         std::cerr << getCurrentExceptionMessage(false) << '\n';
 
         if (getuid() != 0)
-            std::cerr << "\nRun with sudo.\n";
+            std::cerr << "\nRun with " << formatWithSudo("...") << "\n";
 
         return getCurrentExceptionCode();
     }
@@ -852,12 +888,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 namespace
 {
-    int start(const std::string & user, const fs::path & executable, const fs::path & config, const fs::path & pid_file)
+    int start(const std::string & user, const fs::path & executable, const fs::path & config, const fs::path & pid_file, unsigned max_tries)
     {
         if (fs::exists(pid_file))
         {
             ReadBufferFromFile in(pid_file.string());
-            UInt64 pid;
+            Int32 pid;
             if (tryReadIntText(pid, in))
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
@@ -892,16 +928,9 @@ namespace
 
         if (!user.empty())
         {
-            bool may_need_sudo = geteuid() != 0;
-            if (may_need_sudo)
-            {
-                struct passwd *p = getpwuid(geteuid());
-                // Only use sudo when we are not the given user
-                if (p == nullptr || std::string(p->pw_name) != user)
-                    command = fmt::format("sudo -u '{}' {}", user, command);
-            }
-            else
-                command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
+            /// sudo respects limits in /etc/security/limits.conf e.g. open files,
+            /// that's why we are using it instead of the 'clickhouse su' tool.
+            command = fmt::format("sudo -u '{}' {}", user, command);
         }
 
         fmt::print("Will run {}\n", command);
@@ -910,8 +939,7 @@ namespace
         /// Wait to start.
 
         size_t try_num = 0;
-        constexpr size_t num_tries = 60;
-        for (; try_num < num_tries; ++try_num)
+        for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to start\n");
             if (fs::exists(pid_file))
@@ -922,7 +950,7 @@ namespace
             sleepForSeconds(1);
         }
 
-        if (try_num == num_tries)
+        if (try_num == max_tries)
         {
             fmt::print("Cannot start server. You can execute {} without --daemon option to run manually.\n", command);
 
@@ -953,9 +981,9 @@ namespace
         return 0;
     }
 
-    UInt64 isRunning(const fs::path & pid_file)
+    int isRunning(const fs::path & pid_file)
     {
-        UInt64 pid = 0;
+        int pid = 0;
 
         if (fs::exists(pid_file))
         {
@@ -1023,15 +1051,12 @@ namespace
         return pid;
     }
 
-    int stop(const fs::path & pid_file, bool force)
+    bool sendSignalAndWaitForStop(const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name)
     {
-        UInt64 pid = isRunning(pid_file);
+        int pid = isRunning(pid_file);
 
         if (!pid)
-            return 0;
-
-        int signal = force ? SIGKILL : SIGTERM;
-        const char * signal_name = force ? "kill" : "terminate";
+            return true;
 
         if (0 == kill(pid, signal))
             fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
@@ -1039,8 +1064,7 @@ namespace
             throwFromErrno(fmt::format("Cannot send {} signal", signal_name), ErrorCodes::SYSTEM_ERROR);
 
         size_t try_num = 0;
-        constexpr size_t num_tries = 60;
-        for (; try_num < num_tries; ++try_num)
+        for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to stop\n");
             if (!isRunning(pid_file))
@@ -1048,40 +1072,51 @@ namespace
                 fmt::print("Server stopped\n");
                 break;
             }
-            sleepForSeconds(1);
+            sleepForMilliseconds(wait_ms);
         }
 
-        if (try_num == num_tries)
+        return try_num < max_tries;
+    }
+
+    int stop(const fs::path & pid_file, bool force, bool do_not_kill, unsigned max_tries)
+    {
+        if (force && do_not_kill)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
+
+        int signal = force ? SIGKILL : SIGTERM;
+        const char * signal_name = force ? "kill" : "terminate";
+
+        if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name))
+            return 0;
+
+        int pid = isRunning(pid_file);
+        if (!pid)
+            return 0;
+
+        if (do_not_kill)
         {
-            fmt::print("Will terminate forcefully.\n", pid);
-            if (0 == kill(pid, 9))
-                fmt::print("Sent kill signal.\n", pid);
-            else
-                throwFromErrno("Cannot send kill signal", ErrorCodes::SYSTEM_ERROR);
-
-            /// Wait for the process (100 seconds).
-            constexpr size_t num_kill_check_tries = 1000;
-            constexpr size_t kill_check_delay_ms = 100;
-            for (size_t i = 0; i < num_kill_check_tries; ++i)
-            {
-                fmt::print("Waiting for server to be killed\n");
-                if (!isRunning(pid_file))
-                {
-                    fmt::print("Server exited\n");
-                    break;
-                }
-                sleepForMilliseconds(kill_check_delay_ms);
-            }
-
-            if (isRunning(pid_file))
-            {
-                throw Exception(ErrorCodes::CANNOT_KILL,
-                    "The server process still exists after {} tries (delay: {} ms)",
-                    num_kill_check_tries, kill_check_delay_ms);
-            }
+            fmt::print("Process (pid = {}) is still running. Will not try to kill it.\n", pid);
+            return 1;
         }
 
-        return 0;
+        /// Send termination signal again, the server will receive it and immediately terminate.
+        fmt::print("Will send the termination signal again to force the termination (pid = {}).\n", pid);
+        if (sendSignalAndWaitForStop(pid_file, signal, std::min(10U, max_tries), 1000, signal_name))
+            return 0;
+
+        /// Send kill signal. Total wait is 100 seconds.
+        constexpr size_t num_kill_check_tries = 1000;
+        constexpr size_t kill_check_delay_ms = 100;
+        fmt::print("Will terminate forcefully (pid = {}).\n", pid);
+        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, signal_name))
+            return 0;
+
+        if (!isRunning(pid_file))
+            return 0;
+
+        throw Exception(ErrorCodes::CANNOT_KILL,
+            "The server process still exists after {} tries (delay: {} ms)",
+            num_kill_check_tries, kill_check_delay_ms);
     }
 }
 
@@ -1098,6 +1133,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
             ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1105,10 +1141,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " start\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " start", getuid() != 0) << '\n';
             return 1;
         }
 
@@ -1118,8 +1151,9 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         fs::path executable = prefix / options["binary-path"].as<std::string>() / "clickhouse-server";
         fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
+        unsigned max_tries = options["max-tries"].as<unsigned>();
 
-        return start(user, executable, config, pid_file);
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {
@@ -1139,6 +1173,8 @@ int mainEntryClickHouseStop(int argc, char ** argv)
             ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
+            ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server to finish after sending TERM (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1146,17 +1182,17 @@ int mainEntryClickHouseStop(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " stop\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " stop", getuid() != 0) << '\n';
             return 1;
         }
 
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
 
-        return stop(pid_file, options["force"].as<bool>());
+        bool force = options["force"].as<bool>();
+        bool do_not_kill = options["do-not-kill"].as<bool>();
+        unsigned max_tries = options["max-tries"].as<unsigned>();
+        return stop(pid_file, force, do_not_kill, max_tries);
     }
     catch (...)
     {
@@ -1182,10 +1218,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " status\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " status", getuid() != 0) << '\n';
             return 1;
         }
 
@@ -1217,6 +1250,8 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
             ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
             ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
             ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
+            ("do-not-kill", po::bool_switch(), "Do not send KILL even if TERM did not help")
+            ("max-tries", po::value<unsigned>()->default_value(60), "Max number of tries for waiting the server (with 1 second delay)")
         ;
 
         po::variables_map options;
@@ -1224,10 +1259,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " restart\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " restart", getuid() != 0) << '\n';
             return 1;
         }
 
@@ -1238,10 +1270,13 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
 
-        if (int res = stop(pid_file, options["force"].as<bool>()))
-            return res;
+        bool force = options["force"].as<bool>();
+        bool do_not_kill = options["do-not-kill"].as<bool>();
+        unsigned max_tries = options["max-tries"].as<unsigned>();
 
-        return start(user, executable, config, pid_file);
+        if (int res = stop(pid_file, force, do_not_kill, max_tries))
+            return res;
+        return start(user, executable, config, pid_file, max_tries);
     }
     catch (...)
     {

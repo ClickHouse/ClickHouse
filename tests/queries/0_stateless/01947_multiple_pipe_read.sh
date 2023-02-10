@@ -3,7 +3,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-SAMPLE_FILE=$(mktemp 01947_multiple_pipe_read_sample_data_XXXXXX.csv)
+SAMPLE_FILE=$(mktemp 01947_multiple_pipe_read_sample_data_XXXXXX.tsv)
 
 echo 'File generated:'
 ${CLICKHOUSE_LOCAL} -q "SELECT number AS x, if(number in (4,6), 'AAA', 'BBB') AS s from numbers(7)" > "$SAMPLE_FILE"

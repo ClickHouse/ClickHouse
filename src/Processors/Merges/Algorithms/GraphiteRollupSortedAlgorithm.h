@@ -92,7 +92,7 @@ private:
      */
 
     /// Path name of current bucket
-    StringRef current_group_path;
+    std::string_view current_group_path;
 
     static constexpr size_t max_row_refs = 2; /// current_subgroup_newest_row, current_row.
     /// Last row with maximum version for current primary key (time bucket).
@@ -102,16 +102,6 @@ private:
     time_t current_time = 0;
     time_t current_time_rounded = 0;
 
-    const Graphite::Pattern undef_pattern =
-    { /// temporary empty pattern for selectPatternForPath
-            .regexp = nullptr,
-            .regexp_str = "",
-            .function = nullptr,
-            .retentions = DB::Graphite::Retentions(),
-            .type = undef_pattern.TypeUndef,
-    };
-
-    Graphite::RollupRule selectPatternForPath(StringRef path) const;
     UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
 
     /// Insert the values into the resulting columns, which will not be changed in the future.

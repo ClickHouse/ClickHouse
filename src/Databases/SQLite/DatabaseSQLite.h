@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_SQLITE
 #include <Core/Names.h>
@@ -12,7 +12,7 @@
 
 namespace DB
 {
-class DatabaseSQLite final : public IDatabase, protected WithContext
+class DatabaseSQLite final : public IDatabase, WithContext
 {
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -54,11 +54,10 @@ private:
 
     bool checkSQLiteTable(const String & table_name) const;
 
-    NameSet fetchTablesList() const;
+    NameSet fetchTablesList() const TSA_REQUIRES(mutex);
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
 
-    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }

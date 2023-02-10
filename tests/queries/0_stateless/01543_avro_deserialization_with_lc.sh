@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-unbundled, no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,6 +23,6 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_01543"
 
 $CLICKHOUSE_CLIENT --query "SELECT number % 2 ? number: NULL as x from numbers(10) FORMAT Avro" > $USER_FILES_PATH/test_01543.avro
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM file('test_01543.avro', 'Avro', 'x LowCardinality(Nullable(UInt64))')"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM file('test_01543.avro', 'Avro', 'x LowCardinality(Nullable(UInt64))')" --allow_suspicious_low_cardinality_types 1
 
 rm $USER_FILES_PATH/test_01543.avro

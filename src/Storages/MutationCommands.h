@@ -5,7 +5,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include <base/shared_ptr_helper.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
@@ -38,6 +37,7 @@ struct MutationCommand
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
     };
 
     Type type = EMPTY;
@@ -70,13 +70,15 @@ struct MutationCommand
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
-class MutationCommands : public shared_ptr_helper<MutationCommands>, public std::vector<MutationCommand>
+class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    std::shared_ptr<ASTExpressionList> ast() const;
+    std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
-    void writeText(WriteBuffer & out) const;
+    void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
     void readText(ReadBuffer & in);
+    std::string toString() const;
+    bool hasNonEmptyMutationCommands() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;

@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/clusters
+---
 # system.clusters {#system-clusters}
 
 Содержит информацию о доступных в конфигурационном файле кластерах и серверах, которые в них входят.
@@ -67,5 +70,3 @@ estimated_recovery_time: 0
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [Настройка distributed_replica_error_cap](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
 -   [Настройка distributed_replica_error_half_life](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/operations/system_tables/clusters) <!--hide-->

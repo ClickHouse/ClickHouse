@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <Processors/Transforms/finalizeChunk.h>
 #include <Common/Arena.h>
 
 namespace DB
@@ -25,6 +26,7 @@ class TotalsHavingTransform : public ISimpleTransform
 public:
     TotalsHavingTransform(
         const Block & header,
+        const ColumnsMask & aggregates_mask_,
         bool overflow_row_,
         const ExpressionActionsPtr & expression_,
         const std::string & filter_column_,
@@ -40,12 +42,13 @@ public:
     Status prepare() override;
     void work() override;
 
-    static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final);
+    static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final, const ColumnsMask & aggregates_mask);
 
 protected:
     void transform(Chunk & chunk) override;
 
     bool finished_transform = false;
+    bool total_prepared = false;
     Chunk totals;
 
 private:
@@ -53,6 +56,7 @@ private:
     void prepareTotals();
 
     /// Params
+    const ColumnsMask aggregates_mask;
     bool overflow_row;
     ExpressionActionsPtr expression;
     String filter_column_name;
@@ -75,7 +79,5 @@ private:
     /// Here, total values are accumulated. After the work is finished, they will be placed in totals.
     MutableColumns current_totals;
 };
-
-void finalizeChunk(Chunk & chunk);
 
 }

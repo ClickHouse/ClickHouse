@@ -1,31 +1,34 @@
 ---
-toc_priority: 42
-toc_title: For Replacing in Strings
+slug: /en/sql-reference/functions/string-replace-functions
+sidebar_position: 42
+sidebar_label: For Replacing in Strings
 ---
 
-# Functions for Searching and Replacing in Strings {#functions-for-searching-and-replacing-in-strings}
+# Functions for Searching and Replacing in Strings
 
-!!! note "Note"
-    Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
+:::note
+Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
+:::
 
-## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
+## replaceOne(haystack, pattern, replacement)
 
-Replaces the first occurrence, if it exists, of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
-Hereafter, ‘pattern’ and ‘replacement’ must be constants.
+Replaces the first occurrence of the substring ‘pattern’ (if it exists) in ‘haystack’ by the ‘replacement’ string.
+‘pattern’ and ‘replacement’ must be constants.
 
-## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement) {#replaceallhaystack-pattern-replacement-replacehaystack-pattern-replacement}
+## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement)
 
-Replaces all occurrences of the ‘pattern’ substring in ‘haystack’ with the ‘replacement’ substring.
+Replaces all occurrences of the substring ‘pattern’ in ‘haystack’ by the ‘replacement’ string.
 
-## replaceRegexpOne(haystack, pattern, replacement) {#replaceregexponehaystack-pattern-replacement}
+## replaceRegexpOne(haystack, pattern, replacement)
 
-Replacement using the ‘pattern’ regular expression. A re2 regular expression.
-Replaces only the first occurrence, if it exists.
-A pattern can be specified as ‘replacement’. This pattern can include substitutions `\0-\9`.
-The substitution `\0` includes the entire regular expression. Substitutions `\1-\9` correspond to the subpattern numbers.To use the `\` character in a template, escape it using `\`.
-Also keep in mind that a string literal requires an extra escape.
+Replaces the first occurrence of the substring matching the regular expression ‘pattern’ in ‘haystack‘ by the ‘replacement‘ string.
+‘pattern‘ must be a constant [re2 regular expression](https://github.com/google/re2/wiki/Syntax).
+‘replacement’ must be a plain constant string or a constant string containing substitutions `\0-\9`.
+Substitutions `\1-\9` correspond to the 1st to 9th capturing group (submatch), substitution `\0` corresponds to the entire match.
+To use a verbatim `\` character in the ‘pattern‘ or ‘replacement‘ string, escape it using `\`.
+Also keep in mind that string literals require an extra escaping.
 
-Example 1. Converting the date to American format:
+Example 1. Converting ISO dates to American format:
 
 ``` sql
 SELECT DISTINCT
@@ -58,9 +61,9 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## replaceRegexpAll(haystack, pattern, replacement) {#replaceregexpallhaystack-pattern-replacement}
+## replaceRegexpAll(haystack, pattern, replacement)
 
-This does the same thing, but replaces all the occurrences. Example:
+Like ‘replaceRegexpOne‘, but replaces all occurrences of the pattern. Example:
 
 ``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
@@ -85,10 +88,42 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 └─────────────────────┘
 ```
 
-## regexpQuoteMeta(s) {#regexpquotemetas}
+## regexpQuoteMeta(s)
 
 The function adds a backslash before some predefined characters in the string.
 Predefined characters: `\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`.
 This implementation slightly differs from re2::RE2::QuoteMeta. It escapes zero byte as `\0` instead of `\x00` and it escapes only required characters.
 For more information, see the link: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
+
+## translate(s, from, to)
+
+The function replaces characters in the string ‘s’ in accordance with one-to-one character mapping defined by ‘from’ and ‘to’ strings. ‘from’ and ‘to’ must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
+
+Example:
+
+``` sql
+SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
+```
+
+``` text
+┌─res───────────┐
+│ HELLO, WORLD! │
+└───────────────┘
+```
+
+## translateUTF8(string, from, to)
+
+Similar to previous function, but works with UTF-8 arguments. ‘from’ and ‘to’ must be valid constant UTF-8 strings of the same size.
+
+Example:
+
+``` sql
+SELECT translateUTF8('Hélló, Wórld¡', 'óé¡', 'oe!') AS res
+```
+
+``` text
+┌─res───────────┐
+│ Hello, World! │
+└───────────────┘
+```

@@ -31,7 +31,7 @@ inline UInt64 clock_gettime_ns_adjusted(UInt64 prev_time, clockid_t clock_type =
 }
 
 /** Differs from Poco::Stopwatch only by using 'clock_gettime' instead of 'gettimeofday',
-  *  returns nanoseconds instead of microseconds, and also by other minor differencies.
+  *  returns nanoseconds instead of microseconds, and also by other minor differences.
   */
 class Stopwatch
 {
@@ -40,6 +40,10 @@ public:
       * Pass CLOCK_MONOTONIC_COARSE, if you need better performance with acceptable cost of several milliseconds of inaccuracy.
       */
     explicit Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { start(); }
+    explicit Stopwatch(clockid_t clock_type_, UInt64 start_nanoseconds, bool is_running_)
+        : start_ns(start_nanoseconds), clock_type(clock_type_), is_running(is_running_)
+    {
+    }
 
     void start()                       { start_ns = nanoseconds(); is_running = true; }
     void stop()                        { stop_ns = nanoseconds(); is_running = false; }
@@ -50,6 +54,8 @@ public:
     UInt64 elapsedMicroseconds() const { return elapsedNanoseconds() / 1000U; }
     UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
     double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
+
+    UInt64 getStart() { return start_ns; }
 
 private:
     UInt64 start_ns = 0;
@@ -63,6 +69,8 @@ private:
 using StopwatchUniquePtr = std::unique_ptr<Stopwatch>;
 
 
+/// Allows to obtain the elapsed time concurrently with restarting the stopwatch.
+/// Allows to atomically compare the elapsed time with a threshold and restart the watch if the elapsed time is not less.
 class AtomicStopwatch
 {
 public:
@@ -152,4 +160,3 @@ private:
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
     UInt64 nanoseconds(UInt64 prev_time) const { return clock_gettime_ns_adjusted(prev_time, clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
 };
-
