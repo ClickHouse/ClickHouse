@@ -114,8 +114,9 @@ private:
     void addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
-    void setNumFilesAndSize(const OperationID & id, size_t num_files, size_t num_processed_files, UInt64 processed_files_size, UInt64 uncompressed_size, UInt64 compressed_size);
-
+    void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
+                            UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
+    
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
 
