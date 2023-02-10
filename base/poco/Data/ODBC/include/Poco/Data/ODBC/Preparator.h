@@ -570,7 +570,7 @@ private:
 		if (Utility::isError(SQLBindCol(_rStmt, 
 			(SQLUSMALLINT) pos + 1, 
 			valueType, 
-			(SQLPOINTER) pVal,  
+			(SQLPOINTER) pVal, 
 			(SQLINTEGER) dataSize, 
 			&_lengths[pos])))
 		{

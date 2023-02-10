@@ -105,8 +105,9 @@ private:
     ActiveDataPartSet virtual_parts;
 
 
-    /// Dropped ranges inserted into queue
-    DropPartsRanges drop_ranges;
+    /// We do not add DROP_PARTs to virtual_parts because they can intersect,
+    /// so we store them separately in this structure.
+    DropPartsRanges drop_parts;
 
     /// A set of mutations loaded from ZooKeeper.
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
@@ -405,8 +406,9 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
-    /// Returns true if part_info is covered by some DROP_RANGE
-    bool hasDropRange(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
+    /// Returns true if part_info is covered by some DROP_RANGE or DROP_PART
+    bool isGoingToBeDropped(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
+    bool isGoingToBeDroppedImpl(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const;
 
     /// Check that part produced by some entry in queue and get source parts for it.
     /// If there are several entries return largest source_parts set. This rarely possible
@@ -524,7 +526,7 @@ public:
     int32_t getVersion() const { return merges_version; }
 
     /// Returns true if there's a drop range covering new_drop_range_info
-    bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
+    bool isGoingToBeDropped(const MergeTreePartInfo & new_drop_range_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
 
     /// Returns virtual part covering part_name (if any) or empty string
     String getCoveringVirtualPart(const String & part_name) const;
