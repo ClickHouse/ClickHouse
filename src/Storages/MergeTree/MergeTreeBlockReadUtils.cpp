@@ -289,6 +289,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const Names & required_columns,
     const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
 {
@@ -314,7 +315,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (prewhere_info)
     {
-        auto prewhere_actions = IMergeTreeSelectAlgorithm::getPrewhereActions(prewhere_info, {}, reader_settings.enable_multiple_prewhere_read_steps); // TODO: pass proper actions_settings
+        auto prewhere_actions = IMergeTreeSelectAlgorithm::getPrewhereActions(
+            prewhere_info, actions_settings, reader_settings.enable_multiple_prewhere_read_steps);
 
         NameSet columns_from_previous_steps;
 

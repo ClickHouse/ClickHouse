@@ -25,7 +25,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         bool use_uncompressed_cache_,
         const PrewhereInfoPtr & prewhere_info_,
-        ExpressionActionsSettings actions_settings,
+        const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & virt_column_names_);
 

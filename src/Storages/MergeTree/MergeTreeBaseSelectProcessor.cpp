@@ -54,7 +54,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
-    ExpressionActionsSettings actions_settings,
+    const ExpressionActionsSettings & actions_settings_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
@@ -64,6 +64,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
+    , actions_settings(actions_settings_)
     , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
@@ -141,7 +142,7 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             std::vector<Step> steps;
 
             /// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
-            /// This is different from ActionsDAG::addCast() becuase it set the name equal to the original name effectively hiding the value before cast,
+            /// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
             /// but it might be required for further steps with its original uncasted type.
             auto add_cast = [] (ActionsDAGPtr dag, const ActionsDAG::Node & node_to_cast, const String & type_name, const String & new_name = {}) -> const ActionsDAG::Node &
             {

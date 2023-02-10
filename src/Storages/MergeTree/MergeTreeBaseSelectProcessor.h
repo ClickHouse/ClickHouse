@@ -43,7 +43,7 @@ public:
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        ExpressionActionsSettings actions_settings,
+        const ExpressionActionsSettings & actions_settings,
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
@@ -140,6 +140,7 @@ protected:
     /// This step is added when the part has lightweight delete mask
     const PrewhereExprStep lightweight_delete_filter_step { nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, true };
     PrewhereInfoPtr prewhere_info;
+    ExpressionActionsSettings actions_settings;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
     UInt64 max_block_size_rows;
