@@ -131,6 +131,7 @@ public:
     void advanceFrameEnd();
     void advanceFrameEndRangeOffset();
 
+    template<bool enable_batch_aggregate>
     void updateAggregationState();
     void writeOutCurrentRow();
 
@@ -287,6 +288,8 @@ public:
     std::vector<size_t> partition_by_indices;
     // Indices of the ORDER BY columns in block;
     std::vector<size_t> order_by_indices;
+    // A flag to decide to use AggreageteFunction's add or addBatchSinglePlace
+    bool enable_aggregate_batch_add = false;
 
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
@@ -358,6 +361,8 @@ public:
         const IColumn * reference_column, size_t reference_row,
         const Field & offset,
         bool offset_is_preceding);
+
+    void setupEnableAggregateBatchAdd();
 };
 
 }

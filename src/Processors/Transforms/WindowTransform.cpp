@@ -291,6 +291,19 @@ WindowTransform::WindowTransform(const Block & input_header_,
             }
         }
     }
+
+    setupEnableAggregateBatchAdd();
+}
+
+void WindowTransform::setupEnableAggregateBatchAdd()
+{
+    const auto & end_type = window_description.frame.end_type;
+    const auto & begin_type = window_description.frame.begin_type;
+    if (end_type == WindowFrame::BoundaryType::Unbounded ||
+            (end_type == WindowFrame::BoundaryType::Offset && begin_type == WindowFrame::BoundaryType::Offset))
+    {
+        enable_aggregate_batch_add = true;
+    }
 }
 
 WindowTransform::~WindowTransform()
@@ -852,6 +865,7 @@ void WindowTransform::advanceFrameEnd()
 }
 
 // Update the aggregation states after the frame has changed.
+template<bool enable_batch_aggregate>
 void WindowTransform::updateAggregationState()
 {
 //    fmt::print(stderr, "update agg states [{}, {}) -> [{}, {})\n",
@@ -945,9 +959,19 @@ void WindowTransform::updateAggregationState()
             auto * columns = ws.argument_columns.data();
             // Removing arena.get() from the loop makes it faster somehow...
             auto * arena_ptr = arena.get();
-            for (auto row = first_row; row < past_the_end_row; ++row)
+            if constexpr (enable_batch_aggregate)
             {
-                a->add(buf, columns, row, arena_ptr);
+                // For [rows unbouned preceding and unbounded following,
+                // first_row = past_the_end_row is the major case
+                if (first_row != past_the_end_row)
+                    a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
+            }
+            else
+            {
+                for (auto row = first_row; row < past_the_end_row; ++row)
+                {
+                    a->add(buf, columns, row, arena_ptr);
+                }
             }
         }
     }
@@ -1078,6 +1102,13 @@ void WindowTransform::appendChunk(Chunk & chunk)
         assertSameColumns(input_header.getColumns(), block.input_columns);
     }
 
+    // std::function<void()> update_aggregate_state;
+    void (WindowTransform::*update_aggregate_state)() = nullptr;
+    if (enable_aggregate_batch_add)
+        update_aggregate_state = &WindowTransform::updateAggregationState<true>;
+    else
+        update_aggregate_state = &WindowTransform::updateAggregationState<false>;
+
     // Start the calculations. First, advance the partition end.
     for (;;)
     {
@@ -1157,7 +1188,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // the frame boundaries, but it would require some care not to
             // perform unnecessary work while we are still looking for the frame
             // start, so do it the simple way for now.
-            updateAggregationState();
+            (this->*update_aggregate_state)();
 
             // Write out the aggregation results.
             writeOutCurrentRow();
