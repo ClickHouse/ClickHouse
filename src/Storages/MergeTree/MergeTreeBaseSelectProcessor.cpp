@@ -7,13 +7,18 @@
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/typeid_cast.h>
-#include "Core/Names.h"
-#include "Interpreters/ActionsDAG.h"
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+
+#include <Interpreters/ActionsDAG.h>
+
+/// For CAST to bool
+#include <Functions/CastOverloadResolver.h>
+#include <Planner/PlannerActionsVisitor.h>
+
 #include <city.h>
 
 namespace ProfileEvents
@@ -104,17 +109,22 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
         }
 
+        //std::cerr << "ORIGINAL PREWHERE:\n" << prewhere_info->prewhere_actions->dumpDAG() << std::endl;
+
         if (enable_multiple_prewhere_read_steps)
         {
+            /// Find all conjunctions in prewhere expression.
             auto conjunctions = getConjunctionNodes(
                 prewhere_info->prewhere_actions->tryFindInOutputs(prewhere_info->prewhere_column_name),
                 {});
 
+            /// Save the list of outputs from the original prewhere expression.
             auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
-            NameSet outputs_required_by_next_steps;
+            std::unordered_map<String, DataTypePtr> outputs_required_by_next_steps;
             for (const auto & output : original_outputs)
-                outputs_required_by_next_steps.insert(output->result_name);
+                outputs_required_by_next_steps[output->result_name] = output->result_type;
 
+            /// Save the list of inputs to the original prewhere expression.
             auto inputs = prewhere_info->prewhere_actions->getInputs();
             ColumnsWithTypeAndName all_inputs;
             for (const auto & input : inputs)
@@ -130,15 +140,36 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             };
             std::vector<Step> steps;
 
+            /// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
+            /// This is different from ActionsDAG::addCast() becuase it set the name equal to the original name effectively hiding the value before cast,
+            /// but it might be required for further steps with its original uncasted type.
+            auto add_cast = [] (ActionsDAGPtr dag, const ActionsDAG::Node & node_to_cast, const String & type_name, const String & new_name = {}) -> const ActionsDAG::Node &
+            {
+                Field cast_type_constant_value(type_name);
+
+                ColumnWithTypeAndName column;
+                column.name = calculateConstantActionNodeName(cast_type_constant_value);
+                column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
+                column.type = std::make_shared<DataTypeString>();
+
+                const auto * cast_type_constant_node = &dag->addColumn(std::move(column));
+                ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
+                FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+
+                return dag->addFunction(func_builder_cast, std::move(children), new_name);
+            };
+
+            /// Make separate DAG for each step
             for (const auto & conjunction : all_conjunctions)
             {
                 auto result_name = conjunction->result_name;
                 auto step_dag = ActionsDAG::cloneActionsForConjunction({conjunction}, all_inputs);
                 const auto & result_node = step_dag->findInOutputs(result_name);
-                /// Cast to UInt8 if needed
+                /// Cast result to UInt8 if needed
                 if (result_node.result_type->getTypeId() != TypeIndex::UInt8)
                 {
-                    const auto & cast_node = step_dag->addCast(result_node, std::make_shared<DataTypeUInt8>());
+                    const auto & cast_node = add_cast(step_dag, result_node, "UInt8");
+
                     step_dag->addOrReplaceInOutputs(cast_node);
                     result_name = cast_node.result_name;
                 }
@@ -147,8 +178,17 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             }
 
             /// "Rename" the last step result to the combined prewhere column name, because in fact it will be AND of all step results
-            if (steps.back().column_name != prewhere_info->prewhere_column_name)
-                steps.back().actions->addAlias(steps.back().actions->findInOutputs(steps.back().column_name), prewhere_info->prewhere_column_name);
+            if (steps.back().column_name != prewhere_info->prewhere_column_name &&
+                outputs_required_by_next_steps.contains(prewhere_info->prewhere_column_name))
+            {
+                const auto & prewhere_result_node = add_cast(
+                    steps.back().actions,
+                    steps.back().actions->findInOutputs(steps.back().column_name),
+                    outputs_required_by_next_steps[prewhere_info->prewhere_column_name]->getName(),
+                    prewhere_info->prewhere_column_name);
+
+                steps.back().actions->addOrReplaceInOutputs(prewhere_result_node);
+            }
 
             const size_t steps_before_prewhere = prewhere_actions->steps.size();
             prewhere_actions->steps.resize(steps_before_prewhere + steps.size());
@@ -164,16 +204,16 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
                 const bool remove_column = !outputs_required_by_next_steps.contains(step.column_name);
                 /// Preserve outputs computed at this step that are used by the next steps
                 for (const auto & output : outputs_required_by_next_steps)
-                    if (step.actions->tryRestoreColumn(output))
-                        step_outputs.emplace_back(output);
+                    if (step.actions->tryRestoreColumn(output.first))
+                        step_outputs.emplace_back(output.first);
                 step.actions->removeUnusedActions(step_outputs, true, true);
 
                 /// Add current step columns as outputs that should be preserved from previous steps
                 for (const auto & input :step.actions->getInputs())
-                    outputs_required_by_next_steps.insert(input->result_name);
+                    outputs_required_by_next_steps[input->result_name] = input->result_type;
 
                 //std::cerr << conjunction->result_name << "\n";
-                //std::cerr << step.actions->dumpDAG() << "\n";
+                //std::cerr << "STEP " << i << ":\n" << step.actions->dumpDAG() << "\n";
 
                 PrewhereExprStep prewhere_step
                 {
