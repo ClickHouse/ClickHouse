@@ -99,6 +99,11 @@ public:
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert AggregateFunctionStateData to {}", demangle(typeid(T).name()));
     }
 
+    T operator() (const CustomType &) const
+    {
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert CustomType to {}", demangle(typeid(T).name()));
+    }
+
     template <typename U>
     requires is_big_int_v<U>
     T operator() (const U & x) const

@@ -308,6 +308,7 @@ MergeTreeData::MergeTreeData(
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
     const auto settings = getSettings();
+
     allow_nullable_key = attach || settings->allow_nullable_key;
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
@@ -378,7 +379,17 @@ MergeTreeData::MergeTreeData(
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
-    return getContext()->getStoragePolicy(getSettings()->storage_policy);
+    auto settings = getSettings();
+    const auto & context = getContext();
+
+    StoragePolicyPtr storage_policy;
+
+    if (settings->disk.changed)
+        storage_policy = context->getStoragePolicyFromDisk(settings->disk);
+    else
+        storage_policy = context->getStoragePolicy(settings->storage_policy);
+
+    return storage_policy;
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -1486,7 +1497,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken())
+            if (disk->isBroken() || disk->isCustomDisk())
                 continue;
 
             if (!defined_disk_names.contains(disk_name)
@@ -2798,7 +2809,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings.allow_non_metadata_alters)
     {
-
         auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, getContext());
 
         if (!mutation_commands.empty())
