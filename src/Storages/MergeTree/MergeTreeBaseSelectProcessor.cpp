@@ -89,6 +89,24 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
 
+/// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
+/// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
+/// but it might be required for further steps with its original uncasted type.
+static const ActionsDAG::Node & addCast(ActionsDAGPtr dag, const ActionsDAG::Node & node_to_cast, const String & type_name, const String & new_name = {})
+{
+    Field cast_type_constant_value(type_name);
+
+    ColumnWithTypeAndName column;
+    column.name = calculateConstantActionNodeName(cast_type_constant_value);
+    column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
+    column.type = std::make_shared<DataTypeString>();
+
+    const auto * cast_type_constant_node = &dag->addColumn(std::move(column));
+    ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
+    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+
+    return dag->addFunction(func_builder_cast, std::move(children), new_name);
+};
 
 std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps)
 {
@@ -112,18 +130,19 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
 
         //std::cerr << "ORIGINAL PREWHERE:\n" << prewhere_info->prewhere_actions->dumpDAG() << std::endl;
 
+        struct Step
+        {
+            ActionsDAGPtr actions;
+            String column_name;
+        };
+        std::vector<Step> steps;
+
         if (enable_multiple_prewhere_read_steps)
         {
             /// Find all conjunctions in prewhere expression.
             auto conjunctions = getConjunctionNodes(
                 prewhere_info->prewhere_actions->tryFindInOutputs(prewhere_info->prewhere_column_name),
                 {});
-
-            /// Save the list of outputs from the original prewhere expression.
-            auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
-            std::unordered_map<String, DataTypePtr> outputs_required_by_next_steps;
-            for (const auto & output : original_outputs)
-                outputs_required_by_next_steps[output->result_name] = output->result_type;
 
             /// Save the list of inputs to the original prewhere expression.
             auto inputs = prewhere_info->prewhere_actions->getInputs();
@@ -134,32 +153,6 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             ActionsDAG::NodeRawConstPtrs all_conjunctions = std::move(conjunctions.allowed);
             all_conjunctions.insert(all_conjunctions.end(), conjunctions.rejected.begin(), conjunctions.rejected.end());
 
-            struct Step
-            {
-                ActionsDAGPtr actions;
-                String column_name;
-            };
-            std::vector<Step> steps;
-
-            /// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
-            /// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
-            /// but it might be required for further steps with its original uncasted type.
-            auto add_cast = [] (ActionsDAGPtr dag, const ActionsDAG::Node & node_to_cast, const String & type_name, const String & new_name = {}) -> const ActionsDAG::Node &
-            {
-                Field cast_type_constant_value(type_name);
-
-                ColumnWithTypeAndName column;
-                column.name = calculateConstantActionNodeName(cast_type_constant_value);
-                column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
-                column.type = std::make_shared<DataTypeString>();
-
-                const auto * cast_type_constant_node = &dag->addColumn(std::move(column));
-                ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-                FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
-
-                return dag->addFunction(func_builder_cast, std::move(children), new_name);
-            };
-
             /// Make separate DAG for each step
             for (const auto & conjunction : all_conjunctions)
             {
@@ -169,7 +162,7 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
                 /// Cast result to UInt8 if needed
                 if (result_node.result_type->getTypeId() != TypeIndex::UInt8)
                 {
-                    const auto & cast_node = add_cast(step_dag, result_node, "UInt8");
+                    const auto & cast_node = addCast(step_dag, result_node, "UInt8");
 
                     step_dag->addOrReplaceInOutputs(cast_node);
                     result_name = cast_node.result_name;
@@ -177,12 +170,21 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
                 step_dag->removeUnusedActions(Names{result_name}, true, true);
                 steps.emplace_back(Step{step_dag, result_name});
             }
+        }
+
+        if (steps.size() > 1)
+        {
+            /// Save the list of outputs from the original prewhere expression.
+            auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
+            std::unordered_map<String, DataTypePtr> outputs_required_by_next_steps;
+            for (const auto & output : original_outputs)
+                outputs_required_by_next_steps[output->result_name] = output->result_type;
 
             /// "Rename" the last step result to the combined prewhere column name, because in fact it will be AND of all step results
             if (steps.back().column_name != prewhere_info->prewhere_column_name &&
                 outputs_required_by_next_steps.contains(prewhere_info->prewhere_column_name))
             {
-                const auto & prewhere_result_node = add_cast(
+                const auto & prewhere_result_node = addCast(
                     steps.back().actions,
                     steps.back().actions->findInOutputs(steps.back().column_name),
                     outputs_required_by_next_steps[prewhere_info->prewhere_column_name]->getName(),
