@@ -7,7 +7,10 @@ from helpers.cluster import ClickHouseCluster
 
 single_node_cluster = ClickHouseCluster(__file__)
 small_node = single_node_cluster.add_instance(
-    "small_node", main_configs=["configs/s3.xml"], user_configs=["configs/max_delayed_streams.xml"], with_minio=True
+    "small_node",
+    main_configs=["configs/s3.xml"],
+    user_configs=["configs/max_delayed_streams.xml"],
+    with_minio=True,
 )
 
 
