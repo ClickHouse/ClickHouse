@@ -18,7 +18,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
-
 namespace DB
 {
 
@@ -1970,6 +1969,121 @@ struct WindowFunctionRowNumber final : public WindowFunction
     }
 };
 
+// Usage: ntile(n). n is the number of buckets.
+struct WindowFunctionNtile final : public WindowFunction
+{
+    WindowFunctionNtile(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    {
+        if (argument_types.size() != 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one parameter", name_);
+        }
+    }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        if (!buckets) [[unlikely]]
+        {
+            checkWindowFrameType(transform);
+            const auto & current_block = transform->blockAt(transform->current_row);
+            const auto & workspace = transform->workspaces[function_index];
+            auto n = (*current_block.input_columns[
+                    workspace.argument_column_indices[0]])[
+                        transform->current_row.row].get<Int64>();
+            if (n <= 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must > 0");
+            }
+            buckets = static_cast<UInt64>(n);
+        }
+        // new partition
+        if (transform->current_row_number == 1) [[unlikely]]
+        {
+            current_partition_rows = 0;
+            start_row = transform->current_row;
+        }
+        current_partition_rows++;
+
+        // Only do the action when we meet the last row in this partition.
+        if (!transform->partition_ended)
+            return;
+        else
+        {
+            auto current_row = transform->current_row;
+            current_row.row++;
+            const auto & end_row = transform->partition_end;
+            if (current_row != end_row)
+            {
+                if (!transform->input_is_finished || end_row.block != current_row.block + 1 || end_row.row)
+                {
+                    return;
+                }
+                // else, current_row is the last input row.
+            }
+        }
+
+        auto bucket_capacity = current_partition_rows / buckets;
+        auto capacity_diff = current_partition_rows - bucket_capacity * buckets;
+
+        // bucket number starts from 1.
+        UInt64 bucket_num = 1;
+        for (UInt64 r = 0; r < current_partition_rows;)
+        {
+            auto current_bucket_capacity = bucket_capacity;
+            if (capacity_diff > 0)
+            {
+                current_bucket_capacity += 1;
+                capacity_diff--;
+            }
+            Int64 left_rows = static_cast<Int64>(current_bucket_capacity);
+            while (left_rows > 0)
+            {
+                auto available_block_rows = transform->blockRowsNumber(start_row) - start_row.row;
+                IColumn & to = *transform->blockAt(start_row).output_columns[function_index];
+                auto & pod_array = assert_cast<ColumnUInt64 &>(to).getData();
+                if (left_rows < static_cast<Int64>(available_block_rows))
+                {
+                    pod_array.resize_fill(pod_array.size() + static_cast<UInt64>(left_rows), bucket_num);
+                    start_row.row += static_cast<UInt64>(left_rows);
+                    left_rows = 0;
+                }
+                else
+                {
+                    pod_array.resize_fill(pod_array.size() + available_block_rows, bucket_num);
+                    left_rows -= static_cast<Int64>(available_block_rows);
+                    start_row.block++;
+                    start_row.row = 0;
+                }
+            }
+
+            r += current_bucket_capacity;
+            bucket_num += 1;
+        }
+    }
+private:
+    UInt64 buckets = 0;
+    RowNumber start_row;
+    UInt64 current_partition_rows = 0;
+
+    void checkWindowFrameType(const WindowTransform * transform)
+    {
+        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame start type must be Unbounded");
+        }
+
+        if (transform->window_description.frame.end_type != WindowFrame::BoundaryType::Current)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame end type must be Current");
+        }
+    }
+};
+
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
 struct WindowFunctionLagLeadInFrame final : public WindowFunction
@@ -2335,6 +2449,13 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
+                parameters);
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("ntile", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionNtile>(name, argument_types,
                 parameters);
         }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
