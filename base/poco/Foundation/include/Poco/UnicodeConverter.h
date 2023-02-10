@@ -37,7 +37,7 @@ public:
 	static void convert(const std::string& utf8String, UTF32String& utf32String);
 		/// Converts the given UTF-8 encoded string into an UTF-32 encoded wide string.
 
-	static void convert(const char* utf8String,  std::size_t length, UTF32String& utf32String);
+	static void convert(const char* utf8String, std::size_t length, UTF32String& utf32String);
 		/// Converts the given UTF-8 encoded character sequence into an UTF-32 encoded wide string.
 
 	static void convert(const char* utf8String, UTF32String& utf32String);
@@ -46,7 +46,7 @@ public:
 	static void convert(const std::string& utf8String, UTF16String& utf16String);
 		/// Converts the given UTF-8 encoded string into an UTF-16 encoded wide string.
 
-	static void convert(const char* utf8String,  std::size_t length, UTF16String& utf16String);	
+	static void convert(const char* utf8String, std::size_t length, UTF16String& utf16String);	
 		/// Converts the given UTF-8 encoded character sequence into an UTF-16 encoded wide string.
 
 	static void convert(const char* utf8String, UTF16String& utf16String);	
@@ -58,7 +58,7 @@ public:
 	static void convert(const UTF32String& utf32String, std::string& utf8String);
 		/// Converts the given UTF-32 encoded wide string into an UTF-8 encoded string.
 
-	static void convert(const UTF16Char* utf16String,  std::size_t length, std::string& utf8String);
+	static void convert(const UTF16Char* utf16String, std::size_t length, std::string& utf8String);
 		/// Converts the given zero-terminated UTF-16 encoded wide character sequence into an UTF-8 encoded string.
 
 	static void convert(const UTF32Char* utf16String, std::size_t length, std::string& utf8String);
