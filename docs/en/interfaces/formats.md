@@ -83,6 +83,7 @@ The supported formats are:
 | [RawBLOB](#rawblob)                                                                       | ✔    | ✔      |
 | [MsgPack](#msgpack)                                                                       | ✔    | ✔      |
 | [MySQLDump](#mysqldump)                                                                   | ✔    | ✗      |
+| [Markdown](#markdown)                                                                     | ✗    | ✔      |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -682,6 +683,11 @@ Example:
 
 ## JSONColumns {#jsoncolumns}
 
+:::tip
+The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field; 
+visually, the data is rotated 90 degrees to the left.
+:::
+
 In this format, all data is represented as a single JSON Object.
 Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
 
@@ -1209,6 +1215,7 @@ SELECT * FROM json_each_row_nested
 - [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `false`.
 - [input_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_named_tuples_as_objects) - parse named tuple columns as JSON objects. Default value - `true`.
 - [input_format_json_defaults_for_missing_elements_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_defaults_for_missing_elements_in_named_tuple) - insert default values for missing elements in JSON object while parsing named tuple. Default value - `true`.
+- [input_format_json_ignore_unknown_keys_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_ignore_unknown_keys_in_named_tuple) - Ignore unknown keys in json object for named tuples. Default value - `false`.
 - [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_64bit_floats](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
@@ -2347,3 +2354,26 @@ FROM file(dump.sql, MySQLDump)
 │ 3 │
 └───┘
 ```
+
+## Markdown {#markdown}
+
+You can export results using [Markdown](https://en.wikipedia.org/wiki/Markdown) format to generate output ready to be pasted into your `.md` files:
+
+```sql
+SELECT
+    number,
+    number * 2
+FROM numbers(5)
+FORMAT Markdown
+```
+```results
+| number | multiply(number, 2) |
+|-:|-:|
+| 0 | 0 |
+| 1 | 2 |
+| 2 | 4 |
+| 3 | 6 |
+| 4 | 8 |
+```
+
+Markdown table will be generated automatically and can be used on markdown-enabled platforms, like Github. This format is used only for output.

@@ -136,7 +136,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.", database_name_in_mysql, table_name);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
         return nullptr;
     }
 
@@ -180,7 +180,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
     fetchTablesIntoLocalCache(getContext());
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.", database_name_in_mysql, table_name);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
 
     return time_t(local_tables_cache[table_name].first);
 }
@@ -448,7 +448,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
         remove_or_detach_tables.erase(table_name);
         throw;
     }
-    table_iter->second.second->is_dropped = true;
+    table_iter->second.second->is_detached = true;
 }
 
 void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)

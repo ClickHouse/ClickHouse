@@ -153,7 +153,7 @@ public:
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context, bool force_wait) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
@@ -178,9 +178,9 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    /// Wait when replication queue size becomes less or equal than queue_size
+    /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForShrinkingQueueSize(size_t queue_size = 0, UInt64 max_wait_milliseconds = 0);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds = 0);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -528,7 +528,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -629,7 +629,7 @@ private:
         const DataPartsVector & parts,
         const String & merged_name,
         const UUID & merged_part_uuid,
-        const MergeTreeDataPartType & merged_part_type,
+        const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
@@ -858,7 +858,7 @@ private:
     // Create table id if needed
     void createTableSharedID() const;
 
-    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
+    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
 
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 

@@ -9,7 +9,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeIndexGin.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -876,7 +876,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes)
 {
-    RangesInDataParts parts_with_ranges(parts.size());
+    RangesInDataParts parts_with_ranges;
+    parts_with_ranges.resize(parts.size());
     const Settings & settings = context->getSettingsRef();
 
     /// Let's start analyzing all useful indices
@@ -1010,7 +1011,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (metadata_snapshot->hasPrimaryKey())
                 ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
             else if (total_marks_count)
-                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+                ranges.ranges = MarkRanges{{MarkRange{0, total_marks_count}}};
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
@@ -1689,10 +1690,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     PostingsCacheForStore cache_in_store;
 
-    if (dynamic_cast<const MergeTreeIndexGinFilter *>(&*index_helper) != nullptr)
-    {
+    if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
         cache_in_store.store = GinIndexStoreFactory::instance().get(index_helper->getFileName(), part->getDataPartStoragePtr());
-    }
 
     for (size_t i = 0; i < ranges.size(); ++i)
     {
@@ -1707,7 +1706,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
-            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionGinFilter *>(&*condition);
+            const auto * gin_filter_condition = dynamic_cast<const MergeTreeConditionInverted *>(&*condition);
             // Cast to Ann condition
             auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
             if (ann_condition != nullptr)
@@ -1734,7 +1733,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
             }
 
-            bool result{false};
+            bool result = false;
             if (!gin_filter_condition)
                 result = condition->mayBeTrueOnGranule(granule);
             else

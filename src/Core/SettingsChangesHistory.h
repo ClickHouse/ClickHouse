@@ -81,10 +81,11 @@ namespace SettingsChangesHistory
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"23.1", {{"input_format_json_read_objects_as_strings", 0, 1, "Enable reading nested json objects as strings while object type is experimental"},
+              {"input_format_json_defaults_for_missing_elements_in_named_tuple", false, true, "Allow missing elements in JSON objects while reading named tuples by default"},
               {"input_format_csv_detect_header", false, true, "Detect header in CSV format by default"},
               {"input_format_tsv_detect_header", false, true, "Detect header in TSV format by default"},
               {"input_format_custom_detect_header", false, true, "Detect header in CustomSeparated format by default"},
-              {"input_format_json_defaults_for_missing_elements_in_named_tuple", false, true, "Allow missing elements in JSON objects while reading named tuples by default"}}},
+              {"query_plan_remove_redundant_sorting", false, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries"}}},
     {"22.12", {{"max_size_to_preallocate_for_aggregation", 10'000'000, 100'000'000, "This optimizes performance"},
                {"query_plan_aggregation_in_order", 0, 1, "Enable some refactoring around query plan"},
                {"format_binary_max_string_size", 0, 1_GiB, "Prevent allocating large amount of memory"}}},
