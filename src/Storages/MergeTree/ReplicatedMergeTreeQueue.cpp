@@ -1831,28 +1831,16 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     MutationCommands commands;
     for (auto it = begin; it != end; ++it)
     {
-        bool rename_command = false;
-        if (it->second->entry->isAlterMutation())
-        {
-            const auto & single_mutation_commands = it->second->entry->commands;
-            for (const auto & command : single_mutation_commands)
-            {
-                if (command.type == MutationCommand::Type::RENAME_COLUMN)
-                {
-                    rename_command = true;
-                    break;
-                }
-            }
-        }
+        const auto & commands_from_entry = it->second->entry->commands;
 
-        if (rename_command)
+        if (commands_from_entry.containBarrierCommand())
         {
             if (commands.empty())
-                commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
+                commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
             break;
         }
         else
-            commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
+            commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
     }
 
     return commands;

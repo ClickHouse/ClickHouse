@@ -7574,7 +7574,6 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
 
     AlterConversions result{};
     auto & rename_map = result.rename_map;
-    /// Squash "log of renames" into single map
     for (const auto & [version, commands] : commands_map)
     {
         for (const auto & command : commands)
@@ -7587,15 +7586,6 @@ AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPa
                 rename_map.emplace_back(AlterConversions::RenamePair{command.rename_to, command.column_name});
             }
         }
-    }
-
-    for (auto it = rename_map.begin(); it != rename_map.end();)
-    {
-        if (it->rename_to == it->rename_from)
-            it = rename_map.erase(it);
-        else
-            ++it;
-
     }
 
     return result;

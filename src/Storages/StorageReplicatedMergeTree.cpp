@@ -455,10 +455,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
             Coordination::Stat metadata_stat;
             current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-
-            StorageInMemoryMetadata storage_metadata(*metadata_snapshot);
-            storage_metadata.setMetadataVersion(metadata_stat.version);
-            setInMemoryMetadata(storage_metadata);
+            setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_stat.version));
         }
         catch (Coordination::Exception & e)
         {

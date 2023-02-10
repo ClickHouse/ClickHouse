@@ -1141,22 +1141,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             if (current_ast_elements + commands_size >= max_ast_elements)
                 break;
 
-            bool rename_command = false;
             const auto & single_mutation_commands = it->second.commands;
-            for (const auto & command : single_mutation_commands)
-            {
-                if (command.type == MutationCommand::Type::RENAME_COLUMN)
-                {
-                    rename_command = true;
-                    break;
-                }
-            }
 
-            if (rename_command)
+            if (single_mutation_commands.containBarrierCommand())
             {
                 if (commands->empty())
                 {
-                    commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
+                    commands->insert(commands->end(), single_mutation_commands.begin(), single_mutation_commands.end());
                     last_mutation_to_apply = it;
                 }
                 break;
@@ -1164,7 +1155,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             else
             {
                 current_ast_elements += commands_size;
-                commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
+                commands->insert(commands->end(), single_mutation_commands.begin(), single_mutation_commands.end());
                 last_mutation_to_apply = it;
             }
 
