@@ -5307,6 +5307,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 
 size_t MergeTreeData::getAllPartsCount() const
 {
+    auto lock = lockParts();
     return data_parts_by_info.size();
 }
 
