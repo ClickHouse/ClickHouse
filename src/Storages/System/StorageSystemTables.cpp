@@ -463,7 +463,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getAllDataPartsSize());
+                        res_columns[res_index++]->insert(table_merge_tree->getAllPartsCount());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
