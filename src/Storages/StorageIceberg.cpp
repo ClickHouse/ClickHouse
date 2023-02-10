@@ -46,8 +46,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-IcebergMetaParser::IcebergMetaParser(const StorageS3::Configuration & configuration_, const String & table_path_, ContextPtr context_)
-    : base_configuration(configuration_), table_path(table_path_), context(context_)
+IcebergMetaParser::IcebergMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context_)
+    : base_configuration(configuration_), context(context_)
 {
 }
 
@@ -71,9 +71,10 @@ String IcebergMetaParser::getNewestMetaFile() const
     /// Iceberg stores all the metadata.json in metadata directory, and the
     /// newest version has the max version name, so we should list all of them
     /// then find the newest metadata.
+    const auto & table_path = base_configuration.url.key;
     std::vector<String> metadata_files = S3::listFiles(
         *base_configuration.client,
-        base_configuration.uri.bucket,
+        base_configuration.url.bucket,
         table_path,
         std::filesystem::path(table_path) / metadata_directory,
         ".json");
@@ -106,7 +107,7 @@ String IcebergMetaParser::getManiFestList(const String & metadata_name) const
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             auto path = snapshot->getValue<String>("manifest-list");
-            return std::filesystem::path(table_path) / metadata_directory / std::filesystem::path(path).filename();
+            return std::filesystem::path(base_configuration.url.key) / metadata_directory / std::filesystem::path(path).filename();
         }
     }
 
@@ -156,7 +157,7 @@ std::vector<String> IcebergMetaParser::getManifestFiles(const String & manifest_
             auto file_path = col_str->getDataAt(i).toView();
             /// We just need obtain the file name
             std::filesystem::path path(file_path);
-            res.emplace_back(std::filesystem::path(table_path) / metadata_directory / path.filename());
+            res.emplace_back(std::filesystem::path(base_configuration.url.key) / metadata_directory / path.filename());
         }
 
         return res;
@@ -227,9 +228,9 @@ std::shared_ptr<ReadBuffer> IcebergMetaParser::createS3ReadBuffer(const String &
     request_settings.max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
-        base_configuration.uri.bucket,
+        base_configuration.url.bucket,
         key,
-        base_configuration.uri.version_id,
+        base_configuration.url.version_id,
         request_settings,
         context->getReadSettings());
 }
@@ -249,7 +250,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             auto & engine_args = args.engine_args;
-            StorageS3Configuration configuration = StorageIceberg::getConfiguration(engine_args, args.getLocalContext());
+            StorageS3::Configuration configuration = StorageIceberg::getConfiguration(engine_args, args.getLocalContext());
 
             auto format_settings = getFormatSettings(args.getContext());
 

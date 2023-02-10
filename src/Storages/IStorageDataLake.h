@@ -79,7 +79,7 @@ public:
         : IStorage(table_id_)
         , base_configuration{configuration_}
         , log(&Poco::Logger::get("Storage" + String(name) + "(" + table_id_.table_name + ")"))
-        , table_path(base_configuration.uri.key)
+        , table_path(base_configuration.url.key)
     {
         StorageInMemoryMetadata storage_metadata;
         StorageS3::updateS3Configuration(context_, base_configuration);
@@ -141,11 +141,14 @@ public:
     static StorageS3::Configuration
     getAdjustedS3Configuration(const ContextPtr & context, StorageS3::Configuration & configuration, Poco::Logger * log)
     {
-        MetaParser parser{configuration, configuration.url.key, context};
+        MetaParser parser{configuration, context};
 
         auto keys = parser.getFiles();
-        auto new_uri = std::filesystem::path(configuration.url.uri.toString()) / Name::data_directory_prefix
+        String new_uri = std::filesystem::path(configuration.url.uri.toString()) / Name::data_directory_prefix
             / MetaParser::generateQueryFromKeys(keys, configuration.format);
+
+        StorageS3::Configuration new_configuration(configuration);
+        new_configuration.url = S3::URI(new_uri);
 
         LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_uri);
 
@@ -199,7 +202,7 @@ public:
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
-            configuration.url = S3::{checkAndGetLiteralArgument<String>(engine_args[0], "url")};
+            configuration.url = S3::URI{checkAndGetLiteralArgument<String>(engine_args[0], "url")};
             configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
 
@@ -215,7 +218,7 @@ public:
 
 private:
 
-    StorageS3::S3Configuration base_configuration;
+    StorageS3::Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
     String table_path;
