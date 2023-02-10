@@ -262,6 +262,7 @@ private:
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
+    UInt64 client_protocol_version;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -807,6 +808,8 @@ public:
     bool tryCheckClientConnectionToMyKeeperCluster() const;
 
     UInt32 getZooKeeperSessionUptime() const;
+    UInt64 getClientProtocolVersion() const;
+    void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
     MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;

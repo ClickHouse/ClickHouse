@@ -61,6 +61,12 @@ public:
     {
     }
 
+    NativeOutputFormat(WriteBuffer & buf, UInt64 client_protocol_version, const Block & header)
+        : IOutputFormat(header, buf)
+        , writer(buf, client_protocol_version, header)
+    {
+    }
+
     String getName() const override { return "Native"; }
 
     std::string getContentType() const override
@@ -115,9 +121,9 @@ void registerOutputFormatNative(FormatFactory & factory)
     factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings & formatSettings)
     {
-        return std::make_shared<NativeOutputFormat>(buf, sample);
+        return std::make_shared<NativeOutputFormat>(buf, formatSettings.client_protocol_version, sample);
     });
 }
 
