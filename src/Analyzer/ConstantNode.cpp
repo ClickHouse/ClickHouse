@@ -86,24 +86,17 @@ ASTPtr ConstantNode::toASTImpl() const
 
     switch (constant_value_literal_type)
     {
-        case Field::Types::UInt64:
-        {
-            need_to_add_cast_function = !constant_value_type.isUInt64();
-            break;
-        }
-        case Field::Types::Int64:
-        {
-            need_to_add_cast_function = !constant_value_type.isInt64();
-            break;
-        }
-        case Field::Types::Float64:
-        {
-            need_to_add_cast_function = !constant_value_type.isFloat64();
-            break;
-        }
         case Field::Types::String:
         {
             need_to_add_cast_function = !constant_value_type.isString();
+            break;
+        }
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::Float64:
+        {
+            WhichDataType constant_value_field_type(applyVisitor(FieldToDataType(), constant_value_literal));
+            need_to_add_cast_function = constant_value_field_type.idx != constant_value_type.idx;
             break;
         }
         case Field::Types::Int128:
