@@ -56,7 +56,7 @@ std::vector<String> DeltaLakeMetadata::listCurrentFiles() &&
     return keys;
 }
 
-DeltaLakeMetaParser::DeltaLakeMetaParser(const StorageS3::Configuration & configuration_,  ContextPtr context)
+DeltaLakeMetaParser::DeltaLakeMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context)
     : base_configuration(configuration_)
 {
     init(context);
