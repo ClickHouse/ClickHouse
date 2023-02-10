@@ -491,8 +491,8 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
                 {
-                    auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID{database_name, table_name});
-                    auto dependents = DatabaseCatalog::instance().getDependents(StorageID{database_name, table_name});
+                    auto dependencies = DatabaseCatalog::instance().getLoadingDependencies(StorageID{database_name, table_name});
+                    auto dependents = DatabaseCatalog::instance().getLoadingDependents(StorageID{database_name, table_name});
 
                     Array dependencies_databases;
                     Array dependencies_tables;
