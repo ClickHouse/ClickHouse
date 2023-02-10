@@ -118,7 +118,7 @@ struct CustomType
     };
 
     CustomType() = default;
-    explicit CustomType(std::shared_ptr<CustomTypeImpl> impl_) : impl(impl_) {}
+    explicit CustomType(std::shared_ptr<const CustomTypeImpl> impl_) : impl(impl_) {}
 
     const char * getTypeName() const { return impl->getTypeName(); }
     String toString() const { return impl->toString(); }
@@ -130,7 +130,7 @@ struct CustomType
     bool operator >= (const CustomType & rhs) const { return *impl >= *rhs.impl; }
     bool operator == (const CustomType & rhs) const { return *impl == *rhs.impl; }
 
-    std::shared_ptr<CustomTypeImpl> impl;
+    std::shared_ptr<const CustomTypeImpl> impl;
 };
 
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
