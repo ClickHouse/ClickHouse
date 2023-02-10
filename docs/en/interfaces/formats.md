@@ -683,6 +683,11 @@ Example:
 
 ## JSONColumns {#jsoncolumns}
 
+:::tip
+The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field; 
+visually, the data is rotated 90 degrees to the left.
+:::
+
 In this format, all data is represented as a single JSON Object.
 Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
 
