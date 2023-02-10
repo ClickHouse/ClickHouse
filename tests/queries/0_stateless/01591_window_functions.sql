@@ -545,3 +545,7 @@ select count() over (w) from numbers(1) window w as ();
 
 -- nonexistent parent window
 select count() over (w2 rows unbounded preceding); -- { serverError 36 }
+
+-- ntile
+select a, b, ntile(3) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
+select a, b, ntile(2) over (partition by a order by b) from(select intDiv(number,10) as a, number%10 as b from numbers(20));
