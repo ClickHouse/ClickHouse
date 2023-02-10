@@ -569,8 +569,10 @@ private:
     uint8_t first{};
 
 #ifdef __SSE4_1__
-    /// vector filled `first` for determining leftmost position of the first symbol
-    __m128i pattern;
+    uint8_t second{};
+    /// vector filled `first` or `second` for determining leftmost position of the first and second symbols
+    __m128i first_pattern;
+    __m128i second_pattern;
     /// vector of first 16 characters of `needle`
     __m128i cache = _mm_setzero_si128();
     int cachemask{};
@@ -587,9 +589,14 @@ public:
 
         first = *needle;
 
-#ifdef __SSE4_1__
-        pattern = _mm_set1_epi8(first);
 
+#ifdef __SSE4_1__
+        first_pattern = _mm_set1_epi8(first);
+        if (needle + 1 < needle_end)
+        {
+            second  = *(needle + 1);
+            second_pattern = _mm_set1_epi8(second);
+        }
         const auto * needle_pos = needle;
 
         for (const auto i : collections::range(0, n))
@@ -660,18 +667,54 @@ public:
         if (needle == needle_end)
             return haystack;
 
+#ifdef __SSE4_1__
+        /// Here is the quick path when needle_size is 1. Compare the first and second characters if the needle_size >= 2.
+        if (needle + 1 == needle_end)
+        {
+            while (haystack < haystack_end)
+            {
+                if (haystack + n <= haystack_end && pageSafe(haystack))
+                {
+                    const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                    const auto v_against_pattern = _mm_cmpeq_epi8(v_haystack, first_pattern);
+                    const auto mask = _mm_movemask_epi8(v_against_pattern);
+                    if (mask == 0)
+                    {
+                        haystack += n;
+                        continue;
+                    }
+
+                    const auto offset = __builtin_ctz(mask);
+                    haystack += offset;
+
+                    return haystack;
+                }
+
+                if (haystack == haystack_end)
+                    return haystack_end;
+
+                if (*haystack == first)
+                    return haystack;
+
+                ++haystack;
+            }
+
+            return haystack_end;
+        }
+#endif
+
         while (haystack < haystack_end)
         {
 #ifdef __SSE4_1__
-            if (haystack + n <= haystack_end && pageSafe(haystack))
+            /// find first and second characters
+            if ((haystack + 1 + n) <= haystack_end && pageSafe(haystack))
             {
-                /// find first character
-                const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                const auto v_against_pattern = _mm_cmpeq_epi8(v_haystack, pattern);
-
-                const auto mask = _mm_movemask_epi8(v_against_pattern);
-
-                /// first character not present in 16 octets starting at `haystack`
+                const auto v_haystack_block_first = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                const auto v_haystack_block_second = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack + 1));
+                const auto v_against_pattern_first = _mm_cmpeq_epi8(v_haystack_block_first, first_pattern);
+                const auto v_against_pattern_second = _mm_cmpeq_epi8(v_haystack_block_second, second_pattern);
+                const auto mask = _mm_movemask_epi8(_mm_and_si128(v_against_pattern_first, v_against_pattern_second));
+                /// first and second characters not present in 16 octets starting at `haystack`
                 if (mask == 0)
                 {
                     haystack += n;
