@@ -3991,7 +3991,7 @@ size_t MergeTreeData::getTotalActiveSizeInRows() const
 }
 
 
-size_t MergeTreeData::getPartsCount() const
+size_t MergeTreeData::getActivePartsCount() const
 {
     return total_active_size_parts.load(std::memory_order_acquire);
 }
@@ -4062,7 +4062,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
-    const size_t parts_count_in_total = getPartsCount();
+    const size_t parts_count_in_total = getActivePartsCount();
 
     /// check if have too many parts in total
     if (parts_count_in_total >= settings->max_parts_in_total)
@@ -5305,13 +5305,15 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
-size_t MergeTreeData::getDataPartsSize() const {
+size_t MergeTreeData::getAllDataPartsSize() const
+{
     return data_parts_by_info.size();
 }
 
-size_t MergeTreeData::getTotalMarksCount() const {
+size_t MergeTreeData::getTotalMarksCount() const
+{
     size_t total_marks = 0;
-    for (auto & part : getAllDataPartsVector())
+    for (auto & part : data_parts_by_info)
     {
         total_marks += part->getMarksCount();
     }

@@ -463,7 +463,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getDataPartsSize());
+                        res_columns[res_index++]->insert(table_merge_tree->getAllDataPartsSize());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -471,7 +471,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getPartsCount());
+                        res_columns[res_index++]->insert(table_merge_tree->getActivePartsCount());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

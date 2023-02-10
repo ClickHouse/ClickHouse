@@ -474,9 +474,9 @@ public:
 
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
-    
+
     /// Return parts number
-    size_t getDataPartsSize() const;
+    size_t getAllDataPartsSize() const;
 
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
@@ -525,7 +525,7 @@ public:
 
     size_t getTotalActiveSizeInRows() const;
 
-    size_t getPartsCount() const;
+    size_t getActivePartsCount() const;
 
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
     /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
