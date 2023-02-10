@@ -384,9 +384,10 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         const auto * data = reinterpret_cast<const NumericType *>(buffer->data());
 
         /// Check that indexes are correct (protection against corrupted files)
+        /// Note that on null values index can be arbitrary value.
         for (int64_t i = 0; i != chunk->length(); ++i)
         {
-            if (data[i] < 0 || data[i] >= dict_size)
+            if (!chunk->IsNull(i) && (data[i] < 0 || data[i] >= dict_size))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                                 "Index {} in Dictionary column is out of bounds, dictionary size is {}",
                                 Int64(data[i]), UInt64(dict_size));
