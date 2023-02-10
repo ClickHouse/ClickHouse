@@ -56,8 +56,8 @@ std::vector<String> DeltaLakeMetadata::listCurrentFiles() &&
     return keys;
 }
 
-DeltaLakeMetaParser::DeltaLakeMetaParser(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context)
-    : base_configuration(configuration_), table_path(table_path_)
+DeltaLakeMetaParser::DeltaLakeMetaParser(const StorageS3::Configuration & configuration_,  ContextPtr context)
+    : base_configuration(configuration_)
 {
     init(context);
 }
@@ -93,14 +93,26 @@ void DeltaLakeMetaParser::init(ContextPtr context)
     }
 }
 
-std::vector<String> DeltaLakeMetaParser::getJsonLogFiles()
+std::vector<String> DeltaLakeMetaParser::getJsonLogFiles() const
 {
+    const auto & client = base_configuration.client;
+    const auto table_path = base_configuration.url.key;
+    const auto bucket = base_configuration.url.bucket;
+
+    std::vector<String> keys;
+    S3::ListObjectsV2Request request;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+
+    bool is_finished{false};
+
+    request.SetBucket(bucket);
+
     /// DeltaLake format stores all metadata json files in _delta_log directory
     static constexpr auto deltalake_metadata_directory = "_delta_log";
 
     return S3::listFiles(
         *base_configuration.client,
-        base_configuration.uri.bucket,
+        base_configuration.url.bucket,
         table_path,
         std::filesystem::path(table_path) / deltalake_metadata_directory,
         ".json");
@@ -112,9 +124,9 @@ std::shared_ptr<ReadBuffer> DeltaLakeMetaParser::createS3ReadBuffer(const String
     request_settings.max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
-        base_configuration.uri.bucket,
+        base_configuration.url.bucket,
         key,
-        base_configuration.uri.version_id,
+        base_configuration.url.version_id,
         request_settings,
         context->getReadSettings());
 }
@@ -153,7 +165,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         "DeltaLake",
         [](const StorageFactory::Arguments & args)
         {
-            StorageS3Configuration configuration = StorageDeltaLake::getConfiguration(args.engine_args, args.getLocalContext());
+            StorageS3::Configuration configuration = StorageDeltaLake::getConfiguration(args.engine_args, args.getLocalContext());
 
             auto format_settings = getFormatSettings(args.getContext());
 

@@ -46,7 +46,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-IcebergMetaParser::IcebergMetaParser(const StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context_)
+IcebergMetaParser::IcebergMetaParser(const StorageS3::Configuration & configuration_, const String & table_path_, ContextPtr context_)
     : base_configuration(configuration_), table_path(table_path_), context(context_)
 {
 }
