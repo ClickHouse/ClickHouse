@@ -467,7 +467,7 @@ else
     for table in query_log trace_log
     do
         clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" \
-          | zstd --threads=0 > /test_output/$table.backward.tsv.zst ||:
+          | zstd --threads=0 > /test_output/$table.tsv.zst ||:
     done
 fi
 
