@@ -205,7 +205,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
 
         if (prefetched_tasks_to_steal != threads_tasks.end())
         {
-            const auto from_thread = prefetched_tasks_to_steal->first;
             auto & thread_tasks = prefetched_tasks_to_steal->second;
             assert(!thread_tasks.empty());
 
@@ -229,7 +228,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
         if (non_prefetched_tasks_to_steal != threads_tasks.end())
         {
             auto & thread_tasks = non_prefetched_tasks_to_steal->second;
-            auto from_thread = non_prefetched_tasks_to_steal->first;
             assert(!thread_tasks.empty());
 
             /// Get second half of the tasks.
@@ -265,7 +263,6 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t thread)
     auto task = std::move(thread_tasks.front());
     thread_tasks.pop_front();
 
-    size_t remaining_tasks_num = thread_tasks.size();
     if (thread_tasks.empty())
         threads_tasks.erase(it);
 
