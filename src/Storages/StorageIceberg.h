@@ -9,16 +9,6 @@
 #    include <unordered_map>
 #    include <base/JSON.h>
 
-namespace Poco
-{
-class Logger;
-}
-
-namespace Aws::S3
-{
-class S3Client;
-}
-
 namespace DB
 {
 
@@ -31,7 +21,7 @@ namespace DB
 class IcebergMetaParser
 {
 public:
-    IcebergMetaParser(const StorageS3::Configuration & configuration_, const String & table_path_, ContextPtr context_);
+    IcebergMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context_);
 
     std::vector<String> getFiles() const;
 
@@ -40,7 +30,6 @@ public:
 private:
     static constexpr auto metadata_directory = "metadata";
     StorageS3::Configuration base_configuration;
-    String table_path;
     ContextPtr context;
 
     /// Just get file name

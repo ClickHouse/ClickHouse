@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-HudiMetaParser::HudiMetaParser(const StorageS3::S3Configuration & configuration_, ContextPtr context_)
+HudiMetaParser::HudiMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context_)
     : configuration(configuration_), context(context_), log(&Poco::Logger::get("StorageHudi"))
 {
 }
@@ -90,7 +90,7 @@ String HudiMetaParser::generateQueryFromKeys(const std::vector<std::string> & ke
 std::vector<std::string> HudiMetaParser::getFiles() const
 {
     const auto & client = configuration.client;
-    const auto & table_path = configuration.table_path;
+    const auto & table_path = configuration.url.key;
     const auto & bucket = configuration.url.bucket;
 
     std::vector<std::string> keys;

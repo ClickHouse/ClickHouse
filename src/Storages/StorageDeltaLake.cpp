@@ -95,17 +95,7 @@ void DeltaLakeMetaParser::init(ContextPtr context)
 
 std::vector<String> DeltaLakeMetaParser::getJsonLogFiles() const
 {
-    const auto & client = base_configuration.client;
     const auto table_path = base_configuration.url.key;
-    const auto bucket = base_configuration.url.bucket;
-
-    std::vector<String> keys;
-    S3::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-    bool is_finished{false};
-
-    request.SetBucket(bucket);
 
     /// DeltaLake format stores all metadata json files in _delta_log directory
     static constexpr auto deltalake_metadata_directory = "_delta_log";
