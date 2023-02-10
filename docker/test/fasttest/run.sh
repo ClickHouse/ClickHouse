@@ -239,7 +239,7 @@ function run_tests
         --order random
         --print-time
         --report-logs-stats
-        # --jobs "${NPROC}"
+        --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
