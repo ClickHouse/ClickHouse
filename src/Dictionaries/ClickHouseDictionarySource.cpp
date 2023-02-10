@@ -207,6 +207,18 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     }
 }
 
+void logConfig(const Poco::Util::AbstractConfiguration & config, std::string start_from = "dictionary", size_t level = 0)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(start_from, keys);
+    for (const auto & key : keys)
+    {
+        LOG_TRACE(&Poco::Logger::get("ClickHouseDictionarySource"),
+          "logConfig key: {}{}", std::string(level, ' '), key);
+        logConfig(config, start_from + "." + key, level + 1);
+    }
+}
+
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const DictionaryStructure & dict_struct,
@@ -217,6 +229,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const std::string & default_database [[maybe_unused]],
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
+        logConfig(config);
+
         bool secure = config.getBool(config_prefix + ".secure", false);
 
         UInt16 default_port = getPortFromContext(global_context, secure);
@@ -231,7 +245,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::string table = config.getString(settings_config_prefix + ".table", "");
         UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
         auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key); };
-        bool clickhouse_secure = config.getBool(settings_config_prefix + ".secure", false);
+        bool secure_from_named = false;
 
         auto named_collection = created_from_ddl
             ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key)
@@ -247,16 +261,16 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             db = configuration.database;
             table = configuration.table;
             port = configuration.port;
-            clickhouse_secure = configuration.secure;
 
-            // const auto & storage_specific_args = named_collection->specific_args;
-            // for (const auto & [arg_name, arg_value] : storage_specific_args)
-            // {
-            //     if (arg_name == "secure")
-            //     {
-            //         clickhouse_secure = checkAndGetLiteralArgument<bool>(arg_value, "secure");
-            //     }
-            // }
+            const auto & storage_specific_args = named_collection->specific_args;
+            for (const auto & [arg_name, arg_value] : storage_specific_args)
+            {
+                if (arg_name == "secure")
+                {
+                    secure_from_named = checkAndGetLiteralArgument<bool>(arg_value, "secure");
+                    LOG_TRACE(&Poco::Logger::get("ClickHouseDictionarySource"), "clickhouse_secure {}", secure_from_named);
+                }
+            }
         }
 
         ClickHouseDictionarySource::Configuration configuration{
@@ -273,7 +287,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .port = port,
             .is_local = isLocalAddress({host, port}, default_port),
-            .secure = clickhouse_secure}; // config.getBool(settings_config_prefix + ".secure", false)};
+            .secure = config.getBool(settings_config_prefix + ".secure", secure_from_named)};
 
 
         ContextMutablePtr context;
