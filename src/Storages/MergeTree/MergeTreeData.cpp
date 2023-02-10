@@ -5305,6 +5305,19 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
+size_t MergeTreeData::getDataPartsSize() const {
+    return data_parts_by_info.size();
+}
+
+size_t MergeTreeData::getTotalMarksCount() const {
+    size_t total_marks = 0;
+    for (auto & part : getAllDataPartsVector())
+    {
+        total_marks += part->getMarksCount();
+    }
+    return total_marks;
+}
+
 bool MergeTreeData::supportsLightweightDelete() const
 {
     auto lock = lockParts();

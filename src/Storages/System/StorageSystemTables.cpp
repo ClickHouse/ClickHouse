@@ -463,7 +463,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getAllDataPartsVector().size());
+                        res_columns[res_index++]->insert(table_merge_tree->getDataPartsSize());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -480,12 +480,7 @@ protected:
                 {
                     if (table_merge_tree)
                     {
-                        size_t total_marks = 0;
-                        for (auto & part : table_merge_tree->getAllDataPartsVector())
-                        {
-                            total_marks += part->getMarksCount();
-                        }
-                        res_columns[res_index++]->insert(total_marks);
+                        res_columns[res_index++]->insert(table_merge_tree->getTotalMarksCount());
                     }
                     else
                         res_columns[res_index++]->insertDefault();
