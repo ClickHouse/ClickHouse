@@ -26,10 +26,10 @@ namespace
         result += "ON ";
         if (element.isNamedCollectionAccess())
         {
-            if (!element.any_named_collection)
-                result += backQuoteIfNeed(element.named_collection);
-            else
+            if (element.any_named_collection)
                 result += "*";
+            else
+                result += backQuoteIfNeed(element.named_collection);
         }
         else if (element.any_database)
         {
