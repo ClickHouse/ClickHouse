@@ -83,6 +83,9 @@ public:
     std::string toString() const;
     bool hasNonEmptyMutationCommands() const;
 
+    /// These set of commands contain barrier command and shouldn't
+    /// stick with other commands. Commands from one set have already been validated
+    /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
 };
 
