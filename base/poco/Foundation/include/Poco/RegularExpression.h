@@ -85,7 +85,7 @@ public:
 		/// If study is true, the pattern is analyzed and optimized. This
 		/// is mainly useful if the pattern is used more than once.
 		/// For a description of the options, please see the PCRE documentation.
-		/// Throws a RegularExpressionException if the patter cannot be compiled.
+		/// Throws a RegularExpressionException if the pattern cannot be compiled.
 		
 	~RegularExpression();
 		/// Destroys the regular expression.

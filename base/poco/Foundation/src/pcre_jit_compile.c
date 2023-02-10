@@ -147,7 +147,7 @@ Saved stack frames:
 
 Atomic blocks and asserts require reloading the values of private data
 when the backtrack mechanism performed. Because of OP_RECURSE, the data
-are not necessarly known in compile time, thus we need a dynamic restore
+are not necessarily known in compile time, thus we need a dynamic restore
 mechanism.
 
 The stack frames are stored in a chain list, and have the following format:
@@ -7923,8 +7923,8 @@ return stacksize;
     M - Any values pushed by the current alternative. Can be empty, or anything.
     C - Push the previous OVECTOR(i), OVECTOR(i+1) and OVECTOR_PRIV(i) to the stack.
     L - Push the previous local (pointed by localptr) to the stack
-   () - opional values stored on the stack
-  ()* - optonal, can be stored multiple times
+   () - optional values stored on the stack
+  ()* - optional, can be stored multiple times
 
   The following list shows the regular expression templates, their PCRE byte codes
   and stack layout supported by pcre-sljit.
