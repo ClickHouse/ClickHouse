@@ -604,8 +604,10 @@ public:
         if (!credentials.IsEmpty())
         {
             AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
+            return;
         }
-        else if (use_environment_credentials)
+
+        if (use_environment_credentials)
         {
             static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
             static const char AWS_ECS_CONTAINER_CREDENTIALS_FULL_URI[] = "AWS_CONTAINER_CREDENTIALS_FULL_URI";
