@@ -30,9 +30,12 @@ namespace
     void formatONClause(const AccessRightsElement & element, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
-        if (!element.any_named_collection)
+        if (element.isNamedCollectionAccess())
         {
-            settings.ostr << backQuoteIfNeed(element.named_collection);
+            if (element.any_named_collection)
+                settings.ostr << "*";
+            else
+                settings.ostr << backQuoteIfNeed(element.named_collection);
         }
         else if (element.any_database)
         {

@@ -326,8 +326,8 @@ public:
         const Node * child = tryGetChild(name);
         if (child)
             return child->isGranted(flags_to_check, subnames...);
-
-        return flags.contains(flags_to_check);
+        else
+            return flags.contains(flags_to_check);
     }
 
     template <typename StringT>
@@ -836,10 +836,7 @@ void AccessRights::grant(const AccessFlags & flags, std::string_view database, s
 void AccessRights::grant(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) { grantImpl<false>(flags, database, table, columns); }
 void AccessRights::grant(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) { grantImpl<false>(flags, database, table, columns); }
 void AccessRights::grant(const AccessRightsElement & element) { grantImpl<false>(element); }
-void AccessRights::grant(const AccessRightsElements & elements)
-{
-    grantImpl<false>(elements);
-}
+void AccessRights::grant(const AccessRightsElements & elements) { grantImpl<false>(elements); }
 
 void AccessRights::grantWithGrantOption(const AccessFlags & flags) { grantImpl<true>(flags); }
 void AccessRights::grantWithGrantOption(const AccessFlags & flags, std::string_view database) { grantImpl<true>(flags, database); }
@@ -928,7 +925,7 @@ void AccessRights::revokeGrantOption(const AccessRightsElements & elements) { re
 
 AccessRightsElements AccessRights::getElements() const
 {
-#if 1
+#if 0
     logTree();
 #endif
     if (!root)
@@ -950,7 +947,6 @@ bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args
 {
     auto helper = [&](const std::unique_ptr<Node> & root_node) -> bool
     {
-        logTree();
         if (!root_node)
             return flags.isEmpty();
         return root_node->isGranted(flags, args...);
