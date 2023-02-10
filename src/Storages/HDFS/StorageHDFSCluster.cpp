@@ -8,6 +8,7 @@
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -42,15 +43,17 @@ StorageHDFSCluster::StorageHDFSCluster(
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & compression_method_)
+    const String & compression_method_,
+    bool structure_argument_was_provided_)
     : IStorageCluster(table_id_)
     , cluster_name(cluster_name_)
     , uri(uri_)
     , format_name(format_name_)
     , compression_method(compression_method_)
+    , structure_argument_was_provided(structure_argument_was_provided_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
     checkHDFSURL(uri_);
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -58,7 +61,6 @@ StorageHDFSCluster::StorageHDFSCluster(
     {
         auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
         storage_metadata.setColumns(columns);
-        add_columns_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -91,7 +93,7 @@ Pipe StorageHDFSCluster::read(
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     auto query_to_send = query_info.original_query->clone();
-    if (add_columns_structure_to_query)
+    if (!structure_argument_was_provided)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 3, getName());
 

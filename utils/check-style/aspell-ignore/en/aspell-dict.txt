@@ -127,8 +127,8 @@ PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
-QueryResultCacheHits
-QueryResultCacheMisses
+QueryCacheHits
+QueryCacheMisses
 RBAC
 RawBLOB
 RedHat
@@ -180,6 +180,7 @@ WriteBuffers
 WithNamesAndTypes
 XCode
 YAML
+Yasm
 YYYY
 Zipkin
 ZooKeeper
@@ -329,6 +330,7 @@ kafka
 kafkacat
 konsole
 latencies
+laion
 lexicographically
 libFuzzer
 libc
