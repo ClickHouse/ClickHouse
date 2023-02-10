@@ -66,7 +66,16 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     int write(const char * start, size_t size)
     {
         ResourceGuard rlock(write_settings.resource_link, size);
-        int bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+        int bytes_written;
+        try
+        {
+            bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+        }
+        catch (...)
+        {
+            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
+            throw;
+        }
         rlock.unlock();
 
         if (bytes_written < 0)

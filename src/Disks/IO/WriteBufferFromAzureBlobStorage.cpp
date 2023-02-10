@@ -58,7 +58,7 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
     {
         try
         {
-            ResourceGuard rlock(write_settings.resource_link, cost);
+            ResourceGuard rlock(write_settings.resource_link, cost); // Note that zero-cost requests are ignored
             func();
             break;
         }
@@ -69,6 +69,12 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
         catch (const Azure::Core::RequestFailedException & e)
         {
             handle_exception(e, i);
+        }
+        catch (...)
+        {
+            if (cost)
+                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
+            throw;
         }
     }
 }
