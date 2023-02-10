@@ -910,6 +910,8 @@ void ReadFromMerge::convertingSourceStream(
 
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 {
+    /// Disable read-in-order optimization for reverse order with final. 
+    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order). 
     if (order_info_->direction != 1 && isFinal(query_info))
         return false;
 
