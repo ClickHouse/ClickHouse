@@ -110,6 +110,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_PREWHERE;
+    extern const int UNKNOWN_TABLE;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -2063,7 +2064,12 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
 
     for (auto & node : node_list_typed.getNodes())
     {
-        auto * constant_node = node->as<ConstantNode>();
+        auto * node_to_replace = &node;
+
+        if (auto * sort_node = node->as<SortNode>())
+            node_to_replace = &sort_node->getExpression();
+
+        auto * constant_node = (*node_to_replace)->as<ConstantNode>();
         if (!constant_node)
             continue;
 
@@ -2088,7 +2094,7 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 scope.scope_node->formatASTForErrorMessage());
 
         --positional_argument_number;
-        node = projection_nodes[positional_argument_number];
+        *node_to_replace = projection_nodes[positional_argument_number];
     }
 }
 
