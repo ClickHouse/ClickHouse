@@ -651,6 +651,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
                    -e "TOO_MANY_PARTS" \
+                   -e "Container already exists" \
             /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | rg -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e "Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)$FAIL$(trim_server_logs bc_check_error_messages.txt)" \
                 >> /test_output/test_results.tsv \
