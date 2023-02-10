@@ -53,6 +53,33 @@ static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
                         child_num, child->getInputStreams().size(), node->children.size());
 }
 
+static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & grouping_sets_params, const Names & identifiers_in_predicate)
+{
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        for (const auto & identifier : identifiers_in_predicate)
+        {
+            if (std::find(grouping_set.used_keys.begin(), grouping_set.used_keys.end(), identifier) == grouping_set.used_keys.end())
+                return false;
+        }
+    }
+    return true;
+}
+
+static void findIdentifiersOfNode(const ActionsDAG::Node * node, Names & names)
+{
+    /// We treat all INPUT as identifier
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        names.emplace_back(node->result_name);
+        return;
+    }
+    for (const auto & child : node->children)
+    {
+        findIdentifiersOfNode(child, names);
+    }
+}
+
 static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -176,8 +203,20 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
+        /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
+        /// of the grouping sets, we cound not push the filter down.
         if (aggregating->isGroupingSets())
-            return 0;
+        {
+
+            const auto & actions = filter->getExpression();
+            const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());
+
+            Names identifiers_in_predicate;
+            findIdentifiersOfNode(&filter_node, identifiers_in_predicate);
+
+            if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
+                return 0;
+        }
 
         const auto & params = aggregating->getParams();
         const auto & keys = params.keys;

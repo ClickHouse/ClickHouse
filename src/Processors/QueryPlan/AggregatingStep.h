@@ -55,6 +55,8 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
+    const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+
     bool inOrder() const { return !sort_description_for_merging.empty(); }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);

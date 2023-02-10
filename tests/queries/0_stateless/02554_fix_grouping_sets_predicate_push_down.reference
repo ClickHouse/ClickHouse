@@ -46,3 +46,19 @@ ExpressionTransform × 2
 
 ---Result---
 2023-01-05	all
+
+---Explain Pipeline---
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  ExpressionTransform × 2
+    AggregatingTransform × 2
+      Copy 1 → 2
+        (Filter)
+        FilterTransform
+          (Filter)
+          FilterTransform
+            (Filter)
+            FilterTransform
+              (ReadFromMergeTree)
+              MergeTreeInOrder 0 → 1
