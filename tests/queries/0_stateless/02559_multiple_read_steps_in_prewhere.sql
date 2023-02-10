@@ -10,9 +10,15 @@ SET enable_multiple_prewhere_read_steps=true, move_all_conditions_to_prewhere=tr
 
 SELECT cast(id as UInt16) AS id16 FROM test_02559 PREWHERE id16 and (id % 40000) LIMIT 10;
 
-SELECT cast(id as UInt16) AS id16, (id % 40000) AS id40000, (id16 AND id40000) AS cond FROM test_02559 PREWHERE cond LIMIT 10;
+SELECT cast(id as UInt16) AS cond1, (id % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond LIMIT 10;
 
-SELECT cast(id as UInt16) AS id16 FROM test_02559 PREWHERE id16 LIMIT 10;
+SELECT cast(id as UInt16) AS cond1, (id % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond AND id > 4 LIMIT 10;
+
+SELECT cast(id as UInt16) AS cond1, (id % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE id > 5 AND cond LIMIT 10;
+
+SELECT cast(id as UInt16) AS cond1, (id % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond1 AND id > 6 AND cond2 LIMIT 10;
+
+SELECT cast(id as UInt16) AS cond1 FROM test_02559 PREWHERE cond1 LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 
 SELECT count() FROM test_02559 PREWHERE 1 OR ignore(id) WHERE ignore(id)=0;
 
