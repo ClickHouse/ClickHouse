@@ -416,6 +416,7 @@ else
                -e "Session expired" \
                -e "TOO_MANY_PARTS" \
                -e "Authentication failed" \
+               -e "Container already exists" \
         /var/log/clickhouse-server/clickhouse-server.upgrade.log | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
         && echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/bc_check_error_messages.txt)" \
             >> /test_output/test_results.tsv \
