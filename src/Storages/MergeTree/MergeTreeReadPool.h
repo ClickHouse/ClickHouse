@@ -27,6 +27,7 @@ public:
         Names virtual_column_names_,
         size_t min_marks_for_concurrent_read_,
         PrewhereInfoPtr prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         RangesInDataParts parts_ranges_,
         bool predict_block_size_bytes_,
@@ -36,6 +37,7 @@ public:
         , virtual_column_names(virtual_column_names_)
         , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
         , prewhere_info(prewhere_info_)
+        , actions_settings(actions_settings_)
         , reader_settings(reader_settings_)
         , parts_ranges(parts_ranges_)
         , predict_block_size_bytes(predict_block_size_bytes_)
@@ -57,6 +59,7 @@ protected:
     const Names virtual_column_names;
     size_t min_marks_for_concurrent_read{0};
     PrewhereInfoPtr prewhere_info;
+    ExpressionActionsSettings actions_settings;
     MergeTreeReaderSettings reader_settings;
     RangesInDataParts parts_ranges;
     bool predict_block_size_bytes;
@@ -126,6 +129,7 @@ public:
         RangesInDataParts && parts_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
@@ -201,6 +205,7 @@ public:
         ParallelReadingExtension extension_,
         const RangesInDataParts & parts_,
         const PrewhereInfoPtr & prewhere_info_,
+        const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
@@ -212,6 +217,7 @@ public:
         virtual_column_names_,
         min_marks_for_concurrent_read_,
         prewhere_info_,
+        actions_settings_,
         reader_settings_,
         parts_,
         /*predict_block_size*/false,

@@ -46,7 +46,7 @@ std::vector<size_t> IMergeTreeReadPool::fillPerPartInfo(const RangesInDataParts 
 
         auto task_columns = getReadTaskColumns(
             LoadedMergeTreeDataPartInfoForReader(part.data_part), storage_snapshot,
-            column_names, virtual_column_names, prewhere_info, reader_settings, /*with_subcolumns=*/ true);
+            column_names, virtual_column_names, prewhere_info, actions_settings, reader_settings, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : IMergeTreeSelectAlgorithm::getSizePredictor(part.data_part, task_columns, sample_block);
@@ -72,6 +72,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
+    const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const Names & virtual_column_names_,
@@ -84,6 +85,7 @@ MergeTreeReadPool::MergeTreeReadPool(
         virtual_column_names_,
         min_marks_for_concurrent_read_,
         prewhere_info_,
+        actions_settings_,
         reader_settings_,
         std::move(parts_),
         (preferred_block_size_bytes_ > 0),
