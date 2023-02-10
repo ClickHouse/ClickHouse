@@ -129,6 +129,13 @@ void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
     metadata_version = metadata_version_;
 }
 
+StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
+{
+    StorageInMemoryMetadata copy(*this);
+    copy.setMetadataVersion(metadata_version_);
+    return copy;
+}
+
 const ColumnsDescription & StorageInMemoryMetadata::getColumns() const
 {
     return columns;

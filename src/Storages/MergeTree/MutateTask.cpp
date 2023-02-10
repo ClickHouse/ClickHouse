@@ -52,7 +52,7 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
 */
-static void splitMutationCommands(
+static void splitAndModifyMutationCommands(
     MergeTreeData::DataPartPtr part,
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
@@ -101,29 +101,37 @@ static void splitMutationCommands(
         }
 
         auto alter_conversions = part->storage.getAlterConversionsForPart(part);
-        /// If it's compact part, then we don't need to actually remove files
-        /// from disk we just don't read dropped columns
 
+        /// We don't add renames from commands, instead we take them from rename_map.
+        /// It's important because required renames depend not only on part's data version (i.e. mutation version)
+        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
+        /// can be deduced based on difference between part's schema and table schema.
         for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
         {
             if (part_columns.has(rename_from))
             {
+                /// Actual rename
                 for_interpreter.push_back(
                 {
                     .type = MutationCommand::Type::READ_COLUMN,
                     .column_name = rename_to,
                 });
 
+                /// Not needed for compact parts (not executed), added here only to produce correct
+                /// set of columns for new part and their serializations
                 for_file_renames.push_back(
                 {
                      .type = MutationCommand::Type::RENAME_COLUMN,
                      .column_name = rename_from,
                      .rename_to = rename_to
                 });
+
                 part_columns.rename(rename_from, rename_to);
             }
         }
 
+        /// If it's compact part, then we don't need to actually remove files
+        /// from disk we just don't read dropped columns
         for (const auto & column : part_columns)
         {
             if (!mutated_columns.contains(column.name))
@@ -162,11 +170,51 @@ static void splitMutationCommands(
         }
 
         auto alter_conversions = part->storage.getAlterConversionsForPart(part);
+        /// We don't add renames from commands, instead we take them from rename_map.
+        /// It's important because required renames depend not only on part's data version (i.e. mutation version)
+        /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
+        /// can be deduced based on difference between part's schema and table schema.
+
         for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
         {
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
     }
+}
+
+/// It's legal to squash renames because commands with rename are always "barrier"
+/// and executed separately from other types of commands.
+static MutationCommands squashRenamesInCommands(const MutationCommands & commands)
+{
+    NameToNameMap squashed_renames;
+    for (const auto & command : commands)
+    {
+        std::string result_name = command.rename_to;
+
+        bool squashed = false;
+        for (const auto & [name_from, name_to] : squashed_renames)
+        {
+            if (name_to == command.column_name)
+            {
+                squashed = true;
+                squashed_renames[name_from] = result_name;
+                break;
+            }
+        }
+        if (!squashed)
+            squashed_renames[command.column_name] = result_name;
+    }
+
+    MutationCommands squashed_commands;
+    for (const auto & command : commands)
+    {
+        if (squashed_renames.contains(command.column_name))
+        {
+            squashed_commands.push_back(command);
+            squashed_commands.back().rename_to = squashed_renames[command.column_name];
+        }
+    }
+    return squashed_commands;
 }
 
 /// Get the columns list of the resulting part in the same order as storage_columns.
@@ -198,35 +246,7 @@ getColumnsForNewDataPart(
             storage_columns.emplace_back(column);
     }
 
-    NameToNameMap squashed_renames;
-    for (const auto & command : all_commands)
-    {
-        std::string result_name = command.rename_to;
-
-        bool squashed = false;
-        for (const auto & [name_from, name_to] : squashed_renames)
-        {
-            if (name_to == command.column_name)
-            {
-                squashed = true;
-                squashed_renames[name_from] = result_name;
-                break;
-            }
-        }
-        if (!squashed)
-            squashed_renames[command.column_name] = result_name;
-    }
-
-    MutationCommands squashed_commands;
-    for (const auto & command : all_commands)
-    {
-        if (squashed_renames.contains(command.column_name))
-        {
-            squashed_commands.push_back(command);
-            squashed_commands.back().rename_to = squashed_renames[command.column_name];
-        }
-    }
-
+    MutationCommands squashed_commands = squashRenamesInCommands(all_commands);
 
     for (const auto & command : squashed_commands)
     {
@@ -618,34 +638,7 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
-    NameToNameMap squashed_renames;
-    for (const auto & command : commands_for_removes)
-    {
-        std::string result_name = command.rename_to;
-
-        bool squashed = false;
-        for (const auto & [name_from, name_to] : squashed_renames)
-        {
-            if (name_to == command.column_name)
-            {
-                squashed = true;
-                squashed_renames[name_from] = result_name;
-                break;
-            }
-        }
-        if (!squashed)
-            squashed_renames[command.column_name] = result_name;
-    }
-
-    MutationCommands squashed_commands;
-    for (const auto & command : commands_for_removes)
-    {
-        if (squashed_renames.contains(command.column_name))
-        {
-            squashed_commands.push_back(command);
-            squashed_commands.back().rename_to = squashed_renames[command.column_name];
-        }
-    }
+    MutationCommands squashed_commands = squashRenamesInCommands(commands_for_removes);
 
     /// Remove old data
     for (const auto & command : squashed_commands)
@@ -1724,7 +1717,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
 
-    MutationHelpers::splitMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
+    MutationHelpers::splitAndModifyMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
