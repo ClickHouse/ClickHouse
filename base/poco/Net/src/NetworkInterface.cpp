@@ -39,6 +39,9 @@
 #include <iostream>
 #include <iomanip>
 
+#include <sys/types.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 
 using Poco::NumberFormatter;
 using Poco::FastMutex;
@@ -1344,10 +1347,7 @@ NetworkInterface::NetworkInterfaceList NetworkInterface::list()
 //
 // BSD variants, QNX(?) and Solaris
 //
-/// #include <sys/types.h>
 #include <sys/socket.h>
-/// #include <ifaddrs.h>
-/// #include <net/if.h>
 #include <net/if_dl.h>
 #ifndef POCO_NO_NET_IFTYPES
 #include <net/if_types.h>
@@ -1517,11 +1517,11 @@ NetworkInterface::Map NetworkInterface::map(bool ipOnly, bool upOnly)
 //
 
 
-#include <sys/types.h>
+/// #include <sys/types.h>
 #if POCO_OS != POCO_OS_ANDROID // Android doesn't have <ifaddrs.h>
-#include <ifaddrs.h>
+/// #include <ifaddrs.h>
 #endif
-#include <net/if.h>
+/// #include <net/if.h>
 #ifndef POCO_NO_LINUX_IF_PACKET_H
 #include <linux/if_packet.h>
 #endif

@@ -26,6 +26,8 @@
 #include <pthread.h>
 #endif
 
+#include <sys/types.h>
+#include <sys/socket.h>
 
 namespace Poco {
 
@@ -140,8 +142,6 @@ unsigned EnvironmentImpl::processorCountImpl()
 //
 // BSD variants
 //
-/// #include <sys/types.h>
-/// #include <sys/socket.h>
 #include <ifaddrs.h>
 #include <net/if_dl.h>
 
@@ -182,7 +182,7 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 // Linux, Cygwin
 //
 #include <sys/ioctl.h>
-#include <sys/socket.h>
+/// #include <sys/socket.h>
 #include <netinet/in.h>
 #include <net/if.h>
 #ifndef __CYGWIN__
@@ -191,7 +191,7 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 #define ARPHRD_ETHER 1 /* Ethernet 10Mbps */
 #endif
 #include <arpa/inet.h>
-#include <sys/types.h>
+/// #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <cstdio>
