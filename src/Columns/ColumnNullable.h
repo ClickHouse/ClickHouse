@@ -188,6 +188,8 @@ public:
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
     const NullMap & getNullMapData() const { return getNullMapColumn().getData(); }
 
+    ColumnPtr getNestedColumnWithDefaultOnNull() const;
+
     /// Apply the null byte map of a specified nullable column onto the
     /// null byte map of the current column by performing an element-wise OR
     /// between both byte maps. This method is used to determine the null byte

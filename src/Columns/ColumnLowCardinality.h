@@ -220,6 +220,8 @@ public:
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
 
+    ColumnPtr cloneWithDefaultOnNull() const;
+
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
