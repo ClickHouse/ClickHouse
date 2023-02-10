@@ -14,15 +14,14 @@ namespace DB
 class HudiMetaParser
 {
 public:
-    HudiMetaParser(const StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context_);
+    HudiMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context_);
 
     std::vector<String> getFiles() const;
 
     static String generateQueryFromKeys(const std::vector<String> & keys, const String & format);
 
 private:
-    StorageS3::S3Configuration configuration;
-    String table_path;
+    StorageS3::Configuration configuration;
     ContextPtr context;
     Poco::Logger * log;
 };

@@ -31,7 +31,7 @@ private:
 class DeltaLakeMetaParser
 {
 public:
-    DeltaLakeMetaParser(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context);
+    DeltaLakeMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context);
 
     std::vector<String> getFiles() { return std::move(metadata).listCurrentFiles(); }
 
@@ -40,14 +40,13 @@ public:
 private:
     void init(ContextPtr context);
 
-    std::vector<String> getJsonLogFiles();
+    std::vector<String> getJsonLogFiles() const;
 
     std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
 
     void handleJSON(const JSON & json);
 
-    StorageS3::S3Configuration base_configuration;
-    String table_path;
+    StorageS3::Configuration base_configuration;
     DeltaLakeMetadata metadata;
 };
 

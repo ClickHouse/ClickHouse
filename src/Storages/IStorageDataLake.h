@@ -69,7 +69,7 @@ public:
     // 2. Finds out parts with latest version
     // 3. Creates url for underlying StorageS3 enigne to handle reads
     IStorageDataLake(
-        const StorageS3Configuration & configuration_,
+        const StorageS3::Configuration & configuration_,
         const StorageID & table_id_,
         ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
@@ -77,14 +77,14 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_)
         : IStorage(table_id_)
-        , base_configuration{getBaseConfiguration(configuration_)}
+        , base_configuration{configuration_}
         , log(&Poco::Logger::get("Storage" + String(name) + "(" + table_id_.table_name + ")"))
         , table_path(base_configuration.uri.key)
     {
         StorageInMemoryMetadata storage_metadata;
         StorageS3::updateS3Configuration(context_, base_configuration);
 
-        auto new_configuration = getAdjustedS3Configuration(context_, base_configuration, configuration_, table_path, log);
+        auto new_configuration = getAdjustedS3Configuration(context_, base_configuration, log);
 
         if (columns_.empty())
         {
@@ -130,52 +130,33 @@ public:
     }
 
     static ColumnsDescription getTableStructureFromData(
-        const StorageS3Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
+        StorageS3::Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
     {
-        auto base_configuration = getBaseConfiguration(configuration);
-        StorageS3::updateS3Configuration(ctx, base_configuration);
-        auto new_configuration = getAdjustedS3Configuration(
-            ctx, base_configuration, configuration, base_configuration.uri.key, &Poco::Logger::get("Storage" + String(name)));
+        StorageS3::updateS3Configuration(ctx, configuration);
+        auto new_configuration = getAdjustedS3Configuration(ctx, configuration, &Poco::Logger::get("Storage" + String(name)));
         return StorageS3::getTableStructureFromData(
             new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
     }
 
-    static StorageS3::S3Configuration getBaseConfiguration(const StorageS3Configuration & configuration)
+    static StorageS3::Configuration
+    getAdjustedS3Configuration(const ContextPtr & context, StorageS3::Configuration & configuration, Poco::Logger * log)
     {
-        return {configuration.url, configuration.auth_settings, configuration.request_settings, configuration.headers};
-    }
-
-    static StorageS3Configuration getAdjustedS3Configuration(
-        const ContextPtr & context,
-        StorageS3::S3Configuration & base_configuration,
-        const StorageS3Configuration & configuration,
-        const std::string & table_path,
-        Poco::Logger * log)
-    {
-        MetaParser parser{base_configuration, table_path, context};
+        MetaParser parser{configuration, configuration.url.key, context};
 
         auto keys = parser.getFiles();
-        auto new_uri = std::filesystem::path(base_configuration.uri.uri.toString()) / Name::data_directory_prefix
+        auto new_uri = std::filesystem::path(configuration.url.uri.toString()) / Name::data_directory_prefix
             / MetaParser::generateQueryFromKeys(keys, configuration.format);
 
-        LOG_DEBUG(log, "New uri: {}", new_uri.c_str());
-        LOG_DEBUG(log, "Table path: {}", table_path);
-
-        // set new url in configuration
-        StorageS3Configuration new_configuration;
-        new_configuration.url = new_uri;
-        new_configuration.auth_settings.access_key_id = configuration.auth_settings.access_key_id;
-        new_configuration.auth_settings.secret_access_key = configuration.auth_settings.secret_access_key;
-        new_configuration.format = configuration.format;
+        LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_uri);
 
         return new_configuration;
     }
 
-    static void processNamedCollectionResult(StorageS3Configuration & configuration, const NamedCollection & collection)
+    static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
     {
         validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
-        configuration.url = collection.get<String>("url");
+        configuration.url = S3::URI{collection.get<String>("url")};
 
         configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
         configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
@@ -190,9 +171,9 @@ public:
         configuration.request_settings = S3Settings::RequestSettings(collection);
     }
 
-    static StorageS3Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
+    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
     {
-        StorageS3Configuration configuration;
+        StorageS3::Configuration configuration;
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
         {
@@ -211,14 +192,14 @@ public:
                     "Storage {} requires 3 or 4 arguments: url, access_key_id, secret_access_key, [format]",
                     name);
 
-            auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers, local_context);
+            auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers_from_ast, local_context);
             if (header_it != engine_args.end())
                 engine_args.erase(header_it);
 
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
-            configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+            configuration.url = S3::{checkAndGetLiteralArgument<String>(engine_args[0], "url")};
             configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
 

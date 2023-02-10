@@ -26,8 +26,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-HudiMetaParser::HudiMetaParser(const StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context_)
-    : configuration(configuration_), table_path(table_path_), context(context_), log(&Poco::Logger::get("StorageHudi"))
+HudiMetaParser::HudiMetaParser(const StorageS3::S3Configuration & configuration_, ContextPtr context_)
+    : configuration(configuration_), context(context_), log(&Poco::Logger::get("StorageHudi"))
 {
 }
 
@@ -89,15 +89,15 @@ String HudiMetaParser::generateQueryFromKeys(const std::vector<std::string> & ke
 
 std::vector<std::string> HudiMetaParser::getFiles() const
 {
-    std::vector<std::string> keys;
-
     const auto & client = configuration.client;
+    const auto & table_path = configuration.table_path;
+    const auto & bucket = configuration.url.bucket;
 
+    std::vector<std::string> keys;
     S3::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
     bool is_finished{false};
-    const auto bucket{configuration.uri.bucket};
 
     request.SetBucket(bucket);
     request.SetPrefix(table_path);
@@ -135,7 +135,7 @@ void registerStorageHudi(StorageFactory & factory)
         "Hudi",
         [](const StorageFactory::Arguments & args)
         {
-            StorageS3Configuration configuration = StorageHudi::getConfiguration(args.engine_args, args.getLocalContext());
+            StorageS3::Configuration configuration = StorageHudi::getConfiguration(args.engine_args, args.getLocalContext());
 
             auto format_settings = getFormatSettings(args.getContext());
 
