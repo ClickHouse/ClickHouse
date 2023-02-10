@@ -402,7 +402,7 @@ start
 
 # NOTE Hung check is implemented in docker/tests/stress/stress
 rg -Fa "No queries hung" /test_output/test_results.tsv | grep -Fa "OK" \
-  || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log | unts)" >> /test_output/test_results.tsv
+  || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log)" >> /test_output/test_results.tsv
 
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
