@@ -460,7 +460,7 @@ private:
 		}
 		else 
 		{
-			throw Poco::BadCastException(Poco::format("Type cast failed!\nColumn: %z\nTarget type:\t%s",  
+			throw Poco::BadCastException(Poco::format("Type cast failed!\nColumn: %z\nTarget type:\t%s",
 				pos,
 				std::string(typeid(T).name())));
 		}
