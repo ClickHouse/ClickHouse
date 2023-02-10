@@ -110,7 +110,6 @@ function clone_submodules
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
-            contrib/poco
             contrib/libunwind
             contrib/fmtlib
             contrib/base64
