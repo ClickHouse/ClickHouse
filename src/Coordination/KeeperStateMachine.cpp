@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <base/errnoToString.h>
+#include <base/defines.h>
 #include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -471,13 +472,15 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        ::close(fd);
+        int err = ::close(fd);
+        chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
     return 0;
 }
 
