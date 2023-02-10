@@ -350,7 +350,7 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
         /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter.
         const auto & required_column_names = task_columns.columns.getNames();
         part_info->column_name_set = {required_column_names.begin(), required_column_names.end()};
-        part_info->task_columns = std::move(task_columns);
+        part_info->task_columns = task_columns;
 
         result.push_back(std::move(part_info));
     }
