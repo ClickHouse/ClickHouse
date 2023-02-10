@@ -371,8 +371,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         actions_stack_node.addInputConstantColumnIfNecessary(set_key, column);
     }
 
-    node_to_node_name.emplace(in_second_argument, set_key);
-
     return {set_key, 0};
 }
 
@@ -421,6 +419,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
 
+    auto function_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
+
+    if (function_node.isAggregateFunction() || function_node.isWindowFunction())
+    {
+        size_t actions_stack_size = actions_stack.size();
+
+        for (size_t i = 0; i < actions_stack_size; ++i)
+        {
+            auto & actions_stack_node = actions_stack[i];
+            actions_stack_node.addInputColumnIfNecessary(function_node_name, function_node.getResultType());
+        }
+
+        return {function_node_name, 0};
+    }
+
     const auto & function_arguments = function_node.getArguments().getNodes();
     size_t function_arguments_size = function_arguments.size();
 
@@ -451,21 +464,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         auto [node_name, node_min_level] = visitImpl(argument);
         function_arguments_node_names.push_back(std::move(node_name));
         level = std::max(level, node_min_level);
-    }
-
-    auto function_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
-
-    if (function_node.isAggregateFunction() || function_node.isWindowFunction())
-    {
-        size_t actions_stack_size = actions_stack.size();
-
-        for (size_t i = 0; i < actions_stack_size; ++i)
-        {
-            auto & actions_stack_node = actions_stack[i];
-            actions_stack_node.addInputColumnIfNecessary(function_node_name, function_node.getResultType());
-        }
-
-        return {function_node_name, 0};
     }
 
     ActionsDAG::NodeRawConstPtrs children;
