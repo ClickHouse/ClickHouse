@@ -476,7 +476,7 @@ public:
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     /// Return parts number
-    size_t getAllDataPartsSize() const;
+    size_t getAllPartsCount() const;
 
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;

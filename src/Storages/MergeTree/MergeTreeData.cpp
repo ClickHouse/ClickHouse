@@ -5305,7 +5305,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
-size_t MergeTreeData::getAllDataPartsSize() const
+size_t MergeTreeData::getAllPartsCount() const
 {
     return data_parts_by_info.size();
 }
