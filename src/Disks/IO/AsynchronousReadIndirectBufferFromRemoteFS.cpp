@@ -7,7 +7,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include <Interpreters/Context.cpp>
+#include <Interpreters/Context.h>
 #include <base/getThreadId.h>
 
 
@@ -191,8 +191,8 @@ void AsynchronousReadIndirectBufferFromRemoteFS::appendToPrefetchLog(FilesystemP
         .reader_id = current_reader_id,
     };
 
-    if (auto log = Context::getGlobalContextInstance()->getFilesystemReadPrefetchesLog())
-        log->add(elem);
+    if (auto prefetch_log = Context::getGlobalContextInstance()->getFilesystemReadPrefetchesLog())
+        prefetch_log->add(elem);
 }
 
 
