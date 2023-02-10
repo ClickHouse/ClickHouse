@@ -61,15 +61,14 @@ namespace
                     res.any_database = true;
                     res.any_table = true;
                     res.any_column = true;
-                    res.any_named_collection = !access_flags.isNamedCollectionAccessOnly();
+                    res.any_named_collection = true;
                     break;
                 }
                 case 1:
                 {
-                    res.any_named_collection = !access_flags.isNamedCollectionAccessOnly();
-                    if (!res.any_named_collection)
+                    if (access_flags.isNamedCollectionAccess())
                     {
-                        res.any_database = true;
+                        res.any_named_collection = false;
                         res.named_collection = full_name[0];
                     }
                     else

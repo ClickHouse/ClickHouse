@@ -129,14 +129,14 @@ namespace
                 size_t named_collection_access = 0;
                 for (const auto & elem : access_and_columns)
                 {
-                    if (elem.first.isNamedCollectionAccessOnly())
+                    if (elem.first.isNamedCollectionAccess())
                         ++named_collection_access;
                 }
-                const bool grant_named_collection_access = named_collection_access == access_and_columns.size();
 
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
 
+                const bool grant_named_collection_access = named_collection_access && named_collection_access == access_and_columns.size();
                 if (grant_named_collection_access)
                 {
                     ASTPtr collection;
