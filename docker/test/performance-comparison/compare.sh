@@ -27,10 +27,6 @@ function wait_for_server # port, pid
 
     if ! clickhouse-client --port "$1" --query "select 1"
     then
-        ls -la
-        ls -la left
-        ls -la right
-        cat setup-server-log.log
         echo "Cannot connect to ClickHouse server at $1"
         return 1
     fi
