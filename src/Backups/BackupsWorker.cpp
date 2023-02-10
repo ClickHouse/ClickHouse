@@ -43,7 +43,7 @@ namespace
         if (!coordination_zk_path.empty())
         {
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-            return std::make_shared<BackupCoordinationRemote>(coordination_zk_path, get_zookeeper, !is_internal_backup);
+            return std::make_shared<BackupCoordinationRemote>(coordination_zk_path, get_zookeeper, is_internal_backup);
         }
         else
         {
@@ -56,7 +56,7 @@ namespace
         if (!coordination_zk_path.empty())
         {
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-            return std::make_shared<RestoreCoordinationRemote>(coordination_zk_path, get_zookeeper, !is_internal_backup);
+            return std::make_shared<RestoreCoordinationRemote>(coordination_zk_path, get_zookeeper, is_internal_backup);
         }
         else
         {
@@ -261,15 +261,17 @@ void BackupsWorker::doBackup(
         if (!on_cluster)
             context->checkAccess(required_access);
 
+        String root_zk_path;
+
         ClusterPtr cluster;
         if (on_cluster)
         {
+            root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
             backup_query->cluster = context->getMacros()->expand(backup_query->cluster);
             cluster = context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
             if (backup_settings.coordination_zk_path.empty())
             {
-                String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
                 backup_settings.coordination_zk_path = root_zk_path + "/backup-" + toString(*backup_settings.backup_uuid);
             }
         }
@@ -278,7 +280,7 @@ void BackupsWorker::doBackup(
         if (!backup_coordination)
             backup_coordination = makeBackupCoordination(backup_settings.coordination_zk_path, context, backup_settings.internal);
 
-        if (!allow_concurrent_backups && !backup_settings.internal && hasConcurrentBackups(backup_id, context, on_cluster))
+        if (!allow_concurrent_backups && backup_coordination->hasConcurrentBackups(backup_id, root_zk_path, std::ref(num_active_backups)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
 
         /// Opens a backup for writing.
@@ -487,13 +489,14 @@ void BackupsWorker::doRestore(
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
         String current_database = context->getCurrentDatabase();
-
+        String root_zk_path;
         /// Checks access rights if this is ON CLUSTER query.
         /// (If this isn't ON CLUSTER query RestorerFromBackup will check access rights later.)
         ClusterPtr cluster;
         bool on_cluster = !restore_query->cluster.empty();
         if (on_cluster)
         {
+            root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
             restore_query->cluster = context->getMacros()->expand(restore_query->cluster);
             cluster = context->getCluster(restore_query->cluster);
             restore_settings.cluster_host_ids = cluster->getHostIDs();
@@ -517,14 +520,13 @@ void BackupsWorker::doRestore(
         /// Make a restore coordination.
         if (on_cluster && restore_settings.coordination_zk_path.empty())
         {
-            String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
             restore_settings.coordination_zk_path = root_zk_path + "/restore-" + toString(restore_id);
         }
 
         if (!restore_coordination)
             restore_coordination = makeRestoreCoordination(restore_settings.coordination_zk_path, context, restore_settings.internal);
 
-        if (!allow_concurrent_restores && !restore_settings.internal && hasConcurrentRestores(restore_id, context, on_cluster))
+        if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(restore_id, root_zk_path, std::ref(num_active_restores)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
 
         /// Do RESTORE.
@@ -707,134 +709,6 @@ std::vector<BackupsWorker::Info> BackupsWorker::getAllInfos() const
             res_infos.push_back(info);
     }
     return res_infos;
-}
-
-std::vector<BackupsWorker::Info> BackupsWorker::getAllActiveBackupInfos() const
-{
-    std::vector<Info> res_infos;
-    std::lock_guard lock{infos_mutex};
-    for (const auto & info : infos | boost::adaptors::map_values)
-    {
-        if (info.status==BackupStatus::CREATING_BACKUP)
-            res_infos.push_back(info);
-    }
-    return res_infos;
-}
-
-std::vector<BackupsWorker::Info> BackupsWorker::getAllActiveRestoreInfos() const
-{
-    std::vector<Info> res_infos;
-    std::lock_guard lock{infos_mutex};
-    for (const auto & info : infos | boost::adaptors::map_values)
-    {
-        if (info.status==BackupStatus::RESTORING)
-            res_infos.push_back(info);
-    }
-    return res_infos;
-}
-
-bool BackupsWorker::hasConcurrentBackups(const OperationID & backup_id, const ContextPtr & context, bool on_cluster) const
-{
-    if (on_cluster)
-    {
-        String common_backup_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups") ;
-        auto zookeeper = context->getGlobalContext()->getZooKeeper();
-        std::string backup_stage_path = common_backup_path + "/backup-" + toString(backup_id) +"/stage";
-
-        if (!zookeeper->exists(common_backup_path))
-            zookeeper->createAncestors(common_backup_path);
-
-        for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
-        {
-            Coordination::Stat stat;
-            zookeeper->get(common_backup_path, &stat);
-            Strings existing_backup_paths = zookeeper->getChildren(common_backup_path);
-
-            for (const auto & existing_backup_path : existing_backup_paths)
-            {
-                if (startsWith(existing_backup_path, "restore-"))
-                    continue;
-
-                String existing_backup_id = existing_backup_path;
-                existing_backup_id.erase(0, String("backup-").size());
-
-                if (existing_backup_id == toString(backup_id))
-                    continue;
-
-                const auto status = zookeeper->get(common_backup_path + "/" + existing_backup_path + "/stage");
-                if (status != Stage::COMPLETED)
-                    return true;
-            }
-
-            zookeeper->createIfNotExists(backup_stage_path, "");
-            auto code = zookeeper->trySet(backup_stage_path, Stage::SCHEDULED_TO_START, stat.version);
-            if (code == Coordination::Error::ZOK)
-                break;
-            bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
-            if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                throw zkutil::KeeperException(code, backup_stage_path);
-        }
-        return false;
-    }
-    else
-    {
-        if (num_active_backups == 1)
-            return false;
-        else
-            return true;
-    }
-}
-
-bool BackupsWorker::hasConcurrentRestores(const OperationID & restore_id, const ContextPtr & context, bool on_cluster) const
-{
-    if (on_cluster)
-    {
-        String common_restore_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups") ;
-        auto zookeeper = context->getGlobalContext()->getZooKeeper();
-        std::string path = common_restore_path + "/restore-" + toString(restore_id) +"/stage";
-
-        if (!zookeeper->exists(common_restore_path))
-            zookeeper->createAncestors(common_restore_path);
-
-        for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
-        {
-            Coordination::Stat stat;
-            zookeeper->get(common_restore_path, &stat);
-            Strings existing_restore_paths = zookeeper->getChildren(common_restore_path);
-            for (const auto & existing_restore_path : existing_restore_paths)
-            {
-                if (startsWith(existing_restore_path, "backup-"))
-                    continue;
-
-                String existing_restore_id = existing_restore_path;
-                existing_restore_id.erase(0, String("restore-").size());
-
-                if (existing_restore_id == toString(restore_id))
-                    continue;
-
-
-                const auto status = zookeeper->get(common_restore_path + "/" + existing_restore_path + "/stage");
-                if (status != Stage::COMPLETED)
-                    return true;
-            }
-
-            zookeeper->createIfNotExists(path, "");
-            auto code = zookeeper->trySet(path, Stage::SCHEDULED_TO_START, stat.version);
-            if (code == Coordination::Error::ZOK)
-                break;
-            bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
-            if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                throw zkutil::KeeperException(code, path);
-        }
-        return false;
-    }
-    else
-    {
-        if (num_active_restores == 1)
-            return false;
-        else
-            return true;
-    }
 }
 
 void BackupsWorker::shutdown()

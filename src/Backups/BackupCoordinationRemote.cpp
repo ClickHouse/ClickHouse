@@ -7,6 +7,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Common/hex.h>
+#include <Backups/BackupCoordinationStage.h>
 
 
 namespace DB
@@ -17,6 +18,8 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int LOGICAL_ERROR;
 }
+
+namespace Stage = BackupCoordinationStage;
 
 /// zookeeper_path/file_names/file_name->checksum_and_size
 /// zookeeper_path/file_infos/checksum_and_size->info
@@ -163,10 +166,10 @@ namespace
 }
 
 BackupCoordinationRemote::BackupCoordinationRemote(
-    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_)
+    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , remove_zk_nodes_in_destructor(remove_zk_nodes_in_destructor_)
+    , is_internal(is_internal_)
 {
     createRootNodes();
     stage_sync.emplace(
@@ -177,7 +180,7 @@ BackupCoordinationRemote::~BackupCoordinationRemote()
 {
     try
     {
-        if (remove_zk_nodes_in_destructor)
+        if (!is_internal)
             removeAllNodes();
     }
     catch (...)
@@ -591,5 +594,51 @@ Strings BackupCoordinationRemote::getAllArchiveSuffixes() const
         node_name = formatArchiveSuffix(extractCounterFromSequentialNodeName(node_name));
     return node_names;
 }
+
+bool BackupCoordinationRemote::hasConcurrentBackups(const String & backup_id, const String & common_backup_path, const std::atomic<size_t> &) const
+{
+    /// If its internal concurrency will be checked for the base backup
+    if (is_internal)
+        return false;
+
+    auto zk = getZooKeeper();
+    std::string backup_stage_path = common_backup_path + "/backup-" + toString(backup_id) +"/stage";
+
+    if (!zk->exists(common_backup_path))
+        zk->createAncestors(common_backup_path);
+
+    for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
+    {
+        Coordination::Stat stat;
+        zk->get(common_backup_path, &stat);
+        Strings existing_backup_paths = zk->getChildren(common_backup_path);
+
+        for (const auto & existing_backup_path : existing_backup_paths)
+        {
+            if (startsWith(existing_backup_path, "restore-"))
+                continue;
+
+            String existing_backup_id = existing_backup_path;
+            existing_backup_id.erase(0, String("backup-").size());
+
+            if (existing_backup_id == toString(backup_id))
+                continue;
+
+            const auto status = zk->get(common_backup_path + "/" + existing_backup_path + "/stage");
+            if (status != Stage::COMPLETED)
+                return true;
+        }
+
+        zk->createIfNotExists(backup_stage_path, "");
+        auto code = zk->trySet(backup_stage_path, Stage::SCHEDULED_TO_START, stat.version);
+        if (code == Coordination::Error::ZOK)
+            break;
+        bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
+        if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
+            throw zkutil::KeeperException(code, backup_stage_path);
+    }
+    return false;
+}
+
 
 }
