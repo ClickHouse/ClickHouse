@@ -4,6 +4,7 @@
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
 # pylint: disable=anomalous-backslash-in-string
+# pylint: disable=raise-missing-from
 
 import enum
 from queue import Full
