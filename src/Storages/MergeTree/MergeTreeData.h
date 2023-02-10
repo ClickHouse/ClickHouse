@@ -475,7 +475,6 @@ public:
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
-    /// Return parts number
     size_t getAllPartsCount() const;
 
     /// Return the number of marks in all parts
