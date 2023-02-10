@@ -848,7 +848,7 @@ UNIT_DISPLAY_NAME(Units::T,   "T");
 UNIT_DISPLAY_NAME(Units::H,   "H");
 UNIT_DISPLAY_NAME(Units::lx,  "lx");
 UNIT_DISPLAY_NAME(Units::Gy,  "Gy");
-UNIT_DISPLAY_NAME(Units::kat,  "kat");
+UNIT_DISPLAY_NAME(Units::kat, "kat");
 
 
 namespace Units
