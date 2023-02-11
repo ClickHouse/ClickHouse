@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/settings_profiles
----
 # system.settings_profiles {#system_tables-settings_profiles}
 
 包含 Setting 配置文件中指定的属性.
@@ -23,3 +20,5 @@ slug: /zh/operations/system-tables/settings_profiles
 ## 另请参阅 {#see-also}
 
 -   [查看配置文件信息](../../sql-reference/statements/show.md#show-profiles-statement)
+
+[原始文章](https://clickhouse.com/docs/en/operations/system-tables/settings_profiles) <!--hide-->

@@ -4,7 +4,6 @@
 
 #include <memory>
 #include <vector>
-#include <optional>
 #include <base/types.h>
 
 namespace DB
@@ -59,12 +58,8 @@ public:
     VolumePtr getVolumeByName(const String & volume_name) const;
     /// Checks if storage policy can be replaced by another one.
     virtual void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const = 0;
-    /// Finds a volume index, which contains disk
-    virtual std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const = 0;
-    size_t getVolumeIndexByDiskName(const String & disk_name) const;
-    /// Finds a volume which contains a specified disk.
-    VolumePtr tryGetVolumeByDiskName(const String & disk_name) const;
-    VolumePtr getVolumeByDiskName(const String & disk_name) const;
+    /// Find volume index, which contains disk
+    virtual size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const = 0;
     /// Check if we have any volume with stopped merges
     virtual bool hasAnyVolumeWithDisabledMerges() const = 0;
     virtual bool containsVolume(const String & volume_name) const = 0;

@@ -22,11 +22,6 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
-    {
-        return {"_path", "_file"};
-    }
-
 protected:
     int fd = -1;
     void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;

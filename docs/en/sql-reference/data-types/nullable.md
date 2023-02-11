@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/nullable
 sidebar_position: 55
 sidebar_label: Nullable
 ---
@@ -69,3 +68,5 @@ SELECT x + y FROM t_null
 │          5 │
 └────────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/data_types/nullable/) <!--hide-->

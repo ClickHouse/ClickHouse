@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Aliases.h>
@@ -19,11 +18,6 @@ namespace ASOF
     enum class Inequality;
 }
 
-namespace ErrorCodes
-{
-    extern const int INVALID_JOIN_ON_EXPRESSION;
-}
-
 enum class JoinIdentifierPos
 {
     /// Position can't be established, identifier not resolved
@@ -32,8 +26,8 @@ enum class JoinIdentifierPos
     Left,
     /// Right side of JOIN
     Right,
-    /// Identifier is not a column (e.g constant)
-    NotColumn,
+    /// Expression not valid, e.g. doesn't contain identifiers
+    NotApplicable,
 };
 
 using JoinIdentifierPosPair = std::pair<JoinIdentifierPos, JoinIdentifierPos>;
@@ -72,9 +66,6 @@ public:
         }
         else
         {
-            if (ast->children.empty())
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", queryToString(ast));
-
             /// visit children
         }
     }

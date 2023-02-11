@@ -15,7 +15,7 @@ struct CRCBase
     {
         for (size_t i = 0; i < 256; ++i)
         {
-            T c = static_cast<T>(i);
+            T c = i;
             for (size_t j = 0; j < 8; ++j)
                 c = c & 1 ? polynomial ^ (c >> 1) : c >> 1;
             tab[i] = c;
@@ -58,7 +58,7 @@ struct CRC32ZLIBImpl
 
     static UInt32 makeCRC(const unsigned char *buf, size_t size)
     {
-        return static_cast<UInt32>(crc32_z(0L, buf, size));
+        return crc32_z(0L, buf, size);
     }
 };
 
@@ -107,22 +107,12 @@ struct CRCFunctionWrapper
 
     [[noreturn]] static void array(const ColumnString::Offsets & /*offsets*/, PaddedPODArray<ReturnType> & /*res*/)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to Array argument", std::string(Impl::name));
+        throw Exception("Cannot apply function " + std::string(Impl::name) + " to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to UUID argument", std::string(Impl::name));
-    }
-
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv6 argument", std::string(Impl::name));
-    }
-
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function {} to IPv4 argument", std::string(Impl::name));
+        throw Exception("Cannot apply function " + std::string(Impl::name) + " to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 private:
@@ -150,7 +140,7 @@ using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 template <class T>
 void registerFunctionCRCImpl(FunctionFactory & factory)
 {
-    factory.registerFunction<T>(T::name, {}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<T>(T::name, FunctionFactory::CaseInsensitive);
 }
 
 REGISTER_FUNCTION(CRC)

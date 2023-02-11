@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/settings
----
 # system.settings {#system-tables-system-settings}
 
 Содержит информацию о сессионных настройках для текущего пользователя.
@@ -52,3 +49,4 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Разрешения для запросов](../settings/permissions-for-queries.md#settings_readonly)
 -   [Ограничения для значений настроек](../settings/constraints-on-settings.md)
 -   Выражение [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings)
+

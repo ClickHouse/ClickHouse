@@ -1,5 +1,4 @@
 ---
-slug: /zh/introduction/adopters
 sidebar_position: 5
 sidebar_label: "ClickHouse用户"
 ---
@@ -85,3 +84,5 @@ sidebar_label: "ClickHouse用户"
 | [Wargaming](https://wargaming.com/en/)                          | 游戏             |                | —                                                 | —                                                                    | [采访](https://habr.com/en/post/496954/)                                                                                                                                                                          |
 | [Crazypanda](https://crazypanda.ru/en/)                         | 游戏             |                | —                                                 | —                                                                    | ClickHouse 社区会议                                                                                                                                                                                               |
 | [FunCorp](https://fun.co/rp)                                    | 游戏             |                | —                                                 | —                                                                    | [文章](https://www.altinity.com/blog/migrating-from-redshift-to-clickhouse)                                                                                                                                       |
+
+[原始文章](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->

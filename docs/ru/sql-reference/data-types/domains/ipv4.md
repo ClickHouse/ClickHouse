@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/data-types/domains/ipv4
 sidebar_position: 59
 sidebar_label: IPv4
 ---
@@ -81,3 +80,4 @@ SELECT toTypeName(i), CAST(from AS UInt32) AS i FROM hits LIMIT 1;
 │ UInt32                           │ 3086477370 │
 └──────────────────────────────────┴────────────┘
 ```
+

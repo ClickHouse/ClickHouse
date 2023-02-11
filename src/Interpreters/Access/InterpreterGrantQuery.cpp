@@ -353,9 +353,9 @@ BlockIO InterpreterGrantQuery::execute()
     query.access_rights_elements.eraseNonGrantable();
 
     if (!query.access_rights_elements.sameOptions())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
+        throw Exception("Elements of an ASTGrantQuery are expected to have the same options", ErrorCodes::LOGICAL_ERROR);
     if (!query.access_rights_elements.empty() && query.access_rights_elements[0].is_partial_revoke && !query.is_revoke)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A partial revoke should be revoked, not granted");
+        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::LOGICAL_ERROR);
 
     auto & access_control = getContext()->getAccessControl();
     auto current_user_access = getContext()->getAccess();
@@ -416,6 +416,16 @@ void InterpreterGrantQuery::updateUserFromQuery(User & user, const ASTGrantQuery
 void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery & query)
 {
     updateFromQuery(role, query);
+}
+
+
+void InterpreterGrantQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr) const
+{
+    auto & query = query_ptr->as<ASTGrantQuery &>();
+    if (query.is_revoke)
+        elem.query_kind = "Revoke";
+    else
+        elem.query_kind = "Grant";
 }
 
 }

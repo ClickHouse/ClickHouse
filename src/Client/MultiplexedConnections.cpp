@@ -74,7 +74,7 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
+        throw Exception("Cannot send scalars data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     for (ReplicaState & state : replica_states)
     {
@@ -89,10 +89,10 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send external tables data: query not yet sent.");
+        throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
     if (data.size() != active_connection_count)
-        throw Exception(ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES, "Mismatch between replicas and data sources");
+        throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
     auto it = data.begin();
     for (ReplicaState & state : replica_states)
@@ -117,14 +117,14 @@ void MultiplexedConnections::sendQuery(
     std::lock_guard lock(cancel_mutex);
 
     if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query already sent.");
+        throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
     Settings modified_settings = settings;
 
     for (auto & replica : replica_states)
     {
         if (!replica.connection)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MultiplexedConnections: Internal error");
+            throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
         if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
         {
@@ -133,11 +133,16 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (replica_info)
+        bool parallel_reading_from_replicas = settings.max_parallel_replicas > 1
+            && settings.allow_experimental_parallel_reading_from_replicas
+            /// To avoid trying to coordinate with clickhouse-benchmark,
+            /// since it uses the same code.
+            && client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
+        if (parallel_reading_from_replicas)
         {
             client_info.collaborate_with_initiator = true;
-            client_info.count_participating_replicas = replica_info->all_replicas_count;
-            client_info.number_of_current_replica = replica_info->number_of_current_replica;
+            client_info.count_participating_replicas = replica_info.all_replicas_count;
+            client_info.number_of_current_replica = replica_info.number_of_current_replica;
         }
     }
 
@@ -174,7 +179,7 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
     std::lock_guard lock(cancel_mutex);
 
     if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
+        throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
 
     for (ReplicaState & state : replica_states)
     {
@@ -194,7 +199,7 @@ void MultiplexedConnections::sendReadTaskResponse(const String & response)
 }
 
 
-void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
+void MultiplexedConnections::sendMergeTreeReadTaskResponse(PartitionReadResponse response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
@@ -230,7 +235,7 @@ void MultiplexedConnections::sendCancel()
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query || cancelled)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cancel. Either no query sent or already cancelled.");
+        throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
     for (ReplicaState & state : replica_states)
     {
@@ -247,7 +252,7 @@ Packet MultiplexedConnections::drain()
     std::lock_guard lock(cancel_mutex);
 
     if (!cancelled)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot drain connections: cancel first.");
+        throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
 
     Packet res;
     res.type = Protocol::Server::EndOfStream;
@@ -258,7 +263,6 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
@@ -307,14 +311,14 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback, bool is_draining)
 {
     if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
+        throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
     if (!hasActiveConnections())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
+        throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
     ReplicaState & state = getReplicaForReading(is_draining);
     current_connection = state.connection;
     if (current_connection == nullptr)
-        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Logical error: no available replica");
+        throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
     Packet packet;
     {
@@ -339,7 +343,6 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
-        case Protocol::Server::MergeTreeAllRangesAnnounecement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
@@ -390,38 +393,24 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList write_list;
         Poco::Net::Socket::SocketList except_list;
 
-        auto timeout = is_draining ? drain_timeout : receive_timeout;
-        int n = 0;
-
-        /// EINTR loop
-        while (true)
+        for (const ReplicaState & state : replica_states)
         {
-            read_list.clear();
-            for (const ReplicaState & state : replica_states)
-            {
-                Connection * connection = state.connection;
-                if (connection != nullptr)
-                    read_list.push_back(*connection->socket);
-            }
-
-            /// poco returns 0 on EINTR, let's reset errno to ensure that EINTR came from select().
-            errno = 0;
-
-            n = Poco::Net::Socket::select(
-                read_list,
-                write_list,
-                except_list,
-                timeout);
-            if (n <= 0 && errno == EINTR)
-                continue;
-            break;
+            Connection * connection = state.connection;
+            if (connection != nullptr)
+                read_list.push_back(*connection->socket);
         }
+
+        auto timeout = is_draining ? drain_timeout : receive_timeout;
+        int n = Poco::Net::Socket::select(
+            read_list,
+            write_list,
+            except_list,
+            timeout);
 
         /// We treat any error as timeout for simplicity.
         /// And we also check if read_list is still empty just in case.
         if (n <= 0 || read_list.empty())
         {
-            const auto & addresses = dumpAddressesUnlocked();
             for (ReplicaState & state : replica_states)
             {
                 Connection * connection = state.connection;
@@ -434,7 +423,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                 "Timeout ({} ms) exceeded while reading from {}",
                 timeout.totalMilliseconds(),
-                addresses);
+                dumpAddressesUnlocked());
         }
     }
 

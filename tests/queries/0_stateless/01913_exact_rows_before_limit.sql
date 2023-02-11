@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings
-
+-- Tags: no-parallel
 drop table if exists test_rows_compact_part;
 create table test_rows_compact_part(f1 int,f2 int)  engine=MergeTree partition by f1 order by f2 settings min_bytes_for_wide_part=10485760;
 insert into test_rows_compact_part select  0,arrayJoin(range(10000)) ;
