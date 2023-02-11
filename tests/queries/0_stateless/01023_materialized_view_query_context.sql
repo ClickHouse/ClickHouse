@@ -26,6 +26,7 @@ CREATE TABLE null_    (key UInt64) Engine=Null();
 CREATE TABLE buffer_  (key UInt64) Engine=Buffer(currentDatabase(), dist_out, 1, 0, 0, 0, 0, 0, 0);
 CREATE TABLE dist_out (key UInt64) Engine=Distributed(test_shard_localhost, currentDatabase(), null_, key);
 
+
 CREATE TABLE output (key UInt64, val UInt64) Engine=Memory();
 CREATE MATERIALIZED VIEW mv TO output AS SELECT key, dictGetUInt64('dict_in_01023.dict', 'val', key) val FROM dist_out;
 

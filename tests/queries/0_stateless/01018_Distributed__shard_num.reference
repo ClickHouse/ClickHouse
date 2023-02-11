@@ -1,94 +1,194 @@
--- { echoOn }
-
--- remote(system.one)
-SELECT 'remote(system.one)';
-remote(system.one)
-SELECT * FROM remote('127.0.0.1', system.one);
-0
-SELECT * FROM remote('127.0.0.{1,2}', system.one);
-0
-0
-SELECT _shard_num, * FROM remote('127.0.0.1', system.one);
-1	0
-SELECT _shard_num, * FROM remote('127.0.0.{1,2}', system.one) order by _shard_num;
-1	0
-2	0
-SELECT _shard_num, * FROM remote('127.0.0.{1,2}', system.one) WHERE _shard_num = 1;
-1	0
--- dist_1 using test_shard_localhost
-SELECT 'dist_1';
-dist_1
-SELECT _shard_num FROM dist_1 order by _shard_num;
-1
-1
-SELECT _shard_num FROM dist_1 order by _shard_num;
-1
-1
-SELECT _shard_num, key FROM dist_1 order by _shard_num;
-1	10
-1	20
-SELECT key FROM dist_1;
-10
-20
-SELECT _shard_num FROM dist_1 order by _shard_num;
-1
-1
-SELECT _shard_num, key FROM dist_1 order by _shard_num, key;
-1	10
-1	20
-SELECT key FROM dist_1;
-10
-20
--- dist_2 using test_cluster_two_shards_localhost
-SELECT 'dist_2';
-dist_2
-SELECT _shard_num FROM dist_2 order by _shard_num;
-1
-2
-SELECT _shard_num FROM dist_2 order by _shard_num;
-1
-2
-SELECT _shard_num, key FROM dist_2 order by _shard_num, key;
-1	100
-2	100
-SELECT key FROM dist_2;
-100
-100
--- multiple _shard_num
-SELECT 'remote(Distributed)';
-remote(Distributed)
-SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key;
-1	100
-2	100
--- JOIN system.clusters
-SELECT 'JOIN system.clusters';
-JOIN system.clusters
-SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
-FROM (SELECT *, _shard_num FROM dist_1) a
-JOIN system.clusters b
-ON a._shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost';
-1	10	localhost	1	9000
-1	20	localhost	1	9000
-SELECT _shard_num, key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
-FROM dist_1 a
-JOIN system.clusters b
-ON _shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 403 }
-SELECT 'Rewrite with alias';
-Rewrite with alias
-SELECT a._shard_num, key FROM dist_1 a;
-1	10
-1	20
--- the same with JOIN, just in case
-SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
-FROM dist_1 a
-JOIN system.clusters b
-ON a._shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 47; }
-SELECT 'dist_3';
-dist_3
-SELECT * FROM dist_3;
-100	foo
-SELECT _shard_num, * FROM dist_3 order by _shard_num;
-foo	100	foo
+┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ QUERY id: 0                                                                                                                                 │
+│   PROJECTION COLUMNS                                                                                                                        │
+│     stacktraces Array(Tuple(UInt64, String))                                                                                                │
+│     is_initial_query UInt8                                                                                                                  │
+│     user String                                                                                                                             │
+│     p.query_id String                                                                                                                       │
+│     address IPv6                                                                                                                            │
+│     port UInt16                                                                                                                             │
+│     initial_user String                                                                                                                     │
+│     initial_query_id String                                                                                                                 │
+│     initial_address IPv6                                                                                                                    │
+│     initial_port UInt16                                                                                                                     │
+│     interface UInt8                                                                                                                         │
+│     os_user String                                                                                                                          │
+│     client_hostname String                                                                                                                  │
+│     client_name String                                                                                                                      │
+│     client_revision UInt64                                                                                                                  │
+│     client_version_major UInt64                                                                                                             │
+│     client_version_minor UInt64                                                                                                             │
+│     client_version_patch UInt64                                                                                                             │
+│     http_method UInt8                                                                                                                       │
+│     http_user_agent String                                                                                                                  │
+│     http_referer String                                                                                                                     │
+│     forwarded_for String                                                                                                                    │
+│     quota_key String                                                                                                                        │
+│     distributed_depth UInt64                                                                                                                │
+│     elapsed Float64                                                                                                                         │
+│     is_cancelled UInt8                                                                                                                      │
+│     is_all_data_sent UInt8                                                                                                                  │
+│     read_rows UInt64                                                                                                                        │
+│     read_bytes UInt64                                                                                                                       │
+│     total_rows_approx UInt64                                                                                                                │
+│     written_rows UInt64                                                                                                                     │
+│     written_bytes UInt64                                                                                                                    │
+│     memory_usage Int64                                                                                                                      │
+│     peak_memory_usage Int64                                                                                                                 │
+│     query String                                                                                                                            │
+│     thread_ids Array(UInt64)                                                                                                                │
+│     ProfileEvents Map(String, UInt64)                                                                                                       │
+│     Settings Map(String, String)                                                                                                            │
+│     current_database String                                                                                                                 │
+│     ProfileEvents.Names Array(String)                                                                                                       │
+│     ProfileEvents.Values Array(UInt64)                                                                                                      │
+│     Settings.Names Array(String)                                                                                                            │
+│     Settings.Values Array(String)                                                                                                           │
+│   PROJECTION                                                                                                                                │
+│     LIST id: 1, nodes: 43                                                                                                                   │
+│       FUNCTION id: 2, function_name: groupArray, function_type: aggregate, result_type: Array(Tuple(UInt64, String))                        │
+│         ARGUMENTS                                                                                                                           │
+│           LIST id: 3, nodes: 1                                                                                                              │
+│             FUNCTION id: 4, function_name: tuple, function_type: ordinary, result_type: Tuple(UInt64, String)                               │
+│               ARGUMENTS                                                                                                                     │
+│                 LIST id: 5, nodes: 2                                                                                                        │
+│                   COLUMN id: 6, column_name: thread_id, result_type: UInt64, source_id: 7                                                   │
+│                   FUNCTION id: 8, function_name: arrayStringConcat, function_type: ordinary, result_type: String                            │
+│                     ARGUMENTS                                                                                                               │
+│                       LIST id: 9, nodes: 2                                                                                                  │
+│                         FUNCTION id: 10, function_name: arrayMap, function_type: ordinary, result_type: Array(String)                       │
+│                           ARGUMENTS                                                                                                         │
+│                             LIST id: 11, nodes: 2                                                                                           │
+│                               LAMBDA id: 12                                                                                                 │
+│                                 ARGUMENTS                                                                                                   │
+│                                   LIST id: 13, nodes: 1                                                                                     │
+│                                     COLUMN id: 14, column_name: x, result_type: UInt64, source_id: 12                                       │
+│                                 EXPRESSION                                                                                                  │
+│                                   FUNCTION id: 15, function_name: concat, function_type: ordinary, result_type: String                      │
+│                                     ARGUMENTS                                                                                               │
+│                                       LIST id: 16, nodes: 3                                                                                 │
+│                                         FUNCTION id: 17, function_name: addressToLine, function_type: ordinary, result_type: String         │
+│                                           ARGUMENTS                                                                                         │
+│                                             LIST id: 18, nodes: 1                                                                           │
+│                                               COLUMN id: 14, column_name: x, result_type: UInt64, source_id: 12                             │
+│                                         CONSTANT id: 19, constant_value: '::', constant_value_type: String                                  │
+│                                         FUNCTION id: 20, function_name: demangle, function_type: ordinary, result_type: String              │
+│                                           ARGUMENTS                                                                                         │
+│                                             LIST id: 21, nodes: 1                                                                           │
+│                                               FUNCTION id: 22, function_name: addressToSymbol, function_type: ordinary, result_type: String │
+│                                                 ARGUMENTS                                                                                   │
+│                                                   LIST id: 23, nodes: 1                                                                     │
+│                                                     COLUMN id: 14, column_name: x, result_type: UInt64, source_id: 12                       │
+│                               COLUMN id: 24, column_name: trace, result_type: Array(UInt64), source_id: 7                                   │
+│                         CONSTANT id: 25, constant_value: '\n', constant_value_type: String                                                  │
+│       COLUMN id: 26, column_name: is_initial_query, result_type: UInt8, source_id: 27                                                       │
+│       COLUMN id: 28, column_name: user, result_type: String, source_id: 27                                                                  │
+│       COLUMN id: 29, column_name: query_id, result_type: String, source_id: 27                                                              │
+│       COLUMN id: 30, column_name: address, result_type: IPv6, source_id: 27                                                                 │
+│       COLUMN id: 31, column_name: port, result_type: UInt16, source_id: 27                                                                  │
+│       COLUMN id: 32, column_name: initial_user, result_type: String, source_id: 27                                                          │
+│       COLUMN id: 33, column_name: initial_query_id, result_type: String, source_id: 27                                                      │
+│       COLUMN id: 34, column_name: initial_address, result_type: IPv6, source_id: 27                                                         │
+│       COLUMN id: 35, column_name: initial_port, result_type: UInt16, source_id: 27                                                          │
+│       COLUMN id: 36, column_name: interface, result_type: UInt8, source_id: 27                                                              │
+│       COLUMN id: 37, column_name: os_user, result_type: String, source_id: 27                                                               │
+│       COLUMN id: 38, column_name: client_hostname, result_type: String, source_id: 27                                                       │
+│       COLUMN id: 39, column_name: client_name, result_type: String, source_id: 27                                                           │
+│       COLUMN id: 40, column_name: client_revision, result_type: UInt64, source_id: 27                                                       │
+│       COLUMN id: 41, column_name: client_version_major, result_type: UInt64, source_id: 27                                                  │
+│       COLUMN id: 42, column_name: client_version_minor, result_type: UInt64, source_id: 27                                                  │
+│       COLUMN id: 43, column_name: client_version_patch, result_type: UInt64, source_id: 27                                                  │
+│       COLUMN id: 44, column_name: http_method, result_type: UInt8, source_id: 27                                                            │
+│       COLUMN id: 45, column_name: http_user_agent, result_type: String, source_id: 27                                                       │
+│       COLUMN id: 46, column_name: http_referer, result_type: String, source_id: 27                                                          │
+│       COLUMN id: 47, column_name: forwarded_for, result_type: String, source_id: 27                                                         │
+│       COLUMN id: 48, column_name: quota_key, result_type: String, source_id: 27                                                             │
+│       COLUMN id: 49, column_name: distributed_depth, result_type: UInt64, source_id: 27                                                     │
+│       COLUMN id: 50, column_name: elapsed, result_type: Float64, source_id: 27                                                              │
+│       COLUMN id: 51, column_name: is_cancelled, result_type: UInt8, source_id: 27                                                           │
+│       COLUMN id: 52, column_name: is_all_data_sent, result_type: UInt8, source_id: 27                                                       │
+│       COLUMN id: 53, column_name: read_rows, result_type: UInt64, source_id: 27                                                             │
+│       COLUMN id: 54, column_name: read_bytes, result_type: UInt64, source_id: 27                                                            │
+│       COLUMN id: 55, column_name: total_rows_approx, result_type: UInt64, source_id: 27                                                     │
+│       COLUMN id: 56, column_name: written_rows, result_type: UInt64, source_id: 27                                                          │
+│       COLUMN id: 57, column_name: written_bytes, result_type: UInt64, source_id: 27                                                         │
+│       COLUMN id: 58, column_name: memory_usage, result_type: Int64, source_id: 27                                                           │
+│       COLUMN id: 59, column_name: peak_memory_usage, result_type: Int64, source_id: 27                                                      │
+│       COLUMN id: 60, column_name: query, result_type: String, source_id: 27                                                                 │
+│       COLUMN id: 61, column_name: thread_ids, result_type: Array(UInt64), source_id: 27                                                     │
+│       COLUMN id: 62, column_name: ProfileEvents, result_type: Map(String, UInt64), source_id: 27                                            │
+│       COLUMN id: 63, column_name: Settings, result_type: Map(String, String), source_id: 27                                                 │
+│       COLUMN id: 64, column_name: current_database, result_type: String, source_id: 27                                                      │
+│       COLUMN id: 65, column_name: ProfileEvents.Names, result_type: Array(String), source_id: 27                                            │
+│       COLUMN id: 66, column_name: ProfileEvents.Values, result_type: Array(UInt64), source_id: 27                                           │
+│       COLUMN id: 67, column_name: Settings.Names, result_type: Array(String), source_id: 27                                                 │
+│       COLUMN id: 68, column_name: Settings.Values, result_type: Array(String), source_id: 27                                                │
+│   JOIN TREE                                                                                                                                 │
+│     JOIN id: 69, strictness: ALL, kind: INNER                                                                                               │
+│       LEFT TABLE EXPRESSION                                                                                                                 │
+│         TABLE id: 27, alias: p, table_name: system.processes                                                                                │
+│       RIGHT TABLE EXPRESSION                                                                                                                │
+│         TABLE id: 7, alias: s, table_name: system.stack_trace                                                                               │
+│       JOIN EXPRESSION                                                                                                                       │
+│         LIST id: 70, nodes: 1                                                                                                               │
+│           COLUMN id: 71, column_name: query_id, result_type: String, source_id: 69                                                          │
+│             EXPRESSION                                                                                                                      │
+│               LIST id: 72, nodes: 2                                                                                                         │
+│                 COLUMN id: 73, column_name: query_id, result_type: String, source_id: 27                                                    │
+│                 COLUMN id: 74, column_name: query_id, result_type: String, source_id: 7                                                     │
+│   WHERE                                                                                                                                     │
+│     FUNCTION id: 75, function_name: notLike, function_type: ordinary, result_type: UInt8                                                    │
+│       ARGUMENTS                                                                                                                             │
+│         LIST id: 76, nodes: 2                                                                                                               │
+│           COLUMN id: 77, column_name: query, result_type: String, source_id: 27                                                             │
+│           CONSTANT id: 78, constant_value: '%system.processes%', constant_value_type: String                                                │
+│   GROUP BY                                                                                                                                  │
+│     LIST id: 79, nodes: 42                                                                                                                  │
+│       COLUMN id: 80, column_name: is_initial_query, result_type: UInt8, source_id: 27                                                       │
+│       COLUMN id: 81, column_name: user, result_type: String, source_id: 27                                                                  │
+│       COLUMN id: 82, column_name: query_id, result_type: String, source_id: 27                                                              │
+│       COLUMN id: 83, column_name: address, result_type: IPv6, source_id: 27                                                                 │
+│       COLUMN id: 84, column_name: port, result_type: UInt16, source_id: 27                                                                  │
+│       COLUMN id: 85, column_name: initial_user, result_type: String, source_id: 27                                                          │
+│       COLUMN id: 86, column_name: initial_query_id, result_type: String, source_id: 27                                                      │
+│       COLUMN id: 87, column_name: initial_address, result_type: IPv6, source_id: 27                                                         │
+│       COLUMN id: 88, column_name: initial_port, result_type: UInt16, source_id: 27                                                          │
+│       COLUMN id: 89, column_name: interface, result_type: UInt8, source_id: 27                                                              │
+│       COLUMN id: 90, column_name: os_user, result_type: String, source_id: 27                                                               │
+│       COLUMN id: 91, column_name: client_hostname, result_type: String, source_id: 27                                                       │
+│       COLUMN id: 92, column_name: client_name, result_type: String, source_id: 27                                                           │
+│       COLUMN id: 93, column_name: client_revision, result_type: UInt64, source_id: 27                                                       │
+│       COLUMN id: 94, column_name: client_version_major, result_type: UInt64, source_id: 27                                                  │
+│       COLUMN id: 95, column_name: client_version_minor, result_type: UInt64, source_id: 27                                                  │
+│       COLUMN id: 96, column_name: client_version_patch, result_type: UInt64, source_id: 27                                                  │
+│       COLUMN id: 97, column_name: http_method, result_type: UInt8, source_id: 27                                                            │
+│       COLUMN id: 98, column_name: http_user_agent, result_type: String, source_id: 27                                                       │
+│       COLUMN id: 99, column_name: http_referer, result_type: String, source_id: 27                                                          │
+│       COLUMN id: 100, column_name: forwarded_for, result_type: String, source_id: 27                                                        │
+│       COLUMN id: 101, column_name: quota_key, result_type: String, source_id: 27                                                            │
+│       COLUMN id: 102, column_name: distributed_depth, result_type: UInt64, source_id: 27                                                    │
+│       COLUMN id: 103, column_name: elapsed, result_type: Float64, source_id: 27                                                             │
+│       COLUMN id: 104, column_name: is_cancelled, result_type: UInt8, source_id: 27                                                          │
+│       COLUMN id: 105, column_name: is_all_data_sent, result_type: UInt8, source_id: 27                                                      │
+│       COLUMN id: 106, column_name: read_rows, result_type: UInt64, source_id: 27                                                            │
+│       COLUMN id: 107, column_name: read_bytes, result_type: UInt64, source_id: 27                                                           │
+│       COLUMN id: 108, column_name: total_rows_approx, result_type: UInt64, source_id: 27                                                    │
+│       COLUMN id: 109, column_name: written_rows, result_type: UInt64, source_id: 27                                                         │
+│       COLUMN id: 110, column_name: written_bytes, result_type: UInt64, source_id: 27                                                        │
+│       COLUMN id: 111, column_name: memory_usage, result_type: Int64, source_id: 27                                                          │
+│       COLUMN id: 112, column_name: peak_memory_usage, result_type: Int64, source_id: 27                                                     │
+│       COLUMN id: 113, column_name: query, result_type: String, source_id: 27                                                                │
+│       COLUMN id: 114, column_name: thread_ids, result_type: Array(UInt64), source_id: 27                                                    │
+│       COLUMN id: 115, column_name: ProfileEvents, result_type: Map(String, UInt64), source_id: 27                                           │
+│       COLUMN id: 116, column_name: Settings, result_type: Map(String, String), source_id: 27                                                │
+│       COLUMN id: 117, column_name: current_database, result_type: String, source_id: 27                                                     │
+│       COLUMN id: 118, column_name: ProfileEvents.Names, result_type: Array(String), source_id: 27                                           │
+│       COLUMN id: 119, column_name: ProfileEvents.Values, result_type: Array(UInt64), source_id: 27                                          │
+│       COLUMN id: 120, column_name: Settings.Names, result_type: Array(String), source_id: 27                                                │
+│       COLUMN id: 121, column_name: Settings.Values, result_type: Array(String), source_id: 27                                               │
+│   ORDER BY                                                                                                                                  │
+│     LIST id: 122, nodes: 1                                                                                                                  │
+│       SORT id: 123, sort_direction: DESCENDING, with_fill: 0                                                                                │
+│         EXPRESSION                                                                                                                          │
+│           COLUMN id: 124, column_name: elapsed, result_type: Float64, source_id: 27                                                         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
