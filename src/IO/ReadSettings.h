@@ -5,6 +5,7 @@
 #include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <IO/ResourceLink.h>
 
 namespace DB
 {
@@ -106,6 +107,9 @@ struct ReadSettings
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
+
+    // Resource to be used during reading
+    ResourceLink resource_link;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;

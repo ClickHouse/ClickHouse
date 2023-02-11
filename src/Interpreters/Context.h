@@ -872,7 +872,8 @@ public:
     void dropMMappedFileCache() const;
 
     /// Create a cache of query results for statements which run repeatedly.
-    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records);
+    void setQueryCache(const Poco::Util::AbstractConfiguration & config);
+    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
     void dropQueryCache() const;
 
@@ -966,14 +967,17 @@ public:
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
+    using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
+    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
 
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
-
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+
+    StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
@@ -1109,7 +1113,9 @@ private:
 
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
-    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
+
+    DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
 };
 
 struct HTTPContext : public IHTTPContext
