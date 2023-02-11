@@ -235,6 +235,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> prefetch_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable QueryCachePtr query_cache;         /// Cache of query results.
@@ -406,6 +407,20 @@ struct ContextSharedPart : boost::noncopyable
                 LOG_DEBUG(log, "Desctructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (prefetch_threadpool)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                prefetch_threadpool->wait();
+                prefetch_threadpool.reset();
             }
             catch (...)
             {
@@ -1994,6 +2009,31 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
+static size_t getPrefetchThreadpoolSizeFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    return config.getUInt(".prefetch_threadpool_pool_size", 100);
+}
+
+size_t Context::getPrefetchThreadpoolSize() const
+{
+    const auto & config = getConfigRef();
+    return getPrefetchThreadpoolSizeFromConfig(config);
+}
+
+ThreadPool & Context::getPrefetchThreadpool() const
+{
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+    if (!shared->prefetch_threadpool)
+    {
+        auto pool_size = getPrefetchThreadpoolSize();
+        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
+        shared->prefetch_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+    }
+    return *shared->prefetch_threadpool;
+}
+
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
 {
     auto lock = getLock();
@@ -2933,7 +2973,16 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->cache_log;
+    return shared->system_logs->filesystem_cache_log;
+}
+
+std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
+{
+    auto lock = getLock();
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->filesystem_read_prefetches_log;
 }
 
 std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
@@ -3838,6 +3887,31 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
+static size_t getThreadPoolReaderSizeFromConfig(Context::FilesystemReaderType type, const Poco::Util::AbstractConfiguration & config)
+{
+    switch (type)
+    {
+        case Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
+        {
+            return config.getUInt(".threadpool_remote_fs_reader_pool_size", 250);
+        }
+        case Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
+        {
+            return config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
+        }
+        case Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
+        {
+            return std::numeric_limits<std::size_t>::max();
+        }
+    }
+}
+
+size_t Context::getThreadPoolReaderSize(FilesystemReaderType type) const
+{
+    const auto & config = getConfigRef();
+    return getThreadPoolReaderSizeFromConfig(type, config);
+}
+
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
     const auto & config = getConfigRef();
@@ -3850,9 +3924,8 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         {
             if (!shared->asynchronous_remote_fs_reader)
             {
-                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 100);
+                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
                 auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
-
                 shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
             }
 
@@ -3862,9 +3935,8 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         {
             if (!shared->asynchronous_local_fs_reader)
             {
-                auto pool_size = config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
+                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
                 auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
-
                 shared->asynchronous_local_fs_reader = std::make_unique<ThreadPoolReader>(pool_size, queue_size);
             }
 
@@ -3922,6 +3994,8 @@ ReadSettings Context::getReadSettings() const
 
     res.load_marks_asynchronously = settings.load_marks_asynchronously;
 
+    res.enable_filesystem_read_prefetches_log = settings.enable_filesystem_read_prefetches_log;
+
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
@@ -3972,6 +4046,14 @@ WriteSettings Context::getWriteSettings() const
     res.remote_throttler = getRemoteWriteThrottler();
 
     return res;
+}
+
+std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
+{
+    auto lock = getLock();
+    if (!async_read_counters)
+        async_read_counters = std::make_shared<AsyncReadCounters>();
+    return async_read_counters;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const

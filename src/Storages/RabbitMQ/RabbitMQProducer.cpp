@@ -46,6 +46,8 @@ RabbitMQProducer::RabbitMQProducer(
 
 void RabbitMQProducer::initialize()
 {
+    LOG_TRACE(log, "Initializing producer");
+
     if (connection.connect())
         setupChannel();
     else
@@ -74,11 +76,10 @@ void RabbitMQProducer::finishImpl()
 
 void RabbitMQProducer::produce(const String & message, size_t, const Columns &, size_t)
 {
-    LOG_DEBUG(&Poco::Logger::get("RabbitMQProducer"), "push {}", message);
-
     Payload payload;
     payload.message = message;
     payload.id = ++payload_counter;
+    LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
 }
@@ -86,6 +87,7 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
 void RabbitMQProducer::setupChannel()
 {
     producer_channel = connection.createChannel();
+    LOG_TRACE(log, "Created a producer channel");
 
     producer_channel->onError([&](const char * message)
     {
@@ -226,6 +228,8 @@ void RabbitMQProducer::publish(Payloads & messages, bool republishing)
 
 void RabbitMQProducer::startProducingTaskLoop()
 {
+    LOG_TRACE(log, "Starting producer loop");
+
     while ((!payloads.isFinishedAndEmpty() || !returned.empty() || !delivery_record.empty()) && !shutdown_called.load())
     {
         /// If onReady callback is not received, producer->usable() will anyway return true,
