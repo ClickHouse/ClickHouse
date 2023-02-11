@@ -107,7 +107,6 @@ namespace ErrorCodes
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_PREWHERE;
     extern const int UNKNOWN_TABLE;
