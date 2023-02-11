@@ -4,7 +4,6 @@
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
 # pylint: disable=anomalous-backslash-in-string
-# pylint: disable=raise-missing-from
 
 import enum
 from queue import Full
@@ -121,7 +120,6 @@ def clickhouse_execute_http(
     if default_format is not None:
         params["default_format"] = default_format
 
-    error_message = ""
     for i in range(max_http_retries):
         try:
             client.request(
@@ -132,9 +130,8 @@ def clickhouse_execute_http(
             data = res.read()
             break
         except Exception as ex:
-            error_message += "\tAttempt {} failed: {}\n{}\n".format(i, str(ex), traceback.format_exc())
             if i == max_http_retries - 1:
-                raise Exception("Failed to send a request after {} retries:\n{}".format(max_http_retries, error_message))
+                raise ex
 
             sleep(i + 1)
 
