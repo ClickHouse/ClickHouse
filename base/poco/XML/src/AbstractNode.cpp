@@ -299,50 +299,50 @@ void AbstractNode::bubbleEvent(Event* evt)
 
 void AbstractNode::dispatchSubtreeModified()
 {
-	AutoPtr<MutationEvent> pEvent = new MutationEvent(_pOwner, MutationEvent::DOMSubtreeModified, this, true, false, 0);
-	dispatchEvent(pEvent.get());
+	AutoPtr<MutationEvent> event = new MutationEvent(_pOwner, MutationEvent::DOMSubtreeModified, this, true, false, 0);
+	dispatchEvent(event.get());
 }
 
 
 void AbstractNode::dispatchNodeInserted()
 {
-	AutoPtr<MutationEvent> pEvent = new MutationEvent(_pOwner, MutationEvent::DOMNodeInserted, this, true, false, parentNode());
-	dispatchEvent(pEvent.get());
+	AutoPtr<MutationEvent> event = new MutationEvent(_pOwner, MutationEvent::DOMNodeInserted, this, true, false, parentNode());
+	dispatchEvent(event.get());
 }
 
 
 void AbstractNode::dispatchNodeRemoved()
 {
-	AutoPtr<MutationEvent> pEvent = new MutationEvent(_pOwner, MutationEvent::DOMNodeRemoved, this, true, false, parentNode());
-	dispatchEvent(pEvent.get());
+	AutoPtr<MutationEvent> event = new MutationEvent(_pOwner, MutationEvent::DOMNodeRemoved, this, true, false, parentNode());
+	dispatchEvent(event.get());
 }
 
 
 void AbstractNode::dispatchNodeRemovedFromDocument()
 {
-	AutoPtr<MutationEvent> pEvent = new MutationEvent(_pOwner, MutationEvent::DOMNodeRemovedFromDocument, this, false, false, 0);
-	dispatchEvent(pEvent.get());
+	AutoPtr<MutationEvent> event = new MutationEvent(_pOwner, MutationEvent::DOMNodeRemovedFromDocument, this, false, false, 0);
+	dispatchEvent(event.get());
 }
 
 
 void AbstractNode::dispatchNodeInsertedIntoDocument()
 {
-	AutoPtr<MutationEvent> pEvent = new MutationEvent(_pOwner, MutationEvent::DOMNodeInsertedIntoDocument, this, false, false, 0);
-	dispatchEvent(pEvent.get());
+	AutoPtr<MutationEvent> event = new MutationEvent(_pOwner, MutationEvent::DOMNodeInsertedIntoDocument, this, false, false, 0);
+	dispatchEvent(event.get());
 }
 
 
 void AbstractNode::dispatchAttrModified(Attr* pAttr, MutationEvent::AttrChangeType changeType, const XMLString& prevValue, const XMLString& newValue)
 {
-	AutoPtr<MutationEvent> pEvent = new MutationEvent(_pOwner, MutationEvent::DOMAttrModified, this, true, false, pAttr, prevValue, newValue, pAttr->name(), changeType);
-	dispatchEvent(pEvent.get());
+	AutoPtr<MutationEvent> event = new MutationEvent(_pOwner, MutationEvent::DOMAttrModified, this, true, false, pAttr, prevValue, newValue, pAttr->name(), changeType);
+	dispatchEvent(event.get());
 }
 
 
 void AbstractNode::dispatchCharacterDataModified(const XMLString& prevValue, const XMLString& newValue)
 {
-	AutoPtr<MutationEvent> pEvent = new MutationEvent(_pOwner, MutationEvent::DOMCharacterDataModified, this, true, false, 0, prevValue, newValue, EMPTY_STRING, MutationEvent::MODIFICATION);
-	dispatchEvent(pEvent.get());
+	AutoPtr<MutationEvent> event = new MutationEvent(_pOwner, MutationEvent::DOMCharacterDataModified, this, true, false, 0, prevValue, newValue, EMPTY_STRING, MutationEvent::MODIFICATION);
+	dispatchEvent(event.get());
 }
 
 

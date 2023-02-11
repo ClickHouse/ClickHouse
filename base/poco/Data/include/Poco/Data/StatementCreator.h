@@ -33,7 +33,7 @@ class Data_API StatementCreator
 {
 public:
 	StatementCreator();
-		/// Creates an unitialized StatementCreator.
+		/// Creates an uninitialized StatementCreator.
 		
 	StatementCreator(Poco::AutoPtr<SessionImpl> ptrImpl);
 		/// Creates a StatementCreator.

@@ -126,7 +126,7 @@ public:
 		/// key is not exported.
 
 	int type() const;
-		/// Retuns the EVPPKey type NID.
+		/// Returns the EVPPKey type NID.
 
 	bool isSupported(int type) const;
 		/// Returns true if OpenSSL type is supported
