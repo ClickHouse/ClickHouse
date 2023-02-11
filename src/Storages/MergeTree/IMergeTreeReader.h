@@ -93,8 +93,12 @@ protected:
     StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
-    using ColumnPosition = std::optional<size_t>;
-    ColumnPosition findColumnForOffsets(const NameAndTypePair & column) const;
+    /// Position and level (of nesting).
+    using ColumnPositionLevel = std::optional<std::pair<size_t, size_t>>;
+    /// In case of part of the nested column does not exists, offsets should be
+    /// read, but only the offsets for the current column, that is why it
+    /// returns pair of size_t, not just one.
+    ColumnPositionLevel findColumnForOffsets(const NameAndTypePair & column) const;
 
     NameSet partially_read_columns;
 
