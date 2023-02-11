@@ -486,7 +486,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, SelectQueryOptions());
+        InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, SelectQueryOptions(), local_context->getViewSource());
         pipeline = interpreter.buildQueryPipeline();
     }
     else
