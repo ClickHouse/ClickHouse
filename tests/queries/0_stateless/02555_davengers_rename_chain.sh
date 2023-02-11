@@ -27,8 +27,8 @@ counter=0 retries=60
 I=0
 while [[ $counter -lt $retries ]]; do
     I=$((I + 1))
-    result=$($CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE table = 'wrong_metadata' AND database='${CLICKHOUSE_DATABASE}'")
-    if [[ $result == *"a TO a1"* ]]; then
+    result=$($CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE wrong_metadata")
+    if [[ $result == *"\`a1\` UInt64"* ]]; then
         break;
     fi
     sleep 0.1
@@ -98,8 +98,8 @@ counter=0 retries=60
 I=0
 while [[ $counter -lt $retries ]]; do
     I=$((I + 1))
-    result=$($CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE table = 'wrong_metadata_compact' AND database='${CLICKHOUSE_DATABASE}'")
-    if [[ $result == *"a TO a1"* ]]; then
+    result=$($CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE wrong_metadata_compact")
+    if [[ $result == *"\`a1\` UInt64"* ]]; then
         break;
     fi
     sleep 0.1
