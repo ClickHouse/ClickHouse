@@ -35,6 +35,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -1516,8 +1517,9 @@ void Context::applySettingChange(const SettingChange & change)
     }
     catch (Exception & e)
     {
-        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}",
-                                 change.name, applyVisitor(FieldVisitorToString(), change.value)));
+        e.addMessage(fmt::format(
+                         "in attempt to set the value of setting '{}' to {}",
+                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
         throw;
     }
 }
@@ -2041,14 +2043,22 @@ void Context::dropIndexMarkCache() const
         shared->index_mark_cache->reset();
 }
 
-void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_records)
+void Context::setQueryCache(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
 
     if (shared->query_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
-    shared->query_cache = std::make_shared<QueryCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_records);
+    shared->query_cache = std::make_shared<QueryCache>();
+    shared->query_cache->updateConfiguration(config);
+}
+
+void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+    if (shared->query_cache)
+        shared->query_cache->updateConfiguration(config);
 }
 
 QueryCachePtr Context::getQueryCache() const
@@ -2964,6 +2974,22 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
+DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto disk_selector = getDiskSelector(lock);
+
+    auto disk = disk_selector->tryGet(name);
+    if (!disk)
+    {
+        disk = creator(getDisksMap(lock));
+        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+    }
+
+    return disk;
+}
+
 StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -2973,10 +2999,39 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
+StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+    StoragePolicyPtr storage_policy = storage_policy_selector->tryGet(storage_policy_name);
+
+    if (!storage_policy)
+    {
+        auto disk_selector = getDiskSelector(lock);
+        auto disk = disk_selector->get(disk_name);
+        auto volume = std::make_shared<SingleDiskVolume>("_volume_" + disk_name, disk);
+
+        static const auto move_factor_for_single_disk_volume = 0.0;
+        storage_policy = std::make_shared<StoragePolicy>(storage_policy_name, Volumes{volume}, move_factor_for_single_disk_volume);
+        const_cast<StoragePolicySelector *>(storage_policy_selector.get())->add(storage_policy);
+    }
+    /// Note: it is important to put storage policy into disk selector (and not recreate it on each call)
+    /// because in some places there are checks that storage policy pointers are the same from different tables.
+    /// (We can assume that tables with the same `disk` setting are on the same storage policy).
+
+    return storage_policy;
+}
 
 DisksMap Context::getDisksMap() const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
+    return getDisksMap(lock);
+}
+
+DisksMap Context::getDisksMap(std::lock_guard<std::mutex> & lock) const
+{
     return getDiskSelector(lock)->getDisksMap();
 }
 

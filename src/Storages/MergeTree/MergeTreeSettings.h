@@ -3,6 +3,7 @@
 #include <base/unit.h>
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -141,6 +142,7 @@ struct Settings;
     M(MaxThreads, max_part_removal_threads, 0, "The number of threads for concurrent removal of inactive data parts. One is usually enough, but in 'Google Compute Environment SSD Persistent Disks' file removal (unlink) operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).", 0) \
     M(UInt64, concurrent_part_removal_threshold, 100, "Activate concurrent part removal (see 'max_part_removal_threads') only if the number of inactive data parts is at least this.", 0) \
     M(String, storage_policy, "default", "Name of storage disk policy", 0) \
+    M(String, disk, "", "Name of storage disk. Can be specified instead of storage policy.", 0) \
     M(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
     M(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm.", 0) \
     M(Bool, assign_part_uuids, false, "Generate UUIDs for parts. Before enabling check that all replicas support new format.", 0) \
@@ -191,7 +193,7 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context);
 
     /// We check settings after storage creation
     static bool isReadonlySetting(const String & name)
