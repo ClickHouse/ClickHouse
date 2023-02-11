@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
+
 using namespace DB;
 
 namespace CurrentMetrics
@@ -63,10 +64,11 @@ using StepFunc = std::function<void(const String & name, size_t steps_left)>;
 class LambdaExecutableTask : public IExecutableTask
 {
 public:
-    explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {})
+    explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {}, UInt64 priority_ = 0)
         : name(name_)
         , step_count(step_count_)
         , step_func(step_func_)
+        , priority(priority_)
     {}
 
     bool executeStep() override
@@ -82,12 +84,14 @@ public:
     }
 
     void onCompleted() override {}
-    UInt64 getPriority() override { return 0; }
+
+    UInt64 getPriority() override { return priority; }
 
 private:
     String name;
     size_t step_count;
     StepFunc step_func;
+    UInt64 priority;
 };
 
 
@@ -116,11 +120,11 @@ TEST(Executor, Simple)
     // This is required to check scheduling properties of round-robin in deterministic way.
     auto init_task = [&] (const String &, size_t)
     {
-       executor->trySchedule(std::make_shared<LambdaExecutableTask>("A", 3, task));
-       executor->trySchedule(std::make_shared<LambdaExecutableTask>("B", 4, task));
-       executor->trySchedule(std::make_shared<LambdaExecutableTask>("C", 5, task));
-       executor->trySchedule(std::make_shared<LambdaExecutableTask>("D", 6, task));
-       executor->trySchedule(std::make_shared<LambdaExecutableTask>("E", 1, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("A", 3, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("B", 4, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("C", 5, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("D", 6, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("E", 1, task));
     };
 
     executor->trySchedule(std::make_shared<LambdaExecutableTask>("init_task", 1, init_task));
@@ -221,4 +225,47 @@ TEST(Executor, RemoveTasksStress)
     executor->wait();
 
     ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
+}
+
+
+TEST(Executor, UpdatePolicy)
+{
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<DynamicRuntimeQueue>>
+    (
+        "GTest",
+        1, // threads
+        100, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+    );
+
+    String schedule; // mutex is not required because we have a single worker
+    String expected_schedule = "ABCDEDDDDDCCBACBACB";
+    std::barrier barrier(2);
+    auto task = [&] (const String & name, size_t)
+    {
+        schedule += name;
+        if (schedule.size() == 5)
+            executor->updateSchedulingPolicy(PriorityRuntimeQueue::name);
+        if (schedule.size() == 12)
+            executor->updateSchedulingPolicy(RoundRobinRuntimeQueue::name);
+        if (schedule.size() == expected_schedule.size())
+            barrier.arrive_and_wait();
+    };
+
+    // Schedule tasks from this `init_task` to guarantee atomicity.
+    // Worker will see pending queue when we push all tasks.
+    // This is required to check scheduling properties in a deterministic way.
+    auto init_task = [&] (const String &, size_t)
+    {
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("A", 3, task, 5));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("B", 4, task, 4));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("C", 5, task, 3));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("D", 6, task, 2));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("E", 1, task, 1));
+    };
+
+    executor->trySchedule(std::make_shared<LambdaExecutableTask>("init_task", 1, init_task));
+    barrier.arrive_and_wait(); // Do not finish until tasks are done
+    executor->wait();
+    ASSERT_EQ(schedule, expected_schedule);
 }
