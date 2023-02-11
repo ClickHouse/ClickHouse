@@ -19,6 +19,7 @@
 #include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -175,7 +176,7 @@ public:
         {
             std::visit([&] (auto && queue)
             {
-                if constexpr (std::is_same_v<decltype(queue), NewQueue>)
+                if constexpr (std::is_same_v<std::decay_t<decltype(queue)>, NewQueue>)
                     return; // The same policy
                 NewQueue new_queue;
                 new_queue.setCapacity(capacity);
