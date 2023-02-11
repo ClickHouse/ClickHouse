@@ -70,20 +70,15 @@ def replace_in_users_config(node, old, new):
     )
 
 
-def test_access(cluster):
+def test_default_access(cluster):
     node = cluster.instances["node_no_default_access"]
-    assert (
-        "DB::Exception: default: Not enough privileges. To execute this query it's necessary to have grant SHOW NAMED COLLECTIONS ON *.*"
-        in node.query_and_get_error("select count() from system.named_collections")
-    )
+    assert 0 == int(node.query("select count() from system.named_collections"))
     node = cluster.instances["node_no_default_access_but_with_access_management"]
-    assert (
-        "DB::Exception: default: Not enough privileges. To execute this query it's necessary to have grant SHOW NAMED COLLECTIONS ON *.*"
-        in node.query_and_get_error("select count() from system.named_collections")
-    )
+    assert 0 == int(node.query("select count() from system.named_collections"))
 
     node = cluster.instances["node"]
     assert int(node.query("select count() from system.named_collections")) > 0
+
     replace_in_users_config(
         node, "show_named_collections>1", "show_named_collections>0"
     )
@@ -91,10 +86,8 @@ def test_access(cluster):
         ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
-    assert (
-        "DB::Exception: default: Not enough privileges. To execute this query it's necessary to have grant SHOW NAMED COLLECTIONS ON *.*"
-        in node.query_and_get_error("select count() from system.named_collections")
-    )
+    assert 0 == int(node.query("select count() from system.named_collections"))
+
     replace_in_users_config(
         node, "show_named_collections>0", "show_named_collections>1"
     )
@@ -112,6 +105,7 @@ def test_granular_access_show_query(cluster):
         "collection1" == node.query("SELECT name FROM system.named_collections").strip()
     )
 
+    node.query("DROP USER IF EXISTS kek")
     node.query("CREATE USER kek")
     node.query("GRANT select ON *.* TO kek")
     assert 0 == int(
@@ -156,6 +150,7 @@ def test_granular_access_show_query(cluster):
         == node.query("select name from system.named_collections", user="kek").strip()
     )
 
+    node.query("DROP USER IF EXISTS koko")
     node.query("CREATE USER koko")
     node.query("GRANT select ON *.* TO koko")
     assert 0 == int(
@@ -177,6 +172,7 @@ def test_granular_access_show_query(cluster):
 
 def test_granular_access_create_alter_drop_query(cluster):
     node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS kek")
     node.query("CREATE USER kek")
     node.query("GRANT select ON *.* TO kek")
     assert 0 == int(
@@ -190,7 +186,7 @@ def test_granular_access_create_alter_drop_query(cluster):
         )
     )
     node.query("GRANT create named collection ON collection2 TO kek")
-    node.query_and_get_error(
+    node.query(
         "CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'", user="kek"
     )
     assert 0 == int(
@@ -198,31 +194,41 @@ def test_granular_access_create_alter_drop_query(cluster):
     )
 
     node.query("GRANT show named collections ON collection2 TO kek")
-    # assert (
-    #     "collection2"
-    #     == node.query("select name from system.named_collections", user="kek").strip()
-    # )
-    # assert (
-    #     "1"
-    #     == node.query(
-    #         "select collection['key1'] from system.named_collections where name = 'collection2'"
-    #     ).strip()
-    # )
+    assert (
+        "collection2"
+        == node.query("select name from system.named_collections", user="kek").strip()
+    )
+    assert (
+        "1"
+        == node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection2'"
+        ).strip()
+    )
 
-    # assert (
-    #     "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant ALTER NAMED COLLECTION"
-    #     in node.query_and_get_error(
-    #         "ALTER NAMED COLLECTION collection2 SET key1=2", user="kek"
-    #     )
-    # )
-    # node.query("GRANT alter named collection ON collection2 TO kek")
-    # node.query("ALTER NAMED COLLECTION collection2 SET key1=2", user="kek")
-    # assert (
-    #     "2"
-    #     == node.query(
-    #         "select collection['key1'] from system.named_collections where name = 'collection2'"
-    #     ).strip()
-    # )
+    assert (
+        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant ALTER NAMED COLLECTION"
+        in node.query_and_get_error(
+            "ALTER NAMED COLLECTION collection2 SET key1=2", user="kek"
+        )
+    )
+    node.query("GRANT alter named collection ON collection2 TO kek")
+    node.query("ALTER NAMED COLLECTION collection2 SET key1=2", user="kek")
+    assert (
+        "2"
+        == node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection2'"
+        ).strip()
+    )
+
+    assert (
+        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant DROP NAMED COLLECTION"
+        in node.query_and_get_error("DROP NAMED COLLECTION collection2", user="kek")
+    )
+    node.query("GRANT drop named collection ON collection2 TO kek")
+    node.query("DROP NAMED COLLECTION collection2", user="kek")
+    assert 0 == int(
+        node.query("select count() from system.named_collections", user="kek")
+    )
 
 
 def test_config_reload(cluster):
