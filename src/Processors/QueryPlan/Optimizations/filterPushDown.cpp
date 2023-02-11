@@ -204,7 +204,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
-        /// of the grouping sets, we cound not push the filter down.
+        /// of the grouping sets, we could not push the filter down.
         if (aggregating->isGroupingSets())
         {
 
