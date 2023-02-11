@@ -198,10 +198,6 @@ bool ReadBufferFromRemoteFSGather::readImpl()
         bytes_to_ignore = 0;
     }
 
-    LOG_TEST(
-        log, "with cache: {}, query_id: {}, read-only: {}",
-        with_cache, query_id, settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
-
     if (!result)
         result = current_buf->next();
 
