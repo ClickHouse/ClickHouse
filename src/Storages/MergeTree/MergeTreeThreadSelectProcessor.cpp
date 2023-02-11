@@ -50,22 +50,18 @@ void MergeTreeThreadSelectAlgorithm::finalizeNewTask()
 
     IMergeTreeReader::ValueSizeMap value_size_map;
 
-    if (!reader)
-    {
-        if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
-        owned_mark_cache = storage.getContext()->getMarkCache();
-    }
-    else if (part_name != last_read_part_name)
+    if (reader && part_name != last_read_part_name)
     {
         value_size_map = reader->getAvgValueSizeHints();
     }
 
-    const bool init_new_readers = !reader || part_name != last_read_part_name;
+    /// task->reader.valid() means there is a prefetched reader in this test, use it.
+    const bool init_new_readers = !reader || task->reader.valid() || part_name != last_read_part_name;
     if (init_new_readers)
     {
-        initializeMergeTreeReadersForPart(task->data_part, task->task_columns, metadata_snapshot,
-            task->mark_ranges, value_size_map, profile_callback);
+        initializeMergeTreeReadersForPart(
+            task->data_part, task->task_columns, metadata_snapshot, task->mark_ranges, value_size_map, profile_callback);
+        initializeMergeTreeReadersForCurrentTask(metadata_snapshot, value_size_map, profile_callback);
     }
 
     last_read_part_name = part_name;
