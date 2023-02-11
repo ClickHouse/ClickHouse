@@ -286,7 +286,7 @@ public:
     void removeTasksCorrespondingToStorage(StorageID id);
     void wait();
 
-    /// Update
+    /// Update scheduling policy for pending tasks. It does nothing if `new_policy` is the same or unknown.
     void updateSchedulingPolicy(std::string_view new_policy)
         requires requires(Queue queue) { queue.updatePolicy(new_policy); } // Because we use explicit template instantiation
     {
