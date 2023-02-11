@@ -6,6 +6,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 /** Sort arrays, by values of its elements, or by values of corresponding elements of calculated expression (known as "schwartzsort").
   */
 template <bool positive, bool is_partial>
