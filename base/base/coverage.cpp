@@ -6,6 +6,9 @@
 #    include <unistd.h>
 
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreserved-identifier"
+
 #    if defined(__clang__)
 extern "C" void __llvm_profile_dump(); // NOLINT
 #    elif defined(__GNUC__) || defined(__GNUG__)
@@ -14,6 +17,7 @@ extern "C" void __gcov_exit();
 
 #endif
 
+#pragma GCC diagnostic pop
 
 void dumpCoverageReportIfPossible()
 {

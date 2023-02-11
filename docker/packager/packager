@@ -403,6 +403,8 @@ if __name__ == "__main__":
     if not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_with_version) or args.force_build_image:
             build_image(image_with_version, dockerfile)
+    args.with_coverage = args.build_type == "debug"
+
     env_prepared = parse_env_variables(
         args.build_type,
         args.compiler,
