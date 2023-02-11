@@ -69,7 +69,7 @@ public:
 		/// Returns true if the given name is one of the names of this encoding.
 		/// For example, the "ISO-8859-1" encoding is also known as "Latin-1".
 		///
-		/// Encoding name comparisions are case insensitive.
+		/// Encoding name comparisons are case insensitive.
 
 	virtual const CharacterMap& characterMap() const = 0;
 		/// Returns the CharacterMap for the encoding.
@@ -108,7 +108,7 @@ public:
 		/// The default implementation returns (int) bytes[0].
 
 	virtual int sequenceLength(const unsigned char* bytes, int length) const;
-		/// The sequenceLength function is used to get the lenth of the sequence pointed
+		/// The sequenceLength function is used to get the length of the sequence pointed
 		/// by bytes. The length parameter should be greater or equal to the length of
 		/// the sequence.
 		///
