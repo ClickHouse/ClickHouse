@@ -117,6 +117,7 @@ ASTPtr ConstantNode::toASTImpl() const
         case Field::Types::IPv4:
         case Field::Types::IPv6:
         case Field::Types::Null:
+        case Field::Types::CustomType:
         {
             need_to_add_cast_function = true;
             break;
