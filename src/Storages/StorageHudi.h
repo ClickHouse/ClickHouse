@@ -22,7 +22,7 @@ public:
     /// 2. Finds out parts with latest version.
     /// 3. Creates url for underlying StorageS3 enigne to handle reads.
     StorageHudi(
-        const StorageS3Configuration & configuration_,
+        const StorageS3::Configuration & configuration_,
         const StorageID & table_id_,
         ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
@@ -44,14 +44,14 @@ public:
         size_t num_streams) override;
 
     static ColumnsDescription getTableStructureFromData(
-        const StorageS3Configuration & configuration,
+        StorageS3::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
+
 private:
-    StorageS3::S3Configuration base_configuration;
+    StorageS3::Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
-    String table_path;
 };
 
 }

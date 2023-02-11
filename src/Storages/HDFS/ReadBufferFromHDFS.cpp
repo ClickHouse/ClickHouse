@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 #include <Storages/HDFS/HDFSCommon.h>
+#include <IO/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
@@ -97,11 +98,27 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             num_bytes_to_read = internal_buffer.size();
         }
 
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        ResourceGuard rlock(read_settings.resource_link, num_bytes_to_read);
+        int bytes_read;
+        try
+        {
+            bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        }
+        catch (...)
+        {
+            read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
+            throw;
+        }
+        rlock.unlock();
+
         if (bytes_read < 0)
+        {
+            read_settings.resource_link.accumulate(num_bytes_to_read); // We assume no resource was used in case of failure
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
                 hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
+        }
+        read_settings.resource_link.adjust(num_bytes_to_read, bytes_read);
 
         if (bytes_read)
         {
