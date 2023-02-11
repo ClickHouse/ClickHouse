@@ -66,7 +66,7 @@ class Data_API Statement
 	///
 	/// See individual functions documentation for more details.
 	///
-	/// Statement owns the RowFormatter, which can be provided externaly through setFormatter()
+	/// Statement owns the RowFormatter, which can be provided externally through setFormatter()
 	/// member function.
 	/// If no formatter is externally supplied to the statement, the SimpleRowFormatter is lazy
 	/// created and used.

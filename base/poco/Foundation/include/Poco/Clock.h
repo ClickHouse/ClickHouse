@@ -28,7 +28,7 @@ class Foundation_API Clock
 	/// A Clock stores a monotonic* clock value
 	/// with (theoretical) microseconds resolution.
 	/// Clocks can be compared with each other
-	/// and simple arithmetics are supported.
+	/// and simple arithmetic are supported.
 	///
 	/// [*] Note that Clock values are only monotonic if
 	/// the operating system provides a monotonic clock.

@@ -201,7 +201,7 @@ public:
 	Any& swap(Any& other)
 		/// Swaps the content of the two Anys.
 		/// 
-		/// When small object optimizaton is enabled, swap only
+		/// When small object optimization is enabled, swap only
 		/// has no-throw guarantee when both (*this and other)
 		/// objects are allocated on the heap.
 	{
