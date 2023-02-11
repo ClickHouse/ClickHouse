@@ -5,7 +5,7 @@
 // Package: Filesystem
 // Module:  RecursiveDirectoryIterator
 //
-// Definitions of the RecursiveDirectoryIterator stategy classes.
+// Definitions of the RecursiveDirectoryIterator strategy classes.
 //
 // Copyright (c) 2012, Applied Informatics Software Engineering GmbH.
 // and Contributors.
