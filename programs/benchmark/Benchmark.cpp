@@ -26,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
@@ -276,7 +277,7 @@ private:
             }
 
             if (queries.empty())
-                throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty list of queries.");
+                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
         }
         else
         {
@@ -473,7 +474,7 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.readBlock())
+        while (Block block = executor.read())
             info.update(block);
 
         executor.finish();
@@ -682,7 +683,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
-            ("ignore-error,continue_on_errors", "continue testing even if a query fails")
+            ("continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
         ;
@@ -737,7 +738,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["query_id"].as<std::string>(),
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
-            options.count("ignore-error"),
+            options.count("continue_on_errors"),
             options.count("reconnect"),
             options.count("client-side-time"),
             print_stacktrace,

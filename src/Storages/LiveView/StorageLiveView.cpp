@@ -79,11 +79,10 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception(DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW,
-                            "LIVE VIEWs are only supported for queries from tables, "
-                            "but there is no table name in select query.");
+            throw Exception("LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.",
+                            DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
         if (ast_select->list_of_selects->children.size() != 1)
-            throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
+            throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
         inner_subquery = ast_select->list_of_selects->children.at(0)->clone();
 
@@ -294,11 +293,11 @@ StorageLiveView::StorageLiveView(
     setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
+        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
     /// Default value, if only table name exist in the query
     if (query.select->list_of_selects->children.size() != 1)
-        throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW, "UNION is not supported for LIVE VIEW");
+        throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
     inner_query = query.select->list_of_selects->children.at(0);
 
@@ -470,6 +469,7 @@ void StorageLiveView::drop()
     DatabaseCatalog::instance().removeViewDependency(select_table_id, table_id);
 
     std::lock_guard lock(mutex);
+    is_dropped = true;
     condition.notify_all();
 }
 
@@ -607,8 +607,9 @@ void registerStorageLiveView(StorageFactory & factory)
     factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
     {
         if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_live_view)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
+            throw Exception(
+                "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
+                ErrorCodes::SUPPORT_IS_DISABLED);
 
         return std::make_shared<StorageLiveView>(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
     });

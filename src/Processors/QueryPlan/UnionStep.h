@@ -24,6 +24,7 @@ public:
 private:
     Block header;
     size_t max_threads;
+    Processors processors;
 };
 
 }

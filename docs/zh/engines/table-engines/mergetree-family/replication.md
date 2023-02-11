@@ -287,3 +287,5 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 -   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
 -   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.mdx#max_replicated_fetches_network_bandwidth)
 -   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.mdx#max_replicated_sends_network_bandwidth)
+
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

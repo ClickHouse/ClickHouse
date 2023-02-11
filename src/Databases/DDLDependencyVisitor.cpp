@@ -183,11 +183,10 @@ namespace
                 /// joinGet(join_storage_table_name, `value_column`, join_keys)
                 addQualifiedNameFromArgument(function, 0);
             }
-            else if (functionIsInOrGlobalInOperator(function.name))
+            else if (function.name == "in" || function.name == "notIn" || function.name == "globalIn" || function.name == "globalNotIn")
             {
-                /// x IN table_name.
-                /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
-                addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
+                /// in(x, table_name) - function for evaluating (x IN table_name)
+                addQualifiedNameFromArgument(function, 1);
             }
             else if (function.name == "dictionary")
             {
@@ -249,10 +248,7 @@ namespace
 
             if (has_local_replicas && !table_function)
             {
-                /// We set `apply_current_database=false` here because if this argument is an identifier without dot,
-                /// then it's not the name of a table within the current database, it's the name of a database, and
-                /// the name of a table will be in the following argument.
-                auto maybe_qualified_name = tryGetQualifiedNameFromArgument(function, 1, /* evaluate= */ true, /* apply_current_database= */ false);
+                auto maybe_qualified_name = tryGetQualifiedNameFromArgument(function, 1, /* apply_current_database= */ false);
                 if (!maybe_qualified_name)
                     return;
                 auto & qualified_name = *maybe_qualified_name;
@@ -275,7 +271,7 @@ namespace
         }
 
         /// Gets an argument as a string, evaluates constants if necessary.
-        std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true) const
+        std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx) const
         {
             if (!function.arguments)
                 return {};
@@ -285,41 +281,28 @@ namespace
                 return {};
 
             const auto & arg = args[arg_idx];
+            ASTPtr evaluated;
 
-            if (evaluate)
+            try
             {
-                try
-                {
-                    /// We're just searching for dependencies here, it's not safe to execute subqueries now.
-                    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
-                    const auto * literal = evaluated->as<ASTLiteral>();
-                    if (!literal || (literal->value.getType() != Field::Types::String))
-                        return {};
-                    return literal->value.safeGet<String>();
-                }
-                catch (...)
-                {
-                    return {};
-                }
+                evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
             }
-            else
+            catch (...)
             {
-                if (const auto * id = arg->as<ASTIdentifier>())
-                    return id->name();
-                if (const auto * literal = arg->as<ASTLiteral>())
-                {
-                    if (literal->value.getType() == Field::Types::String)
-                        return literal->value.safeGet<String>();
-                }
                 return {};
             }
+
+            const auto * literal = evaluated->as<ASTLiteral>();
+            if (!literal || (literal->value.getType() != Field::Types::String))
+                return {};
+            return literal->value.safeGet<String>();
         }
 
         /// Gets an argument as a qualified table name.
         /// Accepts forms db_name.table_name (as an identifier) and 'db_name.table_name' (as a string).
         /// The function doesn't replace an empty database name with the current_database (the caller must do that).
-        std::optional<QualifiedTableName> tryGetQualifiedNameFromArgument(
-            const ASTFunction & function, size_t arg_idx, bool evaluate = true, bool apply_current_database = true) const
+        std::optional<QualifiedTableName>
+        tryGetQualifiedNameFromArgument(const ASTFunction & function, size_t arg_idx, bool apply_current_database = true) const
         {
             if (!function.arguments)
                 return {};
@@ -343,7 +326,7 @@ namespace
             }
             else
             {
-                auto qualified_name_as_string = tryGetStringFromArgument(function, arg_idx, evaluate);
+                auto qualified_name_as_string = tryGetStringFromArgument(function, arg_idx);
                 if (!qualified_name_as_string)
                     return {};
 
@@ -362,9 +345,9 @@ namespace
 
         /// Adds a qualified table name from an argument to the collection of dependencies.
         /// Accepts forms db_name.table_name (as an identifier) and 'db_name.table_name' (as a string).
-        void addQualifiedNameFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true)
+        void addQualifiedNameFromArgument(const ASTFunction & function, size_t arg_idx)
         {
-            if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx, evaluate))
+            if (auto qualified_name = tryGetQualifiedNameFromArgument(function, arg_idx))
                 dependencies.emplace(std::move(qualified_name).value());
         }
 
@@ -377,7 +360,7 @@ namespace
                 return {};
 
             auto table = tryGetStringFromArgument(function, table_arg_idx);
-            if (!table || table->empty())
+            if (!table)
                 return {};
 
             QualifiedTableName qualified_name;

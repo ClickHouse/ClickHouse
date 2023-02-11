@@ -23,7 +23,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
 {
 }
 
-MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
+MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction() const
 {
     return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this);
 }
@@ -108,7 +108,7 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
 {
     std::string blob_name = object_storage->generateBlobNameForPath(path);
     size_t object_size = getFileSize(blob_name);
-    auto object = StoredObject::create(*object_storage, getAbsolutePath(blob_name), object_size, path, /* exists */true);
+    auto object = StoredObject::create(*object_storage, getAbsolutePath(blob_name), object_size, /* exists */true);
     return {std::move(object)};
 }
 

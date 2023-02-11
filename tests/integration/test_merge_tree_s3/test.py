@@ -4,7 +4,6 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers
 from helpers.utility import generate_values, replace_config, SafeThread
 from helpers.wait_for_helpers import wait_for_delete_inactive_parts
 from helpers.wait_for_helpers import wait_for_delete_empty_parts
@@ -80,15 +79,46 @@ def create_table(node, table_name, **additional_settings):
 
 
 def run_s3_mocks(cluster):
-    script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
-    start_mock_servers(
-        cluster,
-        script_dir,
-        [
-            ("unstable_proxy.py", "resolver", "8081"),
-            ("no_delete_objects.py", "resolver", "8082"),
-        ],
+    logging.info("Starting s3 mocks")
+    mocks = (
+        ("unstable_proxy.py", "resolver", "8081"),
+        ("no_delete_objects.py", "resolver", "8082"),
     )
+    for mock_filename, container, port in mocks:
+        container_id = cluster.get_container_id(container)
+        current_dir = os.path.dirname(__file__)
+        cluster.copy_file_to_container(
+            container_id,
+            os.path.join(current_dir, "s3_mocks", mock_filename),
+            mock_filename,
+        )
+        cluster.exec_in_container(
+            container_id, ["python", mock_filename, port], detach=True
+        )
+
+    # Wait for S3 mocks to start
+    for mock_filename, container, port in mocks:
+        num_attempts = 100
+        for attempt in range(num_attempts):
+            ping_response = cluster.exec_in_container(
+                cluster.get_container_id(container),
+                ["curl", "-s", f"http://localhost:{port}/"],
+                nothrow=True,
+            )
+            if ping_response != "OK":
+                if attempt == num_attempts - 1:
+                    assert (
+                        ping_response == "OK"
+                    ), f'Expected "OK", but got "{ping_response}"'
+                else:
+                    time.sleep(1)
+            else:
+                logging.debug(
+                    f"mock {mock_filename} ({port}) answered {ping_response} on attempt {attempt}"
+                )
+                break
+
+    logging.info("S3 mocks started")
 
 
 def wait_for_delete_s3_objects(cluster, expected, timeout=30):
@@ -618,6 +648,49 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
     assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_s3_disk_restart_during_load(cluster, node_name):
+    node = cluster.instances[node_name]
+    create_table(node, "s3_test")
+
+    node.query(
+        "INSERT INTO s3_test VALUES {}".format(
+            generate_values("2020-01-04", 1024 * 1024)
+        )
+    )
+    node.query(
+        "INSERT INTO s3_test VALUES {}".format(
+            generate_values("2020-01-05", 1024 * 1024, -1)
+        )
+    )
+
+    def read():
+        for ii in range(0, 20):
+            logging.info("Executing %d query", ii)
+            assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
+            logging.info("Query %d executed", ii)
+            time.sleep(0.2)
+
+    def restart_disk():
+        for iii in range(0, 5):
+            logging.info("Restarting disk, attempt %d", iii)
+            node.query("SYSTEM RESTART DISK s3")
+            logging.info("Disk restarted, attempt %d", iii)
+            time.sleep(0.5)
+
+    threads = []
+    for i in range(0, 4):
+        threads.append(SafeThread(target=read))
+
+    threads.append(SafeThread(target=restart_disk))
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
 
 
 @pytest.mark.parametrize("node_name", ["node"])

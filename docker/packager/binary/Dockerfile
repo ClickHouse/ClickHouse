@@ -22,9 +22,7 @@ RUN apt-get update && \
         build-essential \
         libc6 \
         libc6-dev \
-        libc6-dev-arm64-cross \
-        yasm \
-        zstd && \
+        libc6-dev-arm64-cross && \
     apt-get clean
 
 ENV CC=clang-${LLVM_VERSION}

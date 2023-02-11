@@ -16,11 +16,12 @@ namespace DB
 namespace
 {
 
-class CustomizeFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<CustomizeFunctionsVisitor>
+class CustomizeFunctionsVisitor : public InDepthQueryTreeVisitor<CustomizeFunctionsVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<CustomizeFunctionsVisitor>;
-    using Base::Base;
+    explicit CustomizeFunctionsVisitor(ContextPtr & context_)
+        : context(context_)
+    {}
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
@@ -28,7 +29,7 @@ public:
         if (!function_node)
             return;
 
-        const auto & settings = getSettings();
+        const auto & settings = context->getSettingsRef();
 
         /// After successful function replacement function name and function name lowercase must be recalculated
         auto function_name = function_node->getFunctionName();
@@ -137,6 +138,7 @@ public:
 
     static inline void resolveAggregateOrWindowFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
     {
+        auto function_result_type = function_node.getResultType();
         auto function_aggregate_function = function_node.getAggregateFunction();
 
         AggregateFunctionProperties properties;
@@ -146,23 +148,27 @@ public:
             properties);
 
         if (function_node.isAggregateFunction())
-            function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+            function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
         else if (function_node.isWindowFunction())
-            function_node.resolveAsWindowFunction(std::move(aggregate_function));
+            function_node.resolveAsWindowFunction(std::move(aggregate_function), std::move(function_result_type));
     }
 
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function = FunctionFactory::instance().get(function_name, getContext());
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+        auto function_result_type = function_node.getResultType();
+        auto function = FunctionFactory::instance().get(function_name, context);
+        function_node.resolveAsFunction(function, std::move(function_result_type));
     }
+
+private:
+    ContextPtr & context;
 };
 
 }
 
 void CustomizeFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    CustomizeFunctionsVisitor visitor(std::move(context));
+    CustomizeFunctionsVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 

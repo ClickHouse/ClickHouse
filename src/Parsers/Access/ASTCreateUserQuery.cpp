@@ -90,7 +90,7 @@ namespace
 
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
             case AuthenticationType::MAX:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
+                throw Exception("AST: Unexpected authentication type " + toString(auth_type), ErrorCodes::LOGICAL_ERROR);
         }
 
         if (password && !settings.show_secrets)

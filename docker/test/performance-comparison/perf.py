@@ -297,7 +297,6 @@ if not args.use_existing_tables:
 
 # Let's sync the data to avoid writeback affects performance
 os.system("sync")
-reportStageEnd("sync")
 
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))

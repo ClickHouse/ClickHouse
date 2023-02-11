@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-merge-tree-settings
+# Tags: no-parallel
 
 set -ue
 

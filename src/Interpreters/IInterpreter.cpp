@@ -11,7 +11,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
 void IInterpreter::extendQueryLogElem(
     QueryLogElement & elem, const ASTPtr & ast, ContextPtr context, const String & query_database, const String & query_table) const
 {

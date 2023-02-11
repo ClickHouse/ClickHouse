@@ -92,22 +92,3 @@ select addMilliseconds(toDateTime64('1930-12-12 12:12:12.123456', 6), 1); -- Bel
 select addMilliseconds(toDateTime64('2220-12-12 12:12:12.123', 3), 1); -- Above normal range, source scale matches result
 select addMilliseconds(toDateTime64('2220-12-12 12:12:12.12', 2), 1); -- Above normal range, source scale less than result
 select addMilliseconds(toDateTime64('2220-12-12 12:12:12.123456', 6), 1); -- Above normal range, source scale greater than result
-
-select 'test subtract[...]seconds()';
-select '- test nanoseconds';
-select subtractNanoseconds(toDateTime64('2023-01-01 00:00:00.0000000', 7, 'UTC'), 1);
-select subtractNanoseconds(toDateTime64('2023-01-01 00:00:00.0000000', 7, 'UTC'), 100);
-select subtractNanoseconds(toDateTime64('2023-01-01 00:00:00.0000000', 7, 'UTC'), -1);
-select subtractNanoseconds(toDateTime64('2023-01-01 00:00:00.0000000', 7, 'UTC'), -100);
-
-select '- test microseconds';
-select subtractMicroseconds(toDateTime64('2023-01-01 00:00:00.0000', 4, 'UTC'), 1);
-select subtractMicroseconds(toDateTime64('2023-01-01 00:00:00.0000', 4, 'UTC'), 100);
-select subtractMicroseconds(toDateTime64('2023-01-01 00:00:00.0000', 4, 'UTC'), -1);
-select subtractMicroseconds(toDateTime64('2023-01-01 00:00:00.0000', 4, 'UTC'), -100);
-
-select '- test milliseconds';
-select subtractMilliseconds(toDateTime64('2023-01-01 00:00:00.0', 1, 'UTC'), 1);
-select subtractMilliseconds(toDateTime64('2023-01-01 00:00:00.0', 1, 'UTC'), 100);
-select subtractMilliseconds(toDateTime64('2023-01-01 00:00:00.0', 1, 'UTC'), -1);
-select subtractMilliseconds(toDateTime64('2023-01-01 00:00:00.0', 1, 'UTC'), -100);

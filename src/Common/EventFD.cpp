@@ -3,7 +3,6 @@
 
 #include <Common/EventFD.h>
 #include <Common/Exception.h>
-#include <base/defines.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 
@@ -56,10 +55,7 @@ bool EventFD::write(uint64_t increase) const
 EventFD::~EventFD()
 {
     if (fd != -1)
-    {
-        int err = close(fd);
-        chassert(!err || errno == EINTR);
-    }
+        close(fd);
 }
 
 }

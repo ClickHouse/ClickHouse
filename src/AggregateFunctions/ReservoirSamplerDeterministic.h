@@ -235,7 +235,7 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
+            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);

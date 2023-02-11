@@ -264,9 +264,9 @@ StorageKeeperMap::StorageKeeperMap(
     metadata_string = out.str();
 
     if (root_path.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "root_path should not be empty");
+        throw Exception("root_path should not be empty", ErrorCodes::BAD_ARGUMENTS);
     if (!root_path.starts_with('/'))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "root_path should start with '/'");
+        throw Exception("root_path should start with '/'", ErrorCodes::BAD_ARGUMENTS);
 
     auto config_keys_limit = context_->getConfigRef().getUInt64("keeper_map_keys_limit", 0);
     if (config_keys_limit != 0 && (keys_limit == 0 || keys_limit > config_keys_limit))
@@ -397,9 +397,7 @@ StorageKeeperMap::StorageKeeperMap(
         return;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot create metadata for table, because it is removed concurrently or because "
-                    "of wrong root_path ({})", root_path);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create metadata for table, because it is removed concurrently or because of wrong root_path ({})", root_path);
 }
 
 
@@ -765,12 +763,12 @@ StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setConstraints(args.constraints);
 
     if (!args.storage_def->primary_key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
+        throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
     metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
+        throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_shared<StorageKeeperMap>(
         args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], root_path, keys_limit);

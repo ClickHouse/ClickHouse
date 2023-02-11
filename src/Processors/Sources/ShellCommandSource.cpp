@@ -71,22 +71,28 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
     pfd.events = events;
     pfd.revents = 0;
 
+    Stopwatch watch;
+
     int res;
 
     while (true)
     {
-        Stopwatch watch;
         res = poll(&pfd, 1, static_cast<int>(timeout_milliseconds));
 
         if (res < 0)
         {
-            if (errno != EINTR)
-                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
+            if (errno == EINTR)
+            {
+                watch.stop();
+                timeout_milliseconds -= watch.elapsedMilliseconds();
+                watch.start();
 
-            const auto elapsed = watch.elapsedMilliseconds();
-            if (timeout_milliseconds <= elapsed)
-                break;
-            timeout_milliseconds -= elapsed;
+                continue;
+            }
+            else
+            {
+                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
+            }
         }
         else
         {
@@ -468,7 +474,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     std::unique_ptr<ShellCommand> process;
     std::unique_ptr<ShellCommandHolder> process_holder;
 
-    auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
+    auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
 
     bool is_executable_pool = (process_pool != nullptr);

@@ -242,7 +242,7 @@ void SubstituteColumnOptimizer::perform()
     {
         auto * list = select_query->refSelect()->as<ASTExpressionList>();
         if (!list)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "List of selected columns must be ASTExpressionList");
+            throw Exception("List of selected columns must be ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
 
         for (ASTPtr & ast : list->children)
             ast->setAlias(ast->getAliasOrColumnName());

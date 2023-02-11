@@ -17,23 +17,11 @@ public:
     ASTPtr clone() const override
     {
         auto clone = std::make_shared<ASTQualifiedAsterisk>(*this);
-        clone->children.clear();
-
-        if (transformers)
-        {
-            clone->transformers = transformers->clone();
-            clone->children.push_back(clone->transformers);
-        }
-
-        clone->qualifier = qualifier->clone();
-        clone->children.push_back(clone->qualifier);
-
+        clone->cloneChildren();
         return clone;
     }
     void appendColumnName(WriteBuffer & ostr) const override;
 
-    ASTPtr qualifier;
-    ASTPtr transformers;
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

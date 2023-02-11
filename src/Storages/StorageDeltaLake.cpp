@@ -8,7 +8,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
-#include <IO/S3/Requests.h>
 
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
@@ -17,6 +16,8 @@
 #include <Formats/FormatFactory.h>
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -57,8 +58,8 @@ std::vector<String> DeltaLakeMetadata::listCurrentFiles() &&
     return keys;
 }
 
-JsonMetadataGetter::JsonMetadataGetter(const StorageS3::Configuration & configuration_, ContextPtr context)
-    : base_configuration(configuration_)
+JsonMetadataGetter::JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context)
+    : base_configuration(configuration_), table_path(table_path_)
 {
     init(context);
 }
@@ -94,17 +95,17 @@ void JsonMetadataGetter::init(ContextPtr context)
     }
 }
 
-std::vector<String> JsonMetadataGetter::getJsonLogFiles() const
+std::vector<String> JsonMetadataGetter::getJsonLogFiles()
 {
-    const auto & client = base_configuration.client;
-    const auto table_path = base_configuration.url.key;
-    const auto bucket = base_configuration.url.bucket;
-
     std::vector<String> keys;
-    S3::ListObjectsV2Request request;
+
+    const auto & client = base_configuration.client;
+
+    Aws::S3::Model::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
     bool is_finished{false};
+    const auto bucket{base_configuration.uri.bucket};
 
     request.SetBucket(bucket);
 
@@ -154,9 +155,9 @@ std::shared_ptr<ReadBuffer> JsonMetadataGetter::createS3ReadBuffer(const String 
     request_settings.max_single_read_retries = 10;
     return std::make_shared<ReadBufferFromS3>(
         base_configuration.client,
-        base_configuration.url.bucket,
+        base_configuration.uri.bucket,
         key,
-        base_configuration.url.version_id,
+        base_configuration.uri.version_id,
         request_settings,
         context->getReadSettings());
 }
@@ -182,6 +183,11 @@ void JsonMetadataGetter::handleJSON(const JSON & json)
 namespace
 {
 
+StorageS3::S3Configuration getBaseConfiguration(const StorageS3Configuration & configuration)
+{
+    return {configuration.url, configuration.auth_settings, configuration.request_settings, configuration.headers};
+}
+
 // DeltaLake stores data in parts in different files
 // keys is vector of parts with latest version
 // generateQueryFromKeys constructs query from parts filenames for
@@ -193,25 +199,35 @@ String generateQueryFromKeys(const std::vector<String> & keys)
 }
 
 
-StorageS3::Configuration getAdjustedS3Configuration(
-    const ContextPtr & context, const StorageS3::Configuration & configuration, Poco::Logger * log)
+StorageS3Configuration getAdjustedS3Configuration(
+    const ContextPtr & context,
+    StorageS3::S3Configuration & base_configuration,
+    const StorageS3Configuration & configuration,
+    const std::string & table_path,
+    Poco::Logger * log)
 {
-    JsonMetadataGetter getter{configuration, context};
-    const auto keys = getter.getFiles();
-    const auto new_uri = configuration.url.uri.toString() + generateQueryFromKeys(keys);
+    JsonMetadataGetter getter{base_configuration, table_path, context};
+
+    auto keys = getter.getFiles();
+    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(keys);
+
+    LOG_DEBUG(log, "New uri: {}", new_uri);
+    LOG_DEBUG(log, "Table path: {}", table_path);
 
     // set new url in configuration
-    StorageS3::Configuration new_configuration(configuration);
-    new_configuration.url = S3::URI(new_uri);
+    StorageS3Configuration new_configuration;
+    new_configuration.url = new_uri;
+    new_configuration.auth_settings.access_key_id = configuration.auth_settings.access_key_id;
+    new_configuration.auth_settings.secret_access_key = configuration.auth_settings.secret_access_key;
+    new_configuration.format = configuration.format;
 
-    LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_uri);
     return new_configuration;
 }
 
 }
 
 StorageDeltaLake::StorageDeltaLake(
-    const StorageS3::Configuration & configuration_,
+    const StorageS3Configuration & configuration_,
     const StorageID & table_id_,
     ColumnsDescription columns_,
     const ConstraintsDescription & constraints_,
@@ -219,13 +235,14 @@ StorageDeltaLake::StorageDeltaLake(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_)
     : IStorage(table_id_)
-    , base_configuration{configuration_}
+    , base_configuration{getBaseConfiguration(configuration_)}
     , log(&Poco::Logger::get("StorageDeltaLake (" + table_id_.table_name + ")"))
-    , table_path(base_configuration.url.key)
+    , table_path(base_configuration.uri.key)
 {
     StorageInMemoryMetadata storage_metadata;
     StorageS3::updateS3Configuration(context_, base_configuration);
-    auto new_configuration = getAdjustedS3Configuration(context_, base_configuration, log);
+
+    auto new_configuration = getAdjustedS3Configuration(context_, base_configuration, configuration_, table_path, log);
 
     if (columns_.empty())
     {
@@ -268,11 +285,14 @@ Pipe StorageDeltaLake::read(
 }
 
 ColumnsDescription StorageDeltaLake::getTableStructureFromData(
-    StorageS3::Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
+    const StorageS3Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
 {
-    StorageS3::updateS3Configuration(ctx, configuration);
-    auto new_configuration = getAdjustedS3Configuration(ctx, configuration, &Poco::Logger::get("StorageDeltaLake"));
-    return StorageS3::getTableStructureFromData(new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
+    auto base_configuration = getBaseConfiguration(configuration);
+    StorageS3::updateS3Configuration(ctx, base_configuration);
+    auto new_configuration = getAdjustedS3Configuration(
+        ctx, base_configuration, configuration, base_configuration.uri.key, &Poco::Logger::get("StorageDeltaLake"));
+    return StorageS3::getTableStructureFromData(
+        new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
 }
 
 void registerStorageDeltaLake(StorageFactory & factory)
@@ -287,9 +307,9 @@ void registerStorageDeltaLake(StorageFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Storage DeltaLake requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
 
-            StorageS3::Configuration configuration;
+            StorageS3Configuration configuration;
 
-            configuration.url = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"));
+            configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
             configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
 
