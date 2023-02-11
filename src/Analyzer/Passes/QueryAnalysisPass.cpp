@@ -2070,22 +2070,10 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
             node_to_replace = &sort_node->getExpression();
 
         auto * constant_node = (*node_to_replace)->as<ConstantNode>();
-        if (!constant_node)
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::UInt64)
             continue;
 
-        if (!isNativeNumber(removeNullable(constant_node->getResultType())))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Positional argument must be constant with numeric type. Actual {}. In scope {}",
-                constant_node->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        Field converted = convertFieldToType(constant_node->getValue(), DataTypeUInt64());
-        if (converted.isNull())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Positional argument numeric constant expression is not representable as UInt64. In scope {}",
-                scope.scope_node->formatASTForErrorMessage());
-
-        UInt64 positional_argument_number = converted.safeGet<UInt64>();
+        UInt64 positional_argument_number = constant_node->getValue().get<UInt64>();
         if (positional_argument_number == 0 || positional_argument_number > projection_nodes.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
