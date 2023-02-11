@@ -1,10 +1,12 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <Processors/Chunk.h>
+
+#include <Processors/ISource.h>
 
 
 namespace DB
@@ -15,16 +17,9 @@ class UncompressedCache;
 class MarkCache;
 struct PrewhereExprInfo;
 
-struct ChunkAndProgress
-{
-    Chunk chunk;
-    size_t num_read_rows = 0;
-    size_t num_read_bytes = 0;
-};
 
 struct ParallelReadingExtension
 {
-    MergeTreeAllRangesCallback all_callback;
     MergeTreeReadTaskCallback callback;
     size_t count_participating_replicas{0};
     size_t number_of_current_replica{0};
@@ -34,11 +29,11 @@ struct ParallelReadingExtension
     Names colums_to_read;
 };
 
-/// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
-class IMergeTreeSelectAlgorithm
+/// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
+class MergeTreeBaseSelectProcessor : public ISource
 {
 public:
-    IMergeTreeSelectAlgorithm(
+    MergeTreeBaseSelectProcessor(
         Block header,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -49,9 +44,10 @@ public:
         UInt64 preferred_max_column_in_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
-        const Names & virt_column_names_ = {});
+        const Names & virt_column_names_ = {},
+        std::optional<ParallelReadingExtension> extension_ = {});
 
-    virtual ~IMergeTreeSelectAlgorithm();
+    ~MergeTreeBaseSelectProcessor() override;
 
     static Block transformHeader(
         Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns);
@@ -61,25 +57,15 @@ public:
         const MergeTreeReadTaskColumns & task_columns,
         const Block & sample_block);
 
-    Block getHeader() const { return result_header; }
-
-    ChunkAndProgress read();
-
-    void cancel() { is_cancelled = true; }
-
-    const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
-
-    virtual std::string getName() const = 0;
-
 protected:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
-    struct BlockAndProgress
+    struct BlockAndRowCount
     {
         Block block;
         size_t row_count = 0;
-        size_t num_read_rows = 0;
-        size_t num_read_bytes = 0;
     };
+
+    Chunk generate() final;
 
     /// Creates new this->task and return a flag whether it was successful or not
     virtual bool getNewTaskImpl() = 0;
@@ -90,12 +76,14 @@ protected:
 
     size_t estimateMaxBatchSizeForHugeRanges();
 
+    virtual bool canUseConsistentHashingForParallelReading() { return false; }
+
     /// Closes readers and unlock part locks
     virtual void finish() = 0;
 
-    virtual BlockAndProgress readFromPart();
+    virtual BlockAndRowCount readFromPart();
 
-    BlockAndProgress readFromPartImpl();
+    BlockAndRowCount readFromPartImpl();
 
     /// Used for filling header with no rows as well as block with data
     static void
@@ -149,9 +137,7 @@ protected:
     DataTypePtr partition_value_type;
 
     /// This header is used for chunks from readFromPart().
-    Block header_without_const_virtual_columns;
-    /// A result of getHeader(). A chunk which this header is returned from read().
-    Block result_header;
+    Block header_without_virtual_columns;
 
     std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
     std::shared_ptr<MarkCache> owned_mark_cache;
@@ -162,28 +148,52 @@ protected:
 
     MergeTreeReadTaskPtr task;
 
-    /// This setting is used in base algorithm only to additionally limit the number of granules to read.
-    /// It is changed in ctor of MergeTreeThreadSelectAlgorithm.
-    ///
-    /// The reason why we have it here is because MergeTreeReadPool takes the full task
-    /// ignoring min_marks_to_read setting in case of remote disk (see MergeTreeReadPool::getTask).
-    /// In this case, we won't limit the number of rows to read based on adaptive granularity settings.
-    ///
-    /// Big reading tasks are better for remote disk and prefetches.
-    /// So, for now it's easier to limit max_rows_to_read.
-    /// Somebody need to refactor this later.
-    size_t min_marks_to_read = 0;
+    std::optional<ParallelReadingExtension> extension;
+    bool no_more_tasks{false};
+    std::deque<MergeTreeReadTaskPtr> delayed_tasks;
+    std::deque<MarkRanges> buffered_ranges;
 
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 
-    std::atomic<bool> is_cancelled{false};
+    enum class Status
+    {
+        Accepted,
+        Cancelled,
+        Denied
+    };
 
+    /// Calls getNewTaskImpl() to get new task, then performs a request to a coordinator
+    /// The coordinator may modify the set of ranges to read from a part or could
+    /// deny the whole request. In the latter case it creates new task and retries.
+    /// Then it calls finalizeNewTask() to create readers for a task if it is needed.
     bool getNewTask();
+    bool getNewTaskParallelReading();
 
-    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
+    /// After PK analysis the range of marks could be extremely big
+    /// We divide this range to a set smaller consecutive ranges
+    /// Then, depending on the type of reading (concurrent, in order or in reverse order)
+    /// we can calculate a consistent hash function with the number of buckets equal to
+    /// the number of replicas involved. And after that we can throw away some ranges with
+    /// hash not equals to the number of the current replica.
+    bool getTaskFromBuffer();
+
+    /// But we can't throw that ranges completely, because if we have different sets of parts
+    /// on replicas (have merged part on one, but not on another), then such a situation is possible
+    /// - Coordinator allows to read from a big merged part, but this part is present only on one replica.
+    ///   And that replica calculates consistent hash and throws away some ranges
+    /// - Coordinator denies other replicas to read from another parts (source parts for that big one)
+    /// At the end, the result of the query is wrong, because we didn't read all the data.
+    /// So, we have to remember parts and mark ranges with hash different then current replica number.
+    /// An we have to ask the coordinator about its permission to read from that "delayed" parts.
+    /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
+    bool getDelayedTasks();
+
+    /// It will form a request to coordinator and
+    /// then reinitialize the mark ranges of this->task object
+    Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
+
+    void splitCurrentTaskRangesAndFillBuffer();
 };
-
-using MergeTreeSelectAlgorithmPtr = std::unique_ptr<IMergeTreeSelectAlgorithm>;
 
 }

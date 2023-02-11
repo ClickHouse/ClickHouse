@@ -22,8 +22,3 @@ List of supported integrations:
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
 -   [SQLite](../../../engines/table-engines/integrations/sqlite.md)
 -   [Hive](../../../engines/table-engines/integrations/hive.md)
--   [ExternalDistributed](../../../engines/table-engines/integrations/ExternalDistributed.md)
--   [MaterializedPostgreSQL](../../../engines/table-engines/integrations/materialized-postgresql.md)
--   [NATS](../../../engines/table-engines/integrations/nats.md)
--   [DeltaLake](../../../engines/table-engines/integrations/deltalake.md)
--   [Hudi](../../../engines/table-engines/integrations/hudi.md)

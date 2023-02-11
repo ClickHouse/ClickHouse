@@ -786,21 +786,21 @@ struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
 
-    static inline UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t, mode);
+        return time_zone.toDayOfWeek(t);
     }
-    static inline UInt8 execute(UInt32 t, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t, mode);
+        return time_zone.toDayOfWeek(t);
     }
-    static inline UInt8 execute(Int32 d, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(ExtendedDayNum(d), mode);
+        return time_zone.toDayOfWeek(ExtendedDayNum(d));
     }
-    static inline UInt8 execute(UInt16 d, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(DayNum(d), mode);
+        return time_zone.toDayOfWeek(DayNum(d));
     }
 
     using FactorTransform = ToMondayImpl;
@@ -1190,9 +1190,9 @@ struct ToRelativeHourNumImpl
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<UInt32>(time_zone.toStableRelativeHourNum(static_cast<DateLUTImpl::Time>(t)));
+            return static_cast<UInt32>(time_zone.toStableRelativeHourNum(static_cast<time_t>(t)));
         else
-            return static_cast<UInt32>(time_zone.toRelativeHourNum(static_cast<DateLUTImpl::Time>(t)));
+            return static_cast<UInt32>(time_zone.toRelativeHourNum(static_cast<time_t>(t)));
     }
     static inline auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -1226,7 +1226,7 @@ struct ToRelativeMinuteNumImpl
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toRelativeMinuteNum(static_cast<DateLUTImpl::Time>(t)));
+        return static_cast<UInt32>(time_zone.toRelativeMinuteNum(static_cast<time_t>(t)));
     }
     static inline auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -1338,30 +1338,6 @@ struct ToYYYYMMDDhhmmssImpl
     static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToDateTimeComponentsImpl
-{
-    static constexpr auto name = "toDateTimeComponents";
-
-    static inline DateLUTImpl::DateTimeComponents execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(t);
-    }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t));
-    }
-    static inline DateLUTImpl::DateTimeComponents execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(ExtendedDayNum(d));
-    }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;

@@ -7,17 +7,16 @@ import sys
 
 from github import Github
 
-from commit_status_helper import get_commit
-from docker_pull_helper import get_image_with_version
 from env_helper import TEMP_PATH, REPO_COPY, CLOUDFLARE_TOKEN
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from report import TestResults, TestResult
-from rerun_helper import RerunHelper
 from s3_helper import S3Helper
+from pr_info import PRInfo
+from get_robot_token import get_best_robot_token
 from ssh import SSHKey
-from tee_popen import TeePopen
 from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
+from commit_status_helper import get_commit
+from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 NAME = "Docs Release"
 
@@ -33,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main():
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     args = parse_args()
 
@@ -61,7 +60,7 @@ def main():
     else:
         user = f"{os.geteuid()}:{os.getegid()}"
 
-    run_log_path = os.path.join(test_output, "run.log")
+    run_log_path = os.path.join(test_output, "runlog.log")
 
     with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
         cmd = (
@@ -85,7 +84,7 @@ def main():
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     files = os.listdir(test_output)
-    test_results = []  # type: TestResults
+    lines = []
     additional_files = []
     if not files:
         logging.error("No output files after docs release")
@@ -98,19 +97,19 @@ def main():
             with open(path, "r", encoding="utf-8") as check_file:
                 for line in check_file:
                     if "ERROR" in line:
-                        test_results.append(TestResult(line.split(":")[-1], "FAIL"))
-        if test_results:
+                        lines.append((line.split(":")[-1], "FAIL"))
+        if lines:
             status = "failure"
             description = "Found errors in docs"
         elif status != "failure":
-            test_results.append(TestResult("No errors found", "OK"))
+            lines.append(("No errors found", "OK"))
         else:
-            test_results.append(TestResult("Non zero exit code", "FAIL"))
+            lines.append(("Non zero exit code", "FAIL"))
 
     s3_helper = S3Helper()
 
     report_url = upload_results(
-        s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
+        s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME
     )
     print("::notice ::Report url: {report_url}")
     commit = get_commit(gh, pr_info.sha)
@@ -120,7 +119,3 @@ def main():
 
     if status == "failure":
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

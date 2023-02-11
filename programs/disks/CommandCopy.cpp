@@ -1,6 +1,7 @@
+#pragma once
+
 #include "ICommand.h"
 #include <Interpreters/Context.h>
-#include <Common/TerminalSize.h>
 
 namespace DB
 {
@@ -10,7 +11,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandCopy final : public ICommand
+class CommandCopy : public ICommand
 {
 public:
     CommandCopy()
@@ -44,22 +45,22 @@ public:
         if (command_arguments.size() != 2)
         {
             printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
+            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         String disk_name_from = config.getString("diskFrom", config.getString("disk", "default"));
         String disk_name_to = config.getString("diskTo", config.getString("disk", "default"));
 
-        const String & path_from = command_arguments[0];
-        const String & path_to =  command_arguments[1];
+        String path_from = command_arguments[0];
+        String path_to =  command_arguments[1];
 
         DiskPtr disk_from = global_context->getDisk(disk_name_from);
         DiskPtr disk_to = global_context->getDisk(disk_name_to);
 
-        String relative_path_from = validatePathAndGetAsRelative(path_from);
-        String relative_path_to = validatePathAndGetAsRelative(path_to);
+        String full_path_from = fullPathWithValidate(disk_from, path_from);
+        String full_path_to = fullPathWithValidate(disk_to, path_to);
 
-        disk_from->copy(relative_path_from, disk_to, relative_path_to);
+        disk_from->copy(full_path_from, disk_to, full_path_to);
     }
 };
 }

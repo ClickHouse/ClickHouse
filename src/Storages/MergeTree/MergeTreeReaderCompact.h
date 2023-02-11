@@ -50,11 +50,10 @@ private:
     MergeTreeMarksLoader marks_loader;
 
     /// Positions of columns in part structure.
-    using ColumnPositions = std::vector<std::optional<size_t>>;
+    using ColumnPositions = std::vector<ColumnPosition>;
     ColumnPositions column_positions;
-    /// Should we read full column or only it's offsets.
-    /// Element of the vector is the level of the alternative stream.
-    std::vector<std::optional<size_t>> read_only_offsets;
+    /// Should we read full column or only it's offsets
+    std::vector<bool> read_only_offsets;
 
     /// For asynchronous reading from remote fs. Same meaning as in MergeTreeReaderStream.
     std::optional<size_t> last_right_offset;
@@ -65,8 +64,7 @@ private:
     void seekToMark(size_t row_index, size_t column_index);
 
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t from_mark,
-        size_t current_task_last_mark, size_t column_position, size_t rows_to_read,
-        std::optional<size_t> only_offsets_level);
+        size_t current_task_last_mark, size_t column_position, size_t rows_to_read, bool only_offsets);
 
     /// Returns maximal value of granule size in compressed file from @mark_ranges.
     /// This value is used as size of read buffer.

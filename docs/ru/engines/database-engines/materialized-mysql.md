@@ -194,3 +194,5 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
+
+[Оригинальная статья](https://clickhouse.com/docs/ru/engines/database-engines/materialized-mysql/) <!--hide-->

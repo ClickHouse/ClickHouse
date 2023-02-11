@@ -12,6 +12,11 @@ namespace Poco
 class Logger;
 }
 
+namespace Aws::S3
+{
+class S3Client;
+}
+
 namespace DB
 {
 
@@ -22,7 +27,7 @@ public:
     /// 2. Finds out parts with latest version.
     /// 3. Creates url for underlying StorageS3 enigne to handle reads.
     StorageHudi(
-        const StorageS3::Configuration & configuration_,
+        const StorageS3Configuration & configuration_,
         const StorageID & table_id_,
         ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
@@ -43,15 +48,20 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    static ColumnsDescription getTableStructureFromData(
-        StorageS3::Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
-
 private:
-    StorageS3::Configuration base_configuration;
+    std::vector<std::string> getKeysFromS3();
+
+    /// Apache Hudi store parts of data in different files.
+    /// Every part file has timestamp in it.
+    /// Every partition(directory) in Apache Hudi has different versions of part.
+    /// To find needed parts we need to find out latest part file for every partition.
+    /// Part format is usually parquet, but can differ.
+    static String generateQueryFromKeys(const std::vector<std::string> & keys, const String & format);
+
+    StorageS3::S3Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
+    String table_path;
 };
 
 }

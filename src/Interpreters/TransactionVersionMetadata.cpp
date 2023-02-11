@@ -243,9 +243,6 @@ bool VersionMetadata::canBeRemoved()
     {
         /// Avoid access to Transaction log if transactions are not involved
 
-        if (creation_csn.load(std::memory_order_relaxed) == Tx::RolledBackCSN)
-            return true;
-
         TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
         if (!removal_lock)
             return false;
@@ -383,9 +380,8 @@ void VersionMetadata::read(ReadBuffer & buf)
 
         if (name == CREATION_CSN_STR)
         {
-            auto new_val = read_csn();
-            chassert(!creation_csn || (creation_csn == new_val && creation_csn == Tx::PrehistoricCSN));
-            creation_csn = new_val;
+            chassert(!creation_csn);
+            creation_csn = read_csn();
         }
         else if (name == REMOVAL_TID_STR)
         {

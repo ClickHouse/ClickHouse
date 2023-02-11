@@ -162,14 +162,14 @@ public:
             const auto * data_type = checkAndGetDataType<typename Impl::data_type>(arguments[0].type.get());
 
             if (!data_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be array. "
-                                "Found {} instead", getName(), arguments[0].type->getName());
+                throw Exception("The only argument for function " + getName() + " must be array. Found "
+                                + arguments[0].type->getName() + " instead", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             DataTypePtr nested_type = data_type->getNestedType();
 
             if (Impl::needBoolean() && !isUInt8(nested_type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be array of UInt8. "
-                                "Found {} instead", getName(), arguments[0].type->getName());
+                throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
+                                + arguments[0].type->getName() + " instead", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             if constexpr (is_argument_type_array)
                 return Impl::getReturnType(nested_type, nested_type);
@@ -179,7 +179,8 @@ public:
         else
         {
             if (arguments.size() > 2 && Impl::needOneArray())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
+                throw Exception("Function " + getName() + " needs one argument with data",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
@@ -199,15 +200,14 @@ public:
             ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
             ///    for these types. In this case we will just create UInt8 const column full of 0.
             if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
-                                getName(), return_type->getName());
+                throw Exception("Expression for function " + getName() + " must return UInt8 or Nullable(UInt8), found "
+                                + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             static_assert(is_argument_type_map || is_argument_type_array, "unsupported type");
 
             if (arguments.size() < 2)
             {
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "{}", arguments.size());
             }
 
             const auto * first_array_type = checkAndGetDataType<typename Impl::data_type>(arguments[1].type.get());
@@ -259,12 +259,14 @@ public:
             const auto & column_with_type_and_name = arguments[0];
 
             if (!column_with_type_and_name.column)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
+                throw Exception("First argument for function " + getName() + " must be a function.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
 
             if (!column_function)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
+                throw Exception("First argument for function " + getName() + " must be a function.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             ColumnPtr offsets_column;
 

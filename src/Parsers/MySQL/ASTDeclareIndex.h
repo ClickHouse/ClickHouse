@@ -32,7 +32,7 @@ public:
 protected:
     void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTDeclareIndex.");
+        throw Exception("Method formatImpl is not supported by MySQLParser::ASTDeclareIndex.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

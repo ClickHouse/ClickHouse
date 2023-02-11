@@ -81,8 +81,7 @@ namespace Protocol
                                             /// This is such an inverted logic, where server sends requests
                                             /// And client returns back response
             ProfileEvents = 14,             /// Packet with profile events from server.
-            MergeTreeAllRangesAnnounecement = 15,
-            MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
+            MergeTreeReadTaskRequest = 15,  /// Request from a MergeTree replica to a coordinator
             MAX = MergeTreeReadTaskRequest,
 
         };
@@ -109,7 +108,6 @@ namespace Protocol
                 "PartUUIDs",
                 "ReadTaskRequest",
                 "ProfileEvents",
-                "MergeTreeAllRangesAnnounecement",
                 "MergeTreeReadTaskRequest",
             };
             return packet <= MAX

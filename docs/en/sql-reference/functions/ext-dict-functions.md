@@ -151,7 +151,7 @@ Perform the query:
 
 ``` sql
 SELECT
-    dictGet('ext-dict-mult', ('c1','c2'), number + 1) AS val,
+    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
     toTypeName(val) AS type
 FROM system.numbers
 LIMIT 3;
@@ -416,7 +416,6 @@ Functions:
 -   `dictGetDateTime`
 -   `dictGetUUID`
 -   `dictGetString`
--   `dictGetIPv4`, `dictGetIPv6`
 
 All these functions have the `OrDefault` modification. For example, `dictGetDateOrDefault`.
 

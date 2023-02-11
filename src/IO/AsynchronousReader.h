@@ -61,8 +61,6 @@ public:
         /// offset
         /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
-
-        operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.

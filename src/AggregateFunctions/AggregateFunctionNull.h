@@ -77,16 +77,12 @@ protected:
 
     static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
     {
-        if constexpr (result_is_nullable)
-            return place[0];
-        else
-            return true;
+        return result_is_nullable ? place[0] : true;
     }
 
 public:
     AggregateFunctionNullBase(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<Derived>(arguments, params, createResultType(nested_function_))
-        , nested_function{nested_function_}
+        : IAggregateFunctionHelper<Derived>(arguments, params), nested_function{nested_function_}
     {
         if constexpr (result_is_nullable)
             prefix_size = nested_function->alignOfData();
@@ -100,12 +96,11 @@ public:
         return nested_function->getName();
     }
 
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
+    DataTypePtr getReturnType() const override
     {
-        if constexpr (result_is_nullable)
-            return makeNullable(nested_function_->getResultType());
-        else
-            return nested_function_->getResultType();
+        return result_is_nullable
+            ? makeNullable(nested_function->getReturnType())
+            : nested_function->getReturnType();
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -141,9 +136,8 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if constexpr (result_is_nullable)
-            if (getFlag(rhs))
-                setFlag(place);
+        if (result_is_nullable && getFlag(rhs))
+            setFlag(place);
 
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
@@ -276,7 +270,7 @@ public:
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
-        auto * return_type = toNativeType(b, this->getResultType());
+        auto * return_type = toNativeType(b, this->getReturnType());
 
         llvm::Value * result = nullptr;
 
@@ -422,12 +416,11 @@ public:
         , number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: single argument is passed to AggregateFunctionNullVariadic");
+            throw Exception("Logical error: single argument is passed to AggregateFunctionNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
         if (number_of_arguments > MAX_ARGS)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Maximum number of arguments for aggregate function with Nullable types is {}",
-                size_t(MAX_ARGS));
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
             is_nullable[i] = arguments[i]->isNullable();
@@ -479,7 +472,7 @@ public:
             final_flags = std::make_unique<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
-            size_t included_elements = 0;
+            bool included_elements = 0;
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = row_begin; i < row_end; i++)
             {

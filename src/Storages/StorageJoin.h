@@ -77,13 +77,13 @@ public:
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
         Block block = metadata_snapshot->getSampleBlock();
-        convertRightBlock(block);
+        if (use_nulls && isLeftOrFull(kind))
+            for (auto & col : block)
+                JoinCommon::convertColumnToNullable(col);
         return block;
     }
 
     bool useNulls() const { return use_nulls; }
-
-    const Names & getKeyNames() const { return key_names; }
 
 private:
     Block sample_block;
@@ -106,8 +106,6 @@ private:
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
-
-    void convertRightBlock(Block & block) const;
 };
 
 }

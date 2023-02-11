@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class CatBoostLibraryBridgeHelper final : public LibraryBridgeHelper
+class CatBoostLibraryBridgeHelper : public LibraryBridgeHelper
 {
 public:
     static constexpr inline auto PING_HANDLER = "/catboost_ping";

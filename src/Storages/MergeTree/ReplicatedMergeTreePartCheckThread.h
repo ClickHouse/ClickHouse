@@ -71,9 +71,6 @@ public:
     /// Check part by name
     CheckResult checkPart(const String & part_name);
 
-    std::unique_lock<std::mutex> pausePartsCheck();
-
-    /// Can be called only while holding a lock returned from pausePartsCheck()
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
