@@ -227,7 +227,7 @@ class DynamicRuntimeQueue : public DynamicRuntimeQueueImpl<RoundRobinRuntimeQueu
  *
  *  Each task is simply a sequence of steps. Heavier tasks have longer sequences.
  *  When a step of a task is executed, we move tasks to pending queue. And take the next task from pending queue.
- *  Next task is choosen from pending tasks using one of the scheduling policies (class Queue):
+ *  Next task is chosen from pending tasks using one of the scheduling policies (class Queue):
  *  1) RoundRobinRuntimeQueue. Uses boost::circular_buffer as FIFO-queue. Next task is taken from queue's head and after one step
  *     enqueued into queue's tail. With this architecture all merges / mutations are fairly scheduled and never starved.
  *     All decisions regarding priorities are left to components creating tasks (e.g. SimpleMergeSelector).
