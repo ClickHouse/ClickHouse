@@ -90,7 +90,7 @@ public:
 		/// Move constructor
 
 	Object &operator =(Object &&other);
-		// Move asignment operator
+		// Move assignment operator
 
 #endif // POCO_ENABLE_CPP11
 
