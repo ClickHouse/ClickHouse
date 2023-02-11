@@ -4,7 +4,6 @@
 #include <Core/Types.h>
 #include <Core/Field.h>
 #include <Common/FieldVisitors.h>
-#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -18,18 +17,20 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
   * Note that you still have to convert Field to corresponding data type before inserting to columns
   *  (for example, this is necessary to convert elements of Array to common type).
   */
-template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
 class FieldToDataType : public StaticVisitor<DataTypePtr>
 {
 public:
+    FieldToDataType(bool allow_convertion_to_string_ = false)
+      : allow_convertion_to_string(allow_convertion_to_string_)
+    {
+    }
+
     DataTypePtr operator() (const Null & x) const;
     DataTypePtr operator() (const UInt64 & x) const;
     DataTypePtr operator() (const UInt128 & x) const;
     DataTypePtr operator() (const Int64 & x) const;
     DataTypePtr operator() (const Int128 & x) const;
     DataTypePtr operator() (const UUID & x) const;
-    DataTypePtr operator() (const IPv4 & x) const;
-    DataTypePtr operator() (const IPv6 & x) const;
     DataTypePtr operator() (const Float64 & x) const;
     DataTypePtr operator() (const String & x) const;
     DataTypePtr operator() (const Array & x) const;
@@ -44,6 +45,9 @@ public:
     DataTypePtr operator() (const UInt256 & x) const;
     DataTypePtr operator() (const Int256 & x) const;
     DataTypePtr operator() (const bool & x) const;
+
+private:
+    bool allow_convertion_to_string;
 };
 
 }

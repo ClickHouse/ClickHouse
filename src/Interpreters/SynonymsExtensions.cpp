@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_NLP
 
@@ -35,7 +35,8 @@ public:
     {
         std::ifstream file(path);
         if (!file.is_open())
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Cannot find synonyms extension at: {}", path);
+            throw Exception("Cannot find synonyms extension at: " + path,
+                ErrorCodes::INVALID_CONFIG_PARAMETER);
 
         String line;
         while (std::getline(file, line))
@@ -103,24 +104,24 @@ SynonymsExtensions::SynonymsExtensions(const Poco::Util::AbstractConfiguration &
             const auto & ext_type = config.getString(prefix + "." + key + ".type", "");
 
             if (ext_name.empty())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Extension name in config is not specified here: {}.{}.name",
-                    prefix, key);
+                throw Exception("Extension name in config is not specified here: " + prefix + "." + key + ".name",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
             if (ext_path.empty())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Extension path in config is not specified here: {}.{}.path",
-                    prefix, key);
+                throw Exception("Extension path in config is not specified here: " + prefix + "." + key + ".path",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
             if (ext_type.empty())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Extension type in config is not specified here: {}.{}.type",
-                    prefix, key);
+                throw Exception("Extension type in config is not specified here: " + prefix + "." + key + ".type",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
             if (ext_type != "plain" && ext_type != "wordnet")
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown extension type in config: "
-                    "{}.{}.type, must be 'plain' or 'wordnet'", prefix, key);
+                throw Exception("Unknown extension type in config: " + prefix + "." + key + ".type, must be 'plain' or 'wordnet'",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
 
             info[ext_name].path = ext_path;
             info[ext_name].type = ext_type;
         }
         else
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}, must be 'extension'",
-                prefix, key);
+            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'extension'",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 }
 
@@ -140,12 +141,13 @@ SynonymsExtensions::ExtPtr SynonymsExtensions::getExtension(const String & name)
         else if (ext_info.type == "wordnet")
             extensions[name] = std::make_shared<WordnetSynonymsExtension>(ext_info.path);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown extension type: {}", ext_info.type);
+            throw Exception("Unknown extension type: " + ext_info.type, ErrorCodes::LOGICAL_ERROR);
 
         return extensions[name];
     }
 
-    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Extension named: '{}' is not found", name);
+    throw Exception("Extension named: '" + name + "' is not found",
+        ErrorCodes::INVALID_CONFIG_PARAMETER);
 }
 
 }

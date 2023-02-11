@@ -7,12 +7,12 @@ namespace DB
 {
 
 HTTPServerConnection::HTTPServerConnection(
-    HTTPContextPtr context_,
+    ContextPtr context_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
     HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), context(std::move(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
+    : TCPServerConnection(socket), context(Context::createCopy(context_)), tcp_server(tcp_server_), params(params_), factory(factory_), stopped(false)
 {
     poco_check_ptr(factory);
 }
@@ -22,24 +22,21 @@ void HTTPServerConnection::run()
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
-    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests() && session.connected())
+    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests())
     {
         try
         {
-            std::lock_guard lock(mutex);
-            if (!stopped && tcp_server.isOpen() && session.connected())
+            std::unique_lock<std::mutex> lock(mutex);
+            if (!stopped && tcp_server.isOpen())
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session);
 
                 Poco::Timestamp now;
 
-                if (!forwarded_for.empty())
-                    request.set("X-Forwarded-For", forwarded_for);
-
                 if (request.isSecure())
                 {
-                    size_t hsts_max_age = context->getMaxHstsAge();
+                    size_t hsts_max_age = context->getSettingsRef().hsts_max_age.value;
 
                     if (hsts_max_age > 0)
                         response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));

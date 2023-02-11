@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="short_strings")
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=False,

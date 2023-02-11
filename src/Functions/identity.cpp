@@ -34,7 +34,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Identity)
+void registerFunctionIdentity(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIdentity>();
 }

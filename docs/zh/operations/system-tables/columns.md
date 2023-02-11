@@ -1,13 +1,10 @@
----
-slug: /zh/operations/system-tables/columns
----
 # system.columns {#system-columns}
 
 此系统表包含所有表中列的信息。
 
 你可以使用这个表来获得类似于 [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table) 查询的信息，但是可以同时获得多个表的信息。
 
-[临时表](../../sql-reference/statements/create/table.mdx#temporary-tables)中的列只在创建它们的会话中的 `system.columns` 中才可见，并且它们的 `database` 字段显示为空。
+[临时表](../../sql-reference/statements/create/table.md#temporary-tables)中的列只在创建它们的会话中的 `system.columns` 中才可见，并且它们的 `database` 字段显示为空。
 
 `system.columns` 表包含以下列 (括号中显示的是列类型):
 
@@ -88,3 +85,5 @@ numeric_precision_radix: ᴺᵁᴸᴸ
 numeric_scale:           ᴺᵁᴸᴸ
 datetime_precision:      ᴺᵁᴸᴸ
 ```
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/columns) <!--hide-->

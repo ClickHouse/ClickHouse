@@ -37,13 +37,38 @@ export FASTTEST_DATA
 export FASTTEST_OUT
 export PATH
 
+server_pid=none
+
+function stop_server
+{
+    if ! kill -0 -- "$server_pid"
+    then
+        echo "ClickHouse server pid '$server_pid' is not running"
+        return 0
+    fi
+
+    for _ in {1..60}
+    do
+        if ! pkill -f "clickhouse-server" && ! kill -- "$server_pid" ; then break ; fi
+        sleep 1
+    done
+
+    if kill -0 -- "$server_pid"
+    then
+        pstree -apgT
+        jobs
+        echo "Failed to kill the ClickHouse server pid '$server_pid'"
+        return 1
+    fi
+
+    server_pid=none
+}
+
 function start_server
 {
     set -m # Spawn server in its own process groups
-
     local opts=(
         --config-file "$FASTTEST_DATA/config.xml"
-        --pid-file "$FASTTEST_DATA/clickhouse-server.pid"
         --
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
@@ -51,28 +76,45 @@ function start_server
         --keeper_server.storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
+    server_pid=$!
     set +m
 
-    for _ in {1..60}; do
-        if clickhouse-client --query "select 1"; then
+    if [ "$server_pid" == "0" ]
+    then
+        echo "Failed to start ClickHouse server"
+        # Avoid zero PID because `kill` treats it as our process group PID.
+        server_pid="none"
+        return 1
+    fi
+
+    for _ in {1..60}
+    do
+        if clickhouse-client --query "select 1" || ! kill -0 -- "$server_pid"
+        then
             break
         fi
         sleep 1
     done
 
-    if ! clickhouse-client --query "select 1"; then
+    if ! clickhouse-client --query "select 1"
+    then
         echo "Failed to wait until ClickHouse server starts."
+        server_pid="none"
         return 1
     fi
 
-    local server_pid
-    server_pid="$(cat "$FASTTEST_DATA/clickhouse-server.pid")"
+    if ! kill -0 -- "$server_pid"
+    then
+        echo "Wrong clickhouse server started: PID '$server_pid' we started is not running, but '$(pgrep -f clickhouse-server)' is running"
+        server_pid="none"
+        return 1
+    fi
+
     echo "ClickHouse server pid '$server_pid' started and responded"
 }
 
 function clone_root
 {
-    git config --global --add safe.directory "$FASTTEST_SOURCE"
     git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
@@ -110,6 +152,7 @@ function clone_submodules
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
+            contrib/poco
             contrib/libunwind
             contrib/fmtlib
             contrib/base64
@@ -117,7 +160,8 @@ function clone_submodules
             contrib/libcpuid
             contrib/libdivide
             contrib/double-conversion
-            contrib/llvm-project
+            contrib/libcxx
+            contrib/libcxxabi
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -132,17 +176,10 @@ function clone_submodules
             contrib/NuRaft
             contrib/jemalloc
             contrib/replxx
-            contrib/wyhash
-            contrib/hashidsxx
-            contrib/c-ares
-            contrib/morton-nd
-            contrib/xxHash
-            contrib/simdjson
-            contrib/liburing
         )
 
         git submodule sync
-        git submodule update --jobs=16 --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -159,13 +196,13 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
-        "-DENABLE_SIMDJSON=1"
         "-DENABLE_JEMALLOC=1"
-        "-DENABLE_LIBURING=1"
+        "-DENABLE_REPLXX=1"
     )
 
+    # TODO remove this? we don't use ccache anyway. An option would be to download it
+    # from S3 simultaneously with cloning.
     export CCACHE_DIR="$FASTTEST_WORKSPACE/ccache"
-    export CCACHE_COMPRESSLEVEL=5
     export CCACHE_BASEDIR="$FASTTEST_SOURCE"
     export CCACHE_NOHASHDIR=true
     export CCACHE_COMPILERCHECK=content
@@ -191,10 +228,9 @@ function build
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
 
             strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
-            zstd --threads=0 "$FASTTEST_OUTPUT/clickhouse-stripped"
+            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
-        ccache --evict-older-than 1d ||:
     )
 }
 
@@ -216,6 +252,9 @@ function run_tests
     clickhouse-server --version
     clickhouse-test --help
 
+    # Kill the server in case we are running locally and not in docker
+    stop_server ||:
+
     start_server
 
     set +e
@@ -229,8 +268,6 @@ function run_tests
     local test_opts=(
         --hung-check
         --fast-tests-only
-        --no-random-settings
-        --no-random-merge-tree-settings
         --no-long
         --testname
         --shard
@@ -238,15 +275,12 @@ function run_tests
         --check-zookeeper-session
         --order random
         --print-time
-        --report-logs-stats
         --jobs "${NPROC}"
     )
     time clickhouse-test "${test_opts[@]}" -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee "$FASTTEST_OUTPUT/test_result.txt"
     set -e
-
-    clickhouse stop --pid-path "$FASTTEST_DATA"
 }
 
 case "$stage" in

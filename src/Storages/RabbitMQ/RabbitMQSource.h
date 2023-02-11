@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <Storages/RabbitMQ/RabbitMQConsumer.h>
+#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 
 namespace DB
 {
 
-class RabbitMQSource : public ISource
+class RabbitMQSource : public SourceWithProgress
 {
 
 public:
@@ -23,16 +23,14 @@ public:
     ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
-    RabbitMQConsumerPtr getBuffer() { return consumer; }
+    ConsumerBufferPtr getBuffer() { return buffer; }
 
     Chunk generate() override;
 
-    bool queueEmpty() const { return !consumer || consumer->hasPendingMessages(); }
+    bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
-
-    void setTimeLimit(uint64_t max_execution_time_ms_) { max_execution_time_ms = max_execution_time_ms_; }
 
 private:
     StorageRabbitMQ & storage;
@@ -46,13 +44,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    Poco::Logger * log;
-    RabbitMQConsumerPtr consumer;
-
-    uint64_t max_execution_time_ms = 0;
-    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
-
-    bool isTimeLimitExceeded() const;
+    ConsumerBufferPtr buffer;
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,

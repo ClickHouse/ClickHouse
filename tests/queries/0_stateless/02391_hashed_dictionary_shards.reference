@@ -1,9 +1,0 @@
-CREATE DICTIONARY default.test_dictionary_10_shards\n(\n    `key` UInt64,\n    `value` UInt16\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(TABLE test_table))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(SPARSE_HASHED(SHARDS 10))
-100000
-0
-CREATE DICTIONARY default.test_dictionary_10_shards_nullable\n(\n    `key` UInt64,\n    `value` Nullable(UInt16)\n)\nPRIMARY KEY key\nSOURCE(CLICKHOUSE(TABLE test_table_nullable))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(SPARSE_HASHED(SHARDS 10))
-100000
-0
-CREATE DICTIONARY default.test_complex_dictionary_10_shards\n(\n    `key_1` UInt64,\n    `key_2` UInt64,\n    `value` UInt16\n)\nPRIMARY KEY key_1, key_2\nSOURCE(CLICKHOUSE(TABLE test_table_complex))\nLIFETIME(MIN 0 MAX 0)\nLAYOUT(COMPLEX_KEY_SPARSE_HASHED(SHARDS 10))
-100000
-0

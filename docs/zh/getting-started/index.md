@@ -1,7 +1,6 @@
 ---
-slug: /zh/getting-started/
-sidebar_label: 快速上手
-sidebar_position: 2
+toc_folder_title: 快速上手
+toc_priority: 2
 ---
 
 # 入门 {#ru-men}
@@ -14,3 +13,6 @@ sidebar_position: 2
 
 -   [QuickStart教程](tutorial.md)  快速了解Clickhouse的操作流程
 -   [示例数据集-航班飞行数据](example-datasets/ontime.md) 示例数据，提供了常用的SQL查询场景
+
+
+[来源文章](https://clickhouse.com/docs/zh/getting_started/) <!--hide-->

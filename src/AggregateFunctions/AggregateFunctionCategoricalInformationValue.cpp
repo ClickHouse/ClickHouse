@@ -35,20 +35,20 @@ private:
     using Counter = UInt64;
     size_t category_count;
 
-    static Counter & counter(AggregateDataPtr __restrict place, size_t i, bool what)
+    Counter & counter(AggregateDataPtr __restrict place, size_t i, bool what) const
     {
         return reinterpret_cast<Counter *>(place)[i * 2 + (what ? 1 : 0)];
     }
 
-    static const Counter & counter(ConstAggregateDataPtr __restrict place, size_t i, bool what)
+    const Counter & counter(ConstAggregateDataPtr __restrict place, size_t i, bool what) const
     {
         return reinterpret_cast<const Counter *>(place)[i * 2 + (what ? 1 : 0)];
     }
 
 public:
-    AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionCategoricalIV>{arguments_, params_, createResultType()}
-        , category_count{arguments_.size() - 1}
+    AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_) :
+        IAggregateFunctionHelper<AggregateFunctionCategoricalIV>{arguments_, params_},
+        category_count{arguments_.size() - 1}
     {
         // notice: argument types has been checked before
     }
@@ -121,7 +121,7 @@ public:
         buf.readStrict(place, sizeOfData());
     }
 
-    static DataTypePtr createResultType()
+    DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeNumber<Float64>>());
@@ -163,14 +163,16 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
     assertNoParameters(name, params);
 
     if (arguments.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires two or more arguments",
-            name);
+        throw Exception(
+            "Aggregate function " + name + " requires two or more arguments",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (const auto & argument : arguments)
     {
         if (!WhichDataType(argument).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All the arguments of aggregate function {} should be UInt8",
-                name);
+            throw Exception(
+                "All the arguments of aggregate function " + name + " should be UInt8",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     return std::make_shared<AggregateFunctionCategoricalIV>(arguments, params);

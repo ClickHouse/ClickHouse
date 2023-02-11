@@ -21,10 +21,10 @@ AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, 
     assertNoParameters(name, params);
 
     if (arguments.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough event arguments for aggregate function {}", name);
+        throw Exception("Not enough event arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (arguments.size() > AggregateFunctionRetentionData::max_events)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many event arguments for aggregate function {}", name);
+        throw Exception("Too many event arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     return std::make_shared<AggregateFunctionRetention>(arguments);
 }

@@ -29,7 +29,7 @@ def create_simple_table():
 def test_protobuf_format_input(started_cluster):
     create_simple_table()
     instance.http_query(
-        "INSERT INTO test.simple SETTINGS format_schema='simple:KeyValuePair' FORMAT Protobuf",
+        "INSERT INTO test.simple FORMAT Protobuf SETTINGS format_schema='simple:KeyValuePair'",
         "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def",
     )
     assert instance.query("SELECT * from test.simple") == "1\tabc\n2\tdef\n"

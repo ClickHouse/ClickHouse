@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Wrong behavior (visible to users) in the official ClickHouse release.
+about: Wrong behaviour (visible to users) in official ClickHouse release.
 title: ''
 labels: 'potential bug'
 assignees: ''
@@ -12,8 +12,6 @@ assignees: ''
 **Describe what's wrong**
 
 > A clear and concise description of what works not as it is supposed to.
-
-> A link to reproducer in [https://fiddle.clickhouse.com/](https://fiddle.clickhouse.com/).
 
 **Does it reproduce on recent release?**
 

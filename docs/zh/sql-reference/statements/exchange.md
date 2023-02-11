@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/statements/exchange
-sidebar_position: 49
-sidebar_label: EXCHANGE
+toc_priority: 49
+toc_title: EXCHANGE
 ---
 
 # EXCHANGE语法 {#exchange}

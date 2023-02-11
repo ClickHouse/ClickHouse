@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class CompressionCodecNone final : public ICompressionCodec
+class CompressionCodecNone : public ICompressionCodec
 {
 public:
     CompressionCodecNone();

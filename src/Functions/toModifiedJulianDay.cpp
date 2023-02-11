@@ -52,8 +52,9 @@ namespace DB
             }
             else
             {
-                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                                 col_from->getName(), Name::name);
+                 throw Exception("Illegal column " + col_from->getName()
+                                 + " of first argument of function " + Name::name,
+                                 ErrorCodes::ILLEGAL_COLUMN);
             }
 
             using ColVecTo = typename ToDataType::ColumnType;
@@ -156,7 +157,7 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
         }
 
     private:
@@ -191,8 +192,8 @@ namespace DB
         {
             if (!isStringOrFixedString(arguments[0]))
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
-                    getName());
+                throw Exception(
+                    "The argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
             DataTypePtr base_type = std::make_shared<ToDataType>();
@@ -227,7 +228,7 @@ namespace DB
         static constexpr auto name = "toModifiedJulianDayOrNull";
     };
 
-    REGISTER_FUNCTION(ToModifiedJulianDay)
+    void registerFunctionToModifiedJulianDay(FunctionFactory & factory)
     {
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>();
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>();

@@ -90,7 +90,7 @@ public:
     bool hasRows() const { return num_rows > 0; }
     bool hasColumns() const { return !columns.empty(); }
     bool empty() const { return !hasRows() && !hasColumns(); }
-    explicit operator bool() const { return !empty(); }
+    operator bool() const { return !empty(); } /// NOLINT
 
     void addColumn(ColumnPtr column);
     void addColumn(size_t position, ColumnPtr column);
@@ -101,8 +101,6 @@ public:
 
     std::string dumpStructure() const;
 
-    void append(const Chunk & chunk);
-
 private:
     Columns columns;
     UInt64 num_rows = 0;
@@ -112,17 +110,6 @@ private:
 };
 
 using Chunks = std::vector<Chunk>;
-
-/// ChunkOffsets marks offsets of different sub-chunks, which will be used by async inserts.
-class ChunkOffsets : public ChunkInfo
-{
-public:
-    ChunkOffsets() = default;
-    explicit ChunkOffsets(const std::vector<size_t> & offsets_) : offsets(offsets_) {}
-    std::vector<size_t> offsets;
-};
-
-using ChunkOffsetsPtr = std::shared_ptr<ChunkOffsets>;
 
 /// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
 class ChunkMissingValues : public ChunkInfo

@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/quantileexactweighted
-sidebar_position: 203
+toc_priority: 203
 ---
 
 # quantileExactWeighted {#quantileexactweighted}
@@ -66,3 +65,4 @@ SELECT quantileExactWeighted(n, val) FROM t
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+

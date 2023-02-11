@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS order_by_desc;
 
-SET enable_filesystem_cache=0;
+SET remote_fs_enable_cache=0;
 
 CREATE TABLE order_by_desc (u UInt32, s String)
 ENGINE MergeTree ORDER BY u PARTITION BY u % 100
@@ -21,5 +21,5 @@ SYSTEM FLUSH LOGS;
 
 SELECT read_rows < 110000 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-AND event_date >= yesterday()
+AND event_time > now() - INTERVAL 10 SECOND
 AND lower(query) LIKE lower('SELECT s FROM order_by_desc ORDER BY u%');

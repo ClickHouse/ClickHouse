@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/replicated_fetches
----
-# replicated_fetches
+# system.replicated_fetches {#system_tables-replicated_fetches}
 
 Contains information about currently running background fetches.
 
@@ -68,4 +65,6 @@ thread_id:                   54
 
 **See Also**
 
--   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md/#managing-replicatedmergetree-tables)
+-   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system/#query-language-system-replicated)
+
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/replicated_fetches) <!--hide-->

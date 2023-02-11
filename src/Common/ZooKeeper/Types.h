@@ -1,11 +1,11 @@
 #pragma once
 
+#include <base/types.h>
 #include <future>
 #include <memory>
 #include <vector>
-#include <base/types.h>
-#include <Poco/Event.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Poco/Event.h>
 
 
 namespace zkutil
@@ -34,9 +34,4 @@ Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
 Coordination::RequestPtr makeCheckRequest(const std::string & path, int version);
 
-Coordination::RequestPtr makeGetRequest(const std::string & path);
-Coordination::RequestPtr
-makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-Coordination::RequestPtr makeSimpleListRequest(const std::string & path);
-Coordination::RequestPtr makeExistsRequest(const std::string & path);
 }

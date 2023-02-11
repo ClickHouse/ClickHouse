@@ -1,0 +1,8 @@
+<models>
+    <model>
+        <type>catboost</type>
+        <name>model</name>
+        <path>/etc/clickhouse-server/model/model.cbm</path>
+        <lifetime>0</lifetime>
+    </model>
+</models>

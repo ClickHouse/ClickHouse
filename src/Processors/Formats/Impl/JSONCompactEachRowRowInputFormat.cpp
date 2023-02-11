@@ -1,13 +1,11 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
-#include <Formats/JSONUtils.h>
-#include <Formats/EscapingRuleUtils.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -30,7 +28,6 @@ JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
         header_,
         in_,
         params_,
-        false,
         with_names_,
         with_types_,
         format_settings_,
@@ -50,17 +47,20 @@ JSONCompactEachRowFormatReader::JSONCompactEachRowFormatReader(ReadBuffer & in_,
 
 void JSONCompactEachRowFormatReader::skipRowStartDelimiter()
 {
-    JSONUtils::skipArrayStart(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar('[', *in);
 }
 
 void JSONCompactEachRowFormatReader::skipFieldDelimiter()
 {
-    JSONUtils::skipComma(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar(',', *in);
 }
 
 void JSONCompactEachRowFormatReader::skipRowEndDelimiter()
 {
-    JSONUtils::skipArrayEnd(*in);
+    skipWhitespaceIfAny(*in);
+    assertChar(']', *in);
 
     skipWhitespaceIfAny(*in);
     if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
@@ -109,7 +109,7 @@ std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
 bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & column_name)
 {
     skipWhitespaceIfAny(*in);
-    return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
+    return readFieldImpl(*in, column, type, serialization, column_name, format_settings, yield_strings);
 }
 
 bool JSONCompactEachRowFormatReader::parseRowStartWithDiagnosticInfo(WriteBuffer & out)
@@ -128,7 +128,8 @@ bool JSONCompactEachRowFormatReader::parseFieldDelimiterWithDiagnosticInfo(Write
 {
     try
     {
-        JSONUtils::skipComma(*in);
+        skipWhitespaceIfAny(*in);
+        assertChar(',', *in);
     }
     catch (const DB::Exception &)
     {
@@ -180,14 +181,12 @@ bool JSONCompactEachRowFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer &
     return true;
 }
 
-JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(
-    ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_)
-    : FormatWithNamesAndTypesSchemaReader(in_, format_settings_, with_names_, with_types_, &reader)
-    , reader(in_, yield_strings_, format_settings_)
+JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_)
+    : FormatWithNamesAndTypesSchemaReader(in_, format_settings_.max_rows_to_read_for_schema_inference, with_names_, with_types_, &reader), reader(in_, yield_strings_, format_settings_)
 {
 }
 
-DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
+DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
 {
     if (first_row)
         first_row = false;
@@ -203,17 +202,7 @@ DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
     if (in.eof())
         return {};
 
-    return JSONUtils::readRowAndGetDataTypesForJSONCompactEachRow(in, format_settings, &inference_info);
-}
-
-void JSONCompactEachRowRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
-}
-
-void JSONCompactEachRowRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
-{
-    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
+    return readRowAndGetDataTypesForJSONCompactEachRow(in, reader.yieldStrings());
 }
 
 void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
@@ -233,7 +222,6 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
         };
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
-        markFormatWithNamesAndTypesSupportsSamplingColumns(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", factory);
     }
 }
 
@@ -243,20 +231,10 @@ void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            factory.registerSchemaReader(format_name, [=](ReadBuffer & buf, const FormatSettings & settings)
+            factory.registerSchemaReader(format_name, [=](ReadBuffer & buf, const FormatSettings & settings, ContextPtr)
             {
                 return std::make_shared<JSONCompactEachRowRowSchemaReader>(buf, with_names, with_types, json_strings, settings);
             });
-            if (!with_types)
-            {
-                factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
-                {
-                    auto result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
-                    if (!with_names)
-                        result += fmt::format(", column_names_for_schema_inference={}", settings.column_names_for_schema_inference);
-                    return result;
-                });
-            }
         };
         registerWithNamesAndTypes(json_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
     }
@@ -271,9 +249,9 @@ void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
         /// the minimum of rows for segmentation engine according to
         /// parameters with_names and with_types.
         size_t min_rows = 1 + int(with_names) + int(with_types);
-        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
         {
-            return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_bytes, min_rows, max_rows);
+            return fileSegmentationEngineJSONCompactEachRow(in, memory, min_chunk_size, min_rows);
         });
     };
 
