@@ -105,7 +105,7 @@ def test_access(cluster):
     assert int(node.query("select count() from system.named_collections")) > 0
 
 
-def test_granular_access(cluster):
+def test_granular_access_show_query(cluster):
     node = cluster.instances["node"]
     assert 1 == int(node.query("SELECT count() FROM system.named_collections"))
     assert (
@@ -173,6 +173,56 @@ def test_granular_access(cluster):
     )
 
     node.query("DROP NAMED COLLECTION collection2")
+
+
+def test_granular_access_create_alter_drop_query(cluster):
+    node = cluster.instances["node"]
+    node.query("CREATE USER kek")
+    node.query("GRANT select ON *.* TO kek")
+    assert 0 == int(
+        node.query("SELECT count() FROM system.named_collections", user="kek")
+    )
+
+    assert (
+        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant CREATE NAMED COLLECTION"
+        in node.query_and_get_error(
+            "CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'", user="kek"
+        )
+    )
+    node.query("GRANT create named collection ON collection2 TO kek")
+    node.query_and_get_error(
+        "CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'", user="kek"
+    )
+    assert 0 == int(
+        node.query("select count() from system.named_collections", user="kek")
+    )
+
+    node.query("GRANT show named collections ON collection2 TO kek")
+    # assert (
+    #     "collection2"
+    #     == node.query("select name from system.named_collections", user="kek").strip()
+    # )
+    # assert (
+    #     "1"
+    #     == node.query(
+    #         "select collection['key1'] from system.named_collections where name = 'collection2'"
+    #     ).strip()
+    # )
+
+    # assert (
+    #     "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant ALTER NAMED COLLECTION"
+    #     in node.query_and_get_error(
+    #         "ALTER NAMED COLLECTION collection2 SET key1=2", user="kek"
+    #     )
+    # )
+    # node.query("GRANT alter named collection ON collection2 TO kek")
+    # node.query("ALTER NAMED COLLECTION collection2 SET key1=2", user="kek")
+    # assert (
+    #     "2"
+    #     == node.query(
+    #         "select collection['key1'] from system.named_collections where name = 'collection2'"
+    #     ).strip()
+    # )
 
 
 def test_config_reload(cluster):
