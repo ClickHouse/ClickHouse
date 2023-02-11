@@ -7,13 +7,19 @@
 
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
-
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+#include <Storages/IStorage.h>
+
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
@@ -63,9 +69,56 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
-QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const SelectQueryOptions & select_query_options, const ContextPtr & context)
+void replaceStorageInQueryTree(const QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
+{
+    auto query_to_replace_table_expression = query_tree;
+
+    while (true)
+    {
+        if (auto * union_node = query_to_replace_table_expression->as<UnionNode>())
+            query_to_replace_table_expression = union_node->getQueries().getNodes().at(0);
+
+        auto & query_to_replace_table_expression_typed = query_to_replace_table_expression->as<QueryNode &>();
+        auto & left_table_expression = extractLeftTableExpression(query_to_replace_table_expression_typed.getJoinTree());
+        auto left_table_expression_node_type = left_table_expression->getNodeType();
+
+        switch (left_table_expression_node_type)
+        {
+            case QueryTreeNodeType::QUERY:
+            case QueryTreeNodeType::UNION:
+            {
+                query_to_replace_table_expression = left_table_expression;
+                continue;
+            }
+            case QueryTreeNodeType::TABLE:
+            case QueryTreeNodeType::IDENTIFIER:
+            {
+                auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+                auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+                left_table_expression = std::make_shared<TableNode>(storage,
+                    std::move(storage_lock),
+                    std::move(storage_snapshot));
+                return;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Expected table or identifier node to replace with storage. Actual {}",
+                    left_table_expression->formatASTForErrorMessage());
+            }
+        }
+    }
+}
+
+QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & context,
+    const StoragePtr & storage)
 {
     auto query_tree = buildQueryTree(query, context);
+
+    if (storage)
+        replaceStorageInQueryTree(query_tree, context, storage);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
@@ -92,7 +145,20 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
+{
+}
+
+InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
+    const ASTPtr & query_,
+    const ContextPtr & context_,
+    const SelectQueryOptions & select_query_options_,
+    const StoragePtr & storage)
+    : query(normalizeAndValidateQuery(query_))
+    , context(buildContext(context_, select_query_options_))
+    , select_query_options(select_query_options_)
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage))
     , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
 {
 }

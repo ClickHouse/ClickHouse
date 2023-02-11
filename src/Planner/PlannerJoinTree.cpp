@@ -932,8 +932,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
+        auto table_expression_node_type = table_expression->getNodeType();
 
-        if (auto * array_join_node = table_expression->as<ArrayJoinNode>())
+        if (table_expression_node_type == QueryTreeNodeType::ARRAY_JOIN)
         {
             if (query_plans_stack.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -946,7 +947,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 table_expressions_outer_scope_columns[i],
                 planner_context);
         }
-        else if (auto * join_node = table_expression->as<JoinNode>())
+        else if (table_expression_node_type == QueryTreeNodeType::JOIN)
         {
             if (query_plans_stack.size() < 2)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -968,9 +969,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         else
         {
             const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-            if (table_expression_data.isRemote() && has_remote_table)
+            if (table_expression_data.isRemote() && (has_remote_table || i != 0))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "JOIN with multiple remote storages is unsuppored");
+                    "JOIN with multiple remote storages is unsupported");
 
             has_remote_table = table_expression_data.isRemote();
 

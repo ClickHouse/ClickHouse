@@ -1055,7 +1055,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
 
-        if (settings.allow_experimental_analyzer)
+        if (settings.allow_experimental_analyzer && query_info.planner_context)
         {
             const auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(query_info.table_expression);
             for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
