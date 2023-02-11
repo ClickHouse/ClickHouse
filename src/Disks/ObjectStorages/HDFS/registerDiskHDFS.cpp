@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/DiskFactory.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
 namespace DB

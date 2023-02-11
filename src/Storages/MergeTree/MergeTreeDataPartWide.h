@@ -47,6 +47,8 @@ public:
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
+    bool supportsVerticalMerge() const override { return true; }
+
     String getFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;

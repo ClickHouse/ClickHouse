@@ -135,47 +135,47 @@ public:
 		/// (typeid) for the stored content.
 
 	virtual void convert(Int8& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(Int16& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(Int32& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(Int64& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(UInt8& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(UInt16& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(UInt32& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(UInt64& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(DateTime& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(LocalDateTime& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(Timestamp& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 #ifndef POCO_LONG_IS_64_BIT
@@ -189,92 +189,92 @@ public:
 #else
 
 	virtual void convert(long long& val) const;
-		/// Throws BadCastException. Must be overriden in a type
-		/// specialization in order to suport the conversion.
+		/// Throws BadCastException. Must be overridden in a type
+		/// specialization in order to support the conversion.
 
 	virtual void convert(unsigned long long & val) const;
-		/// Throws BadCastException. Must be overriden in a type
-		/// specialization in order to suport the conversion.
+		/// Throws BadCastException. Must be overridden in a type
+		/// specialization in order to support the conversion.
 
 #endif
 
 	virtual void convert(bool& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(float& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(double& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(char& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(std::string& val) const;
-		/// Throws BadCastException. Must be overriden in a type
+		/// Throws BadCastException. Must be overridden in a type
 		/// specialization in order to support the conversion.
 
 	virtual void convert(Poco::UTF16String& val) const;
-	/// Throws BadCastException. Must be overriden in a type
+	/// Throws BadCastException. Must be overridden in a type
 	/// specialization in order to support the conversion.
 
 	virtual bool isArray() const;
 		/// Returns true.
 
 	virtual bool isVector() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isList() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isDeque() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isStruct() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isInteger() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isSigned() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isNumeric() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isBoolean() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isString() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isDate() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isTime() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual bool isDateTime() const;
-		/// Returns false. Must be properly overriden in a type
+		/// Returns false. Must be properly overridden in a type
 		/// specialization in order to support the diagnostic.
 
 	virtual std::size_t size() const;
-		/// Returns 1 iff Var is not empty or this function overriden.
+		/// Returns 1 iff Var is not empty or this function overridden.
 
 protected:
 	VarHolder();
