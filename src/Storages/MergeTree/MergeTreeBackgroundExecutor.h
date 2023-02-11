@@ -6,7 +6,9 @@
 #include <future>
 #include <condition_variable>
 #include <set>
-#include <iostream>
+#include <variant>
+#include <utility>
+
 
 #include <boost/circular_buffer.hpp>
 #include <boost/noncopyable.hpp>
@@ -78,7 +80,10 @@ public:
         return result;
     }
 
-    void push(TaskRuntimeDataPtr item) { queue.push_back(std::move(item));}
+    void push(TaskRuntimeDataPtr item)
+    {
+        queue.push_back(std::move(item));
+    }
 
     void remove(StorageID id)
     {
@@ -89,6 +94,8 @@ public:
 
     void setCapacity(size_t count) { queue.set_capacity(count); }
     bool empty() { return queue.empty(); }
+
+    static constexpr std::string_view name = "round_robin";
 
 private:
     boost::circular_buffer<TaskRuntimeDataPtr> queue{0};
@@ -122,9 +129,81 @@ public:
     void setCapacity(size_t count) { buffer.reserve(count); }
     bool empty() { return buffer.empty(); }
 
+    static constexpr std::string_view name = "shortest_task_first";
+
 private:
     std::vector<TaskRuntimeDataPtr> buffer;
 };
+
+/// Queue that can dynamically change scheduling policy
+template <class ... Policies>
+class DynamicRuntimeQueueImpl
+{
+public:
+    TaskRuntimeDataPtr pop()
+    {
+        return std::visit<TaskRuntimeDataPtr>([&] (auto && queue) { return queue.pop(); }, impl);
+    }
+
+    void push(TaskRuntimeDataPtr item)
+    {
+        std::visit([&] (auto && queue) { queue.push(std::move(item)); }, impl);
+    }
+
+    void remove(StorageID id)
+    {
+        std::visit([&] (auto && queue) { queue.remove(id); }, impl);
+    }
+
+    void setCapacity(size_t count)
+    {
+        capacity = count;
+        std::visit([&] (auto && queue) { queue.setCapacity(count); }, impl);
+    }
+
+    bool empty()
+    {
+        return std::visit<bool>([&] (auto && queue) { return queue.empty(); }, impl);
+    }
+
+    // Change policy. It does nothing if new policy is unknown or equals current policy.
+    void updatePolicy(std::string_view name)
+    {
+        // We use this double lambda trick to generate code for all possible pairs of types of old and new queue.
+        // If types are different it moves tasks from old queue to new one using corresponding pop() and push()
+        resolve<Policies...>(name, [&] <class NewQueue> (std::in_place_type_t<NewQueue>)
+        {
+            std::visit([&] (auto && queue)
+            {
+                if constexpr (std::is_same_v<decltype(queue), NewQueue>)
+                    return; // The same policy
+                NewQueue new_queue;
+                new_queue.setCapacity(capacity);
+                while (!queue.empty())
+                    new_queue.push(queue.pop());
+                impl = std::move(new_queue);
+            }, impl);
+        });
+    }
+
+private:
+    // Find policy with specified `name` and call `func()` if found.
+    // Tag `std::in_place_type_t<T>` used to help templated lambda to deduce type T w/o creating its instance
+    template <class T, class ... Ts, class Func>
+    void resolve(std::string_view name, Func && func)
+    {
+        if (T::name == name)
+            return func(std::in_place_type<T>);
+        if constexpr (sizeof...(Ts))
+            return resolve<Ts...>(name, std::forward<Func>(func));
+    }
+
+    std::variant<Policies...> impl;
+    size_t capacity;
+};
+
+// Avoid typedef and alias to facilitate forward declaration
+class DynamicRuntimeQueue : public DynamicRuntimeQueueImpl<RoundRobinRuntimeQueue, PriorityRuntimeQueue> {};
 
 /**
  *  Executor for a background MergeTree related operations such as merges, mutations, fetches and so on.
@@ -206,6 +285,14 @@ public:
     void removeTasksCorrespondingToStorage(StorageID id);
     void wait();
 
+    /// Update
+    void updateSchedulingPolicy(std::string_view new_policy)
+        requires requires(Queue queue) { queue.updatePolicy(new_policy); } // Because we use explicit template instantiation
+    {
+        std::lock_guard lock(mutex);
+        pending.updatePolicy(new_policy);
+    }
+
 private:
     String name;
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
@@ -229,5 +316,6 @@ private:
 
 extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 extern template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
+extern template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
 
 }
