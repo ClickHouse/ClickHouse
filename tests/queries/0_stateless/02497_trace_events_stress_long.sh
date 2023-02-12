@@ -9,9 +9,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function thread1()
 {
-    query_id="$RANDOM-$CLICKHOUSE_DATABASE"
-
+    thread_id=$1
     while true; do
+        query_id="02497_$CLICKHOUSE_DATABASE-$RANDOM-$thread_id"
         $CLICKHOUSE_CLIENT --query_id=$query_id --query "
             SELECT count() FROM numbers_mt(100000) SETTINGS
                 trace_profile_events = 1,
@@ -35,13 +35,13 @@ export -f thread2
 
 TIMEOUT=10
 
-timeout $TIMEOUT bash -c thread1 >/dev/null &
-timeout $TIMEOUT bash -c thread1 >/dev/null &
-timeout $TIMEOUT bash -c thread1 >/dev/null &
-timeout $TIMEOUT bash -c thread1 >/dev/null &
+timeout $TIMEOUT bash -c "thread1 0" >/dev/null &
+timeout $TIMEOUT bash -c "thread1 1" >/dev/null &
+timeout $TIMEOUT bash -c "thread1 2" >/dev/null &
+timeout $TIMEOUT bash -c "thread1 3" >/dev/null &
 timeout $TIMEOUT bash -c thread2 >/dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$query_id'"
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%' SYNC" >/dev/null
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '02497_$CLICKHOUSE_DATABASE%'"

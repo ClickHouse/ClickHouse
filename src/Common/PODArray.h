@@ -110,7 +110,7 @@ protected:
     {
         size_t amount;
         if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
-            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         return amount;
     }
 
@@ -119,7 +119,7 @@ protected:
     {
         size_t amount;
         if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
-            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         return amount;
     }
 
@@ -437,7 +437,7 @@ public:
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
     /** This method doesn't allow to pass parameters for Allocator,
@@ -450,12 +450,12 @@ public:
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
-        this->c_end += this->byte_size(1);
+        this->c_end += sizeof(T);
     }
 
     void pop_back() /// NOLINT
     {
-        this->c_end -= this->byte_size(1);
+        this->c_end -= sizeof(T);
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.

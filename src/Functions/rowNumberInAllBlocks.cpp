@@ -10,7 +10,7 @@ namespace DB
 namespace
 {
 
-/** Incremental number of row within all columnss passed to this function. */
+/** Incremental number of row within all columns passed to this function. */
 class FunctionRowNumberInAllBlocks : public IFunction
 {
 private:

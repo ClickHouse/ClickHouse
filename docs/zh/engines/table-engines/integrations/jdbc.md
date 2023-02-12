@@ -95,5 +95,3 @@ FROM system.numbers
 ## 参见 {#see-also}
 
 -   [JDBC表函数](../../../sql-reference/table-functions/jdbc.md).
-
-[原始文档](https://clickhouse.com/docs/en/operations/table_engines/jdbc/) <!--hide-->

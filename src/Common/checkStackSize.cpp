@@ -98,7 +98,7 @@ __attribute__((__weak__)) void checkStackSize()
 
     /// We assume that stack grows towards lower addresses. And that it starts to grow from the end of a chunk of memory of max_stack_size.
     if (int_frame_address > int_stack_address + max_stack_size)
-        throw Exception("Logical error: frame address is greater than stack begin address", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: frame address is greater than stack begin address");
 
     size_t stack_size = int_stack_address + max_stack_size - int_frame_address;
     size_t max_stack_size_allowed = static_cast<size_t>(max_stack_size * STACK_SIZE_FREE_RATIO);

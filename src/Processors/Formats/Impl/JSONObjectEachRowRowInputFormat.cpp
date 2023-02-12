@@ -2,6 +2,7 @@
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 
 namespace DB
@@ -85,15 +86,25 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
         JSONUtils::skipComma(in);
 
     JSONUtils::readFieldName(in);
-    auto names_and_types = JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, false);
+    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
+}
+
+NamesAndTypesList JSONObjectEachRowSchemaReader::getStaticNamesAndTypes()
+{
     if (!format_settings.json_object_each_row.column_for_object_name.empty())
-        names_and_types.emplace_front(format_settings.json_object_each_row.column_for_object_name, std::make_shared<DataTypeString>());
-    return names_and_types;
+        return {{format_settings.json_object_each_row.column_for_object_name, std::make_shared<DataTypeString>()}};
+
+    return {};
 }
 
 void JSONObjectEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
+}
+
+void JSONObjectEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
+{
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONObjectEachRow(FormatFactory & factory)

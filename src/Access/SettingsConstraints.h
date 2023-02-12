@@ -73,6 +73,7 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
+    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements) const;
     void check(const Settings & current_settings, const SettingChange & change) const;
     void check(const Settings & current_settings, const SettingsChanges & changes) const;
     void check(const Settings & current_settings, SettingsChanges & changes) const;

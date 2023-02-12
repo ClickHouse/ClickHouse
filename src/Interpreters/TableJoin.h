@@ -198,7 +198,7 @@ public:
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
-        , join_algorithm(JoinAlgorithm::HASH)
+        , join_algorithm(JoinAlgorithm::DEFAULT)
     {
         clauses.emplace_back().key_names_right = key_names_right;
         table_join.kind = kind;
@@ -334,6 +334,7 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+    void setRename(const String & from, const String & to);
 
     void resetKeys();
     void resetToCross();

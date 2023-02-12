@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
@@ -17,7 +18,7 @@ class IExecutableFunction;
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
@@ -74,7 +75,6 @@ public:
         std::string result_name;
         DataTypePtr result_type;
 
-        FunctionOverloadResolverPtr function_builder;
         /// Can be used to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
@@ -139,6 +139,11 @@ public:
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
             std::string result_name);
+    const Node & addFunction(
+        const FunctionBasePtr & function_base,
+        NodeRawConstPtrs children,
+        std::string result_name);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
@@ -343,7 +348,16 @@ public:
         const ContextPtr & context);
 
 private:
+    NodeRawConstPtrs getParents(const Node * target) const;
+
     Node & addNode(Node node);
+
+    const Node & addFunctionImpl(
+        const FunctionBasePtr & function_base,
+        NodeRawConstPtrs children,
+        ColumnsWithTypeAndName arguments,
+        std::string result_name,
+        bool all_const);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

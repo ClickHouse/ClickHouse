@@ -57,7 +57,8 @@ private:
 
     void restartReplica(const StorageID & replica, ContextMutablePtr system_context);
     void restartReplicas(ContextMutablePtr system_context);
-    void syncReplica(ASTSystemQuery & query);
+    void syncReplica();
+    void waitLoadingParts();
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
 
@@ -67,15 +68,14 @@ private:
 
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
+    void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
-    void restartDisk(String & name);
+    [[noreturn]] void restartDisk(String & name);
 
     RefreshTaskHolder getRefreshTask();
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
-
-    void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, ContextPtr) const override;
 };
 
 

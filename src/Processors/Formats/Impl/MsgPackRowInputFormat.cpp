@@ -247,6 +247,14 @@ static void insertNull(IColumn & column, DataTypePtr type)
 
 static void insertUUID(IColumn & column, DataTypePtr type, const char * value, size_t size)
 {
+    auto insert_func = [&](IColumn & column_, DataTypePtr type_)
+    {
+        insertUUID(column_, type_, value, size);
+    };
+
+    if (checkAndInsertNullable(column, type, insert_func) || checkAndInsertLowCardinality(column, type, insert_func))
+        return;
+
     if (!isUUID(type))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
@@ -376,7 +384,7 @@ bool MsgPackVisitor::visit_ext(const char * value, uint32_t size)
 
 void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
 {
-    throw Exception("Error occurred while parsing msgpack data.", ErrorCodes::INCORRECT_DATA);
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
 }
 
 bool MsgPackRowInputFormat::readObject()
@@ -390,7 +398,7 @@ bool MsgPackRowInputFormat::readObject()
     {
         buf->position() = buf->buffer().end();
         if (buf->eof())
-            throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing msgpack object.");
         buf->position() = buf->buffer().end();
         buf->makeContinuousMemoryFromCheckpointToPos();
         buf->rollbackToCheckpoint();
@@ -413,7 +421,7 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     if (!has_more_data)
     {
         if (column_index != 0)
-            throw Exception("Not enough values to complete the row.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough values to complete the row.");
         return false;
     }
     return true;
@@ -421,15 +429,16 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 
 void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(in_);
+    buf->setSubBuffer(in_);
 }
 
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowSchemaReader(buf, format_settings_), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
     if (!number_of_columns)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You must specify setting input_format_msgpack_number_of_columns to extract table schema from MsgPack data");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "You must specify setting input_format_msgpack_number_of_columns "
+                        "to extract table schema from MsgPack data");
 }
 
 
@@ -454,7 +463,7 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
         {
             buf.position() = buf.buffer().end();
             if (buf.eof())
-                throw Exception("Unexpected end of file while parsing msgpack object", ErrorCodes::UNEXPECTED_END_OF_FILE);
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while parsing msgpack object");
             buf.position() = buf.buffer().end();
             buf.makeContinuousMemoryFromCheckpointToPos();
             buf.rollbackToCheckpoint();
@@ -470,16 +479,16 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
     {
         case msgpack::type::object_type::POSITIVE_INTEGER: [[fallthrough]];
         case msgpack::type::object_type::NEGATIVE_INTEGER:
-            return makeNullable(std::make_shared<DataTypeInt64>());
+            return std::make_shared<DataTypeInt64>();
         case msgpack::type::object_type::FLOAT32:
-            return makeNullable(std::make_shared<DataTypeFloat32>());
+            return std::make_shared<DataTypeFloat32>();
         case msgpack::type::object_type::FLOAT64:
-            return makeNullable(std::make_shared<DataTypeFloat64>());
+            return std::make_shared<DataTypeFloat64>();
         case msgpack::type::object_type::BOOLEAN:
-            return makeNullable(std::make_shared<DataTypeUInt8>());
+            return std::make_shared<DataTypeUInt8>();
         case msgpack::type::object_type::BIN: [[fallthrough]];
         case msgpack::type::object_type::STR:
-            return makeNullable(std::make_shared<DataTypeString>());
+            return std::make_shared<DataTypeString>();
         case msgpack::type::object_type::ARRAY:
         {
             msgpack::object_array object_array = object.via.array;

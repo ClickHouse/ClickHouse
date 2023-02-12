@@ -10,7 +10,7 @@ echo "Check style" | ts
 echo "Check python formatting with black" | ts
 ./check-black -n              |& tee /test_output/black_output.txt
 echo "Check python type hinting with mypy" | ts
-./check-mypy -n              |& tee /test_output/mypy_output.txt
+./check-mypy -n               |& tee /test_output/mypy_output.txt
 echo "Check typos" | ts
 ./check-typos                 |& tee /test_output/typos_output.txt
 echo "Check docs spelling" | ts
@@ -19,6 +19,8 @@ echo "Check whitespaces" | ts
 ./check-whitespaces -n        |& tee /test_output/whitespaces_output.txt
 echo "Check workflows" | ts
 ./check-workflows             |& tee /test_output/workflows_output.txt
+echo "Check submodules" | ts
+./check-submodules            |& tee /test_output/submodules_output.txt
 echo "Check shell scripts with shellcheck" | ts
 ./shellcheck-run.sh           |& tee /test_output/shellcheck_output.txt
 /process_style_check_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv

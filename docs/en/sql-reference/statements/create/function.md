@@ -58,3 +58,7 @@ Result:
 │      2 │ even                                 │
 └────────┴──────────────────────────────────────┘
 ```
+
+## Related Content
+
+- [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

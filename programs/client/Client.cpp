@@ -1,3 +1,4 @@
+#include <boost/algorithm/string/join.hpp>
 #include <cstdlib>
 #include <fcntl.h>
 #include <map>
@@ -16,6 +17,8 @@
 
 #include <base/find_symbols.h>
 
+#include <Access/AccessControl.h>
+
 #include "config_version.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -28,9 +31,10 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -38,6 +42,8 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
@@ -119,6 +125,69 @@ void Client::showWarnings()
     catch (...)
     {
         /// Ignore exception
+    }
+}
+
+void Client::parseConnectionsCredentials()
+{
+    /// It is not possible to correctly handle multiple --host --port options.
+    if (hosts_and_ports.size() >= 2)
+        return;
+
+    String host;
+    std::optional<UInt16> port;
+    if (hosts_and_ports.empty())
+    {
+        host = config().getString("host", "localhost");
+        if (config().has("port"))
+            port = config().getInt("port");
+    }
+    else
+    {
+        host = hosts_and_ports.front().host;
+        port = hosts_and_ports.front().port;
+    }
+
+    Strings keys;
+    config().keys("connections_credentials", keys);
+    for (const auto & connection : keys)
+    {
+        const String & prefix = "connections_credentials." + connection;
+
+        const String & connection_name = config().getString(prefix + ".name", "");
+        if (connection_name != host)
+            continue;
+
+        String connection_hostname;
+        if (config().has(prefix + ".hostname"))
+            connection_hostname = config().getString(prefix + ".hostname");
+        else
+            connection_hostname = connection_name;
+
+        /// Set "host" unconditionally (since it is used as a "name"), while
+        /// other options only if they are not set yet (config.xml/cli
+        /// options).
+        config().setString("host", connection_hostname);
+        if (!hosts_and_ports.empty())
+            hosts_and_ports.front().host = connection_hostname;
+
+        if (config().has(prefix + ".port") && !port.has_value())
+            config().setInt("port", config().getInt(prefix + ".port"));
+        if (config().has(prefix + ".secure") && !config().has("secure"))
+            config().setBool("secure", config().getBool(prefix + ".secure"));
+        if (config().has(prefix + ".user") && !config().has("user"))
+            config().setString("user", config().getString(prefix + ".user"));
+        if (config().has(prefix + ".password") && !config().has("password"))
+            config().setString("password", config().getString(prefix + ".password"));
+        if (config().has(prefix + ".database") && !config().has("database"))
+            config().setString("database", config().getString(prefix + ".database"));
+        if (config().has(prefix + ".history_file") && !config().has("history_file"))
+        {
+            String history_file = config().getString(prefix + ".history_file");
+            if (history_file.starts_with("~") && !home_path.empty())
+                history_file = home_path + "/" + history_file.substr(1);
+            config().setString("history_file", history_file);
+        }
     }
 }
 
@@ -211,6 +280,8 @@ void Client::initialize(Poco::Util::Application & self)
     if (env_password)
         config().setString("password", env_password);
 
+    parseConnectionsCredentials();
+
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
 
@@ -257,6 +328,10 @@ try
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
         showWarnings();
+
+    /// Set user password complexity rules
+    auto & access_control = global_context->getAccessControl();
+    access_control.setPasswordComplexityRules(connection->getPasswordComplexityRules());
 
     if (is_interactive && !delayed_interactive)
     {
@@ -464,24 +539,28 @@ void Client::connect()
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
 void Client::printChangedSettings() const
 {
-    const auto & changes = global_context->getSettingsRef().changes();
-    if (!changes.empty())
+    auto print_changes = [](const auto & changes, std::string_view settings_name)
     {
-        fmt::print(stderr, "Changed settings: ");
-        for (size_t i = 0; i < changes.size(); ++i)
+        if (!changes.empty())
         {
-            if (i)
+            fmt::print(stderr, "Changed {}: ", settings_name);
+            for (size_t i = 0; i < changes.size(); ++i)
             {
-                fmt::print(stderr, ", ");
+                if (i)
+                    fmt::print(stderr, ", ");
+                fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
             }
-            fmt::print(stderr, "{} = '{}'", changes[i].name, toString(changes[i].value));
+
+            fmt::print(stderr, "\n");
         }
-        fmt::print(stderr, "\n");
-    }
-    else
-    {
-        fmt::print(stderr, "No changed settings.\n");
-    }
+        else
+        {
+            fmt::print(stderr, "No changed {}.\n", settings_name);
+        }
+    };
+
+    print_changes(global_context->getSettingsRef().changes(), "settings");
+    print_changes(cmd_merge_tree_settings.changes(), "MergeTree settings");
 }
 
 
@@ -710,7 +789,7 @@ bool Client::processWithFuzzing(const String & full_query)
             // uniformity.
             // Surprisingly, this is a client exception, because we get the
             // server exception w/o throwing (see onReceiveException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -821,6 +900,20 @@ bool Client::processWithFuzzing(const String & full_query)
         WriteBufferFromOStream ast_buf(std::cout, 4096);
         formatAST(*query, ast_buf, false /*highlight*/);
         ast_buf.next();
+        if (const auto * insert = query->as<ASTInsertQuery>())
+        {
+            /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
+            if (insert->hasInlinedData())
+            {
+                String bytes;
+                {
+                    auto read_buf = getReadBufferFromASTInsertQuery(query);
+                    WriteBufferFromString write_buf(bytes);
+                    copyData(*read_buf, write_buf);
+                }
+                std::cout << std::endl << bytes;
+            }
+        }
         std::cout << std::endl << std::endl;
 
         try
@@ -831,7 +924,7 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         catch (...)
         {
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -945,7 +1038,7 @@ void Client::processOptions(const OptionsDescription & options_description,
             if (external_tables.back().file == "-")
                 ++number_of_external_tables_with_stdin_source;
             if (number_of_external_tables_with_stdin_source > 1)
-                throw Exception("Two or more external tables has stdin (-) set as --file field", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more external tables has stdin (-) set as --file field");
         }
         catch (const Exception & e)
         {
@@ -998,7 +1091,7 @@ void Client::processOptions(const OptionsDescription & options_description,
     }
 
     if (options.count("config-file") && options.count("config"))
-        throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
@@ -1189,14 +1282,14 @@ void Client::readArguments(
                     /// param_name value
                     ++arg_num;
                     if (arg_num >= argc)
-                        throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter requires value");
                     arg = argv[arg_num];
                     query_parameters.emplace(String(param_continuation), String(arg));
                 }
                 else
                 {
                     if (equal_pos == 0)
-                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
 
                     /// param_name=value
                     query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
@@ -1210,7 +1303,7 @@ void Client::readArguments(
                 {
                     ++arg_num;
                     if (arg_num >= argc)
-                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host argument requires value");
                     arg = argv[arg_num];
                     host_arg = "--host=";
                     host_arg.append(arg);
@@ -1242,7 +1335,7 @@ void Client::readArguments(
                     port_arg.push_back('=');
                     ++arg_num;
                     if (arg_num >= argc)
-                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Port argument requires value");
                     arg = argv[arg_num];
                     port_arg.append(arg);
                 }
@@ -1264,6 +1357,8 @@ void Client::readArguments(
             }
             else if (arg == "--allow_repeated_settings")
                 allow_repeated_settings = true;
+            else if (arg == "--allow_merge_tree_settings")
+                allow_merge_tree_settings = true;
             else
                 common_arguments.emplace_back(arg);
         }

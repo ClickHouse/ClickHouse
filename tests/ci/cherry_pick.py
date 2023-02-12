@@ -208,6 +208,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         self.cherrypick_pr.add_to_labels(Labels.CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
         self._assign_new_pr(self.cherrypick_pr)
+        # update cherrypick PR to get the state for PR.mergable
+        self.cherrypick_pr.update()
 
     def create_backport(self):
         assert self.cherrypick_pr is not None
@@ -311,11 +313,13 @@ class Backport:
         logging.info("Active releases: %s", ", ".join(self.release_branches))
 
     def receive_prs_for_backport(self):
-        # The commit is the oldest open release branch's merge-base
-        since_commit = git_runner(
-            f"git merge-base {self.remote}/{self.release_branches[0]} "
-            f"{self.remote}/{self.default_branch}"
+        # The commits in the oldest open release branch
+        oldest_branch_commits = git_runner(
+            "git log --no-merges --format=%H --reverse "
+            f"{self.remote}/{self.default_branch}..{self.remote}/{self.release_branches[0]}"
         )
+        # The first commit is the one we are looking for
+        since_commit = oldest_branch_commits.split("\n", 1)[0]
         since_date = date.fromisoformat(
             git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
         )
@@ -488,7 +492,7 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token, per_page=100)
+    gh = GitHub(token, create_cache_dir=False, per_page=100)
     bp = Backport(gh, args.repo, args.dry_run)
     # https://github.com/python/mypy/issues/3004
     bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore

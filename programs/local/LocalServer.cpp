@@ -37,7 +37,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include <Storages/NamedCollectionUtils.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -49,6 +49,10 @@
 
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
 namespace fs = std::filesystem;
@@ -114,6 +118,14 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000)
     );
+
+#if USE_AZURE_BLOB_STORAGE
+    /// See the explanation near the same line in Server.cpp
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
 
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
@@ -207,7 +219,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp", "", 0);
+    global_context->setTemporaryStoragePath(path + "tmp/", 0);
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
@@ -359,7 +371,7 @@ void LocalServer::setupUsers()
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
-        throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+        throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
 }
 
 void LocalServer::connect()
@@ -489,7 +501,7 @@ void LocalServer::processConfig()
     if (is_interactive && !delayed_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
 
         if (config().has("multiquery"))
             is_multiquery = true;

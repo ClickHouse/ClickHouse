@@ -1,3 +1,5 @@
+-- Tags: no-s3-storage
+
 DROP TABLE IF EXISTS table_in_memory;
 
 CREATE TABLE table_in_memory
@@ -35,4 +37,4 @@ ATTACH TABLE table_in_memory;
 
 SELECT count() FROM table_in_memory;
 SELECT name, part_type, rows, active from system.parts
-WHERE table='table_in_memory' AND database=currentDatabase();
+WHERE table='table_in_memory' AND database=currentDatabase() and active;

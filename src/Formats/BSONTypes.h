@@ -7,6 +7,8 @@ namespace DB
 {
 
 static const uint8_t BSON_DOCUMENT_END = 0x00;
+static const size_t BSON_OBJECT_ID_SIZE = 12;
+static const size_t BSON_DB_POINTER_SIZE = 12;
 using BSONSizeT = uint32_t;
 static const BSONSizeT MAX_BSON_SIZE = std::numeric_limits<BSONSizeT>::max();
 

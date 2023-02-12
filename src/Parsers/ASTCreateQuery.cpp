@@ -73,6 +73,11 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
     }
 }
 
+bool ASTStorage::isExtendedStorageDefinition() const
+{
+    return partition_by || primary_key || order_by || sample_by || settings;
+}
+
 
 class ASTColumnsElement : public IAST
 {
@@ -446,6 +451,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
         comment->formatImpl(settings, state, frame);
     }
+}
+
+bool ASTCreateQuery::isParameterizedView() const
+{
+    if (is_ordinary_view && select && select->hasQueryParameters())
+        return true;
+    return false;
 }
 
 }

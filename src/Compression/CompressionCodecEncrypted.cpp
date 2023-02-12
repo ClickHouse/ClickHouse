@@ -11,10 +11,14 @@
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL
-#include <openssl/digest.h>
-#include <openssl/err.h>
-#include <boost/algorithm/hex.hpp>
-#include <openssl/aead.h>
+#    include <openssl/err.h>
+#    include <boost/algorithm/hex.hpp>
+#    if USE_BORINGSSL
+#        include <openssl/digest.h>
+#        include <openssl/aead.h>
+#    else
+#        include <openssl/evp.h>
+#    endif
 #endif
 
 // Common part for both parts (with SSL and without)
@@ -59,7 +63,7 @@ uint8_t getMethodCode(EncryptionMethod Method)
     }
     else
     {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -87,23 +91,6 @@ constexpr size_t nonce_max_size    = 13;   /// Nonce size and one byte to show i
 constexpr size_t actual_nonce_size = 12;   /// Nonce actual size
 const String empty_nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", actual_nonce_size};
 
-/// Get encryption/decryption algorithms.
-auto getMethod(EncryptionMethod Method)
-{
-    if (Method == AES_128_GCM_SIV)
-    {
-        return EVP_aead_aes_128_gcm_siv;
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
-        return EVP_aead_aes_256_gcm_siv;
-    }
-    else
-    {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
-    }
-}
-
 /// Find out key size for each algorithm
 UInt64 methodKeySize(EncryptionMethod Method)
 {
@@ -117,7 +104,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
     }
     else
     {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
     }
 }
 
@@ -126,6 +113,24 @@ std::string lastErrorString()
     std::array<char, 1024> buffer = {};
     ERR_error_string_n(ERR_get_error(), buffer.data(), buffer.size());
     return std::string(buffer.data());
+}
+
+#if USE_BORINGSSL
+/// Get encryption/decryption algorithms.
+auto getMethod(EncryptionMethod Method)
+{
+    if (Method == AES_128_GCM_SIV)
+    {
+        return EVP_aead_aes_128_gcm_siv;
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return EVP_aead_aes_256_gcm_siv;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+    }
 }
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
@@ -141,7 +146,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
                                             reinterpret_cast<const uint8_t*>(key.data()), key.size(),
                                             tag_size, nullptr);
     if (!ok_init)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     /// encrypt data using context and given nonce.
     size_t out_len;
@@ -152,7 +157,7 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
                                             reinterpret_cast<const uint8_t *>(plaintext.data()), plaintext.size(),
                                             nullptr, 0);
     if (!ok_open)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     return out_len;
 }
@@ -171,7 +176,7 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
                                           reinterpret_cast<const uint8_t*>(key.data()), key.size(),
                                           tag_size, nullptr);
     if (!ok_init)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     /// decrypt data using given nonce
     size_t out_len;
@@ -182,10 +187,164 @@ size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod m
                                           reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
                                           nullptr, 0);
     if (!ok_open)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     return out_len;
 }
+#else
+/// Get encryption/decryption algorithms.
+auto getMethod(EncryptionMethod Method)
+{
+    if (Method == AES_128_GCM_SIV)
+    {
+        return EVP_aes_128_gcm;
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return EVP_aes_256_gcm;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong encryption Method. Got {}", getMethodName(Method));
+    }
+}
+
+/// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
+/// This function get key and nonce and encrypt text with their help.
+/// If something went wrong (can't init context or can't encrypt data) it throws exception.
+/// It returns length of encrypted text.
+size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
+{
+    int out_len;
+    int ciphertext_len;
+    EVP_CIPHER_CTX *encrypt_ctx;
+
+    if (!(encrypt_ctx = EVP_CIPHER_CTX_new()))
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+    try
+    {
+        const int ok_cryptinit = EVP_EncryptInit_ex(encrypt_ctx,
+                                                    getMethod(method)(),
+                                                    nullptr, nullptr, nullptr);
+        if (!ok_cryptinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_cipherctrl = EVP_CIPHER_CTX_ctrl(encrypt_ctx,
+                                                    EVP_CTRL_GCM_SET_IVLEN,
+                                                    static_cast<int32_t>(nonce.size()),
+                                                    nullptr);
+        if (!ok_cipherctrl)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_nonceinit = EVP_EncryptInit_ex(encrypt_ctx, nullptr, nullptr,
+                                                    reinterpret_cast<const uint8_t*>(key.data()),
+                                                    reinterpret_cast<const uint8_t *>(nonce.data()));
+        if (!ok_nonceinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_encryptupdate = EVP_EncryptUpdate(encrypt_ctx,
+                                                    reinterpret_cast<uint8_t *>(ciphertext_and_tag),
+                                                    &out_len,
+                                                    reinterpret_cast<const uint8_t *>(plaintext.data()),
+                                                    static_cast<int32_t>(plaintext.size()));
+        ciphertext_len = out_len;
+        if (!ok_encryptupdate)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_encryptfinal = EVP_EncryptFinal_ex(encrypt_ctx,
+                                                        reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
+                                                        reinterpret_cast<int32_t *>(&out_len));
+        ciphertext_len += out_len;
+        if (!ok_encryptfinal)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        /* Get the tag */
+        const int ok_tag = EVP_CIPHER_CTX_ctrl(encrypt_ctx,
+                                            EVP_CTRL_GCM_GET_TAG,
+                                            tag_size,
+                                            reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size());
+
+        if (!ok_tag)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    }
+    catch (...)
+    {
+        EVP_CIPHER_CTX_free(encrypt_ctx);
+        throw;
+    }
+    EVP_CIPHER_CTX_free(encrypt_ctx);
+    return ciphertext_len + tag_size;
+}
+
+/// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
+/// This function get key and nonce and encrypt text with their help.
+/// If something went wrong (can't init context or can't encrypt data) it throws exception.
+/// It returns length of encrypted text.
+size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
+{
+
+    int out_len;
+    int plaintext_len;
+    EVP_CIPHER_CTX *decrypt_ctx;
+
+    if (!(decrypt_ctx = EVP_CIPHER_CTX_new()))
+        throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+    try
+    {
+        const int ok_cryptinit = EVP_DecryptInit_ex(decrypt_ctx,
+                                                    getMethod(method)(),
+                                                    nullptr, nullptr, nullptr);
+        if (!ok_cryptinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_cipherctrl = EVP_CIPHER_CTX_ctrl(decrypt_ctx,
+                                                    EVP_CTRL_GCM_SET_IVLEN,
+                                                    static_cast<int32_t>(nonce.size()), nullptr);
+        if (!ok_cipherctrl)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_nonceinit = EVP_DecryptInit_ex(decrypt_ctx, nullptr, nullptr,
+                                                    reinterpret_cast<const uint8_t*>(key.data()),
+                                                    reinterpret_cast<const uint8_t *>(nonce.data()));
+        if (!ok_nonceinit)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_decryptudpate = EVP_DecryptUpdate(decrypt_ctx,
+                                                    reinterpret_cast<uint8_t *>(plaintext),
+                                                    reinterpret_cast<int32_t *>(&out_len),
+                                                    reinterpret_cast<const uint8_t *>(ciphertext.data()),
+                                                    static_cast<int32_t>(ciphertext.size()) - tag_size);
+        plaintext_len = out_len;
+
+        if (!ok_decryptudpate)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_tag = EVP_CIPHER_CTX_ctrl(decrypt_ctx,
+                                            EVP_CTRL_GCM_SET_TAG,
+                                            tag_size,
+                                            reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size);
+        if (!ok_tag)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
+        const int ok_decryptfinal = EVP_DecryptFinal_ex(decrypt_ctx,
+                                                        reinterpret_cast<uint8_t *>(plaintext) + out_len,
+                                                        reinterpret_cast<int32_t *>(&out_len));
+
+        if (!ok_decryptfinal)
+            throw Exception::createDeprecated(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    }
+    catch (...)
+    {
+        EVP_CIPHER_CTX_free(decrypt_ctx);
+        throw;
+    }
+    EVP_CIPHER_CTX_free(decrypt_ctx);
+
+    return plaintext_len + out_len;
+}
+#endif
 
 /// Register codec in factory
 void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
@@ -196,9 +355,8 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
         if (arguments)
         {
             if (!arguments->children.empty())
-                throw Exception("Codec " + getMethodName(Method) + " must not have parameters, given " +
-                                std::to_string(arguments->children.size()),
-                                ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Codec {} must not have parameters, given {}",
+                                getMethodName(Method), arguments->children.size());
         }
         return std::make_shared<CompressionCodecEncrypted>(Method);
     });
@@ -229,7 +387,9 @@ inline char* writeNonce(const String& nonce, char* dest)
         ++dest;
         size_t copied_symbols = nonce.copy(dest, nonce.size());
         if (copied_symbols != nonce.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}", copied_symbols, nonce.size());
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}",
+                            copied_symbols, nonce.size());
         dest += copied_symbols;
         return dest;
     }
@@ -273,7 +433,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 {
     // if method is not smaller than MAX_ENCRYPTION_METHOD it is incorrect
     if (method >= MAX_ENCRYPTION_METHOD)
-        throw Exception("Wrong argument for loading configurations.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong argument for loading configurations.");
 
     /// Scan all keys in config and add them into storage. If key is in hex, transform it.
     /// Remember key ID for each key, because it will be used in encryption/decryption
@@ -341,7 +501,8 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
         new_params->nonce[method] = config.getString(config_prefix + ".nonce", "");
 
     if (new_params->nonce[method].size() != actual_nonce_size && !new_params->nonce[method].empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}", new_params->nonce[method].size(), actual_nonce_size);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}",
+                        new_params->nonce[method].size(), actual_nonce_size);
 }
 
 bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -382,7 +543,7 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
 {
     /// It parameters were not set, throw exception
     if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
 
     /// Save parameters in variable, because they can always change.
     /// As this function not atomic, we should be certain that we get information from one particular version for correct work.
@@ -409,7 +570,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     String key;
     /// See description of previous finction, logic is the same.
     if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
 
     const auto current_params = params.get();
 
@@ -479,7 +640,9 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Length of encrypted text should be equal to text length plus tag_size (which was added by algorithm).
     if (out_len != source_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't encrypt data, length after encryption {} is wrong, expected {}", out_len, source_size + tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't encrypt data, length after encryption {} is wrong, expected {}",
+                        out_len, source_size + tag_size);
 
     size_t out_size = out_len + keyid_size + nonce_size;
     return safe_cast<UInt32>(out_size);
@@ -505,12 +668,15 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
     /// Count text size (nonce and key_id was read from source)
     size_t ciphertext_size = source_size - keyid_size - nonce_size;
     if (ciphertext_size != uncompressed_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}", uncompressed_size, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}",
+                        uncompressed_size, ciphertext_size - tag_size);
 
 
     size_t out_len = decrypt({ciphertext, ciphertext_size}, dest, encryption_method, key, nonce);
     if (out_len != ciphertext_size - tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, out length after decryption {} is wrong, expected {}", out_len, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't decrypt data, out length after decryption {} is wrong, expected {}",
+                        out_len, ciphertext_size - tag_size);
 }
 
 }

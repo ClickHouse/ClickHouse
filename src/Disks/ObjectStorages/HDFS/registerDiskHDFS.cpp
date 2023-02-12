@@ -3,8 +3,9 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/DiskFactory.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Interpreters/Context.h>
+#include <Common/Macros.h>
 
 namespace DB
 {
@@ -23,7 +24,8 @@ void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check)
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        String uri{config.getString(config_prefix + ".endpoint")};
+        String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+        String uri{endpoint};
         checkHDFSURL(uri);
 
         if (uri.back() != '/')
@@ -55,7 +57,7 @@ void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check)
             copy_thread_pool_size);
         disk->startup(context, skip_access_check);
 
-        return std::make_shared<DiskRestartProxy>(disk);
+        return disk;
     };
 
     factory.registerDiskType("hdfs", creator);
