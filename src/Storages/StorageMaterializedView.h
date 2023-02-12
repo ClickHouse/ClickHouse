@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Storages/MaterializedView/RefreshTask_fwd.h>
 
 namespace DB
 {
@@ -76,6 +77,7 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
 
     void read(
         QueryPlan & query_plan,
@@ -98,12 +100,25 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
 private:
+    mutable std::mutex target_table_id_mutex;
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
 
+    RefreshTaskHolder refresher;
+
     bool has_inner_table = false;
 
+    friend class RefreshTask;
+
     void checkStatementCanBeForwarded() const;
+
+    std::shared_ptr<ASTInsertQuery> prepareRefreshQuery();
+
+    void updateInnerTableAfterRefresh(std::shared_ptr<ASTInsertQuery> refresh_query);
+
+    StorageID getTargetTableId() const;
+    void setTargetTableId(StorageID id);
+    void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };
 
 }

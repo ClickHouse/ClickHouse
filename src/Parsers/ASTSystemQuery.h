@@ -90,6 +90,14 @@ public:
         STOP_CLEANUP,
         START_CLEANUP,
         RESET_COVERAGE,
+        REFRESH_VIEW,
+        START_VIEW,
+        START_VIEWS,
+        STOP_VIEW,
+        STOP_VIEWS,
+        CANCEL_VIEW,
+        PAUSE_VIEW,
+        RESUME_VIEW,
         END
     };
 
