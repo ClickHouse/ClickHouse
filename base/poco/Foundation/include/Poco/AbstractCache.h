@@ -55,7 +55,8 @@ public:
 		initialize();
 	}
 
-	AbstractCache(const TStrategy& strat): _strategy(strat)
+	AbstractCache(const TStrategy & strategy)
+        : _strategy(strategy)
 	{
 		initialize();
 	}
@@ -85,7 +86,7 @@ public:
 		/// If for the key already an entry exists, it will be overwritten.
 		/// The difference to add is that no remove or add events are thrown in this case, 
 		/// just a simply silent update is performed
-		/// If the key doesnot exist the behavior is equal to add, ie. an add event is thrown
+		/// If the key does not exist the behavior is equal to add, ie. an add event is thrown
 	{
 		typename TMutex::ScopedLock lock(_mutex);
 		doUpdate(key, val);
@@ -105,7 +106,7 @@ public:
 		/// If for the key already an entry exists, it will be overwritten.
 		/// The difference to add is that no remove or add events are thrown in this case, 
 		/// just an Update is thrown
-		/// If the key doesnot exist the behavior is equal to add, ie. an add event is thrown
+		/// If the key does not exist the behavior is equal to add, ie. an add event is thrown
 	{
 		typename TMutex::ScopedLock lock(_mutex);
 		doUpdate(key, val);

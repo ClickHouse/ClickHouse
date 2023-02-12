@@ -18,7 +18,7 @@
 
 
 #if defined(POCO_NO_FPENVIRONMENT)
-#include "FPEnvironment_DUMMY.cpp"
+/// #include "FPEnvironment_DUMMY.cpp"
 #elif defined(__osf__)
 #include "FPEnvironment_DEC.cpp"
 #elif defined(sun) || defined(__sun)

@@ -53,7 +53,7 @@ class Foundation_API FileChannel: public Channel
 	///
 	/// The rotation strategy can be specified with the
 	/// "rotation" property, which can take one of the
-	/// follwing values:
+	/// following values:
 	///
 	///   * never:         no log rotation
 	///   * [day,][hh]:mm: the file is rotated on specified day/time

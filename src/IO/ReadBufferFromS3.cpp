@@ -1,17 +1,18 @@
 #include "config.h"
-#include "IO/S3Common.h"
+#include <IO/S3Common.h>
 
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ResourceGuard.h>
 #include <IO/S3/getObjectInfo.h>
-
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/logger_useful.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <base/sleep.h>
 
 #include <utility>
@@ -20,6 +21,7 @@
 namespace ProfileEvents
 {
     extern const Event ReadBufferFromS3Microseconds;
+    extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
     extern const Event ReadBufferSeekCancelConnection;
@@ -323,16 +325,25 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     if (read_settings.for_object_storage)
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
+
+    // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
+    constexpr ResourceCost estimated_cost = 1;
+    ResourceGuard rlock(read_settings.resource_link, estimated_cost);
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+    rlock.unlock();
 
     if (outcome.IsSuccess())
     {
-        read_result = outcome.GetResultWithOwnership();
+        ResourceCost bytes_read = outcome.GetResult().GetContentLength();
+        read_settings.resource_link.adjust(estimated_cost, bytes_read);
         size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
+        read_result = outcome.GetResultWithOwnership();
         return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
     }
     else
     {
+        read_settings.resource_link.accumulate(estimated_cost);
         const auto & error = outcome.GetError();
         throw S3Exception(error.GetMessage(), error.GetErrorType());
     }

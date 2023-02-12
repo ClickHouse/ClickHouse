@@ -43,7 +43,7 @@ class Foundation_API BinaryWriter
 	/// data type sizes (e.g., 32-bit and 64-bit architectures), as the sizes
 	/// of some of the basic types may be different. For example, writing a
 	/// long integer on a 64-bit system and reading it on a 32-bit system
-	/// may yield an incorrent result. Use fixed-size types (Int32, Int64, etc.)
+	/// may yield an incorrect result. Use fixed-size types (Int32, Int64, etc.)
 	/// in such a case.
 {
 public:

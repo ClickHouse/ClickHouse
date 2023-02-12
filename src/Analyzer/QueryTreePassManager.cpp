@@ -35,6 +35,7 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/ArrayExistsToHasPass.h>
 
 namespace DB
 {
@@ -217,6 +218,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
+    manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_unique<CustomizeFunctionsPass>());
