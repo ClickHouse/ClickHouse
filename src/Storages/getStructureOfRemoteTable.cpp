@@ -58,7 +58,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     }
 
     ColumnsDescription res;
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -79,7 +79,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ParserExpression expr_parser;
 
-    while (Block current = executor.read())
+    while (Block current = executor.readBlock())
     {
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
@@ -155,9 +155,8 @@ ColumnsDescription getStructureOfRemoteTable(
         }
     }
 
-    throw NetException(
-        "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
-        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+    throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
+        "All attempts to get table structure failed. Log: \n\n{}\n", fail_messages);
 }
 
 ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
@@ -169,7 +168,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const auto & shards_info = cluster.getShardsInfo();
     auto query = "DESC TABLE " + remote_table_id.getFullTableName();
 
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), remote_table_id);
     new_context->setSetting("describe_extend_object_types", true);
 
     /// Expect only needed columns from the result of DESC TABLE.
@@ -188,7 +187,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
         executor.setMainTable(remote_table_id);
 
         ColumnsDescription res;
-        while (auto block = executor.read())
+        while (auto block = executor.readBlock())
         {
             const auto & name_col = *block.getByName("name").column;
             const auto & type_col = *block.getByName("type").column;
@@ -200,7 +199,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
                 auto type_name = type_col[i].get<const String &>();
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && isObject(storage_column->type))
+                if (storage_column && storage_column->type->hasDynamicSubcolumns())
                     res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }
@@ -220,7 +219,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     }
 
     if (columns.empty())
-        throw NetException("All attempts to get table structure failed", ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+        throw NetException(ErrorCodes::NO_REMOTE_SHARD_AVAILABLE, "All attempts to get table structure failed");
 
     return columns;
 }

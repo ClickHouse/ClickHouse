@@ -138,7 +138,7 @@ static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataType
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
     if (value->getType()->isFloatingPointTy())
-        return b.CreateFCmpONE(value, zero); /// QNaN is false
+        return b.CreateFCmpUNE(value, zero);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
 }
@@ -224,7 +224,7 @@ static inline std::pair<llvm::Value *, llvm::Value *> nativeCastToCommon(llvm::I
         size_t rhs_bit_width = rhs->getType()->getIntegerBitWidth() + (!rhs_is_signed && lhs_is_signed);
 
         size_t max_bit_width = std::max(lhs_bit_width, rhs_bit_width);
-        common = b.getIntNTy(max_bit_width);
+        common = b.getIntNTy(static_cast<unsigned>(max_bit_width));
     }
     else
     {

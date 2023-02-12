@@ -20,7 +20,7 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
     UInt32 version;
     readIntText(version, buf);
 
-    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
+    if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_INLINE_DATA)
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
@@ -65,14 +65,12 @@ void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
         readBoolText(read_only, buf);
         assertChar('\n', buf);
     }
-}
 
-void DiskObjectStorageMetadata::createFromSingleObject(const std::string & relative_path, size_t bytes_size, size_t ref_count_, bool read_only_)
-{
-    storage_objects.emplace_back(relative_path, bytes_size);
-    total_size = bytes_size;
-    ref_count = ref_count_;
-    read_only = read_only_;
+    if (version >= VERSION_INLINE_DATA)
+    {
+        readEscapedString(inline_data, buf);
+        assertChar('\n', buf);
+    }
 }
 
 void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
@@ -83,7 +81,11 @@ void DiskObjectStorageMetadata::deserializeFromString(const std::string & data)
 
 void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 {
-    writeIntText(VERSION_READ_ONLY_FLAG, buf);
+    if (inline_data.empty())
+        writeIntText(VERSION_READ_ONLY_FLAG, buf);
+    else
+        writeIntText(VERSION_INLINE_DATA, buf);
+
     writeChar('\n', buf);
 
     writeIntText(storage_objects.size(), buf);
@@ -104,6 +106,12 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     writeBoolText(read_only, buf);
     writeChar('\n', buf);
+
+    if (!inline_data.empty())
+    {
+        writeEscapedString(inline_data, buf);
+        writeChar('\n', buf);
+    }
 
     buf.finalize();
     if (sync)

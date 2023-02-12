@@ -140,6 +140,12 @@ public:
 
     void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context);
 
+    /// Finds all processors for reading from MergeTree
+    /// And explicitly connects them with all RemoteSources
+    /// using a ResizeProcessor. This is needed not to let
+    /// the RemoteSource to starve for CPU time
+    void connectDependencies();
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
@@ -148,7 +154,7 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void setProcessListElement(QueryStatus * elem);
+    void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);
 
     /// Recommend number of threads for pipeline execution.
@@ -189,7 +195,7 @@ private:
     /// Sometimes, more streams are created then the number of threads for more optimal execution.
     size_t max_threads = 0;
 
-    QueryStatus * process_list_element = nullptr;
+    QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();

@@ -568,7 +568,7 @@ ORDER BY c DESC
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)

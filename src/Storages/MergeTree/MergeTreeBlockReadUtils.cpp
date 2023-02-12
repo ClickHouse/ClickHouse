@@ -135,28 +135,32 @@ NameSet injectRequiredColumns(
 
 
 MergeTreeReadTask::MergeTreeReadTask(
-    const MergeTreeData::DataPartPtr & data_part_,
+    const DataPartPtr & data_part_,
     const MarkRanges & mark_ranges_,
     size_t part_index_in_query_,
-    const Names & ordered_names_,
     const NameSet & column_name_set_,
     const MergeTreeReadTaskColumns & task_columns_,
     bool remove_prewhere_column_,
-    MergeTreeBlockSizePredictorPtr && size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    int64_t priority_,
+    std::future<MergeTreeReaderPtr> reader_,
+    std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_)
     : data_part{data_part_}
     , mark_ranges{mark_ranges_}
     , part_index_in_query{part_index_in_query_}
-    , ordered_names{ordered_names_}
     , column_name_set{column_name_set_}
     , task_columns{task_columns_}
     , remove_prewhere_column{remove_prewhere_column_}
-    , size_predictor{std::move(size_predictor_)}
+    , size_predictor{size_predictor_}
+    , reader(std::move(reader_))
+    , pre_reader_for_step(std::move(pre_reader_for_step_))
+    , priority(priority_)
 {
 }
 
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
     : data_part(data_part_)
 {
     number_of_rows_in_part = data_part->rows_count;
@@ -233,9 +237,9 @@ void MergeTreeBlockSizePredictor::startBlock()
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
 {
     if (columns.size() != sample_block.columns())
-        throw Exception("Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
-                        "Have " + toString(sample_block.columns()) + " in sample block "
-                        "and " + toString(columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent number of columns passed to MergeTreeBlockSizePredictor. "
+                        "Have {} in sample block and {} columns in list",
+                        toString(sample_block.columns()), toString(columns.size()));
 
     if (!is_initialized_in_update)
     {
@@ -246,8 +250,8 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
     if (num_rows < block_size_rows)
     {
-        throw Exception("Updated block has less rows (" + toString(num_rows) + ") than previous one (" + toString(block_size_rows) + ")",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Updated block has less rows ({}) than previous one ({})",
+                        num_rows, block_size_rows);
     }
 
     size_t diff_rows = num_rows - block_size_rows;
@@ -315,7 +319,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 1. Columns for row level filter
         if (prewhere_info->row_level_filter)
         {
-            Names row_filter_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
+            Names row_filter_column_names = prewhere_info->row_level_filter->getRequiredColumnsNames();
+            injectRequiredColumns(
+                data_part_info_for_reader, storage_snapshot, with_subcolumns, row_filter_column_names);
             result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
             pre_name_set.insert(row_filter_column_names.begin(), row_filter_column_names.end());
         }
@@ -323,7 +329,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// 2. Columns for prewhere
         Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
 
-        const auto injected_pre_columns = injectRequiredColumns(
+        injectRequiredColumns(
              data_part_info_for_reader, storage_snapshot, with_subcolumns, all_pre_column_names);
 
         for (const auto & name : all_pre_column_names)

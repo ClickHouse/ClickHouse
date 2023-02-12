@@ -76,7 +76,7 @@
         #charts
         {
             height: 100%;
-            display: flex;
+            display: none;
             flex-flow: row wrap;
             gap: 1rem;
         }
@@ -152,7 +152,7 @@
             filter: contrast(125%);
         }
 
-        #add {
+        #add, #reload {
             font-weight: bold;
             user-select: none;
             cursor: pointer;
@@ -166,8 +166,16 @@
             margin-bottom: 1rem;
         }
 
-        #add:hover {
+        #add:hover, #reload:hover {
             background: var(--button-background-color);
+        }
+
+        #auth-error {
+            color: var(--error-color);
+
+            display: flex;
+            flex-flow: row nowrap;
+            justify-content: center;
         }
 
         form {
@@ -286,12 +294,14 @@
             <input spellcheck="false" id="password" type="password" placeholder="password" />
         </div>
         <div>
+            <input id="reload" type="button" value="Reload" style="display: none;">
             <input id="add" type="button" value="Add chart">
             <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
             <div id="chart-params"></div>
         </div>
     </form>
 </div>
+<div id="auth-error"></div>
 <div id="charts"></div>
 <script>
 
@@ -319,6 +329,11 @@ let password = '';
 if (location.protocol != 'file:') {
     host = location.origin;
     user = 'default';
+}
+
+const errorCodeRegex = /Code: (\d+)/
+const errorCodeMessageMap = {
+    516: 'Error authenticating with database. Please check your connection params and try again.'
 }
 
 /// This is just a demo configuration of the dashboard.
@@ -596,6 +611,11 @@ function insertChart(i) {
     query_editor_confirm.value = 'Ok';
     query_editor_confirm.className = 'edit-confirm';
 
+    function getCurrentIndex() {
+        /// Indices may change after deletion of other element, hence captured "i" may become incorrect.
+        return [...charts.querySelectorAll('.chart')].findIndex(child => chart == child);
+    }
+
     function editConfirm() {
         query_editor.style.display = 'none';
         query_error.style.display = 'none';
@@ -604,7 +624,8 @@ function insertChart(i) {
         title_text.data = '';
         findParamsInQuery(q.query, params);
         buildParams();
-        draw(i, chart, getParamsForURL(), q.query);
+        const idx = getCurrentIndex();
+        draw(idx, chart, getParamsForURL(), q.query);
         saveState();
     }
 
@@ -648,8 +669,7 @@ function insertChart(i) {
     let trash_text = document.createTextNode('✕');
     trash.appendChild(trash_text);
     trash.addEventListener('click', e => {
-        /// Indices may change after deletion of other element, hence captured "i" may become incorrect.
-        let idx = [...charts.querySelectorAll('.chart')].findIndex(child => chart == child);
+        const idx = getCurrentIndex();
         if (plots[idx]) {
             plots[idx].destroy();
             plots[idx] = null;
@@ -672,14 +692,38 @@ function insertChart(i) {
     chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
     charts.appendChild(chart);
+    return {chart: chart, textarea: query_editor_textarea};
 };
 
 document.getElementById('add').addEventListener('click', e => {
     queries.push({ title: '', query: '' });
-    insertChart(plots.length);
+
+    const {chart, textarea} = insertChart(plots.length);
+    chart.scrollIntoView();
+    textarea.focus();
+
     plots.push(null);
     resize();
 });
+
+document.getElementById('reload').addEventListener('click', e => {
+    reloadAll();
+});
+
+function showReloadIfNeeded() {
+    const is_any_field_changed = (host != document.getElementById('url').value
+                               || user != document.getElementById('user').value
+                               || password != document.getElementById('password').value);
+    if (is_any_field_changed) {
+        document.getElementById('reload').style.display = '';
+    } else {
+        document.getElementById('reload').style.display = 'none';
+    }
+}
+
+document.getElementById('password').addEventListener('input', e => { showReloadIfNeeded(); })
+document.getElementById('user').addEventListener('input', e => { showReloadIfNeeded(); })
+document.getElementById('url').addEventListener('input', e => { showReloadIfNeeded(); })
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
@@ -731,6 +775,8 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
     };
 }
 
+let add_http_cors_header = false;
+
 async function draw(idx, chart, url_params, query) {
     if (plots[idx]) {
         plots[idx].destroy();
@@ -742,6 +788,12 @@ async function draw(idx, chart, url_params, query) {
     password = document.getElementById('password').value;
 
     let url = `${host}?default_format=JSONCompactColumns`
+
+    if (add_http_cors_header) {
+        // For debug purposes, you may set add_http_cors_header from a browser console
+        url += '&add_http_cors_header=1';
+    }
+
     if (user) {
         url += `&user=${encodeURIComponent(user)}`;
     }
@@ -761,6 +813,18 @@ async function draw(idx, chart, url_params, query) {
     } catch (e) {
         console.log(e);
         error = e.toString();
+    }
+
+    if (error) {
+        const errorMatch = error.match(errorCodeRegex)
+        if (errorMatch && errorMatch[1]) {
+            const code = errorMatch[1]
+            if (errorCodeMessageMap[code]) {
+                const authError = new Error(errorCodeMessageMap[code])
+                authError.code = code
+                throw authError
+            }
+        }
     }
 
     if (!error) {
@@ -820,16 +884,50 @@ async function draw(idx, chart, url_params, query) {
     sync.sub(plots[idx]);
 
     /// Set title
-    const title = queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
+    const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
     chart.querySelector('.title').firstChild.data = title;
 }
+
+function showAuthError(message) {
+    const charts = document.querySelector('#charts');
+    charts.style.display = 'none';
+    const add = document.querySelector('#add');
+    add.style.display = 'none';
+
+    const authError = document.querySelector('#auth-error');
+    authError.textContent = message;
+    authError.style.display = 'flex';
+}
+
+function hideAuthError() {
+    const charts = document.querySelector('#charts');
+    charts.style.display = 'flex';
+    const add = document.querySelector('#add');
+    add.style.display = 'block';
+
+    const authError = document.querySelector('#auth-error');
+    authError.textContent = '';
+    authError.style.display = 'none';
+}
+
+let firstLoad = true;
 
 async function drawAll() {
     let params = getParamsForURL();
     const charts = document.getElementsByClassName('chart');
-    for (let i = 0; i < queries.length; ++i) {
-        draw(i, charts[i], params, queries[i].query);
+
+    if (!firstLoad) {
+        hideAuthError();
     }
+    await Promise.all([...Array(queries.length)].map(async (_, i) => {
+        return draw(i, charts[i], params, queries[i].query).catch((e) => {
+            if (!firstLoad) {
+                showAuthError(e.message);
+            }
+        });
+    })).then(() => {
+        firstLoad = false;
+    })
 }
 
 function resize() {
@@ -843,10 +941,15 @@ function resize() {
 
 new ResizeObserver(resize).observe(document.body);
 
-document.getElementById('params').onsubmit = function(event) {
+function reloadAll() {
     updateParams();
     drawAll();
     saveState();
+    document.getElementById('reload').style.display = 'none';
+}
+
+document.getElementById('params').onsubmit = function(event) {
+    reloadAll();
     event.preventDefault();
 }
 

@@ -29,11 +29,13 @@ struct AzureObjectStorageSettings
         uint64_t max_single_part_upload_size_,
         uint64_t min_bytes_for_seek_,
         int max_single_read_retries_,
-        int max_single_download_retries_)
+        int max_single_download_retries_,
+        int list_object_keys_size_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
+        , list_object_keys_size(list_object_keys_size_)
     {
     }
 
@@ -41,6 +43,7 @@ struct AzureObjectStorageSettings
     uint64_t min_bytes_for_seek;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
+    int list_object_keys_size;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;
@@ -84,7 +87,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
+    void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     void removeObject(const StoredObject & object) override;

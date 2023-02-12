@@ -67,7 +67,7 @@ public:
 
         b.SetInsertPoint(join);
 
-        auto * phi = b.CreatePHI(toNativeType(b, return_type), returns.size());
+        auto * phi = b.CreatePHI(toNativeType(b, return_type), static_cast<unsigned>(returns.size()));
         for (const auto & [block, value] : returns)
             phi->addIncoming(value, block);
 

@@ -6,7 +6,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
-#include <IO/ConnectionTimeoutsContext.h>
 
 
 namespace DB
@@ -43,7 +42,7 @@ protected:
 
     virtual String serviceFileName() const = 0;
 
-    virtual size_t getDefaultPort() const = 0;
+    virtual unsigned getDefaultPort() const = 0;
 
     virtual bool startBridgeManually() const = 0;
 

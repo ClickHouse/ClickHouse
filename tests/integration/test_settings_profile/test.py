@@ -550,7 +550,7 @@ def test_function_current_profiles():
             user="robin",
             params={"session_id": session_id},
         )
-        == "['P1','P2']\t['P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
+        == "['P1','P2']\t['default','P3','P5','P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
     )
 
     instance.http_query(

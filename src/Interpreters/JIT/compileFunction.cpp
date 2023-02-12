@@ -403,7 +403,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     std::vector<ColumnDataPlaceholder> columns(functions.size());
     for (size_t i = 0; i < functions.size(); ++i)
     {
-        auto return_type = functions[i].function->getReturnType();
+        auto return_type = functions[i].function->getResultType();
         auto * data = b.CreateLoad(column_type, b.CreateConstInBoundsGEP1_64(column_type, columns_arg, i));
 
         auto * column_data_type = toNativeType(b, removeNullable(return_type));
@@ -614,7 +614,7 @@ static void compileSortDescription(llvm::Module & module,
     /** Join results from all comparator steps.
       * Result of columns comparison equals to first compare block where lhs is not equal to lhs or last compare block.
       */
-    auto * compare_result_phi = b.CreatePHI(b.getInt8Ty(), comparator_steps_and_results.size());
+    auto * compare_result_phi = b.CreatePHI(b.getInt8Ty(), static_cast<unsigned>(comparator_steps_and_results.size()));
 
     for (const auto & [block, result_value] : comparator_steps_and_results)
         compare_result_phi->addIncoming(result_value, block);

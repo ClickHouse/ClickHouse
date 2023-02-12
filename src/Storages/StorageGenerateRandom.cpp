@@ -7,20 +7,24 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDecimalBase.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
@@ -157,7 +161,7 @@ ColumnPtr fillColumnWithRandomData(
 
         case TypeIndex::Array:
         {
-            auto nested_type = typeid_cast<const DataTypeArray *>(type.get())->getNestedType();
+            auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
 
             auto offsets_column = ColumnVector<ColumnArray::Offset>::create();
             auto & offsets = offsets_column->getData();
@@ -175,6 +179,13 @@ ColumnPtr fillColumnWithRandomData(
             return ColumnArray::create(data_column, std::move(offsets_column));
         }
 
+        case TypeIndex::Map:
+        {
+            const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+            return ColumnMap::create(nested_column);
+        }
+
         case TypeIndex::Tuple:
         {
             auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
@@ -189,7 +200,7 @@ ColumnPtr fillColumnWithRandomData(
 
         case TypeIndex::Nullable:
         {
-            auto nested_type = typeid_cast<const DataTypeNullable *>(type.get())->getNestedType();
+            auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
             auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
 
             auto null_map_column = ColumnUInt8::create();
@@ -372,9 +383,37 @@ ColumnPtr fillColumnWithRandomData(
 
             return column;
         }
+        case TypeIndex::LowCardinality:
+        {
+            /// We are generating the values using the same random distribution as for full columns
+            /// so it's not in fact "low cardinality",
+            /// but it's ok for testing purposes, because the LowCardinality data type supports high cardinality data as well.
+
+            auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+
+            auto column = type->createColumn();
+            typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*nested_column, 0, limit);
+
+            return column;
+        }
+        case TypeIndex::IPv4:
+        {
+            auto column = ColumnIPv4::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(IPv4), rng);
+            return column;
+        }
+        case TypeIndex::IPv6:
+        {
+            auto column = ColumnIPv6::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(IPv6), rng);
+            return column;
+        }
 
         default:
-            throw Exception("The 'GenerateRandom' is not implemented for type " + type->getName(), ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
     }
 }
 
@@ -462,9 +501,9 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() > 3)
-            throw Exception("Storage GenerateRandom requires at most three arguments: "
-                "random_seed, max_string_length, max_array_length.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage GenerateRandom requires at most three arguments: "
+                            "random_seed, max_string_length, max_array_length.");
 
         std::optional<UInt64> random_seed;
         UInt64 max_string_length = 10;
@@ -494,7 +533,7 @@ Pipe StorageGenerateRandom::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 

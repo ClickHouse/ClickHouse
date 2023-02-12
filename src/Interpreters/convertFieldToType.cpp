@@ -86,9 +86,9 @@ Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & typ
 {
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
-        throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", type.getName());
 
-    T scaled_value = type.getScaleMultiplier() * static_cast<T>(value);
+    T scaled_value = type.getScaleMultiplier() * T(static_cast<typename T::NativeType>(value));
     return DecimalField<T>(scaled_value, type.getScale());
 }
 
@@ -114,7 +114,7 @@ Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & t
 {
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
-        throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", type.getName());
 
     //String sValue = convertFieldToString(from);
     //int fromScale = sValue.length()- sValue.find('.') - 1;
@@ -236,17 +236,38 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64()
-            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDate32() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
+            && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
-            const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
+            const auto decimal_value
+                = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<DateTime64>(decimal_value, scale));
+        }
+
+        if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
+        {
+            /// Already in needed type.
+            return src;
         }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
     {
         /// Already in needed type.
         return src;
+    }
+    else if (which_type.isIPv6())
+    {
+        /// Already in needed type.
+        if (src.getType() == Field::Types::IPv6)
+            return src;
+        /// Treat FixedString(16) as a binary representation of IPv6
+        if (which_from_type.isFixedString() && assert_cast<const DataTypeFixedString *>(from_type_hint)->getN() == IPV6_BINARY_LENGTH)
+        {
+            const auto col = type.createColumn();
+            ReadBufferFromString in_buffer(src.get<String>());
+            type.getDefaultSerialization()->deserializeBinary(*col, in_buffer, {});
+            return (*col)[0];
+        }
     }
     else if (which_type.isStringOrFixedString())
     {
@@ -300,8 +321,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             size_t dst_tuple_size = type_tuple->getElements().size();
 
             if (dst_tuple_size != src_tuple_size)
-                throw Exception("Bad size of tuple in IN or VALUES section. Expected size: "
-                    + toString(dst_tuple_size) + ", actual size: " + toString(src_tuple_size), ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple in IN or VALUES section. "
+                    "Expected size: {}, actual size: {}", dst_tuple_size, src_tuple_size);
 
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
@@ -380,12 +401,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         const auto & name = src.get<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)
-            throw Exception("Cannot convert " + name + " to " + agg_func_type->getName(), ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", name, agg_func_type->getName());
 
         return src;
     }
     else if (isObject(type))
     {
+        if (src.getType() == Field::Types::Object)
+            return src;  /// Already in needed type.
+
         const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
         if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
         {
