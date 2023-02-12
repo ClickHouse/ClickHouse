@@ -15,9 +15,10 @@ extern "C" void __llvm_profile_dump(); // NOLINT
 extern "C" void __gcov_exit();
 #    endif
 
+#pragma GCC diagnostic pop
+
 #endif
 
-#pragma GCC diagnostic pop
 
 void dumpCoverageReportIfPossible()
 {
