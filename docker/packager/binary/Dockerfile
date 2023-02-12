@@ -42,7 +42,6 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
 FROM clickhouse/test-util:$FROM_TAG
 ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
-COPY --from=cctools /cctools /cctools
 
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup
@@ -102,6 +101,8 @@ ARG CLANG_TIDY_SHA1=03644275e794b0587849bfc2ec6123d5ae0bdb1c
 RUN curl -Lo /usr/bin/clang-tidy-cache \
         "https://raw.githubusercontent.com/matus-chochlik/ctcache/$CLANG_TIDY_SHA1/clang-tidy-cache" \
     && chmod +x /usr/bin/clang-tidy-cache
+
+COPY --from=cctools /cctools /cctools
 
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
