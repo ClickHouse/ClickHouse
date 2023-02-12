@@ -3,6 +3,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MaterializedView/RefreshTask_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Common/ActionLock.h>
 #include <Disks/IVolume.h>
@@ -71,6 +72,8 @@ private:
     void dropDatabaseReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
     [[noreturn]] void restartDisk(String & name);
+
+    RefreshTaskHolder getRefreshTask();
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);

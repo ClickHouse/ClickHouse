@@ -388,6 +388,20 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
 
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::STOP_VIEW:
+        case Type::CANCEL_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::RESUME_VIEW:
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+            break;
+
+        case Type::START_VIEWS:
+        case Type::STOP_VIEWS:
+            break;
+
         case Type::SUSPEND:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
