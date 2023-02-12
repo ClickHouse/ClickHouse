@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/Context.h>

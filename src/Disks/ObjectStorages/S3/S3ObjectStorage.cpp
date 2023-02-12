@@ -18,7 +18,6 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/getRandomASCIIString.h>
@@ -26,6 +25,7 @@
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 
 namespace ProfileEvents

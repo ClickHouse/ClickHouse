@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentThread.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Poco/Environment.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>

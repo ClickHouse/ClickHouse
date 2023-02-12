@@ -2,7 +2,7 @@
 
 #include <Common/CoTask_fwd.h>
 #include <Common/scope_guard_safe.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <boost/tti/has_member_function.hpp>
 #include <coroutine>
 #include <utility>

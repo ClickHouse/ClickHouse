@@ -10,13 +10,12 @@
 
 #include <base/types.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
 #include <IO/S3/Requests.h>
 #include <Storages/StorageS3Settings.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
