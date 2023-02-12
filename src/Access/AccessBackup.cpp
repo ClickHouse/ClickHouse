@@ -289,7 +289,7 @@ namespace
                 }
 
                 default:
-                    throw Exception("Unknown type: " + toString(entity_type), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", toString(entity_type));
             }
         }
         return res;

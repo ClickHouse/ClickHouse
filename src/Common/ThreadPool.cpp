@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/noexcept_scope.h>
 
 #include <cassert>
 #include <iostream>
@@ -87,7 +88,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -156,26 +157,27 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
                      propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread());
 
         ++scheduled_jobs;
-        new_job_or_shutdown.notify_one();
     }
+
+    new_job_or_shutdown.notify_one();
 
     return static_cast<ReturnType>(true);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, int priority)
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, ssize_t priority)
 {
     scheduleImpl<void>(std::move(job), priority, std::nullopt);
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, ssize_t priority, uint64_t wait_microseconds) noexcept
 {
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, ssize_t priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
 }
@@ -208,6 +210,7 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
     /// and the destruction order of global variables is unspecified.
 
     finalize();
+    onDestroy();
 }
 
 template <typename Thread>
@@ -224,6 +227,24 @@ void ThreadPoolImpl<Thread>::finalize()
         thread.join();
 
     threads.clear();
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::addOnDestroyCallback(OnDestroyCallback && callback)
+{
+    std::lock_guard lock(mutex);
+    on_destroy_callbacks.push(std::move(callback));
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::onDestroy()
+{
+    while (!on_destroy_callbacks.empty())
+    {
+        auto callback = std::move(on_destroy_callbacks.top());
+        on_destroy_callbacks.pop();
+        NOEXCEPT_SCOPE({ callback(); });
+    }
 }
 
 template <typename Thread>

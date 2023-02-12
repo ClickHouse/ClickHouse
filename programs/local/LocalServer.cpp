@@ -8,9 +8,10 @@
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
@@ -36,6 +37,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
@@ -47,6 +49,10 @@
 
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
 namespace fs = std::filesystem;
@@ -113,10 +119,20 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
+#if USE_AZURE_BLOB_STORAGE
+    /// See the explanation near the same line in Server.cpp
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
+
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
+
+    NamedCollectionUtils::loadFromConfig(config());
 }
 
 
@@ -203,10 +219,12 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp", "", 0);
+    global_context->setTemporaryStoragePath(path + "tmp/", 0);
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
+
+    NamedCollectionUtils::loadFromSQL(global_context);
 
     /// top_level_domains_lists
     const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
@@ -353,7 +371,7 @@ void LocalServer::setupUsers()
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
-        throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+        throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
 }
 
 void LocalServer::connect()
@@ -409,10 +427,12 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
     processConfig();
+    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+
     applyCmdSettings(global_context);
 
     if (is_interactive)
@@ -481,14 +501,13 @@ void LocalServer::processConfig()
     if (is_interactive && !delayed_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
 
         if (config().has("multiquery"))
             is_multiquery = true;
     }
     else
     {
-        need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
@@ -546,9 +565,14 @@ void LocalServer::processConfig()
 
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
     else
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
@@ -585,6 +609,18 @@ void LocalServer::processConfig()
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
+
+#if USE_EMBEDDED_COMPILER
+    /// 128 MB
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
+
+    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+    size_t compiled_expression_cache_elements_size
+        = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
+#endif
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());

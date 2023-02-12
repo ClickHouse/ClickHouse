@@ -232,7 +232,7 @@ StoragesInfo StoragesInfoStream::next()
 
         info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
         if (!info.data)
-            throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
 
         return info;
     }
@@ -247,7 +247,7 @@ Pipe StorageSystemPartsBase::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+    const size_t /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names, storage_snapshot);
 

@@ -48,7 +48,7 @@ static unsigned getNumberOfPhysicalCPUCoresImpl()
     /// Let's limit ourself to the number of physical cores.
     /// But if the number of logical cores is small - maybe it is a small machine
     /// or very limited cloud instance and it is reasonable to use all the cores.
-    if (cpu_count >= 8)
+    if (cpu_count >= 32)
         cpu_count /= 2;
 #endif
 

@@ -33,7 +33,7 @@ bool CurrentThread::isInitialized()
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
-        throw Exception("Thread #" + std::to_string(getThreadId()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} status was not initialized", std::to_string(getThreadId()));
 
     return *current_thread;
 }

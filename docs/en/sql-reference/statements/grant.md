@@ -482,4 +482,3 @@ Doesn’t grant any privileges.
 ### ADMIN OPTION
 
 The `ADMIN OPTION` privilege allows a user to grant their role to another user.
-

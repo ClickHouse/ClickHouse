@@ -55,8 +55,6 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
-
     void removeObject(const StoredObject & object) override;
 
     void removeObjects(const StoredObjects &  objects) override;

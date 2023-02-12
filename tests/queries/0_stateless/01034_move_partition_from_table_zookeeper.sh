@@ -65,7 +65,7 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '1', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (2, '0', 1);"
 
-query_with_retry "ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" &>-
+query_with_retry "ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" &>/dev/null
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst;"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM src;"
@@ -85,7 +85,7 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '0', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (1, '1', 1);"
 $CLICKHOUSE_CLIENT --query="INSERT INTO src VALUES (2, '0', 1);"
 
-query_with_retry "ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" &>-
+query_with_retry "ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" &>/dev/null
 $CLICKHOUSE_CLIENT --query="SYSTEM SYNC REPLICA dst;"
 
 $CLICKHOUSE_CLIENT --query="SELECT count(), sum(d) FROM src;"

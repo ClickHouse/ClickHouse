@@ -41,7 +41,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const String & metadata_path_,
         const ASTStorage * database_engine_define_,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration_,
+        const StoragePostgreSQL::Configuration & configuration_,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_)
     : IDatabase(dbname_)
@@ -214,12 +214,12 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
     if (!checkPostgresTable(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                        "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL",
+                        "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL (database: {})",
                         getTableNameForLogs(table_name), database_name);
 
     if (!detached_or_dropped.contains(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                        "Cannot attach PostgreSQL table {} because it already exists",
+                        "Cannot attach PostgreSQL table {} because it already exists (database: {})",
                         getTableNameForLogs(table_name), database_name);
 
     if (cache_tables)
@@ -258,7 +258,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
     const auto & create = create_query->as<ASTCreateQuery>();
 
     if (!create->attach)
-        throw Exception("PostgreSQL database engine does not support create table", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PostgreSQL database engine does not support create table");
 
     attachTable(local_context, table_name, storage, {});
 }
@@ -442,6 +442,11 @@ ASTPtr DatabasePostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) c
 
     if (which.isArray())
         return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
+
+    if (which.isDateTime64())
+    {
+        return makeASTFunction("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+    }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
 }

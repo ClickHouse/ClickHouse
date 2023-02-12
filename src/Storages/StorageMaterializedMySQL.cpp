@@ -40,7 +40,7 @@ void StorageMaterializedMySQL::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned int num_streams)
+    size_t num_streams)
 {
     if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
         db->rethrowExceptionIfNeeded();
