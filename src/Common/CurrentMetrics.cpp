@@ -103,6 +103,7 @@
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
+    M(Refresh, "Number of active refreshes") \
 
 namespace CurrentMetrics
 {

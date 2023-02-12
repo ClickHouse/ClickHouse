@@ -50,6 +50,7 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -82,6 +83,7 @@ namespace ActionLocks
     extern StorageActionBlockType DistributedSend;
     extern StorageActionBlockType PartsTTLMerge;
     extern StorageActionBlockType PartsMove;
+    extern StorageActionBlockType ViewRefresh;
 }
 
 
@@ -141,6 +143,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_TTL_MERGES;
     else if (action_type == ActionLocks::PartsMove)
         return AccessType::SYSTEM_MOVES;
+    else if (action_type == ActionLocks::ViewRefresh)
+        return AccessType::SYSTEM_VIEWS;
     else
         throw Exception("Unknown action type: " + std::to_string(action_type), ErrorCodes::LOGICAL_ERROR);
 }
@@ -479,6 +483,30 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_DISTRIBUTED_SENDS:
             startStopAction(ActionLocks::DistributedSend, true);
+            break;
+        case Type::START_VIEWS:
+            startStopAction(ActionLocks::ViewRefresh, true);
+            break;
+        case Type::STOP_VIEWS:
+            startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::START_VIEW:
+            startStopAction(ActionLocks::ViewRefresh, true);
+            break;
+        case Type::STOP_VIEW:
+            startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::REFRESH_VIEW:
+            getRefreshTask()->run();
+            break;
+        case Type::CANCEL_VIEW:
+            getRefreshTask()->cancel();
+            break;
+        case Type::PAUSE_VIEW:
+            getRefreshTask()->pause();
+            break;
+        case Type::RESUME_VIEW:
+            getRefreshTask()->resume();
             break;
         case Type::DROP_REPLICA:
             dropReplica(query);
@@ -852,6 +880,17 @@ void InterpreterSystemQuery::restartDisk(String & name)
         throw Exception("Disk " + name + " doesn't have possibility to restart", ErrorCodes::BAD_ARGUMENTS);
 }
 
+RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
+{
+    auto ctx = getContext();
+    ctx->checkAccess(AccessType::SYSTEM_VIEWS);
+    auto task = ctx->getRefreshSet().getTask(table_id);
+    if (!task)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
+    return task;
+}
+
 
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
@@ -978,6 +1017,21 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_VIEWS:
+        case Type::STOP_VIEW:
+        case Type::STOP_VIEWS:
+        case Type::CANCEL_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::RESUME_VIEW:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_VIEWS);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_VIEWS, query.getDatabase(), query.getTable());
             break;
         }
         case Type::DROP_REPLICA:
