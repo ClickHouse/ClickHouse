@@ -595,23 +595,23 @@ Strings BackupCoordinationRemote::getAllArchiveSuffixes() const
     return node_names;
 }
 
-bool BackupCoordinationRemote::hasConcurrentBackups(const String & backup_id, const String & common_backup_path, const std::atomic<size_t> &) const
+bool BackupCoordinationRemote::hasConcurrentBackups(const String & backup_id, const String & common_backups_path, const std::atomic<size_t> &) const
 {
     /// If its internal concurrency will be checked for the base backup
     if (is_internal)
         return false;
 
     auto zk = getZooKeeper();
-    std::string backup_stage_path = common_backup_path + "/backup-" + toString(backup_id) +"/stage";
+    std::string backup_stage_path = common_backups_path + "/backup-" + toString(backup_id) +"/stage";
 
-    if (!zk->exists(common_backup_path))
-        zk->createAncestors(common_backup_path);
+    if (!zk->exists(common_backups_path))
+        zk->createAncestors(common_backups_path);
 
     for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
     {
         Coordination::Stat stat;
-        zk->get(common_backup_path, &stat);
-        Strings existing_backup_paths = zk->getChildren(common_backup_path);
+        zk->get(common_backups_path, &stat);
+        Strings existing_backup_paths = zk->getChildren(common_backups_path);
 
         for (const auto & existing_backup_path : existing_backup_paths)
         {
@@ -624,7 +624,7 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const String & backup_id, co
             if (existing_backup_id == toString(backup_id))
                 continue;
 
-            const auto status = zk->get(common_backup_path + "/" + existing_backup_path + "/stage");
+            const auto status = zk->get(common_backups_path + "/" + existing_backup_path + "/stage");
             if (status != Stage::COMPLETED)
                 return true;
         }
