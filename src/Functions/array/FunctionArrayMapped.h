@@ -116,7 +116,7 @@ public:
                 getName(),
                 arguments.size());
 
-        if (arguments.size() < 1 + num_fixed_params)
+        if (arguments.size() <= 1 + num_fixed_params)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} needs at least {} argument{} with data",
