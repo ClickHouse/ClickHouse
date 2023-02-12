@@ -201,8 +201,6 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
                         configuration.host = arg_value.safeGet<String>();
                     else if (arg_name == "port")
                         configuration.port = arg_value.safeGet<UInt64>();
-                    // else if (arg_name == "secure")
-                    //     configuration.secure = arg_value.safeGet<bool>();
                     else if (arg_name == "user")
                         configuration.username = arg_value.safeGet<String>();
                     else if (arg_name == "password")
