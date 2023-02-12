@@ -79,6 +79,7 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
     Payload payload;
     payload.message = message;
     payload.id = ++payload_counter;
+    LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
 }
