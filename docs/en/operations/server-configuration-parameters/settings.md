@@ -606,7 +606,7 @@ Keys:
 -   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
 -   `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
--   `stream_compress` – Compress `log` and `errorlog` with `lz4` compression. To enable, set to `1` or `true`.
+-   `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 
 **Example**
 
