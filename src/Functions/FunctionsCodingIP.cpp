@@ -290,7 +290,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
         }
 
-        auto result_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
+        auto result_type = std::make_shared<DataTypeIPv6>();
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
         {
@@ -317,14 +317,14 @@ public:
         {
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
-                auto result = convertToIPv6<IPStringToNumExceptionMode::Default, ColumnFixedString>(column, null_map);
+                auto result = convertToIPv6<IPStringToNumExceptionMode::Default, ColumnIPv6>(column, null_map);
                 if (null_map && !result->isNullable())
                     return ColumnNullable::create(result, null_map_column);
                 return result;
             }
         }
 
-        auto result = convertToIPv6<exception_mode, ColumnFixedString>(column, null_map);
+        auto result = convertToIPv6<exception_mode, ColumnIPv6>(column, null_map);
         if (null_map && !result->isNullable())
             return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
         return result;
@@ -457,7 +457,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
         }
 
-        auto result_type = std::make_shared<DataTypeUInt32>();
+        auto result_type = std::make_shared<DataTypeIPv4>();
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
         {
@@ -484,14 +484,14 @@ public:
         {
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
-                auto result = convertToIPv4<IPStringToNumExceptionMode::Default, ColumnUInt32>(column, null_map);
+                auto result = convertToIPv4<IPStringToNumExceptionMode::Default, ColumnIPv4>(column, null_map);
                 if (null_map && !result->isNullable())
                     return ColumnNullable::create(result, null_map_column);
                 return result;
             }
         }
 
-        auto result = convertToIPv4<exception_mode, ColumnUInt32>(column, null_map);
+        auto result = convertToIPv4<exception_mode, ColumnIPv4>(column, null_map);
         if (null_map && !result->isNullable())
             return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
         return result;
