@@ -683,7 +683,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)
-        async_reader->prefetch();
+        async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
 
     return async_reader;
 }

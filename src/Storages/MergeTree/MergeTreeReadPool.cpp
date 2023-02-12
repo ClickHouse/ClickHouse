@@ -154,10 +154,8 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t thread)
     /// Get whole part to read if it is small enough.
     if (marks_in_part <= need_marks)
     {
-        const auto marks_to_get_from_range = marks_in_part;
         ranges_to_get_from_part = thread_task.ranges;
-
-        marks_in_part -= marks_to_get_from_range;
+        marks_in_part = 0;
 
         thread_tasks.parts_and_ranges.pop_back();
         thread_tasks.sum_marks_in_parts.pop_back();

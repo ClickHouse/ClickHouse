@@ -21,7 +21,6 @@
 #include "Poco/Net/StreamSocketImpl.h"
 #include "Poco/Buffer.h"
 #include "Poco/Random.h"
-#include "Poco/Buffer.h"
 
 
 namespace Poco {
