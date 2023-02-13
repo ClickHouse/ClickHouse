@@ -114,6 +114,7 @@ endif()
 
 add_contrib (llvm-project-cmake llvm-project)
 add_contrib (libfuzzer-cmake llvm-project)
+add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 
 add_contrib (aws-cmake

@@ -25,7 +25,6 @@
 #include "Poco/StreamCopier.h"
 #include "Poco/URI.h"
 #include "Poco/String.h"
-#include "Poco/CountingStream.h"
 #include "Poco/UTF8String.h"
 #include <sstream>
 

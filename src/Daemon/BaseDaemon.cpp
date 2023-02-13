@@ -6,6 +6,7 @@
 #include <Daemon/SentryWriter.h>
 #include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -568,6 +569,7 @@ std::string BaseDaemon::getDefaultConfigFileName() const
 
 void BaseDaemon::closeFDs()
 {
+    /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
     fs::path proc_path{"/dev/fd"};
 #else
@@ -584,7 +586,13 @@ void BaseDaemon::closeFDs()
         for (const auto & fd : fds)
         {
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                /// NOTE: it is OK to ignore error here since at least one fd
+                /// is already closed (for proc_path), and there can be some
+                /// tricky cases, likely.
+                (void)err;
+            }
         }
     }
     else
@@ -597,8 +605,16 @@ void BaseDaemon::closeFDs()
 #endif
             max_fd = 256; /// bad fallback
         for (int fd = 3; fd < max_fd; ++fd)
+        {
             if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                /// NOTE: it is OK to get EBADF here, since it is simply
+                /// iterator over all possible fds, without any checks does
+                /// this process has this fd or not.
+                (void)err;
+            }
+        }
     }
 }
 
@@ -701,7 +717,10 @@ void BaseDaemon::initialize(Application & self)
             if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                chassert(!err || errno == EINTR);
+            }
         }
 
         if (!freopen(stderr_path.c_str(), "a+", stderr))
@@ -975,6 +994,11 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
+    bool restart = false;
+    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
+    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
+        restart = true;
+
     while (true)
     {
         /// This pipe is used to synchronize notifications to the service manager from the child process
@@ -1122,14 +1146,14 @@ void BaseDaemon::setupWatchdog()
             logger().fatal("Child process was not exited normally by unknown reason.");
         }
 
-        /// Automatic restart is not enabled but you can play with it.
-#if 1
-        _exit(WEXITSTATUS(status));
-#else
-        logger().information("Will restart.");
-        if (argv0)
-            memcpy(argv0, original_process_name.c_str(), original_process_name.size());
-#endif
+        if (restart)
+        {
+            logger().information("Will restart.");
+            if (argv0)
+                memcpy(argv0, original_process_name.c_str(), original_process_name.size());
+        }
+        else
+            _exit(WEXITSTATUS(status));
     }
 }
 

@@ -1,6 +1,3 @@
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-
 add_subdirectory (Crypto)
 add_subdirectory (Data)
 add_subdirectory (Data/ODBC)

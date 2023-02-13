@@ -10,6 +10,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -95,6 +96,7 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
 class IAsynchronousReader;
 struct MergeTreeSettings;
@@ -369,6 +371,8 @@ private:
 
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Query metrics for reading data asynchronously with IAsynchronousReader.
+    mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -856,6 +860,13 @@ public:
     void dropMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
+    ThreadPool & getPrefetchThreadpool() const;
+
+    /// Note: prefetchThreadpool is different from threadpoolReader
+    /// in the way that its tasks are - wait for marks to be loaded
+    /// and make a prefetch by putting a read task to threadpoolReader.
+    size_t getPrefetchThreadpoolSize() const;
+
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -943,6 +954,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
@@ -967,14 +979,17 @@ public:
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
+    using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
+    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
 
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
-
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+
+    StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
@@ -1081,6 +1096,10 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 
+    size_t getThreadPoolReaderSize(FilesystemReaderType type) const;
+
+    std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
+
     ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
@@ -1110,7 +1129,9 @@ private:
 
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
-    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
+
+    DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
 };
 
 struct HTTPContext : public IHTTPContext
