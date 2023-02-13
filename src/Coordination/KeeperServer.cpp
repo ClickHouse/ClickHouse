@@ -274,13 +274,16 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
 
-    if (params.election_timeout_lower_bound_ >= params.election_timeout_upper_bound_)
+    if (params.election_timeout_lower_bound_ || params.election_timeout_upper_bound_)
     {
-        LOG_FATAL(
-            log,
-            "election_timeout_lower_bound_ms is greater than election_timeout_upper_bound_ms, this would disable leader election "
-            "completely.");
-        std::terminate();
+        if (params.election_timeout_lower_bound_ >= params.election_timeout_upper_bound_)
+        {
+            LOG_FATAL(
+                log,
+                "election_timeout_lower_bound_ms is greater than election_timeout_upper_bound_ms, this would disable leader election "
+                "completely.");
+            std::terminate();
+        }
     }
 
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
