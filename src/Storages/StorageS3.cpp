@@ -1284,59 +1284,90 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.request_settings = S3Settings::RequestSettings(collection);
 }
 
-StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+void StorageS3::parseArguments(const String & error_message, ASTs & args, ContextPtr local_context, Configuration & configuration)
 {
-    StorageS3::Configuration configuration;
-
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
     {
-        processNamedCollectionResult(configuration, *named_collection);
+        StorageS3::processNamedCollectionResult(configuration, *named_collection);
     }
     else
     {
-        /// Supported signatures:
-        ///
-        /// S3('url')
-        /// S3('url', 'format')
-        /// S3('url', 'format', 'compression')
-        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
-        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
+        if (args.empty() || args.size() > 6)
+            throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (engine_args.empty() || engine_args.size() > 5)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage S3 requires 1 to 5 arguments: "
-                            "url, [access_key_id, secret_access_key], name of used format and [compression_method].");
+        auto * header_it = StorageURL::collectHeaders(args, configuration.headers_from_ast, local_context);
+        if (header_it != args.end())
+            args.erase(header_it);
 
-        auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers_from_ast, local_context);
-        if (header_it != engine_args.end())
-            engine_args.erase(header_it);
+        for (auto & arg : args)
+            arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, local_context);
 
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"));
-        if (engine_args.size() >= 4)
+        /// Size -> argument indexes
+        static auto size_to_args = std::map<size_t, std::map<String, size_t>>
         {
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
+            {1, {{}}},
+            {2, {{"format", 1}}},
+            {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}}},
+            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
+        };
+
+        std::map<String, size_t> args_to_idx;
+        /// For 4 arguments we support 2 possible variants:
+        /// s3(source, format, structure, compression_method) and s3(source, access_key_id, access_key_id, format)
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
+        if (args.size() == 4)
+        {
+            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
+            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+                args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
+
+            else
+                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
+        }
+        /// For 3 arguments we support 2 possible variants:
+        /// s3(source, format, structure) and s3(source, access_key_id, access_key_id)
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
+        else if (args.size() == 3)
+        {
+
+            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
+            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+                args_to_idx = {{"format", 1}, {"structure", 2}};
+            else
+                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
+        }
+        else
+        {
+            args_to_idx = size_to_args[args.size()];
         }
 
-        if (engine_args.size() == 3 || engine_args.size() == 5)
-        {
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args.back(), "compression_method");
-            configuration.format = checkAndGetLiteralArgument<String>(engine_args[engine_args.size() - 2], "format");
-        }
-        else if (engine_args.size() != 1)
-        {
-            configuration.compression_method = "auto";
-            configuration.format = checkAndGetLiteralArgument<String>(engine_args.back(), "format");
-        }
+        /// This argument is always the first
+        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
+
+        if (args_to_idx.contains("format"))
+            configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
+
+        if (args_to_idx.contains("structure"))
+            configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
+
+        if (args_to_idx.contains("compression_method"))
+            configuration.compression_method = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
+
+        if (args_to_idx.contains("access_key_id"))
+            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args[args_to_idx["access_key_id"]], "access_key_id");
+
+        if (args_to_idx.contains("secret_access_key"))
+            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
     }
-    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty();
 
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.key, true);
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.uri.getPath(), true);
+}
 
+StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+{
+    StorageS3::Configuration configuration;
+    parseArguments("Failed to parse arguments for S3 engine", engine_args, local_context, configuration);
     return configuration;
 }
 
