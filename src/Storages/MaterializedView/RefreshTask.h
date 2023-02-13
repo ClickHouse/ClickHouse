@@ -66,7 +66,7 @@ public:
     /// Resume task execution
     void resume();
 
-    /// Notify dependant task
+    /// Notify dependent task
     void notify(const StorageID & parent_id);
 
 private:
