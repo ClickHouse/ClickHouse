@@ -18,6 +18,8 @@ using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 class DiskSelector
 {
 public:
+    static constexpr auto TMP_INTERNAL_DISK_PREFIX = "__tmp_internal_";
+
     DiskSelector() = default;
     DiskSelector(const DiskSelector & from) = default;
 
@@ -26,11 +28,12 @@ public:
     DiskSelectorPtr updateFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context
-    ) const;
+        ContextPtr context) const;
 
     /// Get disk by name
     DiskPtr get(const String & name) const;
+
+    DiskPtr tryGet(const String & name) const;
 
     /// Get all disks with names
     const DisksMap & getDisksMap() const;

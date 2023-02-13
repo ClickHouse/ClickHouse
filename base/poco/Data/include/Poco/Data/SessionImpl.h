@@ -65,7 +65,7 @@ public:
 		/// a disconnected session.
 		/// If the connection is not established within requested timeout 
 		/// (specified in seconds), a ConnectionFailedException is thrown. 
-		/// Zero timout means indefinite
+		/// Zero timeout means indefinite
 
 	virtual void close() = 0;
 		/// Closes the connection.

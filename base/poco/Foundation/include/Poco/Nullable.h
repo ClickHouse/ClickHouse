@@ -182,7 +182,7 @@ public:
 
 	bool operator < (const Nullable<C>& other) const
 		/// Compares two Nullable objects. Return true if this object's
-		/// value is smaler than the other object's value.
+		/// value is smaller than the other object's value.
 		/// Null value is smaller than a non-null value.
 	{
 		if (_isNull && other._isNull) return false;

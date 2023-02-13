@@ -36,7 +36,7 @@ template <class Key, class Value, class KeyHashFunction = HashFunction<Key> >
 class SimpleHashTable
 	/// A SimpleHashTable stores a key value pair that can be looked up via a hashed key.
 	///
-	/// In comparision to a HashTable, this class handles collisions by sequentially searching the next
+	/// In comparison to a HashTable, this class handles collisions by sequentially searching the next
 	/// free location. This also means that the maximum size of this table is limited, i.e. if the hash table
 	/// is full, it will throw an exception and that this class does not support remove operations.
 	/// On the plus side it is faster than the HashTable.

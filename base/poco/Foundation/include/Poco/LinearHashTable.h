@@ -35,7 +35,7 @@ class LinearHashTable
 	/// This class implements a linear hash table.
 	///
 	/// In a linear hash table, the available address space
-	/// grows or shrinks dynamically. A linar hash table thus
+	/// grows or shrinks dynamically. A linear hash table thus
 	/// supports any number of insertions or deletions without
 	/// lookup or insertion performance deterioration.
 	///
