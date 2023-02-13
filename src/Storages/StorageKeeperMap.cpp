@@ -782,14 +782,15 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
+        auto header = interpreter->getUpdatedHeader();
+        auto primary_key_pos = header.getPositionByName(primary_key);
+
         auto client = getClient();
         Block block;
         while (executor.pull(block))
         {
-            auto column_it = std::find_if(block.begin(), block.end(), [&](const auto & column) { return column.name == primary_key; });
-            assert(column_it != block.end());
-
-            auto column = column_it->column;
+            auto & column_type_name = block.getByPosition(primary_key_pos);
+            auto column = column_type_name.column;
             auto size = column->size();
 
             WriteBufferFromOwnString wb_key;
@@ -798,7 +799,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             {
                 wb_key.restart();
 
-                column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
+                column_type_name.type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
                 delete_requests.emplace_back(zkutil::makeRemoveRequest(fullPathForKey(base64Encode(wb_key.str(), true)), -1));
             }
 
