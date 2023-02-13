@@ -352,9 +352,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
 
-        auto set_result_details = [&with_output](const String &, const String &, const String &format, const String &)
+        auto set_result_details = [&with_output](const QueryResultDetails & details)
         {
-            if (format != "MySQLWire")
+            if (details.format && *details.format != "MySQLWire")
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
             with_output = true;
         };
