@@ -85,15 +85,14 @@ public:
             tryExecute<ColumnFixedString>(encoded, res_column))
             return res_column;
 
-        throw Exception("Unsupported argument type:" + arguments[0].column->getName()
-                        + " of argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported argument type:{} of argument of function {}",
+                        arguments[0].column->getName(), getName());
     }
 };
 
 }
 
-void registerFunctionGeohashDecode(FunctionFactory & factory)
+REGISTER_FUNCTION(GeohashDecode)
 {
     factory.registerFunction<FunctionGeohashDecode>();
 }

@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 43
@@ -626,5 +627,3 @@ SOURCE(REDIS(
 -   `port` – The port on the Redis server.
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` 适用于简单源和散列单键源, `hash_map` 用于具有两个键的散列源。 不支持具有复杂键的范围源和缓存源。 可以省略，默认值为 `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

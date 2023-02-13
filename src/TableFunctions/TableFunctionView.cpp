@@ -32,7 +32,7 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /
             return;
         }
     }
-    throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a query argument.", getName());
 }
 
 ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context) const
@@ -55,7 +55,7 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>();
+    factory.registerFunction<TableFunctionView>({.documentation = {}, .allow_readonly = true});
 }
 
 }

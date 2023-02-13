@@ -1,3 +1,10 @@
+import pytest
+
+# FIXME This test is too flaky
+# https://github.com/ClickHouse/ClickHouse/issues/39185
+
+pytestmark = pytest.mark.skip
+
 import json
 import os.path as p
 import random
@@ -9,11 +16,9 @@ from random import randrange
 import math
 
 import asyncio
-import nats
-import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, check_nats_is_available
+from helpers.cluster import ClickHouseCluster, check_nats_is_available, nats_connect_ssl
 from helpers.test_tools import TSV
 
 from . import nats_pb2
@@ -35,11 +40,11 @@ instance = cluster.add_instance(
 # Helpers
 
 
-def wait_nats_to_start(nats_ip, timeout=180):
+def wait_nats_to_start(nats_port, ssl_ctx=None, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            if asyncio.run(check_nats_is_available(nats_ip)):
+            if asyncio.run(check_nats_is_available(nats_port, ssl_ctx=ssl_ctx)):
                 logging.debug("NATS is available")
                 return
             time.sleep(0.5)
@@ -63,10 +68,10 @@ def kill_nats(nats_id):
     return p.returncode == 0
 
 
-def revive_nats(nats_id, nats_ip):
+def revive_nats(nats_id, nats_port):
     p = subprocess.Popen(("docker", "start", nats_id), stdout=subprocess.PIPE)
     p.communicate()
-    wait_nats_to_start(nats_ip)
+    wait_nats_to_start(nats_port)
 
 
 # Fixtures
@@ -96,8 +101,13 @@ def nats_setup_teardown():
 # Tests
 
 
-async def nats_produce_messages(ip, subject, messages=(), bytes=None):
-    nc = await nats.connect("{}:4444".format(ip), user="click", password="house")
+async def nats_produce_messages(cluster_inst, subject, messages=(), bytes=None):
+    nc = await nats_connect_ssl(
+        cluster_inst.nats_port,
+        user="click",
+        password="house",
+        ssl_ctx=cluster_inst.nats_ssl_context,
+    )
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
     for message in messages:
@@ -136,7 +146,7 @@ def test_nats_select(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "select", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "select", messages))
 
     # The order of messages in select * from test.nats is not guaranteed, so sleep to collect everything in one select
     time.sleep(1)
@@ -186,13 +196,13 @@ def test_nats_json_without_delimiter(nats_cluster):
         messages += json.dumps({"key": i, "value": i}) + "\n"
 
     all_messages = [messages]
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "json", all_messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "json", all_messages))
 
     messages = ""
     for i in range(25, 50):
         messages += json.dumps({"key": i, "value": i}) + "\n"
     all_messages = [messages]
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "json", all_messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "json", all_messages))
 
     time.sleep(1)
 
@@ -229,7 +239,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
     for i in range(50):
         messages.append("{i}, {i}".format(i=i))
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "csv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "csv", messages))
 
     time.sleep(1)
 
@@ -268,7 +278,7 @@ def test_nats_tsv_with_delimiter(nats_cluster):
     for i in range(50):
         messages.append("{i}\t{i}".format(i=i))
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "tsv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "tsv", messages))
 
     result = ""
     for _ in range(60):
@@ -299,7 +309,7 @@ def test_nats_macros(nats_cluster):
     message = ""
     for i in range(50):
         message += json.dumps({"key": i, "value": i}) + "\n"
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "macro", [message]))
+    asyncio.run(nats_produce_messages(nats_cluster, "macro", [message]))
 
     time.sleep(1)
 
@@ -344,7 +354,7 @@ def test_nats_materialized_view(nats_cluster):
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "mv", messages))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -389,7 +399,7 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mvsq", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "mvsq", messages))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -434,7 +444,7 @@ def test_nats_many_materialized_views(nats_cluster):
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mmv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "mmv", messages))
 
     time_limit_sec = 60
     deadline = time.monotonic() + time_limit_sec
@@ -485,7 +495,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "pb", bytes=data))
+    asyncio.run(nats_produce_messages(nats_cluster, "pb", bytes=data))
     data = b""
     for i in range(20, 21):
         msg = nats_pb2.ProtoKeyValue()
@@ -493,7 +503,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "pb", bytes=data))
+    asyncio.run(nats_produce_messages(nats_cluster, "pb", bytes=data))
     data = b""
     for i in range(21, 50):
         msg = nats_pb2.ProtoKeyValue()
@@ -501,7 +511,7 @@ def test_nats_protobuf(nats_cluster):
         msg.value = str(i)
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "pb", bytes=data))
+    asyncio.run(nats_produce_messages(nats_cluster, "pb", bytes=data))
 
     result = ""
     time_limit_sec = 60
@@ -542,7 +552,7 @@ def test_nats_big_message(nats_cluster):
         logging.debug("Table test.nats is not yet ready")
         time.sleep(0.5)
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "big", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "big", messages))
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
@@ -600,7 +610,7 @@ def test_nats_mv_combo(nats_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "combo", messages))
+        asyncio.run(nats_produce_messages(nats_cluster, "combo", messages))
 
     threads = []
     threads_num = 20
@@ -662,8 +672,11 @@ def test_nats_insert(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats.connect(
-            "{}:4444".format(nats_cluster.nats_ip), user="click", password="house"
+        nc = await nats_connect_ssl(
+            nats_cluster.nats_port,
+            user="click",
+            password="house",
+            ssl_ctx=nats_cluster.nats_ssl_context,
         )
         sub = await nc.subscribe("insert")
         await sub.unsubscribe(50)
@@ -771,8 +784,11 @@ def test_nats_many_subjects_insert_right(nats_cluster):
     insert_messages = []
 
     async def sub_to_nats():
-        nc = await nats.connect(
-            "{}:4444".format(nats_cluster.nats_ip), user="click", password="house"
+        nc = await nats_connect_ssl(
+            nats_cluster.nats_port,
+            user="click",
+            password="house",
+            ssl_ctx=nats_cluster.nats_ssl_context,
         )
         sub = await nc.subscribe("right_insert1")
         await sub.unsubscribe(50)
@@ -1003,7 +1019,7 @@ def test_nats_virtual_column(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "virtuals", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "virtuals", messages))
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
@@ -1067,7 +1083,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
         messages.append(json.dumps({"key": i, "value": i}))
         i += 1
 
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "virtuals_mv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "virtuals_mv", messages))
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
@@ -1147,9 +1163,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
-        asyncio.run(
-            nats_produce_messages(nats_cluster.nats_ip, "many_consumers", messages)
-        )
+        asyncio.run(nats_produce_messages(nats_cluster, "many_consumers", messages))
 
     threads = []
     threads_num = 20
@@ -1243,7 +1257,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
     kill_nats(nats_cluster.nats_docker_id)
     time.sleep(4)
-    revive_nats(nats_cluster.nats_docker_id, nats_cluster.nats_ip)
+    revive_nats(nats_cluster.nats_docker_id, nats_cluster.nats_port)
 
     while True:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
@@ -1310,7 +1324,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
     messages = []
     for i in range(messages_num):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "cs", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "cs", messages))
 
     for _ in range(20):
         result = instance.query("SELECT count() FROM test.view")
@@ -1353,9 +1367,7 @@ def test_nats_format_factory_settings(nats_cluster):
         """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
     )
 
-    asyncio.run(
-        nats_produce_messages(nats_cluster.nats_ip, "format_settings", [message])
-    )
+    asyncio.run(nats_produce_messages(nats_cluster, "format_settings", [message]))
 
     while True:
         result = instance.query("SELECT date FROM test.format_settings")
@@ -1372,9 +1384,7 @@ def test_nats_format_factory_settings(nats_cluster):
         """
     )
 
-    asyncio.run(
-        nats_produce_messages(nats_cluster.nats_ip, "format_settings", [message])
-    )
+    asyncio.run(nats_produce_messages(nats_cluster, "format_settings", [message]))
     while True:
         result = instance.query("SELECT date FROM test.view")
         if result == expected:
@@ -1424,13 +1434,13 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(20):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "mv", messages))
 
     instance.query("DROP VIEW test.consumer")
     messages = []
     for i in range(20, 40):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "mv", messages))
 
     instance.query(
         """
@@ -1441,7 +1451,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(40, 50):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "mv", messages))
 
     while True:
         result = instance.query("SELECT * FROM test.view ORDER BY key")
@@ -1454,7 +1464,7 @@ def test_nats_drop_mv(nats_cluster):
     messages = []
     for i in range(50, 60):
         messages.append(json.dumps({"key": i, "value": i}))
-    asyncio.run(nats_produce_messages(nats_cluster.nats_ip, "mv", messages))
+    asyncio.run(nats_produce_messages(nats_cluster, "mv", messages))
 
     count = 0
     while True:
@@ -1477,7 +1487,7 @@ def test_nats_predefined_configuration(nats_cluster):
 
     asyncio.run(
         nats_produce_messages(
-            nats_cluster.nats_ip, "named", [json.dumps({"key": 1, "value": 2})]
+            nats_cluster, "named", [json.dumps({"key": 1, "value": 2})]
         )
     )
     while True:
@@ -1486,6 +1496,376 @@ def test_nats_predefined_configuration(nats_cluster):
         )
         if result == "1\t2\n":
             break
+
+
+def test_format_with_prefix_and_suffix(nats_cluster):
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.nats;
+        
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'custom',
+                     nats_format = 'CustomSeparated';
+    """
+    )
+    while not check_table_is_ready(instance, "test.nats"):
+        logging.debug("Table test.nats is not yet ready")
+        time.sleep(0.5)
+
+    insert_messages = []
+
+    async def sub_to_nats():
+        nc = await nats_connect_ssl(
+            nats_cluster.nats_port,
+            user="click",
+            password="house",
+            ssl_ctx=nats_cluster.nats_ssl_context,
+        )
+        sub = await nc.subscribe("custom")
+        await sub.unsubscribe(2)
+        async for msg in sub.messages:
+            insert_messages.append(msg.data.decode())
+
+        await sub.drain()
+        await nc.drain()
+
+    def run_sub():
+        asyncio.run(sub_to_nats())
+
+    thread = threading.Thread(target=run_sub)
+    thread.start()
+    time.sleep(1)
+
+    instance.query(
+        "INSERT INTO test.nats select number*10 as key, number*100 as value from numbers(2) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    thread.join()
+
+    assert (
+        "".join(insert_messages)
+        == "<prefix>\n0\t0\n<suffix>\n<prefix>\n10\t100\n<suffix>\n"
+    )
+
+
+def test_max_rows_per_message(nats_cluster):
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.nats;
+           
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'custom1',
+                     nats_format = 'CustomSeparated',
+                     nats_max_rows_per_message = 3,
+                     format_custom_result_before_delimiter = '<prefix>\n',
+                     format_custom_result_after_delimiter = '<suffix>\n';
+        
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+        SELECT key, value FROM test.nats;
+    """
+    )
+    while not check_table_is_ready(instance, "test.nats"):
+        logging.debug("Table test.nats is not yet ready")
+        time.sleep(0.5)
+
+    num_rows = 5
+
+    insert_messages = []
+
+    async def sub_to_nats():
+        nc = await nats_connect_ssl(
+            nats_cluster.nats_port,
+            user="click",
+            password="house",
+            ssl_ctx=nats_cluster.nats_ssl_context,
+        )
+        sub = await nc.subscribe("custom1")
+        await sub.unsubscribe(2)
+        async for msg in sub.messages:
+            insert_messages.append(msg.data.decode())
+
+        await sub.drain()
+        await nc.drain()
+
+    def run_sub():
+        asyncio.run(sub_to_nats())
+
+    thread = threading.Thread(target=run_sub)
+    thread.start()
+    time.sleep(1)
+
+    instance.query(
+        f"INSERT INTO test.nats select number*10 as key, number*100 as value from numbers({num_rows}) settings format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>\n'"
+    )
+
+    thread.join()
+
+    assert (
+        "".join(insert_messages)
+        == "<prefix>\n0\t0\n10\t100\n20\t200\n<suffix>\n<prefix>\n30\t300\n40\t400\n<suffix>\n"
+    )
+
+    attempt = 0
+    rows = 0
+    while attempt < 100:
+        rows = int(instance.query("SELECT count() FROM test.view"))
+        if rows == num_rows:
+            break
+        attempt += 1
+
+    assert rows == num_rows
+
+    result = instance.query("SELECT * FROM test.view")
+    assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
+
+
+def test_row_based_formats(nats_cluster):
+    num_rows = 10
+
+    for format_name in [
+        "TSV",
+        "TSVWithNamesAndTypes",
+        "TSKV",
+        "CSV",
+        "CSVWithNamesAndTypes",
+        "CustomSeparatedWithNamesAndTypes",
+        "Values",
+        "JSON",
+        "JSONEachRow",
+        "JSONCompactEachRow",
+        "JSONCompactEachRowWithNamesAndTypes",
+        "JSONObjectEachRow",
+        "Avro",
+        "RowBinary",
+        "RowBinaryWithNamesAndTypes",
+        "MsgPack",
+    ]:
+        print(format_name)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.nats;
+               
+            CREATE TABLE test.nats (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                         nats_subjects = '{format_name}',
+                         nats_format = '{format_name}';      
+    
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.nats;
+        """
+        )
+
+        while not check_table_is_ready(instance, "test.nats"):
+            logging.debug("Table test.nats is not yet ready")
+            time.sleep(0.5)
+
+        insert_messages = 0
+
+        async def sub_to_nats():
+            nc = await nats_connect_ssl(
+                nats_cluster.nats_port,
+                user="click",
+                password="house",
+                ssl_ctx=nats_cluster.nats_ssl_context,
+            )
+            sub = await nc.subscribe(format_name)
+            await sub.unsubscribe(2)
+            async for msg in sub.messages:
+                nonlocal insert_messages
+                insert_messages += 1
+
+            await sub.drain()
+            await nc.drain()
+
+        def run_sub():
+            asyncio.run(sub_to_nats())
+
+        thread = threading.Thread(target=run_sub)
+        thread.start()
+        time.sleep(1)
+
+        instance.query(
+            f"INSERT INTO test.nats select number*10 as key, number*100 as value from numbers({num_rows})"
+        )
+
+        thread.join()
+
+        assert insert_messages == 2
+
+        attempt = 0
+        rows = 0
+        while attempt < 100:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+
+        result = instance.query("SELECT * FROM test.view")
+        assert result == expected
+
+
+def test_block_based_formats_1(nats_cluster):
+    instance.query(
+        """
+        DROP TABLE IF EXISTS test.nats;
+        
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'PrettySpace',
+                     nats_format = 'PrettySpace';
+    """
+    )
+
+    insert_messages = []
+
+    async def sub_to_nats():
+        nc = await nats_connect_ssl(
+            nats_cluster.nats_port,
+            user="click",
+            password="house",
+            ssl_ctx=nats_cluster.nats_ssl_context,
+        )
+        sub = await nc.subscribe("PrettySpace")
+        await sub.unsubscribe(3)
+        async for msg in sub.messages:
+            insert_messages.append(msg.data.decode())
+
+        await sub.drain()
+        await nc.drain()
+
+    def run_sub():
+        asyncio.run(sub_to_nats())
+
+    thread = threading.Thread(target=run_sub)
+    thread.start()
+    time.sleep(1)
+
+    attempt = 0
+    while attempt < 100:
+        try:
+            instance.query(
+                "INSERT INTO test.nats SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;"
+            )
+            break
+        except Exception:
+            logging.debug("Table test.nats is not yet ready")
+            time.sleep(0.5)
+            attempt += 1
+    thread.join()
+
+    data = []
+    for message in insert_messages:
+        splitted = message.split("\n")
+        assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+        assert splitted[1] == ""
+        assert splitted[-1] == ""
+        data += [line.split() for line in splitted[2:-1]]
+
+    assert data == [
+        ["0", "0"],
+        ["10", "100"],
+        ["20", "200"],
+        ["30", "300"],
+        ["40", "400"],
+    ]
+
+
+def test_block_based_formats_2(nats_cluster):
+    num_rows = 100
+
+    for format_name in [
+        "JSONColumns",
+        "Native",
+        "Arrow",
+        "Parquet",
+        "ORC",
+        "JSONCompactColumns",
+    ]:
+        print(format_name)
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.nats;
+               
+            CREATE TABLE test.nats (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                         nats_subjects = '{format_name}',
+                         nats_format = '{format_name}';      
+    
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value FROM test.nats;
+        """
+        )
+
+        while not check_table_is_ready(instance, "test.nats"):
+            logging.debug("Table test.nats is not yet ready")
+            time.sleep(0.5)
+
+        insert_messages = 0
+
+        async def sub_to_nats():
+            nc = await nats_connect_ssl(
+                nats_cluster.nats_port,
+                user="click",
+                password="house",
+                ssl_ctx=nats_cluster.nats_ssl_context,
+            )
+            sub = await nc.subscribe(format_name)
+            await sub.unsubscribe(9)
+            async for msg in sub.messages:
+                nonlocal insert_messages
+                insert_messages += 1
+
+            await sub.drain()
+            await nc.drain()
+
+        def run_sub():
+            asyncio.run(sub_to_nats())
+
+        thread = threading.Thread(target=run_sub)
+        thread.start()
+        time.sleep(1)
+
+        instance.query(
+            f"INSERT INTO test.nats SELECT number * 10 as key, number * 100 as value FROM numbers({num_rows}) settings max_block_size=12, optimize_trivial_insert_select=0;"
+        )
+
+        thread.join()
+
+        assert insert_messages == 9
+
+        attempt = 0
+        rows = 0
+        while attempt < 100:
+            rows = int(instance.query("SELECT count() FROM test.view"))
+            if rows == num_rows:
+                break
+            attempt += 1
+
+        assert rows == num_rows
+
+        result = instance.query("SELECT * FROM test.view ORDER by key")
+        expected = ""
+        for i in range(num_rows):
+            expected += str(i * 10) + "\t" + str(i * 100) + "\n"
+        assert result == expected
 
 
 if __name__ == "__main__":

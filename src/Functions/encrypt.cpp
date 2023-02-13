@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 
@@ -19,7 +19,7 @@ struct EncryptImpl
 namespace DB
 {
 
-void registerFunctionEncrypt(FunctionFactory & factory)
+REGISTER_FUNCTION(Encrypt)
 {
     factory.registerFunction<FunctionEncrypt<EncryptImpl>>();
 }

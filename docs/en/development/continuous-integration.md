@@ -1,10 +1,10 @@
 ---
+slug: /en/development/continuous-integration
 sidebar_position: 62
 sidebar_label: Continuous Integration Checks
+title: Continuous Integration Checks
 description: When you submit a pull request, some automated checks are ran for your code by the ClickHouse continuous integration (CI) system
 ---
-
-# Continuous Integration Checks
 
 When you submit a pull request, some automated checks are ran for your code by
 the ClickHouse [continuous integration (CI) system](tests.md#test-automation).
@@ -54,7 +54,7 @@ the documentation is wrong. Go to the check report and look for `ERROR` and `WAR
 Check that the description of your pull request conforms to the template
 [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and
-write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/)
+write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
 
 ## Push To DockerHub
@@ -118,7 +118,6 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
-- **Split** `splitted` is a [split build](../development/build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
@@ -130,8 +129,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
   - `clickhouse`: Main built binary.
   - `clickhouse-odbc-bridge`
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-  - `shared_build.tgz`: build with shared libraries.
-  - `performance.tgz`: Special package for performance tests.
+  - `performance.tar.zst`: Special package for performance tests.
 
 
 ## Special Build Check
@@ -156,10 +154,6 @@ Runs [stateful functional tests](tests.md#functional-tests). Treat them in the s
 Runs [integration tests](tests.md#integration-tests).
 
 
-## Testflows Check
-Runs some tests using Testflows test system. See [here](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally) how to run them locally.
-
-
 ## Stress Test
 Runs stateless functional tests concurrently from several clients to detect
 concurrency-related errors. If it fails:
@@ -167,16 +161,6 @@ concurrency-related errors. If it fails:
     * Fix all other test failures first;
     * Look at the report to find the server logs and check them for possible causes
       of error.
-
-
-## Split Build Smoke Test
-
-Checks that the server build in [split build](../development/build.md#split-build)
-configuration can start and run simple queries.  If it fails:
-
-    * Fix other test errors first;
-    * Build the server in [split build](../development/build.md#split-build) configuration
-      locally and check whether it can start and run `select 1`.
 
 
 ## Compatibility Check

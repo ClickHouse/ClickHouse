@@ -11,6 +11,9 @@ class ASTBackupQuery;
 /// Settings specified in the "SETTINGS" clause of a BACKUP query.
 struct BackupSettings
 {
+    /// ID of the backup operation, to identify it in the system.backups table. Auto-generated if not set.
+    String id;
+
     /// Base backup, if it's set an incremental backup will be built. That means only differences made after the base backup will be put
     /// into a new backup.
     std::optional<BackupInfo> base_backup_info;
@@ -28,6 +31,9 @@ struct BackupSettings
 
     /// Whether the BACKUP command must return immediately without waiting until the backup has completed.
     bool async = false;
+
+    /// Whether the BACKUP will omit similar files (within one backup only).
+    bool deduplicate_files = true;
 
     /// 1-based shard index to store in the backup. 0 means all shards.
     /// Can only be used with BACKUP ON CLUSTER.

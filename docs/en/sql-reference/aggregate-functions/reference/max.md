@@ -1,8 +1,8 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/max
 sidebar_position: 3
+title: max
 ---
-
-# max
 
 Aggregate function that calculates the maximum across a group of values.
 
@@ -21,4 +21,3 @@ If you need non-aggregate function to choose a maximum of two values, see `great
 ```
 SELECT greatest(a, b) FROM table;
 ```
-

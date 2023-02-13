@@ -12,6 +12,7 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <base/unaligned.h>
+#include <base/defines.h>
 #include <base/sort.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
@@ -34,6 +35,8 @@ namespace ProfileEvents
     extern const Event AIOWriteBytes;
     extern const Event AIORead;
     extern const Event AIOReadBytes;
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
 }
 
 namespace DB
@@ -542,8 +545,11 @@ public:
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
                 "Not all data was written for asynchronous IO on file {}. returned: {}",
                 file_path,
-                std::to_string(bytes_written));
+                bytes_written);
 
+        ProfileEvents::increment(ProfileEvents::FileSync);
+
+        Stopwatch watch;
         #if defined(OS_DARWIN)
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
@@ -551,6 +557,7 @@ public:
         if (::fdatasync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fdatasync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
         #endif
+        ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
         current_block_index += buffer_size_in_blocks;
 
@@ -669,7 +676,7 @@ public:
             pointers.push_back(&requests.back());
         }
 
-        AIOContext aio_context(read_from_file_buffer_blocks_size);
+        AIOContext aio_context(static_cast<unsigned>(read_from_file_buffer_blocks_size));
 
         PaddedPODArray<bool> processed(requests.size(), false);
         PaddedPODArray<io_event> events;
@@ -729,7 +736,8 @@ public:
                 ++to_pop;
 
             /// add new io tasks
-            const int new_tasks_count = std::min(read_from_file_buffer_blocks_size - (to_push - to_pop), requests.size() - to_push);
+            const int new_tasks_count = static_cast<int>(std::min(
+                read_from_file_buffer_blocks_size - (to_push - to_pop), requests.size() - to_push));
 
             int pushed = 0;
             while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) <= 0)
@@ -761,7 +769,8 @@ private:
             if (this == &rhs)
                 return *this;
 
-            close(fd);
+            int err = ::close(fd);
+            chassert(!err || errno == EINTR);
 
             fd = rhs.fd;
             rhs.fd = -1;
@@ -770,7 +779,10 @@ private:
         ~FileDescriptor()
         {
             if (fd != -1)
-                close(fd);
+            {
+                int err = close(fd);
+                chassert(!err || errno == EINTR);
+            }
         }
 
         int fd = -1;

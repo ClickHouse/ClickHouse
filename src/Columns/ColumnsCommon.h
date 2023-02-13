@@ -27,17 +27,17 @@ namespace ErrorCodes
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 {
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-    static const __m512i zero64 = _mm512_setzero_epi32();
-    UInt64 res = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(bytes64)), zero64, _MM_CMPINT_EQ);
+    const __m512i vbytes = _mm512_loadu_si512(reinterpret_cast<const void *>(bytes64));
+    UInt64 res = _mm512_testn_epi8_mask(vbytes, vbytes);
 #elif defined(__AVX__) && defined(__AVX2__)
-    static const __m256i zero32 = _mm256_setzero_si256();
+    const __m256i zero32 = _mm256_setzero_si256();
     UInt64 res =
         (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64)), zero32))) & 0xffffffff)
         | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64+32)), zero32))) << 32);
-#elif defined(__SSE2__) && defined(__POPCNT__)
-    static const __m128i zero16 = _mm_setzero_si128();
+#elif defined(__SSE2__)
+    const __m128i zero16 = _mm_setzero_si128();
     UInt64 res =
         (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16))) & 0xffff)
@@ -124,8 +124,8 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
     else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
     else
-        throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}",
+                        indexes.getName());
 }
 
 size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit);

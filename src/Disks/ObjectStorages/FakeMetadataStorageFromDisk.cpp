@@ -23,7 +23,7 @@ FakeMetadataStorageFromDisk::FakeMetadataStorageFromDisk(
 {
 }
 
-MetadataTransactionPtr FakeMetadataStorageFromDisk::createTransaction() const
+MetadataTransactionPtr FakeMetadataStorageFromDisk::createTransaction()
 {
     return std::make_shared<FakeMetadataStorageFromDiskTransaction>(*this, disk);
 }
@@ -66,12 +66,7 @@ uint64_t FakeMetadataStorageFromDisk::getFileSize(const String & path) const
 std::vector<std::string> FakeMetadataStorageFromDisk::listDirectory(const std::string & path) const
 {
     std::vector<std::string> result;
-    auto it = disk->iterateDirectory(path);
-    while (it->isValid())
-    {
-        result.push_back(it->path());
-        it->next();
-    }
+    disk->listFiles(path, result);
     return result;
 }
 
@@ -85,6 +80,19 @@ std::string FakeMetadataStorageFromDisk::readFileToString(const std::string &) c
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readFileToString is not implemented for FakeMetadataStorageFromDisk");
 }
 
+std::string FakeMetadataStorageFromDisk::readInlineDataToString(const std::string & path) const
+{
+    auto rb = disk->readFile(path);
+    std::string result;
+    std::array<char, 1000> buf;
+    while (!rb->eof())
+    {
+        auto sz = rb->read(buf.data(), buf.size());
+        result.append(buf.data(), buf.data() + sz);
+    }
+    return result;
+}
+
 std::unordered_map<String, String> FakeMetadataStorageFromDisk::getSerializedMetadata(const std::vector<String> &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getSerializedMetadata is not implemented for FakeMetadataStorageFromDisk");
@@ -95,17 +103,15 @@ StoredObjects FakeMetadataStorageFromDisk::getStorageObjects(const std::string &
     std::string blob_name = object_storage->generateBlobNameForPath(path);
 
     std::string object_path = fs::path(object_storage_root_path) / blob_name;
-    size_t object_size = getFileSize(object_path);
+    size_t object_size = getFileSize(path);
 
-    auto object = StoredObject::create(*object_storage, object_path, object_size);
+    auto object = StoredObject::create(*object_storage, object_path, object_size, path, /* exists */true);
     return {std::move(object)};
 }
 
 uint32_t FakeMetadataStorageFromDisk::getHardlinkCount(const std::string & path) const
 {
-    size_t ref_count = disk->getRefCount(path);
-    assert(ref_count > 0);
-    return ref_count - 1;
+    return disk->getRefCount(path);
 }
 
 const IMetadataStorage & FakeMetadataStorageFromDiskTransaction::getStorageForNonTransactionalReads() const
@@ -114,6 +120,13 @@ const IMetadataStorage & FakeMetadataStorageFromDiskTransaction::getStorageForNo
 }
 
 void FakeMetadataStorageFromDiskTransaction::writeStringToFile(const std::string & path, const std::string & data)
+{
+    auto wb = disk->writeFile(path);
+    wb->write(data.data(), data.size());
+    wb->finalize();
+}
+
+void FakeMetadataStorageFromDiskTransaction::writeInlineDataToFile(const std::string & path, const std::string & data)
 {
     auto wb = disk->writeFile(path);
     wb->write(data.data(), data.size());

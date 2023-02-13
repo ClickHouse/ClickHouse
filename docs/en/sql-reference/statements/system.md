@@ -1,48 +1,10 @@
 ---
+slug: /en/sql-reference/statements/system
 sidebar_position: 36
 sidebar_label: SYSTEM
 ---
 
 # SYSTEM Statements
-
-The list of available `SYSTEM` statements:
-
--   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
--   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
--   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
--   [RELOAD MODELS](#query_language-system-reload-models)
--   [RELOAD MODEL](#query_language-system-reload-model)
--   [RELOAD FUNCTIONS](#query_language-system-reload-functions)
--   [RELOAD FUNCTION](#query_language-system-reload-functions)
--   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
--   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
--   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
--   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
--   [DROP REPLICA](#query_language-system-drop-replica)
--   [FLUSH LOGS](#query_language-system-flush_logs)
--   [RELOAD CONFIG](#query_language-system-reload-config)
--   [SHUTDOWN](#query_language-system-shutdown)
--   [KILL](#query_language-system-kill)
--   [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
--   [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
--   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
--   [STOP MERGES](#query_language-system-stop-merges)
--   [START MERGES](#query_language-system-start-merges)
--   [STOP TTL MERGES](#query_language-stop-ttl-merges)
--   [START TTL MERGES](#query_language-start-ttl-merges)
--   [STOP MOVES](#query_language-stop-moves)
--   [START MOVES](#query_language-start-moves)
--   [SYSTEM UNFREEZE](#query_language-system-unfreeze)
--   [STOP FETCHES](#query_language-system-stop-fetches)
--   [START FETCHES](#query_language-system-start-fetches)
--   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
--   [START REPLICATED SENDS](#query_language-system-start-replicated-sends)
--   [STOP REPLICATION QUEUES](#query_language-system-stop-replication-queues)
--   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
--   [SYNC REPLICA](#query_language-system-sync-replica)
--   [RESTART REPLICA](#query_language-system-restart-replica)
--   [RESTORE REPLICA](#query_language-system-restore-replica)
--   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
 ## RELOAD EMBEDDED DICTIONARIES
 
@@ -68,7 +30,12 @@ SELECT name, status FROM system.dictionaries;
 
 ## RELOAD MODELS
 
-Reloads all [CatBoost](../../guides/developer/apply-catboost-model.md) models if the configuration was updated without restarting the server.
+:::note
+This statement and `SYSTEM RELOAD MODEL` merely unload catboost models from the clickhouse-library-bridge. The function `catboostEvaluate()`
+loads a model upon first access if it is not loaded yet.
+:::
+
+Unloads all CatBoost models.
 
 **Syntax**
 
@@ -78,12 +45,12 @@ SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
 
 ## RELOAD MODEL
 
-Completely reloads a CatBoost model `model_name` if the configuration was updated without restarting the server.
+Unloads a CatBoost model at `model_path`.
 
 **Syntax**
 
 ```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_name>
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 ```
 
 ## RELOAD FUNCTIONS
@@ -105,7 +72,7 @@ For more convenient (automatic) cache management, see disable_internal_dns_cache
 
 ## DROP MARK CACHE
 
-Resets the mark cache. Used in development of ClickHouse and performance tests.
+Resets the mark cache.
 
 ## DROP REPLICA
 
@@ -127,22 +94,31 @@ The fourth one is useful to remove metadata of dead replica when all other repli
 
 ## DROP UNCOMPRESSED CACHE
 
-Reset the uncompressed data cache. Used in development of ClickHouse and performance tests.
-For manage uncompressed data cache parameters use following server level settings [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) and query/user/profile level settings [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache)
+Reset the uncompressed data cache.
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
+Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
-Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
-Compiled expression cache used when query/user/profile enable option [compile-expressions](../../operations/settings/settings.md#compile-expressions)
+Reset the compiled expression cache.
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
+
+## DROP QUERY CACHE
+
+Resets the [query cache](../../operations/query-cache.md).
 
 ## FLUSH LOGS
 
-Flushes buffers of log messages to system tables (e.g. system.query_log). Allows you to not wait 7.5 seconds when debugging.
+Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.
 This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG
 
 Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
+
+## RELOAD USERS
+
+Reloads all access storages, including: users.xml, local disk access storage, replicated (in ZooKeeper) access storage. Note that `SYSTEM RELOAD CONFIG` will only reload users.xml access storage.
 
 ## SHUTDOWN
 
@@ -192,7 +168,7 @@ Provides possibility to stop background merges for tables in the MergeTree famil
 SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-:::note    
+:::note
 `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
 :::
 
@@ -307,15 +283,15 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
 
 ``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
 ```
 
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
 
 ### RESTART REPLICA
 
-Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed.
-Initialization replication queue based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
+Provides possibility to reinitialize Zookeeper session's state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of truth and add tasks to Zookeeper queue if needed.
+Initialization of replication queue based on ZooKeeper data happens in the same way as for `ATTACH TABLE` statement. For a short time, the table will be unavailable for any operations.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
@@ -336,7 +312,7 @@ One may execute query after:
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-:::warning    
+:::warning
 Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 :::
 
@@ -378,3 +354,23 @@ SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ### RESTART REPLICAS
 
 Provides possibility to reinitialize Zookeeper sessions state for all `ReplicatedMergeTree` tables, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
+
+### DROP FILESYSTEM CACHE
+
+Allows to drop filesystem cache.
+
+```sql
+SYSTEM DROP FILESYSTEM CACHE
+```
+
+### SYNC FILE CACHE
+
+:::note
+It's too heavy and has potential for misuse.
+:::
+
+Will do sync syscall. 
+
+```sql
+SYSTEM SYNC FILE CACHE
+```

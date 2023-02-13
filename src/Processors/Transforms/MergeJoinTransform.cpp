@@ -30,8 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using JoinKind = ASTTableJoin::Kind;
-
 namespace
 {
 
@@ -278,10 +276,10 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     , log(&Poco::Logger::get("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
-        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
 
     auto strictness = table_join->getTableJoin().strictness();
-    if (strictness != ASTTableJoin::Strictness::Any && strictness != ASTTableJoin::Strictness::All)
+    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness {}", strictness);
 
     auto kind = table_join->getTableJoin().kind();
@@ -331,10 +329,10 @@ void MergeJoinAlgorithm::initialize(Inputs inputs)
 void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
 {
     if (input.skip_last_row)
-        throw Exception("skip_last_row is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "skip_last_row is not supported");
 
     if (input.permutation)
-        throw DB::Exception("permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "permutation is not supported");
 
     if (input.chunk)
     {
@@ -515,7 +513,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
     Columns lcols;
     if (!left_to_right_key_remap.empty())
     {
-        /// If we have remapped columns, then we need to get values from right columns insead of defaults
+        /// If we have remapped columns, then we need to get values from right columns instead of defaults
         const auto & indices = idx_map[0];
 
         const auto & left_src = cursors[0]->getCurrent().getColumns();
@@ -826,10 +824,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
     auto strictness = table_join->getTableJoin().strictness();
 
-    if (strictness == ASTTableJoin::Strictness::Any)
+    if (strictness == JoinStrictness::Any)
         return anyJoin(kind);
 
-    if (strictness == ASTTableJoin::Strictness::All)
+    if (strictness == JoinStrictness::All)
         return allJoin(kind);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported strictness '{}'", strictness);

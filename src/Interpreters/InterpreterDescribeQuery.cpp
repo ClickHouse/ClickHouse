@@ -7,6 +7,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -16,7 +17,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
-
 
 namespace DB
 {
@@ -60,10 +60,9 @@ Block InterpreterDescribeQuery::getSampleBlock(bool include_subcolumns)
     return block;
 }
 
-
 BlockIO InterpreterDescribeQuery::execute()
 {
-    ColumnsDescription columns;
+    std::vector<ColumnDescription> columns;
     StorageSnapshotPtr storage_snapshot;
 
     const auto & ast = query_ptr->as<ASTDescribeQuery &>();
@@ -72,14 +71,34 @@ BlockIO InterpreterDescribeQuery::execute()
 
     if (table_expression.subquery)
     {
-        auto names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(
-            table_expression.subquery->children.at(0), getContext()).getNamesAndTypesList();
-        columns = ColumnsDescription(std::move(names_and_types));
+        NamesAndTypesList names_and_types;
+        auto select_query = table_expression.subquery->children.at(0);
+        auto current_context = getContext();
+
+        if (settings.allow_experimental_analyzer)
+        {
+            SelectQueryOptions select_query_options;
+            names_and_types = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock().getNamesAndTypesList();
+        }
+        else
+        {
+            names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context).getNamesAndTypesList();
+        }
+
+        for (auto && [name, type] : names_and_types)
+        {
+            ColumnDescription description;
+            description.name = std::move(name);
+            description.type = std::move(type);
+            columns.emplace_back(std::move(description));
+        }
     }
     else if (table_expression.table_function)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, getContext());
-        columns = table_function_ptr->getActualTableStructure(getContext());
+        auto table_function_column_descriptions = table_function_ptr->getActualTableStructure(getContext());
+        for (const auto & table_function_column_description : table_function_column_descriptions)
+            columns.emplace_back(table_function_column_description);
     }
     else
     {
@@ -90,7 +109,9 @@ BlockIO InterpreterDescribeQuery::execute()
 
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
         storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
-        columns = metadata_snapshot->getColumns();
+        auto metadata_column_descriptions = metadata_snapshot->getColumns();
+        for (const auto & metadata_column_description : metadata_column_descriptions)
+            columns.emplace_back(metadata_column_description);
     }
 
     bool extend_object_types = settings.describe_extend_object_types && storage_snapshot;
@@ -163,7 +184,7 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            }, { type->getDefaultSerialization(), type, nullptr, nullptr });
+            }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
         }
     }
 

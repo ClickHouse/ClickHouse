@@ -106,7 +106,7 @@ struct ToValidUTF8Impl
                 /// Sequence was not fully written to this buffer.
                 break;
             }
-            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), len))
+            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), static_cast<int>(len)))
             {
                 /// Valid sequence.
                 p += len;
@@ -154,7 +154,7 @@ struct ToValidUTF8Impl
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Column of type FixedString is not supported by toValidUTF8 function", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by toValidUTF8 function");
     }
 };
 
@@ -166,7 +166,7 @@ using FunctionToValidUTF8 = FunctionStringToString<ToValidUTF8Impl, NameToValidU
 
 }
 
-void registerFunctionToValidUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(ToValidUTF8)
 {
     factory.registerFunction<FunctionToValidUTF8>();
 }

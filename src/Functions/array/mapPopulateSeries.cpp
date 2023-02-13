@@ -80,7 +80,7 @@ private:
         if (!(max_key_data_type.isInt() || max_key_data_type.isUInt()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} max key should be of signed or unsigned integer type. Actual type {}.",
+                "Function {} max key should be of signed or unsigned integer type. Actual type {}, max type {}.",
                 getName(),
                 key_type->getName(),
                 max_key_type->getName());
@@ -496,7 +496,7 @@ private:
     }
 };
 
-void registerFunctionMapPopulateSeries(FunctionFactory & factory)
+REGISTER_FUNCTION(MapPopulateSeries)
 {
     factory.registerFunction<FunctionMapPopulateSeries>();
 }

@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -77,7 +77,7 @@ public:
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution),
                     getName(),
                     MAX_H3_RES);
@@ -94,7 +94,7 @@ public:
 
 }
 
-void registerFunctionH3EdgeAngle(FunctionFactory & factory)
+REGISTER_FUNCTION(H3EdgeAngle)
 {
     factory.registerFunction<FunctionH3EdgeAngle>();
 }
