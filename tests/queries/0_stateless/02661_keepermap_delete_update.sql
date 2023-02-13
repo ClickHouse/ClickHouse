@@ -35,7 +35,7 @@ ALTER TABLE 02661_keepermap_delete_update UPDATE key = key * 10 WHERE 1 = 1; -- 
 SELECT * FROM 02661_keepermap_delete_update ORDER BY key;
 SELECT '-----------';
 
-ALTER TABLE 02661_keepermap_delete_update UPDATE value2 = value2 * 10 + 2 WHERE 1 = 1;
+ALTER TABLE 02661_keepermap_delete_update UPDATE value2 = value2 * 10 + 2 WHERE value2 < 100;
 SELECT * FROM 02661_keepermap_delete_update ORDER BY key;
 SELECT '-----------';
 
