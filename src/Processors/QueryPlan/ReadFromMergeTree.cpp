@@ -1262,8 +1262,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (!direction)
         direction = getSortDirection();
 
-    /// Disable read-in-order optimization for reverse order with final. 
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order). 
+    /// Disable read-in-order optimization for reverse order with final.
+    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
     if (direction != 1 && isFinal(query_info))
         return false;
 
