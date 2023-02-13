@@ -9,6 +9,7 @@
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <bit>
+#include <boost/algorithm/string/replace.hpp>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -1370,13 +1371,16 @@ std::string PrewhereExprInfo::dump() const
 {
     WriteBufferFromOwnString s;
 
+    const char indent[] = "\n      ";
     for (size_t i = 0; i < steps.size(); ++i)
     {
         s << "STEP " << i << ":\n"
-            << "  ACTIONS: " << (steps[i].actions ? steps[i].actions->dumpActions() : "nullptr") << "\n"
+            << "  ACTIONS: " << (steps[i].actions ?
+                (indent + boost::replace_all_copy(steps[i].actions->dumpActions(), "\n", indent)) :
+                "nullptr") << "\n"
             << "  COLUMN: " << steps[i].column_name << "\n"
             << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
-            << "  NEED_FILTER: " << steps[i].need_filter << "\n";
+            << "  NEED_FILTER: " << steps[i].need_filter << "\n\n";
     }
 
     return s.str();
