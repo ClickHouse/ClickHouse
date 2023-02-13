@@ -122,7 +122,7 @@ typedef struct internal_state {
      * bytes. With this organization, matches are limited to a distance of
      * wSize-MAX_MATCH bytes, but this ensures that IO is always
      * performed with a length multiple of the block size. Also, it limits
-     * the window size to 64K, which is quite useful on MSDOS.
+     * the window size to 64K, which is quite useful on MS-DOS.
      * To do: use the user input buffer as sliding window.
      */
 

@@ -29,7 +29,7 @@ template <class C>
 class AutoReleasePool
 	/// An AutoReleasePool implements simple garbage collection for 
 	/// reference-counted objects.
-	/// It temporarily takes ownwership of reference-counted objects that 
+	/// It temporarily takes ownership of reference-counted objects that 
 	/// nobody else wants to take ownership of and releases them 
 	/// at a later, appropriate point in time.
 	///

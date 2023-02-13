@@ -181,6 +181,15 @@ namespace
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
         }
+        void operator() (const CustomType & x) const
+        {
+            UInt8 type = Field::Types::CustomType;
+            hash.update(type);
+            hash.update(x.getTypeName());
+            auto result = x.toString();
+            hash.update(result.size());
+            hash.update(result.data(), result.size());
+        }
         void operator() (const bool & x) const
         {
             UInt8 type = Field::Types::Bool;

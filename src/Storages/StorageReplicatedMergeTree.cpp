@@ -1795,8 +1795,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 /* to_detached= */ false,
                 entry.quorum,
                 /* zookeeper_ */ nullptr,
-                /* try_fetch_shared= */ true,
-                entry.znode_name))
+                /* try_fetch_shared= */ true))
             {
                 return false;
             }
@@ -3963,8 +3962,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     bool to_detached,
     size_t quorum,
     zkutil::ZooKeeper::Ptr zookeeper_,
-    bool try_fetch_shared,
-    String entry_znode)
+    bool try_fetch_shared)
 {
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
@@ -4160,17 +4158,6 @@ bool StorageReplicatedMergeTree::fetchPart(
                 LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
-
-            /// It is possible that fetched parts may cover other parts (see
-            /// findReplicaHavingCoveringPart()), and if those covered parts
-            /// cannot be executed right now (due to MERGE_PARTS that covers
-            /// them is in progress), replica delay will be increased until
-            /// those entries will be executed (if covered operations
-            /// finishes) in other words until MERGE_PARTS is in progress,
-            /// while this can take awhile.
-            ///
-            /// So let's just remove them from the queue.
-            queue.removePartProducingOpsInRange(zookeeper, part->info, /* covering_entry= */ {}, entry_znode);
 
             write_part_log({});
         }
@@ -7847,18 +7834,23 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    for (auto & part : data_parts)
     {
-        try
+        auto part_check_lock = part_check_thread.pausePartsCheck();
+
+        for (auto & part : data_parts)
         {
-            results.push_back(part_check_thread.checkPart(part->name));
-        }
-        catch (const Exception & ex)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+            try
+            {
+                results.push_back(part_check_thread.checkPart(part->name));
+            }
+            catch (const Exception & ex)
+            {
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+            }
         }
     }
+
     return results;
 }
 
