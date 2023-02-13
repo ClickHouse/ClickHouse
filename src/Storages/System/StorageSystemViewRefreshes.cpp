@@ -38,7 +38,7 @@ void StorageSystemViewRefreshes::fillData(
     auto valid_access = AccessType::SHOW_TABLES;
     bool check_access_for_tables = !access->isGranted(valid_access);
 
-    
+
     for (const auto & refresh : context->getRefreshSet().getInfo())
     {
         if (check_access_for_tables && !access->isGranted(valid_access, refresh.database, refresh.view_name))
