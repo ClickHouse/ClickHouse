@@ -513,7 +513,7 @@ protected:
         if (common::mulOverflow(buffer_size, sizeof(Cell), size))
             throw DB::Exception(
                 DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                "Integer overflow trying to allocate memory for HashTable. Trying to allocate {} cells per {} bytes",
+                "Integer overflow trying to allocate memory for HashTable. Trying to allocate {} cells of {} bytes each",
                 buffer_size, sizeof(Cell));
 
         return size;
