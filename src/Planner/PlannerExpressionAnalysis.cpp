@@ -80,7 +80,8 @@ std::pair<std::optional<AggregationAnalysisResult>, std::optional<ColumnsWithTyp
     PlannerActionsVisitor actions_visitor(planner_context);
 
     /// Add expressions from GROUP BY
-    bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef().group_by_use_nulls;
+    bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef().group_by_use_nulls &&
+        (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
 
     if (query_node.hasGroupBy())
     {
