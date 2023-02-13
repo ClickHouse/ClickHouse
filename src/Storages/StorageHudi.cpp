@@ -26,7 +26,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-HudiMetaParser::HudiMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context_)
+template <typename Configuration, typename MetaReadHelper>
+HudiMetaParser<Configuration, MetaReadHelper>::HudiMetaParser(const Configuration & configuration_, ContextPtr context_)
     : configuration(configuration_), context(context_), log(&Poco::Logger::get("StorageHudi"))
 {
 }
@@ -36,7 +37,8 @@ HudiMetaParser::HudiMetaParser(const StorageS3::Configuration & configuration_, 
 /// Every partition(directory) in Apache Hudi has different versions of part.
 /// To find needed parts we need to find out latest part file for every partition.
 /// Part format is usually parquet, but can differ.
-String HudiMetaParser::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
+template <typename Configuration, typename MetaReadHelper>
+String HudiMetaParser<Configuration, MetaReadHelper>::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
 {
     /// For each partition path take only latest file.
     struct FileInfo
@@ -87,47 +89,17 @@ String HudiMetaParser::generateQueryFromKeys(const std::vector<std::string> & ke
     return "{" + list_of_keys + "}";
 }
 
-std::vector<std::string> HudiMetaParser::getFiles() const
+template <typename Configuration, typename MetaReadHelper>
+std::vector<std::string> HudiMetaParser<Configuration, MetaReadHelper>::getFiles() const
 {
-    const auto & client = configuration.client;
-    const auto & table_path = configuration.url.key;
-    const auto & bucket = configuration.url.bucket;
-
-    std::vector<std::string> keys;
-    S3::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-    bool is_finished{false};
-
-    request.SetBucket(bucket);
-    request.SetPrefix(table_path);
-
-    while (!is_finished)
-    {
-        outcome = client->ListObjectsV2(request);
-        if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                quoteString(bucket),
-                quoteString(table_path),
-                backQuote(outcome.GetError().GetExceptionName()),
-                quoteString(outcome.GetError().GetMessage()));
-
-        const auto & result_batch = outcome.GetResult().GetContents();
-        for (const auto & obj : result_batch)
-        {
-            const auto & filename = obj.GetKey().substr(table_path.size()); /// Object name without tablepath prefix.
-            keys.push_back(filename);
-            LOG_DEBUG(log, "Found file: {}", filename);
-        }
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-        is_finished = !outcome.GetResult().GetIsTruncated();
-    }
-
-    return keys;
+    return MetaReadHelper::listFiles(configuration);
 }
+
+template HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::HudiMetaParser(
+    const StorageS3::Configuration & configuration_, ContextPtr context_);
+template std::vector<String> HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getFiles() const;
+template String HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::generateQueryFromKeys(
+    const std::vector<String> & keys, const String & format);
 
 void registerStorageHudi(StorageFactory & factory)
 {

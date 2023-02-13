@@ -38,15 +38,18 @@ class NamedCollection;
 template <typename Name, typename MetaParser>
 class IStorageDataLake;
 
+struct S3DataLakeMetaReadHelper;
+
 struct StorageIcebergName;
-struct S3MetaReadHelper;
 template <typename Configuration, typename MetaReadHelper>
 class IcebergMetaParser;
 
 struct StorageDeltaLakeName;
+template <typename Configuration, typename MetaReadHelper>
 class DeltaLakeMetaParser;
 
 struct StorageHudiName;
+template <typename Configuration, typename MetaReadHelper>
 class HudiMetaParser;
 
 class StorageS3Source : public ISource, WithContext
@@ -317,9 +320,9 @@ public:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
-    friend class IStorageDataLake<StorageHudiName, HudiMetaParser>;
-    friend class IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser>;
-    friend class IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3MetaReadHelper>>;
+    friend class IStorageDataLake<StorageHudiName, HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
+    friend class IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
+    friend class IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
 
     Configuration s3_configuration;
     std::vector<String> keys;

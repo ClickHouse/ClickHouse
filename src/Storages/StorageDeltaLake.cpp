@@ -56,20 +56,22 @@ std::vector<String> DeltaLakeMetadata::listCurrentFiles() &&
     return keys;
 }
 
-DeltaLakeMetaParser::DeltaLakeMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context)
+template <typename Configuration, typename MetaReadHelper>
+DeltaLakeMetaParser<Configuration, MetaReadHelper>::DeltaLakeMetaParser(const Configuration & configuration_, ContextPtr context)
     : base_configuration(configuration_)
 {
     init(context);
 }
 
-void DeltaLakeMetaParser::init(ContextPtr context)
+template <typename Configuration, typename MetaReadHelper>
+void DeltaLakeMetaParser<Configuration, MetaReadHelper>::init(ContextPtr context)
 {
     auto keys = getJsonLogFiles();
 
     // read data from every json log file
     for (const String & key : keys)
     {
-        auto buf = createS3ReadBuffer(key, context);
+        auto buf = MetaReadHelper::createReadBuffer(key, context, base_configuration);
 
         char c;
         while (!buf->eof())
@@ -93,35 +95,19 @@ void DeltaLakeMetaParser::init(ContextPtr context)
     }
 }
 
-std::vector<String> DeltaLakeMetaParser::getJsonLogFiles() const
+template <typename Configuration, typename MetaReadHelper>
+std::vector<String> DeltaLakeMetaParser<Configuration, MetaReadHelper>::getJsonLogFiles() const
 {
-    const auto table_path = base_configuration.url.key;
 
     /// DeltaLake format stores all metadata json files in _delta_log directory
     static constexpr auto deltalake_metadata_directory = "_delta_log";
+    static constexpr auto meta_file_suffix = ".json";
 
-    return S3::listFiles(
-        *base_configuration.client,
-        base_configuration.url.bucket,
-        table_path,
-        std::filesystem::path(table_path) / deltalake_metadata_directory,
-        ".json");
+    return MetaReadHelper::listFilesMatchSuffix(base_configuration, deltalake_metadata_directory, meta_file_suffix);
 }
 
-std::shared_ptr<ReadBuffer> DeltaLakeMetaParser::createS3ReadBuffer(const String & key, ContextPtr context)
-{
-    S3Settings::RequestSettings request_settings;
-    request_settings.max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
-    return std::make_shared<ReadBufferFromS3>(
-        base_configuration.client,
-        base_configuration.url.bucket,
-        key,
-        base_configuration.url.version_id,
-        request_settings,
-        context->getReadSettings());
-}
-
-void DeltaLakeMetaParser::handleJSON(const JSON & json)
+template <typename Configuration, typename MetaReadHelper>
+void DeltaLakeMetaParser<Configuration, MetaReadHelper>::handleJSON(const JSON & json)
 {
     if (json.has("add"))
     {
@@ -139,15 +125,26 @@ void DeltaLakeMetaParser::handleJSON(const JSON & json)
     }
 }
 
+
 // DeltaLake stores data in parts in different files
 // keys is vector of parts with latest version
 // generateQueryFromKeys constructs query from parts filenames for
 // underlying StorageS3 engine
-String DeltaLakeMetaParser::generateQueryFromKeys(const std::vector<String> & keys, const String &)
+template <typename Configuration, typename MetaReadHelper>
+String DeltaLakeMetaParser<Configuration, MetaReadHelper>::generateQueryFromKeys(const std::vector<String> & keys, const String &)
 {
     std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
     return new_query;
 }
+
+template DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::DeltaLakeMetaParser(
+    const StorageS3::Configuration & configuration_, ContextPtr context);
+template std::vector<String> DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getFiles();
+template String DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::generateQueryFromKeys(
+    const std::vector<String> & keys, const String & format);
+template void DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::init(ContextPtr context);
+template std::vector<String> DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getJsonLogFiles() const;
+template void DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::handleJSON(const JSON & json);
 
 void registerStorageDeltaLake(StorageFactory & factory)
 {
