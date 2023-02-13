@@ -870,10 +870,17 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
+    if (global_ctx->future_part->type != MergeTreeDataPartType::WIDE)
+        return MergeAlgorithm::Horizontal;
 
-    for (const auto & part : global_ctx->future_part->parts)
-        if (!part->supportsVerticalMerge())
-            return MergeAlgorithm::Horizontal;
+    if (!data_settings->allow_vertical_merges_from_compact_to_wide_parts)
+    {
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            if (part->getType() != MergeTreeDataPartType::WIDE)
+                return MergeAlgorithm::Horizontal;
+        }
+    }
 
     bool is_supported_storage =
         ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
