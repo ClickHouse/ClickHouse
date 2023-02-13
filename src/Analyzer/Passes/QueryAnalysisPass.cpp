@@ -1,6 +1,5 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
-#include "Common/logger_useful.h"
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
 
@@ -194,7 +193,6 @@ namespace ErrorCodes
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
-  * TODO: Support group_by_use_nulls.
   * TODO: Scalar subqueries cache.
   */
 
@@ -676,7 +674,11 @@ struct IdentifierResolveScope
         if (auto * union_node = scope_node->as<UnionNode>())
             context = union_node->getContext();
         else if (auto * query_node = scope_node->as<QueryNode>())
+        {
             context = query_node->getContext();
+            group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
+                (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        }
     }
 
     QueryTreeNodePtr scope_node;
@@ -728,6 +730,9 @@ struct IdentifierResolveScope
 
     /// Use identifier lookup to result cache
     bool use_identifier_lookup_to_result_cache = true;
+
+    /// Apply nullability to aggregation keys
+    bool group_by_use_nulls = false;
 
     /// Subquery depth
     size_t subquery_depth = 0;
@@ -3122,7 +3127,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (!resolve_result.resolved_identifier ||
         scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup) ||
         !scope.use_identifier_lookup_to_result_cache ||
-        scope.context->getSettingsRef().group_by_use_nulls)
+        scope.group_by_use_nulls)
         scope.identifier_lookup_to_result.erase(it);
 
     return resolve_result;
@@ -4650,7 +4655,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         function_node.resolveAsFunction(std::move(function_base));
-        if (settings.group_by_use_nulls && scope.nullable_group_by_keys.contains(node))
+        if (scope.group_by_use_nulls && scope.nullable_group_by_keys.contains(node))
             function_node.convertToNullable();
     }
     catch (Exception & e)
@@ -4795,8 +4800,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                 node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE_EXPRESSION}, scope).resolved_identifier;
 
                 /// If table identifier is resolved as CTE clone it and resolve
-                auto * subquery_node = node->as<QueryNode>();
-                auto * union_node = node->as<UnionNode>();
+                auto * subquery_node = node ? node->as<QueryNode>() : nullptr;
+                auto * union_node = node ? node->as<UnionNode>() : nullptr;
                 bool resolved_as_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
 
                 if (resolved_as_cte)
@@ -4900,6 +4905,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             if (result_projection_names.empty())
                 result_projection_names.push_back(column_node.getColumnName());
 
+            if (scope.group_by_use_nulls && scope.nullable_group_by_keys.contains(node))
+            {
+                node = node->clone();
+                node->convertToNullable();
+            }
+
             break;
         }
         case QueryTreeNodeType::FUNCTION:
@@ -4986,7 +4997,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
     /** Update aliases after expression node was resolved.
       * Do not update node in alias table if we resolve it for duplicate alias.
       */
-    if (!node_alias.empty() && use_alias_table)
+    if (!node_alias.empty() && use_alias_table && !scope.group_by_use_nulls)
     {
         auto it = scope.alias_name_to_expression_node.find(node_alias);
         if (it != scope.alias_name_to_expression_node.end())
@@ -6033,7 +6044,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
     }
 
-    if (!settings.group_by_use_nulls)
+    if (!scope.group_by_use_nulls)
         scope.use_identifier_lookup_to_result_cache = true;
 
     /// Resolve query node sections.
@@ -6072,7 +6083,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
             resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-            if (settings.group_by_use_nulls)
+            if (scope.group_by_use_nulls)
             {
                 for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
                     scope.nullable_group_by_keys.insert(group_by_elem->clone());
@@ -6270,7 +6281,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     continue;
 
                 group_by_keys_nodes.push_back(grouping_set_key->clone());
-                if (settings.group_by_use_nulls)
+                if (scope.group_by_use_nulls)
                     group_by_keys_nodes.back()->convertToNullable();
             }
         }
@@ -6280,7 +6291,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 continue;
 
             group_by_keys_nodes.push_back(node->clone());
-            if (settings.group_by_use_nulls)
+            if (scope.group_by_use_nulls)
                 group_by_keys_nodes.back()->convertToNullable();
         }
     }
