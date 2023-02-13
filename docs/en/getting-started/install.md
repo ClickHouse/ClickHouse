@@ -1,6 +1,7 @@
 ---
 sidebar_label: Install
 keywords: [clickhouse, install, getting started, quick start]
+description: Install ClickHouse
 slug: /en/install
 ---
 
