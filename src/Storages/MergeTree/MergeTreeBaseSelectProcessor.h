@@ -116,10 +116,17 @@ protected:
          const Names & non_const_virtual_column_names);
 
     /// Sets up data readers for each step of prewhere and where
+    void initializeMergeTreeReadersForCurrentTask(
+        const StorageMetadataPtr & metadata_snapshot,
+        const IMergeTreeReader::ValueSizeMap & value_size_map,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
     void initializeMergeTreeReadersForPart(
         MergeTreeData::DataPartPtr & data_part,
-        const MergeTreeReadTaskColumns & task_columns, const StorageMetadataPtr & metadata_snapshot,
-        const MarkRanges & mark_ranges, const IMergeTreeReader::ValueSizeMap & value_size_map,
+        const MergeTreeReadTaskColumns & task_columns,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MarkRanges & mark_ranges,
+        const IMergeTreeReader::ValueSizeMap & value_size_map,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
     /// Sets up range readers corresponding to data readers
@@ -153,8 +160,8 @@ protected:
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
 
-    std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
-    std::shared_ptr<MarkCache> owned_mark_cache;
+    UncompressedCachePtr owned_uncompressed_cache;
+    MarkCachePtr owned_mark_cache;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
@@ -180,6 +187,15 @@ private:
     std::atomic<bool> is_cancelled{false};
 
     bool getNewTask();
+
+    /// Initialize pre readers.
+    void initializeMergeTreePreReadersForPart(
+        MergeTreeData::DataPartPtr & data_part,
+        const MergeTreeReadTaskColumns & task_columns,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MarkRanges & mark_ranges,
+        const IMergeTreeReader::ValueSizeMap & value_size_map,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
     static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 };

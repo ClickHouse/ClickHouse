@@ -712,7 +712,7 @@ void XMLCALL XMLStreamParser::handleStartElement(void* v, const XML_Char* name, 
 	XML_ParsingStatus ps;
 	XML_GetParsingStatus(p._parser, &ps);
 
-	// Expat has a (mis)-feature of a possibily calling handlers even
+	// Expat has a (mis)-feature of a possibly calling handlers even
 	// after the non-resumable XML_StopParser call.
 	//
 	if (ps.parsing == XML_FINISHED)
@@ -796,7 +796,7 @@ void XMLCALL XMLStreamParser::handleEndElement(void* v, const XML_Char* name)
 	XML_ParsingStatus ps;
 	XML_GetParsingStatus(p._parser, &ps);
 
-	// Expat has a (mis)-feature of a possibily calling handlers even
+	// Expat has a (mis)-feature of a possibly calling handlers even
 	// after the non-resumable XML_StopParser call.
 	//
 	if (ps.parsing == XML_FINISHED)
@@ -835,7 +835,7 @@ void XMLCALL XMLStreamParser::handleCharacters(void* v, const XML_Char* s, int n
 	XML_ParsingStatus ps;
 	XML_GetParsingStatus(p._parser, &ps);
 
-	// Expat has a (mis)-feature of a possibily calling handlers even
+	// Expat has a (mis)-feature of a possibly calling handlers even
 	// after the non-resumable XML_StopParser call.
 	//
 	if (ps.parsing == XML_FINISHED)
@@ -906,7 +906,7 @@ void XMLCALL XMLStreamParser::handleStartNamespaceDecl(void* v, const XML_Char* 
 	XML_ParsingStatus ps;
 	XML_GetParsingStatus(p._parser, &ps);
 
-	// Expat has a (mis)-feature of a possibily calling handlers even
+	// Expat has a (mis)-feature of a possibly calling handlers even
 	// after the non-resumable XML_StopParser call.
 	//
 	if (ps.parsing == XML_FINISHED)
@@ -925,7 +925,7 @@ void XMLCALL XMLStreamParser::handleEndNamespaceDecl(void* v, const XML_Char* pr
 	XML_ParsingStatus ps;
 	XML_GetParsingStatus(p._parser, &ps);
 
-	// Expat has a (mis)-feature of a possibily calling handlers even
+	// Expat has a (mis)-feature of a possibly calling handlers even
 	// after the non-resumable XML_StopParser call.
 	//
 	if (ps.parsing == XML_FINISHED)
