@@ -115,7 +115,6 @@ def started_cluster():
         ),
     ],
 )
-
 def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
     mysql_conn = create_mysql_conn(
         "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
@@ -214,6 +213,7 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
         "select dictGetString('xml_dictionary', 'SomeValue2', toUInt64(977))"
     ) == str(hex(977))[2:] + "\n"
     clickhouse.query(f"drop dictionary default.{name}")
+
 
 def test_restricted_database(started_cluster):
     for node in [node1, node2]:
@@ -471,6 +471,7 @@ def test_clickhouse_remote(started_cluster):
         "select dictGetUInt8('test.clickhouse_remote', 'SomeValue1', toUInt64(17))"
     ) == "17\n"
 
+
 # https://github.com/ClickHouse/ClickHouse/issues/38450
 #  suggests placing 'secure' in named_collections
 def test_secure(started_cluster):
@@ -481,7 +482,7 @@ def test_secure(started_cluster):
     # No named collection, secure is set in DDL
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
     node1.query(
-           """
+        """
         CREATE DICTIONARY test.clickhouse_secure(
             id UInt64,
             value String
@@ -496,14 +497,16 @@ def test_secure(started_cluster):
             ))
         LIFETIME(MIN 1 MAX 10)
             """
-        )
-    value = node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))") ;
-    assert(value == "value1\n")
+    )
+    value = node1.query(
+        "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
+    )
+    assert value == "value1\n"
 
     # Secure set in named collection
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
     node1.query(
-           """
+        """
         CREATE DICTIONARY test.clickhouse_secure(
             id UInt64,
             value String
@@ -516,14 +519,16 @@ def test_secure(started_cluster):
             ))
         LIFETIME(MIN 1 MAX 10)
             """
-        )
-    value = node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))") ;
-    assert(value == "value1\n")
+    )
+    value = node1.query(
+        "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
+    )
+    assert value == "value1\n"
 
     # Secure is not set
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
     node1.query(
-           """
+        """
         CREATE DICTIONARY test.clickhouse_secure(
             id UInt64,
             value String
@@ -536,15 +541,15 @@ def test_secure(started_cluster):
             ))
         LIFETIME(MIN 1 MAX 10)
             """
-        )
+    )
     with pytest.raises(QueryRuntimeException) as excinfo:
-        node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))") ;
+        node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
     assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
 
     # Secure is set to 0 in named collection
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
     node1.query(
-           """
+        """
         CREATE DICTIONARY test.clickhouse_secure(
             id UInt64,
             value String
@@ -557,15 +562,15 @@ def test_secure(started_cluster):
             ))
         LIFETIME(MIN 1 MAX 10)
             """
-        )
+    )
     with pytest.raises(QueryRuntimeException) as excinfo:
-        node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))") ;
+        node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
     assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
 
     # Secure is set to 0 in named collection and in 1 in DDL
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
     node1.query(
-           """
+        """
         CREATE DICTIONARY test.clickhouse_secure(
             id UInt64,
             value String
@@ -579,9 +584,11 @@ def test_secure(started_cluster):
             ))
         LIFETIME(MIN 1 MAX 10)
             """
-        )
-    value = node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))") ;
-    assert(value == "value1\n")
+    )
+    value = node1.query(
+        "SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))"
+    )
+    assert value == "value1\n"
 
     node1.query("DROP DICTIONARY test.clickhouse_secure")
     node1.query("DROP TABLE test.foo_dict")
