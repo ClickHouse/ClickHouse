@@ -7847,18 +7847,23 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    for (auto & part : data_parts)
     {
-        try
+        auto part_check_lock = part_check_thread.pausePartsCheck();
+
+        for (auto & part : data_parts)
         {
-            results.push_back(part_check_thread.checkPart(part->name));
-        }
-        catch (const Exception & ex)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+            try
+            {
+                results.push_back(part_check_thread.checkPart(part->name));
+            }
+            catch (const Exception & ex)
+            {
+                tryLogCurrentException(log, __PRETTY_FUNCTION__);
+                results.emplace_back(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
+            }
         }
     }
+
     return results;
 }
 

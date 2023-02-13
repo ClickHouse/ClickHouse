@@ -35,7 +35,7 @@ namespace {
 template <typename T>
 unsigned maskBits(T val, unsigned size)
 	/// Returns the length of the mask (number of bits set in val).
-	/// The val should be either all zeros or two contiguos areas of 1s and 0s. 
+	/// The val should be either all zeros or two contiguous areas of 1s and 0s. 
 	/// The algorithm ignores invalid non-contiguous series of 1s and treats val 
 	/// as if all bits between MSb and last non-zero bit are set to 1.
 {

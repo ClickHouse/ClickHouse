@@ -1260,7 +1260,6 @@ namespace Constants
 
 	// Other constants:
 	const Value<double, Units::rad> pi (3.141592653589793);
-	const Value<double, Units::m> lightyear (9.4605284e15);
 	const Value<double, Units::km> AU(149597871);
 	const Value<double, Compose<Units::m, Power<Units::s, -2> > > g (9.80665);
 }
