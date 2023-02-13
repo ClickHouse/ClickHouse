@@ -41,6 +41,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_AVAILABLE_DATA;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 }
 
