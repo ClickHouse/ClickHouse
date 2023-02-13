@@ -16,8 +16,6 @@ public:
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
 
-    ASTPtr expression;
-    ASTPtr transformers;
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };

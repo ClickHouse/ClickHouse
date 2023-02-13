@@ -161,12 +161,12 @@ public:
         {
             String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
             appendHintsMessage(exception_message, column_name);
-            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
         }
 
         removeSubcolumns(it->name);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify ColumnDescription for column {}: column name cannot be changed", column_name);
+            throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
 
         addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);

@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/use-cases/time-series
 title: Можно ли использовать ClickHouse как базу данных временных рядов?
 sidebar_position: 101
 ---

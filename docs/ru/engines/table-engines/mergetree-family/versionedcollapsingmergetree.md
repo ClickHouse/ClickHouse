@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/mergetree-family/versionedcollapsingmergetree
 sidebar_position: 37
 sidebar_label: VersionedCollapsingMergeTree
 ---
@@ -234,3 +233,4 @@ SELECT * FROM UAct FINAL
 ```
 
 Это очень неэффективный способ выбора данных. Не используйте его для больших таблиц.
+

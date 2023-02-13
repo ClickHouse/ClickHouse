@@ -16,14 +16,13 @@ namespace ErrorCodes
 
 
 MergeTreeReaderInMemory::MergeTreeReaderInMemory(
-    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
     DataPartInMemoryPtr data_part_,
     NamesAndTypesList columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_)
     : IMergeTreeReader(
-        data_part_info_for_read_,
+        data_part_,
         columns_,
         metadata_snapshot_,
         nullptr,
@@ -33,19 +32,13 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
         {})
     , part_in_memory(std::move(data_part_))
 {
-    for (const auto & column_to_read : columns_to_read)
+    for (const auto & [name, type] : columns_to_read)
     {
         /// If array of Nested column is missing in part,
         /// we have to read its offsets if they exist.
-        if (typeid_cast<const DataTypeArray *>(column_to_read.type.get())
-            && !tryGetColumnFromBlock(part_in_memory->block, column_to_read))
-        {
-            if (auto offsets_position = findColumnForOffsets(column_to_read))
-            {
-                positions_for_offsets[column_to_read.name] = offsets_position->first;
-                partially_read_columns.insert(column_to_read.name);
-            }
-        }
+        if (!part_in_memory->block.has(name) && typeid_cast<const DataTypeArray *>(type.get()))
+            if (auto offset_position = findColumnForOffsets(name))
+                positions_for_offsets[name] = *offset_position;
     }
 }
 
@@ -55,18 +48,18 @@ size_t MergeTreeReaderInMemory::readRows(
     if (!continue_reading)
         total_rows_read = 0;
 
-    size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCount();
+    size_t total_marks = data_part->index_granularity.getMarksCount();
     if (from_mark >= total_marks)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Mark {} is out of bound. Max mark: {}",
-            toString(from_mark), toString(total_marks));
+        throw Exception("Mark " + toString(from_mark) + " is out of bound. Max mark: "
+            + toString(total_marks), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     size_t num_columns = res_columns.size();
     checkNumberOfColumns(num_columns);
 
     size_t part_rows = part_in_memory->block.rows();
     if (total_rows_read >= part_rows)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data in MergeTreeReaderInMemory. "
-            "Rows already read: {}. Rows in part: {}", total_rows_read, part_rows);
+        throw Exception("Cannot read data in MergeTreeReaderInMemory. Rows already read: "
+            + toString(total_rows_read) + ". Rows in part: " + toString(part_rows), ErrorCodes::CANNOT_READ_ALL_DATA);
 
     size_t rows_to_read = std::min(max_rows_to_read, part_rows - total_rows_read);
     for (size_t i = 0; i < num_columns; ++i)

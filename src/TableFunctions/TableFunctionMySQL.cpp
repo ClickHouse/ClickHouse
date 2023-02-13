@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <Databases/MySQL/FetchTablesColumnsList.h>
@@ -35,7 +35,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     const auto & args_func = ast_function->as<ASTFunction &>();
 
     if (!args_func.arguments)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function 'mysql' must have arguments.");
+        throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
     auto & args = args_func.arguments->children;
 
@@ -45,7 +45,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
     mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
 
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -67,8 +67,8 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
 
     const auto columns = tables_and_columns.find(configuration->table);
     if (columns == tables_and_columns.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {} doesn't exist.",
-                        (configuration->database.empty() ? "" : (backQuote(configuration->database) + "." + backQuote(configuration->table))));
+        throw Exception("MySQL table " + (configuration->database.empty() ? "" : (backQuote(configuration->database) + "."))
+            + backQuote(configuration->table) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     return columns->second;
 }

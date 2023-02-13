@@ -209,7 +209,7 @@ namespace
             case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 }
 
@@ -797,7 +797,7 @@ template <bool with_grant_option>
 void AccessRights::grantImpl(const AccessRightsElement & element)
 {
     if (element.is_partial_revoke)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A partial revoke should be revoked, not granted");
+        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::BAD_ARGUMENTS);
     if constexpr (with_grant_option)
     {
         grantImplHelper<true>(element);
