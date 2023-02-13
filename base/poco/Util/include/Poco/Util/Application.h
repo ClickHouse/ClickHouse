@@ -27,7 +27,6 @@
 #include "Poco/Path.h"
 #include "Poco/Timestamp.h"
 #include "Poco/Timespan.h"
-#include "Poco/AutoPtr.h"
 #if defined(POCO_VXWORKS)
 #include <cstdarg>
 #endif
@@ -187,7 +186,7 @@ public:
 		/// by the .ini file and the .xml file.
 		///
 		/// If the application is built in debug mode (the _DEBUG preprocessor
-		/// macro is defined) and the base name of the appication executable
+		/// macro is defined) and the base name of the application executable
 		/// ends with a 'd', a config file without the 'd' ending its base name is
 		/// also found.
 		///

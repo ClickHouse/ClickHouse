@@ -848,7 +848,7 @@ UNIT_DISPLAY_NAME(Units::T,   "T");
 UNIT_DISPLAY_NAME(Units::H,   "H");
 UNIT_DISPLAY_NAME(Units::lx,  "lx");
 UNIT_DISPLAY_NAME(Units::Gy,  "Gy");
-UNIT_DISPLAY_NAME(Units::kat,  "kat");
+UNIT_DISPLAY_NAME(Units::kat, "kat");
 
 
 namespace Units
@@ -1260,7 +1260,6 @@ namespace Constants
 
 	// Other constants:
 	const Value<double, Units::rad> pi (3.141592653589793);
-	const Value<double, Units::m> lightyear (9.4605284e15);
 	const Value<double, Units::km> AU(149597871);
 	const Value<double, Compose<Units::m, Power<Units::s, -2> > > g (9.80665);
 }

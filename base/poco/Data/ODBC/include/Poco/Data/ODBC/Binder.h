@@ -557,7 +557,7 @@ private:
 		if (size == _maxFieldSize)
 		{
 			getMinValueSize(val, size);
-			// accomodate for terminating zero
+			// accommodate for terminating zero
 			if (size != _maxFieldSize) ++size;
 		}
 
@@ -623,7 +623,7 @@ private:
 		if (size == _maxFieldSize)
 		{
 			getMinValueSize(val, size);
-			// accomodate for terminating zero
+			// accommodate for terminating zero
 			if (size != _maxFieldSize) size += sizeof(UTF16Char);
 		}
 
@@ -942,9 +942,9 @@ private:
 		/// This function runs for query and stored procedure parameters (in and 
 		/// out-bound). Some drivers, however, do not care about knowing this 
 		/// information to start with. For that reason, after all the attempts 
-		/// to discover the required values are unsuccesfully exhausted, the values 
+		/// to discover the required values are unsuccessfully exhausted, the values 
 		/// are both set to zero and no exception is thrown.
-		/// However, if the colSize is succesfully retrieved and it is greater than
+		/// However, if the colSize is successfully retrieved and it is greater than
 		/// session-wide maximum allowed field size, LengthExceededException is thrown.
 
 	void setParamSetSize(std::size_t length);

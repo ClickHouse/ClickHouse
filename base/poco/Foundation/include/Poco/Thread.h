@@ -108,7 +108,7 @@ public:
 	void setOSPriority(int prio, int policy = POLICY_DEFAULT);
 		/// Sets the thread's priority, using an operating system specific
 		/// priority value. Use getMinOSPriority() and getMaxOSPriority() to
-		/// obtain mininum and maximum priority values. Additionally,
+		/// obtain minimum and maximum priority values. Additionally,
 		/// a scheduling policy can be specified. The policy is currently
 		/// only used on POSIX platforms where the values SCHED_OTHER (default),
 		/// SCHED_FIFO and SCHED_RR are supported.

@@ -158,9 +158,9 @@ public:
 	{
 	}
 
-	AbstractEvent(const TStrategy& strat):
+	AbstractEvent(const TStrategy& strategy):
 		_executeAsync(this, &AbstractEvent::executeAsyncImpl),
-		_strategy(strat),
+		_strategy(strategy),
 		_enabled(true)
 	{
 	}
@@ -251,7 +251,7 @@ public:
 	ActiveResult<TArgs> notifyAsync(const void* pSender, const TArgs& args)
 		/// Sends a notification to all registered delegates. The order is
 		/// determined by the TStrategy. This method is not blocking and will
-		/// immediately return. The delegates are invoked in a seperate thread.
+		/// immediately return. The delegates are invoked in a separate thread.
 		/// Call activeResult.wait() to wait until the notification has ended.
 		/// While executing, other objects can change the delegate list. These changes don't
 		/// influence the current active notifications but are activated with
@@ -364,9 +364,9 @@ public:
 	{
 	}
 
-	AbstractEvent(const TStrategy& strat):
+	AbstractEvent(const TStrategy& strategy):
 		_executeAsync(this, &AbstractEvent::executeAsyncImpl),
-		_strategy(strat),
+		_strategy(strategy),
 		_enabled(true)
 	{
 	}
@@ -453,7 +453,7 @@ public:
 	ActiveResult<void> notifyAsync(const void* pSender)
 		/// Sends a notification to all registered delegates. The order is
 		/// determined by the TStrategy. This method is not blocking and will
-		/// immediately return. The delegates are invoked in a seperate thread.
+		/// immediately return. The delegates are invoked in a separate thread.
 		/// Call activeResult.wait() to wait until the notification has ended.
 		/// While executing, other objects can change the delegate list. These changes don't
 		/// influence the current active notifications but are activated with

@@ -28,7 +28,7 @@ namespace Poco {
 
 template <class Engine>
 class HMACEngine: public DigestEngine
-	/// This class implementes the HMAC message
+	/// This class implements the HMAC message
 	/// authentication code algorithm, as specified
 	/// in RFC 2104. The underlying DigestEngine
 	/// (MD5Engine, SHA1Engine, etc.) must be given as 
