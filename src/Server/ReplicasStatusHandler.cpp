@@ -59,7 +59,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 time_t absolute_delay = 0;
                 time_t relative_delay = 0;
 
-                if(!table_replicated->isTableReadOnly())
+                if (!table_replicated->isTableReadOnly())
                 {
                     table_replicated->getReplicaDelays(absolute_delay, relative_delay);
 
@@ -69,12 +69,12 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
                     message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
                         << ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
-
-                } else {
+                }
+                else
+                {
                     message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
                         << ":\tis readonly. \n";
                 }
-
             }
         }
 
