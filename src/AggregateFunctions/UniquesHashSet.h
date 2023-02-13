@@ -145,19 +145,20 @@ class HashAddressingForSSE2
 {
 private:
     inline static const __m128i zero16 = _mm_setzero_si128();
-    /**For sse2 processing, we should process 4 continues number
-    * in one shot. And for current buffer resize aglo, it can
-    * keep our buffer size always modular by 4. So if start index
-    * can modular by 4, it will always satisfy sse2 processing in
-    * hash addressing. If start index can not modular 4, we should
-    * start with aligned start index to make processing more simple
-    * and more efficiency. When start index can not modular 4, we still
-    * use aligned start index to calc address. But some test case
-    * (eg 01890_state_of_state) need our data distribute the same as
-    * original algo, this made us ignore some part that ahead start index.
-    * Or the data's distribution will different with original aglo.
-    * This will cause some fast test case fail
-    **/
+
+    /** For sse2 processing, we should process 4 continuous numbers
+      * in one shot. And for current buffer resize aglo, it can
+      * keep our buffer size always modular by 4. So if start index
+      * can modular by 4, it will always satisfy sse2 processing in
+      * hash addressing. If start index can not modular 4, we should
+      * start with aligned start index to make processing more simple
+      * and more efficiency. When start index can not modular 4, we still
+      * use aligned start index to calc address. But some test case
+      * (eg 01890_state_of_state) need our data distribute the same as
+      * original algo, this made us ignore some part that ahead start index.
+      * Or the data's distribution will different with original aglo.
+      * This will cause some fast test case fail.
+      */
     inline static size_t alignedStart(size_t start_index) { return (start_index & 0xFFFFFFFFFFFFFFFC); }
     inline static UInt16 calcInitIgnoreMask(size_t start_index, size_t aligned_start)
     {
