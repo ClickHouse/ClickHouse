@@ -1172,7 +1172,7 @@ void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
     if (FileCache::isReadOnly()
         && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed (query_id: {})", query_id);
 }
 
 String CachedOnDiskReadBufferFromFile::getInfoForLog()

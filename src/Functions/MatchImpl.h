@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
-#include "Regexps.h"
+#include <Functions/Regexps.h>
 
 #include "config.h"
 #include <re2_st/re2.h>

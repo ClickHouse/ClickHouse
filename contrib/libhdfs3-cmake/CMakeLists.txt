@@ -106,7 +106,7 @@ set(SRCS
 if (ARCH_AMD64)
     find_program(YASM_PATH NAMES yasm)
     if (NOT YASM_PATH)
-        message(FATAL_ERROR "Please install the Yasm assembler")
+        message(FATAL_ERROR "Please install the Yasm assembler to build ClickHouse with Hadoop Distributed File System (HDFS) support")
     endif ()
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/crc_iscsi_v_pcl.o
