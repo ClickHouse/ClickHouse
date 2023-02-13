@@ -57,7 +57,7 @@ struct ArraySortImpl
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of limit argument of function {} (must be UInt or Int)",
-                arguments[0].column->getName(),
+                arguments[0].type->getName(),
                 name);
     }
 
