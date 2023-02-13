@@ -322,7 +322,7 @@ sure both macros are undefined; an emulation function will then be used. */
    contain the relevant magic. If you do not define this macro, a suitable
     __declspec value is used for Windows systems; in other environments
    "extern" is used for a C compiler and "extern C" for a C++ compiler.
-   This macro apears at the start of every exported function that is part
+   This macro appears at the start of every exported function that is part
    of the external API. It does not appear on functions that are "external"
    in the C sense, but which are internal to the library. */
 /* #undef PCRE_EXP_DEFN */

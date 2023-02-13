@@ -2188,7 +2188,7 @@ regex. The lengths are used when searching for specific things, and also in the
 debugging printing of a compiled regex. We use a macro so that it can be
 defined close to the definitions of the opcodes themselves.
 
-As things have been extended, some of these are no longer fixed lenths, but are
+As things have been extended, some of these are no longer fixed lengths, but are
 minima instead. For example, the length of a single-character repeat may vary
 in UTF-8 mode. The code that uses this table must know about such things. */
 

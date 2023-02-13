@@ -958,6 +958,15 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return MergeAlgorithm::Horizontal;
 
+    if (!data_settings->allow_vertical_merges_from_compact_to_wide_parts)
+    {
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            if (!isWidePart(part))
+                return MergeAlgorithm::Horizontal;
+        }
+    }
+
     bool is_supported_storage =
         ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
         ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||

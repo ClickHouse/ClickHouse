@@ -903,6 +903,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 element.used_functions = factories_info.functions;
                 element.used_storages = factories_info.storages;
                 element.used_table_functions = factories_info.table_functions;
+
+                element.async_read_counters = context_ptr->getAsyncReadCounters();
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.

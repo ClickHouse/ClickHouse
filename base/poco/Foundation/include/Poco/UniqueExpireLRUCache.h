@@ -35,7 +35,7 @@ template <
 >
 class UniqueExpireLRUCache: public AbstractCache<TKey, TValue, StrategyCollection<TKey, TValue>, TMutex, TEventMutex>
 	/// A UniqueExpireLRUCache combines LRU caching and time based per entry expire caching.
-	/// One can define for each cache entry a seperate timepoint
+	/// One can define for each cache entry a separate timepoint
 	/// but also limit the size of the cache (per default: 1024).
 	/// Each TValue object must thus offer the following method:
 	///    
