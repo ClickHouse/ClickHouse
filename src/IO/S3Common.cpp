@@ -799,47 +799,6 @@ namespace S3
             put_request_throttler);
     }
 
-    std::vector<String>
-    listFiles(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & prefix, const String & extension)
-    {
-        std::vector<String> res;
-        S3::ListObjectsV2Request request;
-        Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-        bool is_finished{false};
-
-        request.SetBucket(bucket);
-
-        request.SetPrefix(prefix);
-
-        while (!is_finished)
-        {
-            outcome = client.ListObjectsV2(request);
-            if (!outcome.IsSuccess())
-                throw Exception(
-                    ErrorCodes::S3_ERROR,
-                    "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                    quoteString(bucket),
-                    quoteString(key),
-                    backQuote(outcome.GetError().GetExceptionName()),
-                    quoteString(outcome.GetError().GetMessage()));
-
-            const auto & result_batch = outcome.GetResult().GetContents();
-            for (const auto & obj : result_batch)
-            {
-                const auto & filename = obj.GetKey();
-
-                if (std::filesystem::path(filename).extension() == extension)
-                    res.push_back(filename);
-            }
-
-            request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
-            is_finished = !outcome.GetResult().GetIsTruncated();
-        }
-
-        return res;
-    }
 }
 }
 

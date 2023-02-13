@@ -2,10 +2,22 @@
 
 #if USE_AWS_S3
 
+#    include <IO/S3/Requests.h>
+#    include <Interpreters/Context.h>
 #    include <Storages/S3DataLakeMetaReadHelper.h>
+#    include <aws/core/auth/AWSCredentials.h>
+#    include <aws/s3/S3Client.h>
+#    include <aws/s3/model/ListObjectsV2Request.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int S3_ERROR;
+}
+
 std::shared_ptr<ReadBuffer>
 S3DataLakeMetaReadHelper::createReadBuffer(const String & key, ContextPtr context, const StorageS3::Configuration & base_configuration)
 {
@@ -23,8 +35,46 @@ std::vector<String> S3DataLakeMetaReadHelper::listFilesMatchSuffix(
     const StorageS3::Configuration & base_configuration, const String & directory, const String & suffix)
 {
     const auto & table_path = base_configuration.url.key;
-    return S3::listFiles(
-        *base_configuration.client, base_configuration.url.bucket, table_path, std::filesystem::path(table_path) / directory, suffix);
+    const auto & bucket = base_configuration.url.bucket;
+    const auto & client = base_configuration.client;
+
+    std::vector<String> res;
+    S3::ListObjectsV2Request request;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+
+    bool is_finished{false};
+
+    request.SetBucket(bucket);
+
+    request.SetPrefix(std::filesystem::path(table_path) / directory);
+
+    while (!is_finished)
+    {
+        outcome = client->ListObjectsV2(request);
+        if (!outcome.IsSuccess())
+            throw Exception(
+                ErrorCodes::S3_ERROR,
+                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
+                quoteString(bucket),
+                quoteString(base_configuration.url.key),
+                backQuote(outcome.GetError().GetExceptionName()),
+                quoteString(outcome.GetError().GetMessage()));
+
+        const auto & result_batch = outcome.GetResult().GetContents();
+        for (const auto & obj : result_batch)
+        {
+            const auto & filename = obj.GetKey();
+
+            if (std::filesystem::path(filename).extension() == suffix)
+                res.push_back(filename);
+        }
+
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+
+        is_finished = !outcome.GetResult().GetIsTruncated();
+    }
+
+    return res;
 }
 
 std::vector<String> S3DataLakeMetaReadHelper::listFiles(const StorageS3::Configuration & configuration)

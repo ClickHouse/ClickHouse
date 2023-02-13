@@ -96,10 +96,8 @@ private:
     Aws::SDKOptions aws_options;
     std::atomic<bool> s3_requests_logging_enabled;
 };
-
-std::vector<String>
-listFiles(const Aws::S3::S3Client & client, const String & bucket, const String & key, const String & prefix, const String & extension);
 }
+
 #endif
 
 namespace Poco::Util
