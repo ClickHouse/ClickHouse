@@ -22,7 +22,7 @@
 
 
 #if defined(POCO_NO_FPENVIRONMENT)
-#include "Poco/FPEnvironment_DUMMY.h"
+/// #include "Poco/FPEnvironment_DUMMY.h"
 #elif defined(__osf__)
 #include "Poco/FPEnvironment_DEC.h"
 #elif defined(sun) || defined(__sun)
