@@ -319,7 +319,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
 {
     std::set<String> role_names;
 
-    // If this node can't access LDAP server (or has not priviledges to fetch roles) and gets empty list of external roles
+    // If this node can't access LDAP server (or has not privileges to fetch roles) and gets empty list of external roles
     if (external_roles.size() == 0)
         return role_names;
 
