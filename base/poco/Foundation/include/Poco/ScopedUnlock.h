@@ -21,40 +21,41 @@
 #include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 template <class M>
 class ScopedUnlock
-	/// A class that simplifies thread synchronization
-	/// with a mutex.
-	/// The constructor accepts a Mutex and unlocks it.
-	/// The destructor locks the mutex.
+/// A class that simplifies thread synchronization
+/// with a mutex.
+/// The constructor accepts a Mutex and unlocks it.
+/// The destructor locks the mutex.
 {
 public:
-	inline ScopedUnlock(M& mutex, bool unlockNow = true): _mutex(mutex)
-	{
-		if (unlockNow)
-			_mutex.unlock();
-	}
-	inline ~ScopedUnlock()
-	{
-		try
-		{
-			_mutex.lock();
-		}
-		catch (...)
-		{
-			poco_unexpected();
-		}
-	}
+    inline ScopedUnlock(M & mutex, bool unlockNow = true) : _mutex(mutex)
+    {
+        if (unlockNow)
+            _mutex.unlock();
+    }
+    inline ~ScopedUnlock()
+    {
+        try
+        {
+            _mutex.lock();
+        }
+        catch (...)
+        {
+            poco_unexpected();
+        }
+    }
 
 private:
-	M& _mutex;
+    M & _mutex;
 
-	ScopedUnlock();
-	ScopedUnlock(const ScopedUnlock&);
-	ScopedUnlock& operator = (const ScopedUnlock&);
+    ScopedUnlock();
+    ScopedUnlock(const ScopedUnlock &);
+    ScopedUnlock & operator=(const ScopedUnlock &);
 };
 
 
