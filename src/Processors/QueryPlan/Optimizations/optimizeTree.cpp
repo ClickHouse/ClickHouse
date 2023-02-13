@@ -122,7 +122,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.optimize_projection)
-                applied_projection |= optimizeUseProjections(*frame.node, nodes);
+                applied_projection |= optimizeUseAggProjections(*frame.node, nodes);
 
             if (optimization_settings.aggregation_in_order)
                 optimizeAggregationInOrder(*frame.node, nodes);
@@ -138,6 +138,14 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             ++frame.next_child;
             stack.push_back(next_frame);
             continue;
+        }
+
+        if (optimization_settings.optimize_projection)
+        {
+            bool applied = optimizeUseNormalProjections(stack, nodes);
+            applied_projection |= applied;
+            if (applied && stack.back().next_child == 0)
+                continue;
         }
 
         optimizePrimaryKeyCondition(stack);
