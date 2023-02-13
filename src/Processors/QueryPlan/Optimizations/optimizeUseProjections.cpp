@@ -527,22 +527,22 @@ bool optimizeUseProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
                 .projection = projection,
                 .dag = std::move(proj_dag),
             });
+
+            minmax_count_projection_block = reading->getMergeTreeData().getMinMaxCountProjectionBlock(
+                metadata,
+                minmax_projection->dag->getRequiredColumnsNames(),
+                filter_node != nullptr,
+                query_info,
+                parts,
+                minmax_projection_normal_parts,
+                max_added_blocks.get(),
+                context);
+
+            if (!minmax_count_projection_block)
+                minmax_projection.reset();
+            else
+                best_candidate = &*minmax_projection;
         }
-
-        minmax_count_projection_block = reading->getMergeTreeData().getMinMaxCountProjectionBlock(
-            metadata,
-            minmax_projection->dag->getRequiredColumnsNames(),
-            filter_node != nullptr,
-            query_info,
-            parts,
-            minmax_projection_normal_parts,
-            max_added_blocks.get(),
-            context);
-
-        if (!minmax_count_projection_block)
-            minmax_projection.reset();
-        else
-            best_candidate = &*minmax_projection;
     }
 
     if (!minmax_projection)
