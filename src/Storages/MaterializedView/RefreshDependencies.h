@@ -12,7 +12,7 @@ namespace DB
 
 class RefreshTask;
 
-/// Concurrent primitive for managing list of dependant task and notifying them
+/// Concurrent primitive for managing list of dependent task and notifying them
 class RefreshDependencies
 {
     using Container = std::list<RefreshTaskObserver>;

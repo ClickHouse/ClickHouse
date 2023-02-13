@@ -6,15 +6,10 @@
 
 #include <Common/CurrentMetrics.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric Refresh;
-}
-
-namespace DB 
+namespace DB
 {
 
-struct RefreshInfo 
+struct RefreshInfo
 {
     String database;
     String view_name;

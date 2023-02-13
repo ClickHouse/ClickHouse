@@ -7,7 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Executors/ManualPipelineExecutor.h>
 
-namespace DB 
+namespace DB
 {
 
 namespace ErrorCodes

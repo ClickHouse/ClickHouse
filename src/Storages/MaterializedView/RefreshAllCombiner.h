@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// Concurrent primitive for dependency completeness registration
-/// When arrive methods return true, dependant task must be executed (or scheduled)
+/// When arrive methods return true, dependent task must be executed (or scheduled)
 class RefreshAllCombiner
 {
 public:

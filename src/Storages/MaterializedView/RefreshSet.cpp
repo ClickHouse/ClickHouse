@@ -1,6 +1,11 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric Refresh;
+}
+
 namespace DB
 {
 
