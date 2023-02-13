@@ -163,7 +163,7 @@ private:
     inline static UInt16 calcInitIgnoreMask(size_t start_index, size_t aligned_start)
     {
         if (start_index == aligned_start)
-            return 0xffff;
+            return 0xFFFF;
         auto offset_sse2 = ((start_index - aligned_start) << 2);
         //clear lower offset bits
         return (0xFFFF >> offset_sse2) << offset_sse2;
