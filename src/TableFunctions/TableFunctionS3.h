@@ -12,7 +12,6 @@ namespace DB
 {
 
 class Context;
-class TableFunctionS3Cluster;
 
 /* s3(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary storage for a file in S3.
  */
@@ -37,8 +36,10 @@ public:
         return {"_path", "_file"};
     }
 
+    template <bool get_format_from_file = true>
+    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & configuration);
+
 protected:
-    friend class TableFunctionS3Cluster;
 
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -50,8 +51,6 @@ protected:
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
-    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & configuration);
 
     mutable StorageS3::Configuration configuration;
     ColumnsDescription structure_hint;
