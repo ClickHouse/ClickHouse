@@ -126,6 +126,8 @@ public:
         return QueryTreeNodeType::JOIN;
     }
 
+    void crossToInner(const QueryTreeNodePtr & join_expression_);
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
