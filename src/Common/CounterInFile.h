@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <base/defines.h>
 #include <base/types.h>
 
 
@@ -112,11 +113,13 @@ public:
         }
         catch (...)
         {
-            close(fd);
+            int err = close(fd);
+            chassert(!err || errno == EINTR);
             throw;
         }
 
-        close(fd);
+        int err = close(fd);
+        chassert(!err || errno == EINTR);
         return res;
     }
 
@@ -180,11 +183,13 @@ public:
         }
         catch (...)
         {
-            close(fd);
+            int err = close(fd);
+            chassert(!err || errno == EINTR);
             throw;
         }
 
-        close(fd);
+        int err = close(fd);
+        chassert(!err || errno == EINTR);
     }
 
 private:

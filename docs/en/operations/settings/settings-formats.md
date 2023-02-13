@@ -1001,6 +1001,12 @@ Use Arrow String type instead of Binary for String columns.
 
 Disabled by default.
 
+### output_format_arrow_fixed_string_as_fixed_byte_array (#output_format_arrow_fixed_string_as_fixed_byte_array)
+
+Use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString columns.
+
+Enabled by default.
+
 ## ORC format settings {#orc-format-settings}
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
@@ -1086,6 +1092,12 @@ Disabled by default.
 Use Parquet String type instead of Binary for String columns.
 
 Disabled by default.
+
+### output_format_parquet_fixed_string_as_fixed_byte_array (#output_format_parquet_fixed_string_as_fixed_byte_array)
+
+Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns.
+
+Enabled by default.
 
 ## Hive format settings {#hive-format-settings}
 

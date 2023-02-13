@@ -391,10 +391,18 @@ For patterns to search for substrings in a string, it is better to use LIKE or �
 
 ## multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
 
-The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) library. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
+The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
 
 :::note
-The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.
+Functions `multiMatchAny`, `multiMatchAnyIndex`, `multiMatchAllIndices` and their fuzzy equivalents (`multiFuzzyMatchAny`,
+`multiFuzzyMatchAnyIndex`, `multiFuzzyMatchAllIndices`) use the (Vectorscan)[https://github.com/VectorCamp/vectorscan] library. As such,
+they are only enabled if ClickHouse is compiled with support for vectorscan.
+
+Due to restrictions of vectorscan, the length of the `haystack` string must be less than 2<sup>32</sup> bytes.
+
+Hyperscan is generally vulnerable to regular expression denial of service (ReDoS) attacks (e.g. see
+(here)[https://www.usenix.org/conference/usenixsecurity22/presentation/turonova], (here)[https://doi.org/10.1007/s10664-021-10033-1] and
+(here)[ https://doi.org/10.1145/3236024.3236027]. Users are adviced to check the provided patterns carefully.
 :::
 
 ## multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
