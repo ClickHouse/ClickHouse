@@ -23,8 +23,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <IO/WriteHelpers.h>
-
 namespace DB
 {
 
@@ -467,7 +465,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
-    bool from_session_context = static_cast<bool>(session_context);
+    const bool from_session_context = static_cast<bool>(session_context);
 
     /// Create a new query context.
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
