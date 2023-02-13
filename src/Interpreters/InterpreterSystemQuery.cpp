@@ -58,6 +58,10 @@
 #include <algorithm>
 #include <unistd.h>
 
+#if USE_AWS_S3
+#include <IO/S3/Client.h>
+#endif
+
 #include "config.h"
 
 namespace DB
@@ -338,6 +342,13 @@ BlockIO InterpreterSystemQuery::execute()
                 cache->reset();
             break;
 #endif
+#if USE_AWS_S3
+        case Type::DROP_S3_CLIENT_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
+            S3::ClientCacheRegistry::instance().clearCacheForAll();
+            break;
+#endif
+
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
@@ -875,8 +886,8 @@ void InterpreterSystemQuery::syncReplica()
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
-        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
-        if (!storage_replicated->waitForShrinkingQueueSize(0, getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
+        if (!storage_replicated->waitForProcessingQueue(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
@@ -978,6 +989,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_SCHEMA_CACHE:
+#if USE_AWS_S3
+        case Type::DROP_S3_CLIENT_CACHE:
+#endif
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
@@ -1153,11 +1167,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::END: break;
     }
     return required_access;
-}
-
-void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr) const
-{
-    elem.query_kind = "System";
 }
 
 }
