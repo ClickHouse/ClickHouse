@@ -272,7 +272,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 
         if (entry->create_time && (!min_unprocessed_insert_time || entry->create_time < min_unprocessed_insert_time))
         {
-            min_unprocessed_insert_time = entry->create_time;
+            min_unprocessed_insert_time.store(entry->create_time, std::memory_order_relaxed);
             min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
         }
     }
@@ -316,18 +316,18 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (inserts_by_time.empty())
         {
-            min_unprocessed_insert_time = 0;
+            min_unprocessed_insert_time.store(0, std::memory_order_relaxed);
             min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
         }
         else if ((*inserts_by_time.begin())->create_time > min_unprocessed_insert_time)
         {
-            min_unprocessed_insert_time = (*inserts_by_time.begin())->create_time;
+            min_unprocessed_insert_time.store((*inserts_by_time.begin())->create_time, std::memory_order_relaxed);
             min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
         }
 
         if (entry->create_time > max_processed_insert_time)
         {
-            max_processed_insert_time = entry->create_time;
+            max_processed_insert_time.store(entry->create_time, std::memory_order_relaxed);
             max_processed_insert_time_changed = max_processed_insert_time;
         }
     }
@@ -674,7 +674,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                     std::lock_guard state_lock(state_mutex);
                     if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
                     {
-                        min_unprocessed_insert_time = entry.create_time;
+                        min_unprocessed_insert_time.store(entry.create_time, std::memory_order_relaxed);
                         min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
                     }
                 }
@@ -1996,9 +1996,8 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res) const
 
 void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const
 {
-    std::lock_guard lock(state_mutex);
-    out_min_unprocessed_insert_time = min_unprocessed_insert_time;
-    out_max_processed_insert_time = max_processed_insert_time;
+    out_min_unprocessed_insert_time = min_unprocessed_insert_time.load(std::memory_order_relaxed);
+    out_max_processed_insert_time = max_processed_insert_time.load(std::memory_order_relaxed);
 }
 
 

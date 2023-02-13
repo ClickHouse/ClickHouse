@@ -69,7 +69,7 @@ public:
 		RE_NEWLINE_CRLF    = 0x00300000, /// assume newline is CRLF ("\r\n") [ctor]
 		RE_NEWLINE_ANY     = 0x00400000, /// assume newline is any valid Unicode newline character [ctor]
 		RE_NEWLINE_ANYCRLF = 0x00500000, /// assume newline is any of CR, LF, CRLF [ctor]
-		RE_GLOBAL          = 0x10000000, /// replace all occurences (/g) [subst]
+		RE_GLOBAL          = 0x10000000, /// replace all occurrences (/g) [subst]
 		RE_NO_VARS         = 0x20000000  /// treat dollar in replacement string as ordinary character [subst]
 	};
 	
@@ -85,7 +85,7 @@ public:
 		/// If study is true, the pattern is analyzed and optimized. This
 		/// is mainly useful if the pattern is used more than once.
 		/// For a description of the options, please see the PCRE documentation.
-		/// Throws a RegularExpressionException if the patter cannot be compiled.
+		/// Throws a RegularExpressionException if the pattern cannot be compiled.
 		
 	~RegularExpression();
 		/// Destroys the regular expression.

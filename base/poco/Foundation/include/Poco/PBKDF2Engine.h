@@ -29,7 +29,7 @@ namespace Poco {
 
 template <class PRF>
 class PBKDF2Engine: public DigestEngine
-	/// This class implementes the Password-Based Key Derivation Function 2,
+	/// This class implements the Password-Based Key Derivation Function 2,
 	/// as specified in RFC 2898. The underlying DigestEngine (HMACEngine, etc.),
 	/// which must accept the passphrase as constructor argument (std::string), 
 	/// must be given as template argument. 
