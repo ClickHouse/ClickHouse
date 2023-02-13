@@ -67,7 +67,7 @@ VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 def stringhash(s):
     # default hash() function consistent
-    # only during proces invocation https://stackoverflow.com/a/42089311
+    # only during process invocation https://stackoverflow.com/a/42089311
     return zlib.crc32(s.encode("utf-8"))
 
 
