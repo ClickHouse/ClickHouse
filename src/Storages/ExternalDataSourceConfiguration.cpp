@@ -278,7 +278,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         {
             uint64_t secure = dict_config.getBool(dict_config_prefix + ".secure", config.getBool(collection_prefix + ".secure", false));
 
-            non_common_args.emplace_back(std::make_pair("secure",  std::make_shared<ASTLiteral>(secure)));
+            non_common_args.emplace_back(std::make_pair("secure", std::make_shared<ASTLiteral>(secure)));
         }
 
 
