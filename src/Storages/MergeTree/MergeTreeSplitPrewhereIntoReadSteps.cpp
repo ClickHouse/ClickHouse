@@ -1,6 +1,5 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionsLogical.h>
-#include <Planner/PlannerActionsVisitor.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Interpreters/ExpressionActions.h>
@@ -44,7 +43,7 @@ void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const
     }
 }
 
-/// Stores information about a node that has already been cloned to one of the new DAGs.
+/// Stores information about a node that has already been cloned or added to one of the new DAGs.
 /// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earliers steps.
 struct DAGNodeRef
 {
@@ -52,16 +51,18 @@ struct DAGNodeRef
     const ActionsDAG::Node * node;
 };
 
-using OriginalToNewNodeMap = std::unordered_map<const ActionsDAG::Node *, DAGNodeRef>;
+/// Result name -> DAGNodeRef
+using OriginalToNewNodeMap = std::unordered_map<String, DAGNodeRef>;
 
 /// Clones the part of original DAG responsible for computing the original_dag_node and adds it to the new DAG.
 const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag_node, ActionsDAGPtr new_dag, OriginalToNewNodeMap & node_remap)
 {
+    const String & node_name = original_dag_node->result_name;
     /// Look for the node in the map of already known nodes
-    if (node_remap.contains(original_dag_node))
+    if (node_remap.contains(node_name))
     {
         /// If the node is already in the new DAG, return it
-        const auto & node_ref = node_remap.at(original_dag_node);
+        const auto & node_ref = node_remap.at(node_name);
         if (node_ref.dag == new_dag)
             return *node_ref.node;
 
@@ -70,7 +71,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         {
             node_ref.dag->addOrReplaceInOutputs(*node_ref.node);
             const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
-            node_remap[original_dag_node] = {new_dag, &new_node}; /// TODO: here we update the node reference. Is it always correct?
+            node_remap[node_name] = {new_dag, &new_node}; /// TODO: here we update the node reference. Is it always correct?
             return new_node;
         }
     }
@@ -79,7 +80,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
     if (original_dag_node->type == ActionsDAG::ActionType::INPUT)
     {
         const auto & new_node = new_dag->addInput(original_dag_node->result_name, original_dag_node->result_type);
-        node_remap[original_dag_node] = {new_dag, &new_node};
+        node_remap[node_name] = {new_dag, &new_node};
         return new_node;
     }
 
@@ -88,7 +89,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
     {
         const auto & new_node = new_dag->addColumn(
             ColumnWithTypeAndName(original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name));
-        node_remap[original_dag_node] = {new_dag, &new_node};
+        node_remap[node_name] = {new_dag, &new_node};
         return new_node;
     }
 
@@ -105,22 +106,36 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         }
 
         const auto & new_node = new_dag->addFunction(original_dag_node->function_base, new_children, original_dag_node->result_name);
-        node_remap[original_dag_node] = {new_dag, &new_node};
+        node_remap[node_name] = {new_dag, &new_node};
         return new_node;
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node type in PREWHERE actions: {}", original_dag_node->type);
 }
 
+const ActionsDAG::Node & addFunction(
+        ActionsDAGPtr new_dag,
+        const FunctionOverloadResolverPtr & function,
+        ActionsDAG::NodeRawConstPtrs children,
+        OriginalToNewNodeMap & node_remap)
+{
+    const auto & new_node = new_dag->addFunction(function, children, "");
+    node_remap[new_node.result_name] = {new_dag, &new_node};
+    return new_node;
+}
+
 /// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
 /// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
 /// but it might be required for further steps with its original uncasted type.
-const ActionsDAG::Node & addCast(ActionsDAGPtr dag, const ActionsDAG::Node & node_to_cast, const String & type_name, const String & new_name = {})
+const ActionsDAG::Node & addCast(
+        ActionsDAGPtr dag,
+        const ActionsDAG::Node & node_to_cast,
+        const String & type_name,
+        OriginalToNewNodeMap & node_remap)
 {
     Field cast_type_constant_value(type_name);
 
     ColumnWithTypeAndName column;
-    column.name = calculateConstantActionNodeName(cast_type_constant_value);
     column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
     column.type = std::make_shared<DataTypeString>();
 
@@ -128,7 +143,7 @@ const ActionsDAG::Node & addCast(ActionsDAGPtr dag, const ActionsDAG::Node & nod
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
     FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
 
-    return dag->addFunction(func_builder_cast, std::move(children), new_name);
+    return addFunction(dag, func_builder_cast, std::move(children), node_remap);
 }
 
 }
@@ -216,7 +231,7 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         {
             /// Add AND function to combine the conditions
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-            const auto & and_function_node = step_dag->addFunction(func_builder_and, new_condition_nodes, "");
+            const auto & and_function_node = addFunction(step_dag, func_builder_and, new_condition_nodes, node_remap);
             step_dag->addOrReplaceInOutputs(and_function_node);
             result_name = and_function_node.result_name;
         }
@@ -231,7 +246,7 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             }
             else
             {
-                const auto & cast_node = addCast(step_dag, result_node, "UInt8");
+                const auto & cast_node = addCast(step_dag, result_node, "UInt8", node_remap);
                 step_dag->addOrReplaceInOutputs(cast_node);
                 result_name = cast_node.result_name;
             }
@@ -248,9 +263,9 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     for (const auto * output : original_outputs)
     {
         all_output_names.insert(output->result_name);
-        if (node_remap.contains(output))
+        if (node_remap.contains(output->result_name))
         {
-            const auto & new_node_info = node_remap[output];
+            const auto & new_node_info = node_remap[output->result_name];
             new_node_info.dag->addOrReplaceInOutputs(*new_node_info.node);
         }
         else if (output->result_name == prewhere_info->prewhere_column_name)
