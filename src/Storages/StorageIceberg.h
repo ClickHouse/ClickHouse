@@ -5,21 +5,10 @@
 #if USE_AWS_S3
 
 #    include <Storages/IStorageDataLake.h>
-
-#    include <unordered_map>
-#    include <base/JSON.h>
+#    include <Storages/S3DataLakeMetaReadHelper.h>
 
 namespace DB
 {
-
-struct S3MetaReadHelper
-{
-    static std::shared_ptr<ReadBuffer>
-    createReadBuffer(const String & key, ContextPtr context, const StorageS3::Configuration & base_configuration);
-
-    static std::vector<String>
-    listFilesMatchSuffix(const StorageS3::Configuration & base_configuration, const String & directory, const String & suffix);
-};
 
 // Class to parse iceberg metadata and find files needed for query in table
 // Iceberg table directory outlook:
@@ -42,7 +31,6 @@ private:
     Configuration base_configuration;
     ContextPtr context;
 
-    /// Just get file name
     String getNewestMetaFile() const;
     String getManiFestList(const String & metadata_name) const;
     std::vector<String> getManifestFiles(const String & manifest_list) const;
@@ -57,7 +45,7 @@ struct StorageIcebergName
     static constexpr auto data_directory_prefix = "data";
 };
 
-using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3MetaReadHelper>>;
+using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
 }
 
 #endif

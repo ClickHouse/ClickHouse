@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #    include <Storages/IStorageDataLake.h>
+#    include <Storages/S3DataLakeMetaReadHelper.h>
 #    include <Storages/StorageS3.h>
 
 #    include <base/JSON.h>
@@ -28,10 +29,11 @@ private:
 };
 
 // class to get deltalake log json files and read json from them
+template <typename Configuration, typename MetaReadHelper>
 class DeltaLakeMetaParser
 {
 public:
-    DeltaLakeMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context);
+    DeltaLakeMetaParser(const Configuration & configuration_, ContextPtr context);
 
     std::vector<String> getFiles() { return std::move(metadata).listCurrentFiles(); }
 
@@ -42,11 +44,9 @@ private:
 
     std::vector<String> getJsonLogFiles() const;
 
-    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
-
     void handleJSON(const JSON & json);
 
-    StorageS3::Configuration base_configuration;
+    Configuration base_configuration;
     DeltaLakeMetadata metadata;
 };
 
@@ -56,7 +56,7 @@ struct StorageDeltaLakeName
     static constexpr auto data_directory_prefix = "";
 };
 
-using StorageDeltaLake = IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser>;
+using StorageDeltaLake = IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
 }
 
 #endif
