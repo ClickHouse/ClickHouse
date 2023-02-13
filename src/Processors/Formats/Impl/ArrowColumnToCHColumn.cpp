@@ -151,7 +151,7 @@ static ColumnWithTypeAndName readColumnWithFixedStringData(std::shared_ptr<arrow
     size_t fixed_len = fixed_type->byte_width();
     auto internal_type = std::make_shared<DataTypeFixedString>(fixed_len);
     auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnFixedString &>(*internal_column).getChars();
+    auto & column_chars_t = assert_cast<ColumnFixedString &>(*internal_column).getChars();
     column_chars_t.reserve(arrow_column->length() * fixed_len);
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
