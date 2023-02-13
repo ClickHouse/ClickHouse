@@ -1,5 +1,6 @@
 #pragma once
 
+#include <new>
 #include <vector>
 #include <memory>
 #include <type_traits>
@@ -75,6 +76,25 @@ class RawVector : public std::vector<T, DefaultInitAllocator<T>>
     using vector_no_default_init = std::vector<T>;
     using vector = std::vector<T, DefaultInitAllocator<T>>;
 
+    static const unsigned _bits_per_word = static_cast<unsigned>(sizeof(size_t) * CHAR_BIT);
+    static size_t _align_it(size_t new_size) noexcept
+    {
+        return (new_size + (_bits_per_word-1)) & ~(static_cast<size_t>(_bits_per_word)-1);
+    }
+    /// NOTE: differs from the PODArray since RawVector operate elements, not bytes.
+    size_t _recommend(size_t new_size) const
+    {
+        const size_t ms = this->max_size();
+        if (new_size > ms)
+            throw std::length_error("vector");
+
+        const size_t cap = this->capacity();
+        if (cap >= ms / 2)
+            return ms;
+        return std::max<size_t>(2 * cap, _align_it(new_size));
+    }
+
+
 public:
     using vector::vector;
 
@@ -83,6 +103,16 @@ public:
     /// Avoid debug assertion, since we have padding for SIMD_BYTES.
     constexpr typename vector::reference operator[](size_t pos) { return this->begin()[pos]; }
     constexpr typename vector::const_reference operator[](size_t pos) const { return this->begin()[pos]; }
+
+    /// Every operation, except reserve, doubles the reserve size.
+    /// Do this for reseve() too.
+    ///
+    /// NOTE: that this differs from what PODArray does with roundUpToPowerOfTwoOrZero()
+    void reserve(size_t size)
+    {
+        size_t new_size = this->_recommend(size);
+        get_stl_vector()->reserve(new_size);
+    }
 
     void resize_fill(size_t size)
     {
