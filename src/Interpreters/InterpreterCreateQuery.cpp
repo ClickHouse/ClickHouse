@@ -936,8 +936,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             if (create.storage->engine)
             {
-                if (create.storage->engine->name.starts_with("Replicated"))
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated table engines");
+                if (create.storage->engine->name.starts_with("Replicated") || create.storage->engine->name == "KeeperMap")
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Temporary tables cannot be created with Replicated or KeeperMap table engines");
             }
             else
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid storage definition for temporary table");

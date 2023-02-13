@@ -43,3 +43,11 @@ ENGINE = TinyLog;
 INSERT INTO table_tiny_log_02525 VALUES (1, 'a'), (2, 'b'), (3, 'c');
 SELECT * FROM table_tiny_log_02525;
 DROP TEMPORARY TABLE table_tiny_log_02525;
+
+DROP TEMPORARY TABLE IF EXISTS table_keeper_map_02525;
+CREATE TEMPORARY TABLE table_keeper_map_02525
+(
+    key String,
+    value UInt32
+) Engine=KeeperMap('/' || currentDatabase() || '/test02525')
+PRIMARY KEY(key); -- { serverError 80 }
