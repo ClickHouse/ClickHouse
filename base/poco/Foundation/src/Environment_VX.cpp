@@ -32,8 +32,6 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <netinet/if_ether.h>
-#include <ifLib.h>
-#include <unistd.h>
 
 
 namespace Poco {

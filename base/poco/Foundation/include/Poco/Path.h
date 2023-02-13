@@ -168,7 +168,7 @@ public:
 		/// Appends the given path.
 		
 	Path& resolve(const Path& path);
-		/// Resolves the given path agains the current one.
+		/// Resolves the given path against the current one.
 		///
 		/// If the given path is absolute, it replaces the current one.
 		/// Otherwise, the relative path is appended to the current path.

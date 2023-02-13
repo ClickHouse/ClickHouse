@@ -419,22 +419,22 @@ public:
 		/// Returns true if the log level is at least PRIO_TEST.
 
 	static std::string format(const std::string& fmt, const std::string& arg);
-		/// Replaces all occurences of $0 in fmt with the string given in arg and
+		/// Replaces all occurrences of $0 in fmt with the string given in arg and
 		/// returns the result. To include a dollar sign in the result string,
 		/// specify two dollar signs ($$) in the format string.
 		
 	static std::string format(const std::string& fmt, const std::string& arg0, const std::string& arg1);
-		/// Replaces all occurences of $<n> in fmt with the string given in arg<n> and
+		/// Replaces all occurrences of $<n> in fmt with the string given in arg<n> and
 		/// returns the result. To include a dollar sign in the result string,
 		/// specify two dollar signs ($$) in the format string.
 
 	static std::string format(const std::string& fmt, const std::string& arg0, const std::string& arg1, const std::string& arg2);	
-		/// Replaces all occurences of $<n> in fmt with the string given in arg<n> and
+		/// Replaces all occurrences of $<n> in fmt with the string given in arg<n> and
 		/// returns the result. To include a dollar sign in the result string,
 		/// specify two dollar signs ($$) in the format string.
 
 	static std::string format(const std::string& fmt, const std::string& arg0, const std::string& arg1, const std::string& arg2, const std::string& arg3);	
-		/// Replaces all occurences of $<n> in fmt with the string given in arg<n> and
+		/// Replaces all occurrences of $<n> in fmt with the string given in arg<n> and
 		/// returns the result. To include a dollar sign in the result string,
 		/// specify two dollar signs ($$) in the format string.
 
@@ -480,7 +480,7 @@ public:
 		
 	static Logger* has(const std::string& name);
 		/// Returns a pointer to the Logger with the given name if it
-		/// exists, or a null pointer otherwse.
+		/// exists, or a null pointer otherwise.
 		
 	static void destroy(const std::string& name);
 		/// Destroys the logger with the specified name. Does nothing
