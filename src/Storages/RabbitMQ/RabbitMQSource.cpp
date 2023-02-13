@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
+#include <Common/logger_useful.h>
 #include <IO/EmptyReadBuffer.h>
 
 namespace DB
@@ -62,6 +63,7 @@ RabbitMQSource::RabbitMQSource(
     , ack_in_suffix(ack_in_suffix_)
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
+    , log(&Poco::Logger::get("RabbitMQSource"))
 {
     storage.incrementReader();
 }
@@ -107,17 +109,15 @@ Chunk RabbitMQSource::generate()
     return chunk;
 }
 
-bool RabbitMQSource::checkTimeLimit() const
+bool RabbitMQSource::isTimeLimitExceeded() const
 {
-    if (max_execution_time != 0)
+    if (max_execution_time_ms != 0)
     {
-        auto elapsed_ns = total_stopwatch.elapsed();
-
-        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
-            return false;
+        uint64_t elapsed_time_ms = total_stopwatch.elapsedMilliseconds();
+        return max_execution_time_ms <= elapsed_time_ms;
     }
 
-    return true;
+    return false;
 }
 
 Chunk RabbitMQSource::generateImpl()
@@ -128,9 +128,11 @@ Chunk RabbitMQSource::generateImpl()
         consumer = storage.popConsumer(timeout);
     }
 
-    if (!consumer || is_finished)
+    if (is_finished || !consumer || consumer->isConsumerStopped())
         return {};
 
+    /// Currently it is one time usage source: to make sure data is flushed
+    /// strictly by timeout or by block size.
     is_finished = true;
 
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
@@ -139,17 +141,17 @@ Chunk RabbitMQSource::generateImpl()
             storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size);
 
     StreamingFormatExecutor executor(non_virtual_header, input_format);
-
     size_t total_rows = 0;
 
     while (true)
     {
-        if (consumer->queueEmpty())
-            break;
-
         size_t new_rows = 0;
-        if (auto buf = consumer->consume())
-            new_rows = executor.execute(*buf);
+
+        if (!consumer->hasPendingMessages())
+        {
+            if (auto buf = consumer->consume())
+                new_rows = executor.execute(*buf);
+        }
 
         if (new_rows)
         {
@@ -172,12 +174,17 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[5]->insert(timestamp);
             }
 
-            total_rows = total_rows + new_rows;
+            total_rows += new_rows;
         }
 
-        if (total_rows >= max_block_size || consumer->queueEmpty() || consumer->isConsumerStopped() || !checkTimeLimit())
+        if (total_rows >= max_block_size || consumer->isConsumerStopped() || isTimeLimitExceeded())
             break;
     }
+
+    LOG_TEST(
+        log,
+        "Flushing {} rows (max block size: {}, time: {} / {} ms)",
+        total_rows, max_block_size, total_stopwatch.elapsedMilliseconds(), max_execution_time_ms);
 
     if (total_rows == 0)
         return {};
