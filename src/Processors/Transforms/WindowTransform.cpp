@@ -1980,6 +1980,11 @@ struct WindowFunctionNtile final : public WindowFunction
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one parameter", name_);
         }
+        auto type_id = argument_types[0]->getTypeId();
+        if (type_id != TypeIndex::UInt8 && type_id != TypeIndex::UInt16 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt64)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument type must be an unsigned integer (not larger then 64-bit), but got {}", argument_types[0]->getName());
+        }
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -1992,14 +1997,23 @@ struct WindowFunctionNtile final : public WindowFunction
             checkWindowFrameType(transform);
             const auto & current_block = transform->blockAt(transform->current_row);
             const auto & workspace = transform->workspaces[function_index];
-            auto n = (*current_block.input_columns[
-                    workspace.argument_column_indices[0]])[
-                        transform->current_row.row].get<Int64>();
-            if (n <= 0)
+            auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
+            if (!isColumnConst(arg_col))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must be a constant");
+            auto type_id = argument_types[0]->getTypeId();
+            if (type_id == TypeIndex::UInt8)
+                buckets = arg_col[transform->current_row.row].get<UInt8>();
+            else if (type_id == TypeIndex::UInt16)
+                buckets = arg_col[transform->current_row.row].get<UInt16>();
+            else if (type_id == TypeIndex::UInt32)
+                buckets = arg_col[transform->current_row.row].get<UInt32>();
+            else if (type_id == TypeIndex::UInt64)
+                buckets = arg_col[transform->current_row.row].get<UInt64>();
+
+            if (!buckets)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must > 0");
             }
-            buckets = static_cast<UInt64>(n);
         }
         // new partition
         if (transform->current_row_number == 1) [[unlikely]]
@@ -2040,22 +2054,22 @@ struct WindowFunctionNtile final : public WindowFunction
                 current_bucket_capacity += 1;
                 capacity_diff--;
             }
-            Int64 left_rows = static_cast<Int64>(current_bucket_capacity);
-            while (left_rows > 0)
+            auto left_rows = current_bucket_capacity;
+            while (left_rows)
             {
                 auto available_block_rows = transform->blockRowsNumber(start_row) - start_row.row;
                 IColumn & to = *transform->blockAt(start_row).output_columns[function_index];
                 auto & pod_array = assert_cast<ColumnUInt64 &>(to).getData();
-                if (left_rows < static_cast<Int64>(available_block_rows))
+                if (left_rows < available_block_rows)
                 {
-                    pod_array.resize_fill(pod_array.size() + static_cast<UInt64>(left_rows), bucket_num);
-                    start_row.row += static_cast<UInt64>(left_rows);
+                    pod_array.resize_fill(pod_array.size() + left_rows, bucket_num);
+                    start_row.row += left_rows;
                     left_rows = 0;
                 }
                 else
                 {
                     pod_array.resize_fill(pod_array.size() + available_block_rows, bucket_num);
-                    left_rows -= static_cast<Int64>(available_block_rows);
+                    left_rows -= available_block_rows;
                     start_row.block++;
                     start_row.row = 0;
                 }
@@ -2072,6 +2086,12 @@ private:
 
     void checkWindowFrameType(const WindowTransform * transform)
     {
+        if (transform->order_by_indices.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's window frame must have order by clause");
+        if (transform->window_description.frame.type != WindowFrame::FrameType::ROWS)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame type must be rows");
+        }
         if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame start type must be Unbounded");
