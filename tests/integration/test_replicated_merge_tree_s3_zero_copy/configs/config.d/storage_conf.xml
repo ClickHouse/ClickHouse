@@ -53,4 +53,6 @@
         <shard>0</shard>
     </macros>
 
+    <database_atomic_delay_before_drop_table_sec>3</database_atomic_delay_before_drop_table_sec>
+    <database_atomic_drop_error_cooldown_sec>0</database_atomic_drop_error_cooldown_sec>
 </clickhouse>
