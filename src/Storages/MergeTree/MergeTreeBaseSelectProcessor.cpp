@@ -145,6 +145,7 @@ using OriginalToNewNodeMap = std::unordered_map<const ActionsDAG::Node *, DAGNod
 
 const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag_node, ActionsDAGPtr new_dag, OriginalToNewNodeMap & node_remap)
 {
+    /// Look for the node in the map of already known nodes
     if (node_remap.contains(original_dag_node))
     {
         /// If the node is already in the new DAG, return it
@@ -152,11 +153,14 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         if (node_ref.dag == new_dag)
             return *node_ref.node;
 
-        /// If the node is known from the previous steps, add it as an input
-        node_ref.dag->addOrReplaceInOutputs(*node_ref.node);
-        const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
-        node_remap[original_dag_node] = {new_dag, &new_node}; /// TODO: here we update the node reference. Is ti always correct?
-        return new_node;
+        /// If the node is known from the previous steps, add it as an input, except for constants
+        if (original_dag_node->type != ActionsDAG::ActionType::COLUMN)
+        {
+            node_ref.dag->addOrReplaceInOutputs(*node_ref.node);
+            const auto & new_node = new_dag->addInput(node_ref.node->result_name, node_ref.node->result_type);
+            node_remap[original_dag_node] = {new_dag, &new_node}; /// TODO: here we update the node reference. Is ti always correct?
+            return new_node;
+        }
     }
 
     /// If the node is an input, add it as an input
