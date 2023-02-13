@@ -158,7 +158,9 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     if (!prewhere_info || !prewhere_info->prewhere_actions)
         return true;
 
-//    std::cerr << "ORIGINAL PREWHERE:\n" << prewhere_info->prewhere_actions->dumpDAG() << std::endl;
+    Poco::Logger * log = &Poco::Logger::get("tryBuildPrewhereSteps");
+
+    LOG_TRACE(log, "Original PREWHERE DAG:\n{}", prewhere_info->prewhere_actions->dumpDAG());
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
@@ -200,15 +202,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
 
     for (const auto & condition_group : condition_groups)
     {
-//        std::cerr
-//            << "Conditions: [";
-//
-//        for (const auto & condition : condition_group)
-//            std::cerr << " \"" << condition->result_name;
-//
-//        std::cerr << "\" ] Columns: " << boost::algorithm::join(nodes_info[condition_group.front()].required_columns, " ")
-//            << std::endl;
-
         ActionsDAGPtr step_dag = std::make_shared<ActionsDAG>();
         String result_name;
 
@@ -244,8 +237,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             }
         }
 
-//        std::cerr << "Step DAG:\n" << step_dag->dumpDAG() << std::endl;
-
         steps.push_back({step_dag, result_name});
     }
 
@@ -256,7 +247,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     NameSet all_output_names;
     for (const auto * output : original_outputs)
     {
-//        std::cerr << "Original output: " << output->result_name << std::endl;
         all_output_names.insert(output->result_name);
         if (node_remap.contains(output))
         {
@@ -284,7 +274,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     {
         for (const auto & step : steps)
         {
-//            std::cerr << "Step DAG:\n" << step.actions->dumpDAG() << std::endl;
             prewhere.steps.push_back(
             {
                 .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
@@ -295,6 +284,8 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         }
         prewhere.steps.back().need_filter = prewhere_info->need_filter;
     }
+
+    LOG_TRACE(log, "Resulting PREWHERE:\n{}", prewhere.dump());
 
     return true;
 }
