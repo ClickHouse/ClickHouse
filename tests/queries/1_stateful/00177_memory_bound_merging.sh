@@ -10,6 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 check_replicas_read_in_order() {
+    # to check this we actually look for at least one log message from MergeTreeInOrderSelectProcessor.
+    # hopefully logger's names are a bit more stable than log messages itself
     $CLICKHOUSE_CLIENT -nq "
         SYSTEM FLUSH LOGS;
 
@@ -19,6 +21,8 @@ check_replicas_read_in_order() {
             AND event_date >= yesterday() AND logger_name = 'MergeTreeInOrderSelectProcessor'"
 }
 
+# replicas should use reading in order following initiator's decision to execute aggregation in order.
+# at some point we had a bug in this logic (see https://github.com/ClickHouse/ClickHouse/pull/45892#issue-1566140414)
 test1() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -nq "
@@ -27,13 +31,15 @@ test1() {
         SELECT URL, EventDate, max(URL)
         FROM remote(test_cluster_one_shard_two_replicas, test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
-        GROUP BY CounterID, URL, EventDate, EventDate
+        GROUP BY CounterID, URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
         SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, use_hedged_requests = 0"
     check_replicas_read_in_order $query_id
 }
 
+# replicas should use reading in order following initiator's decision to execute aggregation in order.
+# at some point we had a bug in this logic (see https://github.com/ClickHouse/ClickHouse/pull/45892#issue-1566140414)
 test2() {
     query_id="query_id_memory_bound_merging_$RANDOM$RANDOM"
     $CLICKHOUSE_CLIENT --query_id="$query_id" -nq "
@@ -42,7 +48,7 @@ test2() {
         SELECT URL, EventDate, max(URL)
         FROM remote(test_cluster_one_shard_two_replicas, test.hits)
         WHERE CounterID = 1704509 AND UserID = 4322253409885123546
-        GROUP BY URL, EventDate, EventDate
+        GROUP BY URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
         SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 3, use_hedged_requests = 0, query_plan_aggregation_in_order = 1"
