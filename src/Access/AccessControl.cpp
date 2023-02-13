@@ -675,7 +675,7 @@ std::vector<std::pair<String, String>> AccessControl::getPasswordComplexityRules
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
     const UUID & user_id,
     const std::vector<UUID> & current_roles,
-    const std::vector<UUID> & additional_roles,
+    const std::vector<UUID> & external_roles,
     bool use_default_roles,
     const Settings & settings,
     const String & current_database,
@@ -684,7 +684,7 @@ std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(
     ContextAccessParams params;
     params.user_id = user_id;
     params.current_roles.insert(current_roles.begin(), current_roles.end());
-    params.additional_roles.insert(additional_roles.begin(), additional_roles.end());
+    params.external_roles.insert(external_roles.begin(), external_roles.end());
     params.use_default_roles = use_default_roles;
     params.current_database = current_database;
     params.readonly = settings.readonly;

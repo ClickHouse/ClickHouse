@@ -49,10 +49,11 @@ public:
 
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
-    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & extra_granted_roles_ = {});
-    /// `extra_granted_roles_` names of the additional roles (over what is granted via local access control mechanisms) that would be granted to used during this session.
+    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_ = {});
+
+    /// `external_roles_` names of the additional roles (over what is granted via local access control mechanisms) that would be granted to user during this session.
     /// Role is not granted if it can't be found by name via AccessControl (i.e. doesn't exist on this instance).
-    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & extra_granted_roles_ = {});
+    void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_ = {});
 
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
@@ -93,7 +94,7 @@ private:
 
     mutable UserPtr user;
     std::optional<UUID> user_id;
-    std::vector<UUID> extra_granted_roles;
+    std::vector<UUID> external_roles;
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

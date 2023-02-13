@@ -254,19 +254,25 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind)
             connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
     }
 
-    auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, true);
-    boost::container::flat_set<String> granted_roles;
-    if (user)
+    // Collect all roles granted on this node and pass those to the remote node
+    std::vector<String> local_granted_roles;
+    if (context->getSettingsRef().allow_extenral_roles_in_interserver_queries)
     {
-        const auto & access_control = context->getAccessControl();
-        for (const auto & e : user->granted_roles.getElements())
+        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, true);
+        boost::container::flat_set<String> granted_roles;
+        if (user)
         {
-            auto names = access_control.readNames(e.ids);
-            granted_roles.insert(names.begin(), names.end());
+            const auto & access_control = context->getAccessControl();
+            for (const auto & e : user->granted_roles.getElements())
+            {
+                auto names = access_control.readNames(e.ids);
+                granted_roles.insert(names.begin(), names.end());
+            }
         }
+        local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
     }
 
-    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, std::vector(granted_roles.begin(), granted_roles.end()));
+    connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
 
     established = false;
     sent_query = true;

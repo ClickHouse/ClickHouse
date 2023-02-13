@@ -306,12 +306,12 @@ AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & u
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & extra_granted_roles_)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address, extra_granted_roles_);
+    authenticate(BasicCredentials{user_name, password}, address, external_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & extra_granted_roles_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -329,12 +329,12 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         LOG_DEBUG(log, "Authenticated with global context as user {}",
                 toString(*user_id));
 
-        if (!extra_granted_roles_.empty() && global_context->getSettingsRef().allow_extenral_roles_in_interserver_queries)
+        if (!external_roles_.empty() && global_context->getSettingsRef().allow_extenral_roles_in_interserver_queries)
         {
-            extra_granted_roles = global_context->getAccessControl().find<Role>(extra_granted_roles_);
+            external_roles = global_context->getAccessControl().find<Role>(external_roles_);
 
-            LOG_DEBUG(log, "User {} will have extra roles: [{}]",
-                    toString(*user_id), fmt::join(extra_granted_roles_, ", "));
+            LOG_DEBUG(log, "User {} will have external_roles applied: [{}] ({})",
+                    toString(*user_id), fmt::join(external_roles_, ", "), external_roles_.size());
         }
     }
     catch (const Exception & e)
@@ -393,7 +393,7 @@ ContextMutablePtr Session::makeSessionContext()
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id)
-        new_session_context->setUser(*user_id, extra_granted_roles);
+        new_session_context->setUser(*user_id, external_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -433,7 +433,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !new_session_context->getAccess()->tryGetUser())
-        new_session_context->setUser(*user_id, extra_granted_roles);
+        new_session_context->setUser(*user_id, external_roles);
 
     /// Session context is ready.
     session_context = std::move(new_session_context);
@@ -510,7 +510,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, extra_granted_roles);
+        query_context->setUser(*user_id, external_roles);
 
     /// Query context is ready.
     query_context_created = true;

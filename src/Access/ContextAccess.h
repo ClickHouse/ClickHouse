@@ -36,7 +36,7 @@ struct ContextAccessParams
 {
     std::optional<UUID> user_id;
     boost::container::flat_set<UUID> current_roles;
-    boost::container::flat_set<UUID> additional_roles;
+    boost::container::flat_set<UUID> external_roles;
     bool use_default_roles = false;
     UInt64 readonly = 0;
     bool allow_ddl = false;
@@ -51,7 +51,7 @@ struct ContextAccessParams
     auto toTuple() const
     {
         return std::tie(
-            user_id, current_roles, additional_roles, use_default_roles, readonly, allow_ddl, allow_introspection,
+            user_id, current_roles, external_roles, use_default_roles, readonly, allow_ddl, allow_introspection,
             current_database, interface, http_method, address, forwarded_address, quota_key);
     }
 

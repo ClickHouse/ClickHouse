@@ -506,7 +506,7 @@ void Connection::sendQuery(
     const Settings * settings,
     const ClientInfo * client_info,
     bool with_pending_data,
-    const std::vector<String> & extra_roles,
+    const std::vector<String> & external_roles,
     std::function<void(const Progress &)>)
 {
     OpenTelemetry::SpanHolder span("Connection::sendQuery()");
@@ -574,16 +574,16 @@ void Connection::sendQuery(
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
-    String extra_roles_str;
+    String external_roles_str;
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
     {
-        WriteBufferFromString buffer(extra_roles_str);
-        writeVectorBinary(extra_roles, buffer);
+        WriteBufferFromString buffer(external_roles_str);
+        writeVectorBinary(external_roles, buffer);
         buffer.finalize();
 
-        LOG_DEBUG(log_wrapper.get(), "Sending extra roles [{}] ()", fmt::join(extra_roles, ", "));
+        LOG_DEBUG(log_wrapper.get(), "Sending external_roles with query: [{}] ({})", fmt::join(external_roles, ", "), external_roles.size());
 
-        writeStringBinary(extra_roles_str, *out);
+        writeStringBinary(external_roles_str, *out);
     }
 
     /// Interserver secret
@@ -603,7 +603,7 @@ void Connection::sendQuery(
             data += query;
             data += query_id;
             data += client_info->initial_user;
-            data += extra_roles_str;
+            data += external_roles_str;
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

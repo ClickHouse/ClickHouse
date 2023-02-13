@@ -288,7 +288,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles = user->granted_roles.findGranted(params.current_roles);
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(params.current_roles);
     }
-    current_roles.insert(current_roles.end(), params.additional_roles.begin(), params.additional_roles.end());
+    current_roles.insert(current_roles.end(), params.external_roles.begin(), params.external_roles.end());
 
     subscription_for_roles_changes.reset();
     enabled_roles = access_control->getEnabledRoles(current_roles, current_roles_with_admin_option);
@@ -717,7 +717,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
         {
             auto role_name = get_name_function(role_id, i);
             if (!role_name)
-                role_name = "ID {" + DB::toString(role_id) + "}";
+                role_name = "ID {" + toString(role_id) + "}";
 
             if (info->enabled_roles.count(role_id))
                 show_error(ErrorCodes::ACCESS_DENIED,

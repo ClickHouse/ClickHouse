@@ -53,7 +53,7 @@ RemoteInserter::RemoteInserter(
       */
     /// TODO (vnemkov): figure out should we pass additional roles in this case or not.
     connection.sendQuery(
-        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, /* extra_roles */ {}, {});
+        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, /* external_roles */ {}, {});
 
     while (true)
     {

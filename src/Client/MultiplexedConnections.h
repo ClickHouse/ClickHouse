@@ -40,7 +40,7 @@ public:
         UInt64 stage,
         ClientInfo & client_info,
         bool with_pending_data,
-        const std::vector<String> & extra_roles) override;
+        const std::vector<String> & external_roles) override;
 
     void sendReadTaskResponse(const String &) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;

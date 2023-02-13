@@ -176,7 +176,7 @@ public:
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
         const std::vector<UUID> & current_roles,
-        const std::vector<UUID> & additional_roles,
+        const std::vector<UUID> & external_roles,
         bool use_default_roles,
         const Settings & settings,
         const String & current_database,
