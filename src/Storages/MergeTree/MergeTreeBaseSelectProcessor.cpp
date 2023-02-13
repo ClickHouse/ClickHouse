@@ -315,9 +315,11 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     auto original_outputs = prewhere_info->prewhere_actions->getOutputs();
     /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
     /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
+    NameSet all_output_names;
     for (const auto * output : original_outputs)
     {
 //        std::cerr << "Original output: " << output->result_name << std::endl;
+        all_output_names.insert(output->result_name);
         if (node_remap.contains(output))
         {
             const auto & new_node_info = node_remap[output];
@@ -325,14 +327,12 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         }
         else if (output->result_name == prewhere_info->prewhere_column_name)
         {
-            /// Special case for final PREWHERE column:
-            /// "Rename" the last step result to the combined PREWHERE column name, because in fact it will be AND of all step results
-            const auto & prewhere_result_node = addCast(
-                steps.back().actions,
-                steps.back().actions->findInOutputs(steps.back().column_name),
-                output->result_type->getName(),
-                prewhere_info->prewhere_column_name);
-
+            /// Special case for final PREWHERE column: it is an AND combination of all conditions,
+            /// but we have only the condition for the last step here.
+            /// However we know that the ultimate result after filtering is constant 1 for the PREWHERE column.
+            auto const_true = output->result_type->createColumnConst(0, Field{1});
+            const auto & prewhere_result_node =
+                steps.back().actions->addColumn(ColumnWithTypeAndName(const_true, output->result_type, output->result_name));
             steps.back().actions->addOrReplaceInOutputs(prewhere_result_node);
         }
         else
@@ -351,11 +351,10 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             {
                 .actions = std::make_shared<ExpressionActions>(step.actions, actions_settings),
                 .column_name = step.column_name,
-                .remove_column = true,
+                .remove_column = !all_output_names.contains(step.column_name), /// Don't remove if it's in the list of original outputs
                 .need_filter = false,
             });
         }
-        prewhere.steps.back().remove_column = prewhere_info->remove_prewhere_column;
         prewhere.steps.back().need_filter = prewhere_info->need_filter;
     }
 
@@ -385,7 +384,8 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
 //        std::cerr << "ORIGINAL PREWHERE:\n" << prewhere_info->prewhere_actions->dumpDAG() << std::endl;
 
 #if 1
-        if (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, *prewhere_actions))
+        if (!enable_multiple_prewhere_read_steps ||
+            !tryBuildPrewhereSteps(prewhere_info, actions_settings, *prewhere_actions))
         {
             PrewhereExprStep prewhere_step
             {
