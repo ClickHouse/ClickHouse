@@ -298,8 +298,6 @@ public:
 
     static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
 
-    static void parseArguments(const String & error_message, ASTs& args, ContextPtr local_context, Configuration & configuration);
-
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
 private:
