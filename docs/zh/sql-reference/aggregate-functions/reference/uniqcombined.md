@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/uniqcombined
-sidebar_position: 192
+toc_priority: 192
 ---
 
 # uniqCombined {#agg_function-uniqcombined}

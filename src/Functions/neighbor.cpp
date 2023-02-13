@@ -61,17 +61,20 @@ public:
         size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be from 2 to 3",
-                getName(), number_of_arguments);
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(number_of_arguments)
+                    + ", should be from 2 to 3",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         // second argument must be an integer
         if (!isInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {} - should be an integer", arguments[1]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - should be an integer",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         else if (arguments[1]->isNullable())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {} - can not be Nullable", arguments[1]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - can not be Nullable",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
@@ -132,7 +135,7 @@ public:
                 }
                 if (size <= 0)
                     return;
-                if (size > static_cast<Int64>(input_rows_count))
+                if (size > Int64(input_rows_count))
                     size = input_rows_count;
 
                 if (!src)
@@ -160,14 +163,14 @@ public:
             }
             else if (offset > 0)
             {
-                insert_range_from(source_is_constant, source_column_casted, offset, static_cast<Int64>(input_rows_count) - offset);
-                insert_range_from(default_is_constant, default_column_casted, static_cast<Int64>(input_rows_count) - offset, offset);
+                insert_range_from(source_is_constant, source_column_casted, offset, Int64(input_rows_count) - offset);
+                insert_range_from(default_is_constant, default_column_casted, Int64(input_rows_count) - offset, offset);
                 return result_column;
             }
             else
             {
                 insert_range_from(default_is_constant, default_column_casted, 0, -offset);
-                insert_range_from(source_is_constant, source_column_casted, 0, static_cast<Int64>(input_rows_count) + offset);
+                insert_range_from(source_is_constant, source_column_casted, 0, Int64(input_rows_count) + offset);
                 return result_column;
             }
         }
@@ -185,7 +188,7 @@ public:
 
                 Int64 src_idx = row + offset;
 
-                if (src_idx >= 0 && src_idx < static_cast<Int64>(input_rows_count))
+                if (src_idx >= 0 && src_idx < Int64(input_rows_count))
                     result_column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
                 else if (has_defaults)
                     result_column->insertFrom(*default_column_casted, default_is_constant ? 0 : row);
@@ -200,7 +203,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Neighbor)
+void registerFunctionNeighbor(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNeighbor>();
 }

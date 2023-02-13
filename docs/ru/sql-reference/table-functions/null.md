@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/table-functions/null
-sidebar_position: 53
-sidebar_label: null функция
+toc_priority: 53
+toc_title: null функция
 ---
 
 # null {#null-function}
@@ -40,3 +39,5 @@ DROP TABLE IF EXISTS t;
 См. также:
 
 -   [Движок таблиц Null](../../engines/table-engines/special/null.md)
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/null/) <!--hide-->

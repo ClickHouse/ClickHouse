@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/register_objects.h>
 #include <Common/IFactoryWithAliases.h>
-#include <Common/Documentation.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -16,35 +14,33 @@
 namespace DB
 {
 
-using FunctionCreator = std::function<FunctionOverloadResolverPtr(ContextPtr)>;
-using FunctionFactoryData = std::pair<FunctionCreator, Documentation>;
-
 /** Creates function by name.
   * Function could use for initialization (take ownership of shared_ptr, for example)
   *  some dictionaries from Context.
   */
-class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<FunctionFactoryData>
+class FunctionFactory : private boost::noncopyable,
+                        public IFactoryWithAliases<std::function<FunctionOverloadResolverPtr(ContextPtr)>>
 {
 public:
     static FunctionFactory & instance();
 
     template <typename Function>
-    void registerFunction(Documentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
+    void registerFunction(CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
-        registerFunction<Function>(Function::name, std::move(doc), case_sensitiveness);
+        registerFunction<Function>(Function::name, case_sensitiveness);
     }
 
     template <typename Function>
-    void registerFunction(const std::string & name, Documentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
+    void registerFunction(const std::string & name, CaseSensitiveness case_sensitiveness = CaseSensitive)
     {
 
         if constexpr (std::is_base_of_v<IFunction, Function>)
-            registerFunction(name, &adaptFunctionToOverloadResolver<Function>, std::move(doc), case_sensitiveness);
+            registerFunction(name, &adaptFunctionToOverloadResolver<Function>, case_sensitiveness);
         else
-            registerFunction(name, &Function::create, std::move(doc), case_sensitiveness);
+            registerFunction(name, &Function::create, case_sensitiveness);
     }
 
-    /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
+    /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
     std::vector<std::string> getAllNames() const;
 
     bool has(const std::string & name) const;
@@ -63,11 +59,8 @@ public:
     /// No locking, you must register all functions before usage of get.
     void registerFunction(
         const std::string & name,
-        FunctionCreator creator,
-        Documentation doc = {},
+        Value creator,
         CaseSensitiveness case_sensitiveness = CaseSensitive);
-
-    Documentation getDocumentation(const std::string & name) const;
 
 private:
     using Functions = std::unordered_map<std::string, Value>;
@@ -87,7 +80,5 @@ private:
 
     String getFactoryName() const override { return "FunctionFactory"; }
 };
-
-const String & getFunctionCanonicalNameIfAny(const String & name);
 
 }

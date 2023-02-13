@@ -1,5 +1,3 @@
--- Tags: no-s3-storage
-
 DROP TABLE IF EXISTS in_memory;
 CREATE TABLE in_memory (a UInt32, b UInt32)
     ENGINE = MergeTree ORDER BY a

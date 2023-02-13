@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/LineAsStringRowInputFormat.h>
-#include <Formats/newLineSegmentationEngine.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 #include <Columns/ColumnString.h>
@@ -19,7 +19,7 @@ LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, Re
     if (header_.columns() != 1
         || !typeid_cast<const ColumnString *>(header_.getByPosition(0).column.get()))
     {
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "This input format is only suitable for tables with a single column of type String.");
+        throw Exception("This input format is only suitable for tables with a single column of type String.", ErrorCodes::INCORRECT_QUERY);
     }
 }
 
@@ -62,12 +62,6 @@ void registerInputFormatLineAsString(FormatFactory & factory)
         return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
     });
 }
-
-void registerFileSegmentationEngineLineAsString(FormatFactory & factory)
-{
-    factory.registerFileSegmentationEngine("LineAsString", &newLineFileSegmentationEngine);
-}
-
 
 void registerLineAsStringSchemaReader(FormatFactory & factory)
 {

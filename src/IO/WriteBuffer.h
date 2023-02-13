@@ -1,10 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <iostream>
 #include <cassert>
-#include <cstring>
+#include <string.h>
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -152,7 +153,7 @@ private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
-    virtual void nextImpl() { throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer."); }
+    virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); }
 };
 
 

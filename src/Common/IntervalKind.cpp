@@ -7,16 +7,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 Int32 IntervalKind::toAvgSeconds() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-        case IntervalKind::Microsecond:
-        case IntervalKind::Millisecond: return 0;
         case IntervalKind::Second: return 1;
         case IntervalKind::Minute: return 60;
         case IntervalKind::Hour: return 3600;
@@ -26,52 +22,7 @@ Int32 IntervalKind::toAvgSeconds() const
         case IntervalKind::Quarter: return 7889238; /// Exactly 1/4 of a year.
         case IntervalKind::Year: return 31556952;   /// The average length of a Gregorian year is equal to 365.2425 days
     }
-    UNREACHABLE();
-}
-
-Float64 IntervalKind::toSeconds() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Nanosecond:
-            return 0.000000001;
-        case IntervalKind::Microsecond:
-            return 0.000001;
-        case IntervalKind::Millisecond:
-            return 0.001;
-        case IntervalKind::Second:
-            return 1;
-        case IntervalKind::Minute:
-            return 60;
-        case IntervalKind::Hour:
-            return 3600;
-        case IntervalKind::Day:
-            return 86400;
-        case IntervalKind::Week:
-            return 604800;
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not possible to get precise number of seconds in non-precise interval");
-    }
-    UNREACHABLE();
-}
-
-bool IntervalKind::isFixedLength() const
-{
-    switch (kind)
-    {
-        case IntervalKind::Nanosecond:
-        case IntervalKind::Microsecond:
-        case IntervalKind::Millisecond:
-        case IntervalKind::Second:
-        case IntervalKind::Minute:
-        case IntervalKind::Hour:
-        case IntervalKind::Day:
-        case IntervalKind::Week: return true;
-        case IntervalKind::Month:
-        case IntervalKind::Quarter:
-        case IntervalKind::Year: return false;
-    }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
@@ -101,9 +52,6 @@ const char * IntervalKind::toKeyword() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond: return "NANOSECOND";
-        case IntervalKind::Microsecond: return "MICROSECOND";
-        case IntervalKind::Millisecond: return "MILLISECOND";
         case IntervalKind::Second: return "SECOND";
         case IntervalKind::Minute: return "MINUTE";
         case IntervalKind::Hour: return "HOUR";
@@ -113,7 +61,7 @@ const char * IntervalKind::toKeyword() const
         case IntervalKind::Quarter: return "QUARTER";
         case IntervalKind::Year: return "YEAR";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
@@ -121,9 +69,6 @@ const char * IntervalKind::toLowercasedKeyword() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond: return "nanosecond";
-        case IntervalKind::Microsecond: return "microsecond";
-        case IntervalKind::Millisecond: return "millisecond";
         case IntervalKind::Second: return "second";
         case IntervalKind::Minute: return "minute";
         case IntervalKind::Hour: return "hour";
@@ -133,7 +78,7 @@ const char * IntervalKind::toLowercasedKeyword() const
         case IntervalKind::Quarter: return "quarter";
         case IntervalKind::Year: return "year";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
@@ -141,12 +86,6 @@ const char * IntervalKind::toDateDiffUnit() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-            return "nanosecond";
-        case IntervalKind::Microsecond:
-            return "microsecond";
-        case IntervalKind::Millisecond:
-            return "millisecond";
         case IntervalKind::Second:
             return "second";
         case IntervalKind::Minute:
@@ -164,7 +103,7 @@ const char * IntervalKind::toDateDiffUnit() const
         case IntervalKind::Year:
             return "year";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
@@ -172,12 +111,6 @@ const char * IntervalKind::toNameOfFunctionToIntervalDataType() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-            return "toIntervalNanosecond";
-        case IntervalKind::Microsecond:
-            return "toIntervalMicrosecond";
-        case IntervalKind::Millisecond:
-            return "toIntervalMillisecond";
         case IntervalKind::Second:
             return "toIntervalSecond";
         case IntervalKind::Minute:
@@ -195,7 +128,7 @@ const char * IntervalKind::toNameOfFunctionToIntervalDataType() const
         case IntervalKind::Year:
             return "toIntervalYear";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
@@ -203,12 +136,6 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 {
     switch (kind)
     {
-        case IntervalKind::Nanosecond:
-            return "toNanosecond";
-        case IntervalKind::Microsecond:
-            return "toMicrosecond";
-        case IntervalKind::Millisecond:
-            return "toMillisecond";
         case IntervalKind::Second:
             return "toSecond";
         case IntervalKind::Minute:
@@ -221,7 +148,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
             // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
             // else if (ParserKeyword("WEEK").ignore(pos, expected))
             //    function_name = "toRelativeWeekNum";
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week");
+            throw Exception("The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week", ErrorCodes::SYNTAX_ERROR);
         case IntervalKind::Month:
             return "toMonth";
         case IntervalKind::Quarter:
@@ -229,27 +156,12 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
         case IntervalKind::Year:
             return "toYear";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 
 bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
 {
-    if ("nanosecond" == kind)
-    {
-        result = IntervalKind::Nanosecond;
-        return true;
-    }
-    if ("microsecond" == kind)
-    {
-        result = IntervalKind::Microsecond;
-        return true;
-    }
-    if ("millisecond" == kind)
-    {
-        result = IntervalKind::Millisecond;
-        return true;
-    }
     if ("second" == kind)
     {
         result = IntervalKind::Second;

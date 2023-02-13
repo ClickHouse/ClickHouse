@@ -47,7 +47,7 @@ struct ArrayDifferenceImpl
         if (which.isDecimal())
             return std::make_shared<DataTypeArray>(expression_return);
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayDifference cannot process values of type {}", expression_return->getName());
+        throw Exception("arrayDifference cannot process values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 
@@ -84,7 +84,7 @@ struct ArrayDifferenceImpl
                 }
                 else
                 {
-                    dst[pos] = static_cast<Result>(curr) - static_cast<Result>(prev);
+                    dst[pos] = curr - prev;
                 }
 
                 prev = curr;
@@ -148,14 +148,14 @@ struct ArrayDifferenceImpl
             executeType<Decimal128, Decimal128>(mapped, array, res))
             return res;
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayDifference: {}", mapped->getName());
+            throw Exception("Unexpected column for arrayDifference: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
 struct NameArrayDifference { static constexpr auto name = "arrayDifference"; };
 using FunctionArrayDifference = FunctionArrayMapped<ArrayDifferenceImpl, NameArrayDifference>;
 
-REGISTER_FUNCTION(ArrayDifference)
+void registerFunctionArrayDifference(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayDifference>();
 }

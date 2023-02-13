@@ -1,7 +1,8 @@
 ---
-slug: /ru/getting-started/
-sidebar_label: "Начало работы"
-sidebar_position: 8
+toc_folder_title: "Начало работы"
+toc_hidden: true
+toc_priority: 8
+toc_title: hidden
 ---
 
 # Начало работы {#nachalo-raboty}
@@ -12,3 +13,4 @@ sidebar_position: 8
 
 -   [Пройти подробное руководство для начинающих](tutorial.md)
 -   [Поэкспериментировать с тестовыми наборами данных](example-datasets/ontime.md)
+

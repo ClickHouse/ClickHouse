@@ -9,7 +9,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -q "drop user if exists u_00600"
 ${CLICKHOUSE_CLIENT} -q "create user u_00600 settings max_execution_time=60, readonly=1"
-${CLICKHOUSE_CLIENT} -q "grant select on system.numbers to u_00600"
 
 function wait_for_query_to_start()
 {

@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/integrations/jdbc
-sidebar_position: 3
-sidebar_label: JDBC
+toc_priority: 3
+toc_title: JDBC
 ---
 
 # JDBC {#table-engine-jdbc}
@@ -95,3 +94,4 @@ FROM system.numbers
 ## Смотрите также {#smotrite-takzhe}
 
 -   [Табличная функция JDBC](../../../engines/table-engines/integrations/jdbc.md).
+

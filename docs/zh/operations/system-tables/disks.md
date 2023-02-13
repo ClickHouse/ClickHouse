@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/disks
----
 # system.disks {#system_tables-disks}
 
 包含在 [服务器配置](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure) 中定义的磁盘信息.
@@ -16,7 +13,7 @@ slug: /zh/operations/system-tables/disks
 **示例**
 
 ```sql
-SELECT * FROM system.disks;
+:) SELECT * FROM system.disks;
 ```
 
 ```text
@@ -26,3 +23,5 @@ SELECT * FROM system.disks;
 
 1 rows in set. Elapsed: 0.001 sec.
 ```
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/disks) <!--hide-->

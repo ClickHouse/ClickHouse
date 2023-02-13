@@ -5,7 +5,7 @@
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
@@ -20,11 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /**
  * ORDER-PRESERVING parallel formatting of data formats.
  * The idea is similar to ParallelParsingInputFormat.
@@ -33,11 +28,13 @@ namespace ErrorCodes
  * Then, another thread add temporary buffers into a "real" WriteBuffer.
  *
  *                   Formatters
- *      ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓   ↓
- *    ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
- *    | 1 | 2 | 3 | 4 | 5 | . | . | . | . | N | ← Processing units
- *    └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
- *      ↑               ↑
+ *      |   |   |   |   |   |   |   |   |   |
+ *      v   v   v   v   v   v   v   v   v   v
+ *    |---|---|---|---|---|---|---|---|---|---|
+ *    | 1 | 2 | 3 | 4 | 5 | . | . | . | . | N | <-- Processing units
+ *    |---|---|---|---|---|---|---|---|---|---|
+ *      ^               ^
+ *      |               |
  *   Collector       addChunk
  *
  * There is a container of ProcessingUnits - internal entity, storing a Chunk to format,
@@ -170,12 +167,6 @@ private:
 
     void finalizeImpl() override;
 
-    void resetFormatterImpl() override
-    {
-        /// Resetting parallel formatting is not obvious and it's not used anywhere
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method resetFormatterImpl is not implemented for parallel formatting");
-    }
-
     InternalFormatterCreator internal_formatter_creator;
 
     /// Status to synchronize multiple threads.
@@ -236,6 +227,7 @@ private:
     size_t rows_consumed = 0;
     std::atomic_bool are_totals_written = false;
 
+    Statistics statistics;
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
@@ -244,7 +236,7 @@ private:
 
     void onBackgroundException()
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock<std::mutex> lock(mutex);
         if (!background_exception)
         {
             background_exception = std::current_exception();

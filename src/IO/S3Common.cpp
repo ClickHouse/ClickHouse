@@ -1,21 +1,19 @@
-#include <IO/S3Common.h>
-
-#include <Common/Exception.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
+
+#    include <IO/S3Common.h>
 
 #    include <Common/quoteString.h>
 
 #    include <IO/WriteBufferFromString.h>
-#    include <IO/HTTPHeaderEntries.h>
 #    include <Storages/StorageS3Settings.h>
 
 #    include <aws/core/Version.h>
 #    include <aws/core/auth/AWSCredentialsProvider.h>
 #    include <aws/core/auth/AWSCredentialsProviderChain.h>
 #    include <aws/core/auth/STSCredentialsProvider.h>
+#    include <aws/core/client/DefaultRetryStrategy.h>
 #    include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #    include <aws/core/platform/Environment.h>
 #    include <aws/core/platform/OSVersionInfo.h>
@@ -25,45 +23,16 @@
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
+#    include <aws/s3/S3Client.h>
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
-#    include <IO/S3/Client.h>
-#    include <IO/S3/URI.h>
-#    include <IO/S3/Requests.h>
-#    include <Common/logger_useful.h>
+#    include <Poco/URI.h>
+#    include <re2/re2.h>
+#    include <boost/algorithm/string/case_conv.hpp>
+#    include <base/logger_useful.h>
 
 #    include <fstream>
-
-namespace ProfileEvents
-{
-    extern const Event S3GetObjectAttributes;
-    extern const Event S3GetObjectMetadata;
-    extern const Event S3HeadObject;
-    extern const Event DiskS3GetObjectAttributes;
-    extern const Event DiskS3GetObjectMetadata;
-    extern const Event DiskS3HeadObject;
-}
-
-namespace DB
-{
-
-bool S3Exception::isRetryableError() const
-{
-    /// Looks like these list is quite conservative, add more codes if you wish
-    static const std::unordered_set<Aws::S3::S3Errors> unretryable_errors = {
-        Aws::S3::S3Errors::NO_SUCH_KEY,
-        Aws::S3::S3Errors::ACCESS_DENIED,
-        Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
-        Aws::S3::S3Errors::INVALID_SIGNATURE,
-        Aws::S3::S3Errors::NO_SUCH_UPLOAD,
-        Aws::S3::S3Errors::NO_SUCH_BUCKET,
-    };
-
-    return !unretryable_errors.contains(code);
-}
-
-}
 
 namespace
 {
@@ -75,14 +44,12 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
 
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
-    /// We map levels to our own logger 1 to 1 except WARN+ levels. In most cases we failover such errors with retries
-    /// and don't want to see them as Errors in our logs.
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
     {
-        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_FATAL}},
+        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::error, Poco::Message::PRIO_FATAL}},
+        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::error, Poco::Message::PRIO_ERROR}},
+        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::warning, Poco::Message::PRIO_WARNING}},
         {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
         {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
@@ -93,8 +60,7 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
 class AWSLogger final : public Aws::Utils::Logging::LogSystemInterface
 {
 public:
-    explicit AWSLogger(bool enable_s3_requests_logging_)
-        :enable_s3_requests_logging(enable_s3_requests_logging_)
+    AWSLogger()
     {
         for (auto [tag, name] : S3_LOGGER_TAG_NAMES)
             tag_loggers[tag] = &Poco::Logger::get(name);
@@ -104,13 +70,7 @@ public:
 
     ~AWSLogger() final = default;
 
-    Aws::Utils::Logging::LogLevel GetLogLevel() const final
-    {
-        if (enable_s3_requests_logging)
-            return Aws::Utils::Logging::LogLevel::Trace;
-        else
-            return Aws::Utils::Logging::LogLevel::Info;
-    }
+    Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
@@ -125,9 +85,9 @@ public:
     void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        if (tag_loggers.contains(tag))
+        if (tag_loggers.count(tag) > 0)
         {
-            LOG_IMPL(tag_loggers[tag], level, prio, fmt::runtime(message));
+            LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
         }
         else
         {
@@ -139,7 +99,6 @@ public:
 
 private:
     Poco::Logger * default_logger;
-    bool enable_s3_requests_logging;
     std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
@@ -151,12 +110,13 @@ class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
     static constexpr char EC2_IMDS_TOKEN_TTL_HEADER[] = "x-aws-ec2-metadata-token-ttl-seconds";
 
+    static constexpr char EC2_DEFAULT_METADATA_ENDPOINT[] = "http://169.254.169.254";
+
 public:
     /// See EC2MetadataClient.
 
-    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
+    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
         : Aws::Internal::AWSHttpResourceClient(client_configuration)
-        , endpoint(endpoint_)
         , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
     {
     }
@@ -166,7 +126,7 @@ public:
     AWSEC2MetadataClient& operator =(const AWSEC2MetadataClient && rhs) = delete;
     AWSEC2MetadataClient(const AWSEC2MetadataClient && rhs) = delete;
 
-    ~AWSEC2MetadataClient() override = default;
+    virtual ~AWSEC2MetadataClient() override = default;
 
     using Aws::Internal::AWSHttpResourceClient::GetResource;
 
@@ -179,9 +139,9 @@ public:
     {
         String credentials_string;
         {
-            std::lock_guard locker(token_mutex);
+            std::unique_lock<std::recursive_mutex> locker(token_mutex);
 
-            LOG_TRACE(logger, "Getting default credentials for ec2 instance from {}", endpoint);
+            LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
             auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
             credentials_string = result.GetPayload();
             if (result.GetResponseCode() == Aws::Http::HttpResponseCode::UNAUTHORIZED)
@@ -225,7 +185,7 @@ public:
         String new_token;
 
         {
-            std::lock_guard locker(token_mutex);
+            std::unique_lock<std::recursive_mutex> locker(token_mutex);
 
             Aws::StringStream ss;
             ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
@@ -287,49 +247,11 @@ public:
     }
 
 private:
-    const Aws::String endpoint;
+    const Aws::String endpoint = EC2_DEFAULT_METADATA_ENDPOINT;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
     Poco::Logger * logger;
 };
-
-std::shared_ptr<AWSEC2MetadataClient> InitEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
-{
-    Aws::String ec2_metadata_service_endpoint = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
-    auto * logger = &Poco::Logger::get("AWSEC2InstanceProfileConfigLoader");
-    if (ec2_metadata_service_endpoint.empty())
-    {
-        Aws::String ec2_metadata_service_endpoint_mode = Aws::Environment::GetEnv("AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE");
-        if (ec2_metadata_service_endpoint_mode.length() == 0)
-        {
-            ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
-        }
-        else
-        {
-            if (ec2_metadata_service_endpoint_mode.length() == 4)
-            {
-                if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv4"))
-                {
-                    ec2_metadata_service_endpoint = "http://169.254.169.254"; //default to IPv4 default endpoint
-                }
-                else if (Aws::Utils::StringUtils::CaselessCompare(ec2_metadata_service_endpoint_mode.c_str(), "ipv6"))
-                {
-                    ec2_metadata_service_endpoint = "http://[fd00:ec2::254]";
-                }
-                else
-                {
-                    LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
-                }
-            }
-            else
-            {
-                LOG_ERROR(logger, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE can only be set to ipv4 or ipv6, received: {}", ec2_metadata_service_endpoint_mode);
-            }
-        }
-    }
-    LOG_INFO(logger, "Using IMDS endpoint: {}", ec2_metadata_service_endpoint);
-    return std::make_shared<AWSEC2MetadataClient>(client_configuration, ec2_metadata_service_endpoint.c_str());
-}
 
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
@@ -341,10 +263,10 @@ public:
     {
     }
 
-    ~AWSEC2InstanceProfileConfigLoader() override = default;
+    virtual ~AWSEC2InstanceProfileConfigLoader() override = default;
 
 protected:
-    bool LoadInternal() override
+    virtual bool LoadInternal() override
     {
         auto credentials_str = use_secure_pull ? client->getDefaultCredentialsSecurely() : client->getDefaultCredentials();
 
@@ -362,7 +284,7 @@ protected:
 
         auto credentials_view = credentials_doc.View();
         access_key = credentials_view.GetString("AccessKeyId");
-        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key.");
+        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
 
         secret_key = credentials_view.GetString("SecretAccessKey");
         token = credentials_view.GetString("Token");
@@ -560,7 +482,7 @@ protected:
         Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
         auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
-        LOG_TRACE(logger, "Successfully retrieved credentials.");
+        LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
         credentials = result.creds;
     }
 
@@ -595,17 +517,9 @@ private:
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
+    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
     {
         auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
-
-        /// add explicit credentials to the front of the chain
-        /// because it's manually defined by the user
-        if (!credentials.IsEmpty())
-        {
-            AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
-            return;
-        }
 
         if (use_environment_credentials)
         {
@@ -615,24 +529,16 @@ public:
             static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
             /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
-            /// is that this chain uses custom ClientConfiguration. Also we removed process provider because it's useless in our case.
-            ///
-            /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
-            /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
-            {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-                    configuration.region,
-                    configuration.remote_host_filter,
-                    configuration.s3_max_redirects,
-                    configuration.enable_s3_requests_logging,
-                    configuration.for_disk_s3,
-                    configuration.get_request_throttler,
-                    configuration.put_request_throttler);
-                AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
-            }
+            /// is that this chain uses custom ClientConfiguration.
 
             AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
+            AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+            AddProvider(std::make_shared<Aws::Auth::ProcessCredentialsProvider>());
 
+            {
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
+                AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
+            }
 
             /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
             const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
@@ -664,14 +570,7 @@ public:
             }
             else if (Aws::Utils::StringUtils::ToLower(ec2_metadata_disabled.c_str()) != "true")
             {
-                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-                    configuration.region,
-                    configuration.remote_host_filter,
-                    configuration.s3_max_redirects,
-                    configuration.enable_s3_requests_logging,
-                    configuration.for_disk_s3,
-                    configuration.get_request_throttler,
-                    configuration.put_request_throttler);
+                DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
 
                 /// See MakeDefaultHttpResourceClientConfiguration().
                 /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
@@ -693,7 +592,7 @@ public:
 
                 aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
-                auto ec2_metadata_client = InitEC2MetadataClient(aws_client_configuration);
+                auto ec2_metadata_client = std::make_shared<AWSEC2MetadataClient>(aws_client_configuration);
                 auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !use_insecure_imds_request);
 
                 AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
@@ -701,10 +600,74 @@ public:
             }
         }
 
-        /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
-        /// in chain.
-        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+        AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
     }
+};
+
+class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
+{
+public:
+    S3AuthSigner(
+        const Aws::Client::ClientConfiguration & client_configuration,
+        const Aws::Auth::AWSCredentials & credentials,
+        const DB::HeaderCollection & headers_,
+        bool use_environment_credentials,
+        bool use_insecure_imds_request)
+        : Aws::Client::AWSAuthV4Signer(
+            std::make_shared<S3CredentialsProviderChain>(
+                static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
+                credentials,
+                use_environment_credentials,
+                use_insecure_imds_request),
+            "s3",
+            client_configuration.region,
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            false)
+        , headers(headers_)
+    {
+    }
+
+    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool sign_body) const override
+    {
+        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
+        for (const auto & header : headers)
+            request.SetHeaderValue(header.name, header.value);
+        return result;
+    }
+
+    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, const char * service_name, bool sign_body) const override
+    {
+        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, service_name, sign_body);
+        for (const auto & header : headers)
+            request.SetHeaderValue(header.name, header.value);
+        return result;
+    }
+
+    bool PresignRequest(
+        Aws::Http::HttpRequest & request,
+        const char * region,
+        long long expiration_time_sec) const override // NOLINT
+    {
+        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, expiration_time_sec);
+        for (const auto & header : headers)
+            request.SetHeaderValue(header.name, header.value);
+        return result;
+    }
+
+    bool PresignRequest(
+        Aws::Http::HttpRequest & request,
+        const char * region,
+        const char * service_name,
+        long long expiration_time_sec) const override // NOLINT
+    {
+        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, service_name, expiration_time_sec);
+        for (const auto & header : headers)
+            request.SetHeaderValue(header.name, header.value);
+        return result;
+    }
+
+private:
+    const DB::HeaderCollection headers;
 };
 
 }
@@ -714,7 +677,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int S3_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -723,7 +686,7 @@ namespace S3
     {
         aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
-        Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
+        Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
         Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
     }
 
@@ -739,22 +702,24 @@ namespace S3
         return ret;
     }
 
-    std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const PocoHTTPClientConfiguration & cfg_,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
-        HTTPHeaderEntries headers,
+        HeaderCollection headers,
         bool use_environment_credentials,
         bool use_insecure_imds_request)
     {
         PocoHTTPClientConfiguration client_configuration = cfg_;
         client_configuration.updateSchemeAndRegion();
 
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+
         if (!server_side_encryption_customer_key_base64.empty())
         {
-            /// See Client::GeneratePresignedUrlWithSSEC().
+            /// See S3Client::GeneratePresignedUrlWithSSEC().
 
             headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
                 Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
@@ -768,118 +733,110 @@ namespace S3
                 Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
         }
 
-        client_configuration.extra_headers = std::move(headers);
+        auto auth_signer = std::make_shared<S3AuthSigner>(
+            client_configuration,
+            std::move(credentials),
+            std::move(headers),
+            use_environment_credentials,
+            use_insecure_imds_request);
 
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
-                client_configuration,
-                std::move(credentials),
-                use_environment_credentials,
-                use_insecure_imds_request);
-
-        client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
-        return Client::create(
-            client_configuration.s3_max_redirects,
-            std::move(credentials_provider),
+        return std::make_shared<Aws::S3::S3Client>(
+            std::move(auth_signer),
             std::move(client_configuration), // Client configuration.
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-            is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.
+            is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );
     }
 
     PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects,
-        bool enable_s3_requests_logging,
-        bool for_disk_s3,
-        const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler)
+        unsigned int s3_max_redirects)
     {
-        return PocoHTTPClientConfiguration(
-            force_region,
-            remote_host_filter,
-            s3_max_redirects,
-            enable_s3_requests_logging,
-            for_disk_s3,
-            get_request_throttler,
-            put_request_throttler);
+        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects);
+    }
+
+    URI::URI(const Poco::URI & uri_)
+    {
+        /// Case when bucket name represented in domain name of S3 URL.
+        /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
+        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
+        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss)([.\-][a-z0-9\-.:]+))");
+
+        /// Case when bucket name and key represented in path of S3 URL.
+        /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
+        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
+        static const RE2 path_style_pattern("^/([^/]*)/(.*)");
+
+        static constexpr auto S3 = "S3";
+        static constexpr auto COSN = "COSN";
+        static constexpr auto COS = "COS";
+        static constexpr auto OBS = "OBS";
+        static constexpr auto OSS = "OSS";
+
+
+        uri = uri_;
+        storage_name = S3;
+
+        if (uri.getHost().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
+
+        String name;
+        String endpoint_authority_from_uri;
+
+        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+        {
+            is_virtual_hosted_style = true;
+            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+            validateBucket(bucket, uri);
+
+            if (!uri.getPath().empty())
+            {
+                /// Remove leading '/' from path to extract key.
+                key = uri.getPath().substr(1);
+            }
+
+            boost::to_upper(name);
+            if (name != S3 && name != COS && name != OBS && name != OSS)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+            }
+            if (name == S3)
+            {
+                storage_name = name;
+            }
+            else if (name == OBS)
+            {
+                storage_name = OBS;
+            }
+            else if (name == OSS)
+            {
+                storage_name = OSS;
+            }
+            else
+            {
+                storage_name = COSN;
+            }
+        }
+        else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+        {
+            is_virtual_hosted_style = false;
+            endpoint = uri.getScheme() + "://" + uri.getAuthority();
+            validateBucket(bucket, uri);
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
+    }
+
+    void URI::validateBucket(const String & bucket, const Poco::URI & uri)
+    {
+        /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+        /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
+        if (bucket.length() < 3 || bucket.length() > 63)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
+                            quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 }
 
 }
 
 #endif
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int INVALID_CONFIG_PARAMETER;
-}
-
-namespace S3
-{
-
-AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const Poco::Util::AbstractConfiguration & config)
-{
-    auto access_key_id = config.getString(config_elem + ".access_key_id", "");
-    auto secret_access_key = config.getString(config_elem + ".secret_access_key", "");
-    auto region = config.getString(config_elem + ".region", "");
-    auto server_side_encryption_customer_key_base64 = config.getString(config_elem + ".server_side_encryption_customer_key_base64", "");
-
-    std::optional<bool> use_environment_credentials;
-    if (config.has(config_elem + ".use_environment_credentials"))
-        use_environment_credentials = config.getBool(config_elem + ".use_environment_credentials");
-
-    std::optional<bool> use_insecure_imds_request;
-    if (config.has(config_elem + ".use_insecure_imds_request"))
-        use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
-
-    HTTPHeaderEntries headers;
-    Poco::Util::AbstractConfiguration::Keys subconfig_keys;
-    config.keys(config_elem, subconfig_keys);
-    for (const std::string & subkey : subconfig_keys)
-    {
-        if (subkey.starts_with("header"))
-        {
-            auto header_str = config.getString(config_elem + "." + subkey);
-            auto delimiter = header_str.find(':');
-            if (delimiter == std::string::npos)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Malformed s3 header value");
-            headers.emplace_back(header_str.substr(0, delimiter), header_str.substr(delimiter + 1, String::npos));
-        }
-    }
-
-    return AuthSettings
-    {
-        std::move(access_key_id), std::move(secret_access_key),
-        std::move(region),
-        std::move(server_side_encryption_customer_key_base64),
-        std::move(headers),
-        use_environment_credentials,
-        use_insecure_imds_request
-    };
-}
-
-
-void AuthSettings::updateFrom(const AuthSettings & from)
-{
-    /// Update with check for emptyness only parameters which
-    /// can be passed not only from config, but via ast.
-
-    if (!from.access_key_id.empty())
-        access_key_id = from.access_key_id;
-    if (!from.secret_access_key.empty())
-        secret_access_key = from.secret_access_key;
-
-    headers = from.headers;
-    region = from.region;
-    server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
-    use_environment_credentials = from.use_environment_credentials;
-    use_insecure_imds_request = from.use_insecure_imds_request;
-}
-
-}
-}

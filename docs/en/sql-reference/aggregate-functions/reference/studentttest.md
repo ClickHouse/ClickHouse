@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/studentttest
-sidebar_position: 300
-sidebar_label: studentTTest
+toc_priority: 300
+toc_title: studentTTest
 ---
 
-# studentTTest
+# studentTTest {#studentttest}
 
 Applies Student's t-test to samples from two populations.
 
@@ -70,3 +69,5 @@ Result:
 
 -   [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
 -   [welchTTest function](welchttest.md#welchttest)
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/studentttest/) <!--hide-->

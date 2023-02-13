@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/functions/geo/geohash
-sidebar_label: "Функции для работы с системой Geohash"
+toc_title: "Функции для работы с системой Geohash"
 ---
 
 # Функции для работы с системой Geohash {#geohash}
@@ -85,9 +84,8 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 -   `latitude_max` — максимальная широта. Диапазон возможных значений: `[-90°, 90°]`. Тип данных: [Float](../../../sql-reference/data-types/float.md).
 -   `precision` — точность geohash. Диапазон возможных значений: `[1, 12]`. Тип данных: [UInt8](../../../sql-reference/data-types/int-uint.md).
 
-:::info "Замечание"
+!!! info "Замечание"
     Все передаваемые координаты должны быть одного и того же типа: либо `Float32`, либо `Float64`.
-:::
 
 **Возвращаемые значения**
 
@@ -96,9 +94,8 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 
 Тип данных: [Array](../../../sql-reference/data-types/array.md)([String](../../../sql-reference/data-types/string.md)).
 
-:::info "Замечание"
+!!! info "Замечание"
     Если возвращаемый массив содержит свыше 10 000 000 элементов, функция сгенерирует исключение.
-:::
 
 **Пример**
 
@@ -115,3 +112,4 @@ SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘
 ```
+

@@ -31,7 +31,7 @@ namespace Util
 ///  context can't own, as Context is destroyed before logger,
 ///    and logger lives longer and logging can still happen after Context destruction.
 ///    resetting masker in the logger at the moment of
-///    context destruction can't be done without synchronization / locks in a safe manner.
+///    context destruction can't be done w/o synchronization / locks in a safe manner.
 ///
 ///  logger is Poco derived and i didn't want to brake it's interface,
 ///    also logger can be dynamically reconfigured without server restart,
@@ -69,8 +69,4 @@ public:
     size_t rulesCount() const;
 };
 
-/// Wipes sensitive data and cuts to a specified maximum length in one function call.
-/// If the maximum length is zero then the function doesn't cut to the maximum length.
-std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length);
-
-}
+};

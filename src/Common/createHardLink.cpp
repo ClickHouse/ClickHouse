@@ -1,6 +1,6 @@
 #include <Common/createHardLink.h>
 #include <Common/Exception.h>
-#include <cerrno>
+#include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
 

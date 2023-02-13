@@ -25,10 +25,7 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int LOGICAL_ERROR;
     extern const int SHARD_HAS_NO_CONNECTIONS;
-    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SYNTAX_ERROR;
-    extern const int INVALID_SHARD_ID;
-    extern const int NO_SUCH_REPLICA;
 }
 
 namespace
@@ -100,6 +97,7 @@ Cluster::Address::Address(
     , replica_index(replica_index_)
 {
     host_name = config.getString(config_prefix + ".host");
+    port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     if (config.has(config_prefix + ".user"))
         user_specified = true;
 
@@ -108,14 +106,7 @@ Cluster::Address::Address(
     default_database = config.getString(config_prefix + ".default_database", "");
     secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
-
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
-    auto default_port = config.getInt(port_type, 0);
-
-    port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
-    if (!port)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
-
     is_local = isLocal(config.getInt(port_type, 0));
 
     /// By default compression is disabled if address looks like localhost.
@@ -134,9 +125,7 @@ Cluster::Address::Address(
     bool secure_,
     Int64 priority_,
     UInt32 shard_index_,
-    UInt32 replica_index_,
-    String cluster_name_,
-    String cluster_secret_)
+    UInt32 replica_index_)
     : user(user_), password(password_)
 {
     bool can_be_local = true;
@@ -168,8 +157,6 @@ Cluster::Address::Address(
     is_local = can_be_local && isLocal(clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
-    cluster = cluster_name_;
-    cluster_secret = cluster_secret_;
 }
 
 
@@ -201,7 +188,7 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 {
     auto pos = host_port_string.find_last_of(':');
     if (pos == std::string::npos)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect <host>:<port> format {}", host_port_string);
+        throw Exception("Incorrect <host>:<port> format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
 
     return {unescapeForFileName(host_port_string.substr(0, pos)), parse<UInt16>(host_port_string.substr(pos + 1))};
 }
@@ -213,7 +200,7 @@ String Cluster::Address::toFullString(bool use_compact_format) const
     {
         if (shard_index == 0 || replica_index == 0)
             // shard_num/replica_num like in system.clusters table
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_num/replica_num cannot be zero");
+            throw Exception("shard_num/replica_num cannot be zero", ErrorCodes::LOGICAL_ERROR);
 
         return fmt::format("shard{}_replica{}", shard_index, replica_index);
     }
@@ -263,12 +250,12 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
         const char * colon = strchr(full_string.data(), ':');
         if (!user_pw_end || !colon)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
+            throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
 
         const bool has_pw = colon < user_pw_end;
         const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
         if (!host_end)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
+            throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
 
         const char * has_db = strchr(full_string.data(), '#');
         const char * port_end = has_db ? has_db : address_end;
@@ -288,9 +275,8 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, MultiVersion<Macros>::Version macros, const String & config_prefix)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_prefix)
 {
-    this->macros_ = macros;
     updateClusters(config, settings, config_prefix);
 }
 
@@ -299,8 +285,7 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    auto expanded_cluster_name = macros_->expand(cluster_name);
-    auto it = impl.find(expanded_cluster_name);
+    auto it = impl.find(cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }
 
@@ -362,7 +347,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         }
 
         if (key.find('.') != String::npos)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cluster names with dots are not supported: '{}'", key);
+            throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
@@ -396,7 +381,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     boost::range::remove_erase(config_keys, "secret");
 
     if (config_keys.empty())
-        throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
+        throw Exception("No cluster elements (shard, node) specified in config at path " + config_prefix, ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
 
     UInt32 current_shard_num = 1;
     for (const auto & key : config_keys)
@@ -420,12 +405,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            info.all_addresses.push_back(address);
-
             auto pool = ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings.distributed_connections_pool_size),
+                settings.distributed_connections_pool_size,
                 address.host_name, address.port,
-                address.default_database, address.user, address.password, address.quota_key,
+                address.default_database, address.user, address.password,
                 address.cluster, address.cluster_secret,
                 "server", address.compression,
                 address.secure, address.priority);
@@ -485,11 +468,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     }
                 }
                 else
-                    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", replica_key);
+                    throw Exception("Unknown element in config: " + replica_key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
             }
 
             Addresses shard_local_addresses;
-            Addresses shard_all_addresses;
 
             ConnectionPoolPtrs all_replicas_pools;
             all_replicas_pools.reserve(replica_addresses.size());
@@ -497,9 +479,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             for (const auto & replica : replica_addresses)
             {
                 auto replica_pool = ConnectionPoolFactory::instance().get(
-                    static_cast<unsigned>(settings.distributed_connections_pool_size),
+                    settings.distributed_connections_pool_size,
                     replica.host_name, replica.port,
-                    replica.default_database, replica.user, replica.password, replica.quota_key,
+                    replica.default_database, replica.user, replica.password,
                     replica.cluster, replica.cluster_secret,
                     "server", replica.compression,
                     replica.secure, replica.priority);
@@ -507,7 +489,6 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 all_replicas_pools.emplace_back(replica_pool);
                 if (replica.is_local)
                     shard_local_addresses.push_back(replica);
-                shard_all_addresses.push_back(replica);
             }
 
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -522,20 +503,19 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 current_shard_num,
                 weight,
                 std::move(shard_local_addresses),
-                std::move(shard_all_addresses),
                 std::move(shard_pool),
                 std::move(all_replicas_pools),
                 internal_replication
             });
         }
         else
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
+            throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
         ++current_shard_num;
     }
 
     if (addresses_with_failover.empty())
-        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "There must be either 'node' or 'shard' elements in config");
+        throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     initMisc();
 }
@@ -550,13 +530,9 @@ Cluster::Cluster(
     bool treat_local_as_remote,
     bool treat_local_port_as_remote,
     bool secure,
-    Int64 priority,
-    String cluster_name,
-    String cluster_secret)
+    Int64 priority)
 {
     UInt32 current_shard_num = 1;
-
-    secret = cluster_secret;
 
     for (const auto & shard : names)
     {
@@ -571,29 +547,25 @@ Cluster::Cluster(
                 secure,
                 priority,
                 current_shard_num,
-                current.size() + 1,
-                cluster_name,
-                cluster_secret);
+                current.size() + 1);
 
         addresses_with_failover.emplace_back(current);
 
         Addresses shard_local_addresses;
-        Addresses all_addresses;
         ConnectionPoolPtrs all_replicas;
         all_replicas.reserve(current.size());
 
         for (const auto & replica : current)
         {
             auto replica_pool = ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings.distributed_connections_pool_size),
-                replica.host_name, replica.port,
-                replica.default_database, replica.user, replica.password, replica.quota_key,
-                replica.cluster, replica.cluster_secret,
-                "server", replica.compression, replica.secure, replica.priority);
+                        settings.distributed_connections_pool_size,
+                        replica.host_name, replica.port,
+                        replica.default_database, replica.user, replica.password,
+                        replica.cluster, replica.cluster_secret,
+                        "server", replica.compression, replica.secure, replica.priority);
             all_replicas.emplace_back(replica_pool);
             if (replica.is_local && !treat_local_as_remote)
                 shard_local_addresses.push_back(replica);
-            all_addresses.push_back(replica);
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -606,7 +578,6 @@ Cluster::Cluster(
             current_shard_num,
             default_weight,
             std::move(shard_local_addresses),
-            std::move(all_addresses),
             std::move(shard_pool),
             std::move(all_replicas),
             false // has_internal_replication
@@ -632,7 +603,8 @@ void Cluster::initMisc()
     for (const auto & shard_info : shards_info)
     {
         if (!shard_info.isLocal() && !shard_info.hasRemoteConnections())
-            throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "Found shard without any specified connection");
+            throw Exception("Found shard without any specified connection",
+                ErrorCodes::SHARD_HAS_NO_CONNECTIONS);
     }
 
     for (const auto & shard_info : shards_info)
@@ -671,7 +643,7 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
 Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
 {
     if (from.addresses_with_failover.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
+        throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
 
     UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
@@ -689,16 +661,13 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            info.all_addresses.push_back(address);
-
             auto pool = ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings.distributed_connections_pool_size),
+                settings.distributed_connections_pool_size,
                 address.host_name,
                 address.port,
                 address.default_database,
                 address.user,
                 address.password,
-                address.quota_key,
                 address.cluster,
                 address.cluster_secret,
                 "server",
@@ -714,9 +683,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         }
     }
 
-    secret = from.secret;
-    name = from.name;
-
     initMisc();
 }
 
@@ -731,65 +697,13 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
             addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
     }
 
-    secret = from.secret;
-    name = from.name;
-
     initMisc();
-}
-
-std::vector<Strings> Cluster::getHostIDs() const
-{
-    std::vector<Strings> host_ids;
-    host_ids.resize(addresses_with_failover.size());
-    for (size_t i = 0; i != addresses_with_failover.size(); ++i)
-    {
-        const auto & addresses = addresses_with_failover[i];
-        host_ids[i].resize(addresses.size());
-        for (size_t j = 0; j != addresses.size(); ++j)
-            host_ids[i][j] = addresses[j].toString();
-    }
-    return host_ids;
-}
-
-std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const
-{
-    std::vector<const Address *> res;
-
-    auto enumerate_replicas = [&](size_t shard_index)
-    {
-        if (shard_index > addresses_with_failover.size())
-            throw Exception(ErrorCodes::INVALID_SHARD_ID, "Cluster {} doesn't have shard #{}", name, shard_index);
-        const auto & replicas = addresses_with_failover[shard_index - 1];
-        if (only_replica_num)
-        {
-            if (only_replica_num > replicas.size())
-                throw Exception(ErrorCodes::NO_SUCH_REPLICA, "Cluster {} doesn't have replica #{} in shard #{}", name, only_replica_num, shard_index);
-            res.emplace_back(&replicas[only_replica_num - 1]);
-        }
-        else
-        {
-            for (const auto & addr : replicas)
-                res.emplace_back(&addr);
-        }
-    };
-
-    if (only_shard_num)
-    {
-        enumerate_replicas(only_shard_num);
-    }
-    else
-    {
-        for (size_t shard_index = 1; shard_index <= addresses_with_failover.size(); ++shard_index)
-            enumerate_replicas(shard_index);
-    }
-
-    return res;
 }
 
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
 {
     if (!has_internal_replication)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "internal_replication is not set");
+        throw Exception("internal_replication is not set", ErrorCodes::LOGICAL_ERROR);
 
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)

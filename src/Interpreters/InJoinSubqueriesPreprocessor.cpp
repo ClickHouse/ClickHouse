@@ -9,7 +9,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 
 
 namespace DB
@@ -81,8 +80,8 @@ private:
 
             String alias = database_and_table->tryGetAlias();
             if (alias.empty())
-                throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
-                                "Distributed table should have an alias when distributed_product_mode set to local");
+                throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
+                                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
 
             auto & identifier = database_and_table->as<ASTTableIdentifier &>();
             renamed_tables.emplace_back(identifier.clone());
@@ -103,22 +102,22 @@ private:
                     /// Already processed.
                 }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected function name {}", concrete->name);
+                    throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
             }
             else if (table_join)
-                table_join->locality = JoinLocality::Global;
+                table_join->locality = ASTTableJoin::Locality::Global;
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unexpected AST node");
+                throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
-            throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
-                            "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
-                            "You may rewrite query to use local tables "
-                            "in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.");
+            throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
+                " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
+                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting");
+            throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",
+                            ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -190,7 +189,7 @@ private:
             return;
 
         ASTTableJoin * table_join = node.table_join->as<ASTTableJoin>();
-        if (table_join->locality != JoinLocality::Global)
+        if (table_join->locality != ASTTableJoin::Locality::Global)
         {
             if (auto * table = node.table_expression->as<ASTTableExpression>())
             {
@@ -225,8 +224,6 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
 {
     if (!ast)
         return;
-
-    checkStackSize();
 
     ASTSelectQuery * query = ast->as<ASTSelectQuery>();
     if (!query || !query->tables())

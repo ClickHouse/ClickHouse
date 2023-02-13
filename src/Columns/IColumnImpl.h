@@ -45,15 +45,16 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
     size_t num_rows = size();
 
     if (num_rows != selector.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector: {} doesn't match size of column: {}",
-                selector.size(), num_rows);
+        throw Exception(
+                "Size of selector: " + std::to_string(selector.size()) + " doesn't match size of column: " + std::to_string(num_rows),
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     std::vector<MutablePtr> columns(num_columns);
     for (auto & column : columns)
         column = cloneEmpty();
 
     {
-        size_t reserve_size = static_cast<size_t>(num_rows * 1.1 / num_columns);    /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = num_rows * 1.1 / num_columns;    /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
@@ -80,8 +81,7 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     if constexpr (use_indexes)
     {
         num_indexes = row_indexes->size();
-        indexes = row_indexes->data();
-        next_index = indexes;
+        next_index = indexes = row_indexes->data();
     }
 
     compare_results.resize(num_rows);
@@ -89,8 +89,9 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     if (compare_results.empty())
         compare_results.resize(num_rows);
     else if (compare_results.size() != num_rows)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of compare_results: {} doesn't match rows_num: {}",
-                compare_results.size(), num_rows);
+        throw Exception(
+                "Size of compare_results: " + std::to_string(compare_results.size()) + " doesn't match rows_num: " + std::to_string(num_rows),
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     for (size_t i = 0; i < num_indexes; ++i)
     {
@@ -99,9 +100,15 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
         if constexpr (use_indexes)
             row = indexes[i];
 
-        int res = static_cast<const Derived *>(this)->compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        assert(res == 1 || res == -1 || res == 0);
-        compare_results[row] = static_cast<Int8>(res);
+        int res = compareAt(row, rhs_row_num, rhs, nan_direction_hint);
+
+        /// We need to convert int to Int8. Sometimes comparison return values which do not fit in one byte.
+        if (res < 0)
+            compare_results[row] = -1;
+        else if (res > 0)
+            compare_results[row] = 1;
+        else
+            compare_results[row] = 0;
 
         if constexpr (reversed)
             compare_results[row] = -compare_results[row];
@@ -117,10 +124,7 @@ void IColumn::compareImpl(const Derived & rhs, size_t rhs_row_num,
     }
 
     if constexpr (use_indexes)
-    {
-        size_t equal_row_indexes_size = next_index - row_indexes->data();
-        row_indexes->resize(equal_row_indexes_size);
-    }
+        row_indexes->resize(next_index - row_indexes->data());
 }
 
 template <typename Derived>

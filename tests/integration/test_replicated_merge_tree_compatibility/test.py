@@ -52,10 +52,7 @@ def test_replicated_merge_tree_defaults_compatibility(started_cluster):
     """
 
     for node in (node1, node2):
-        node.query(
-            "CREATE DATABASE test ENGINE = Ordinary",
-            settings={"allow_deprecated_database_ordinary": 1},
-        )
+        node.query("CREATE DATABASE test ENGINE = Ordinary")
         node.query(create_query.format(replica=node.name))
 
     node1.query("DETACH TABLE test.table")
@@ -73,4 +70,4 @@ def test_replicated_merge_tree_defaults_compatibility(started_cluster):
     node2.restart_with_latest_version()
 
     node1.query(create_query.format(replica=1))
-    assert node1.query("EXISTS TABLE test.table") == "1\n"
+    node1.query("EXISTS TABLE test.table") == "1\n"

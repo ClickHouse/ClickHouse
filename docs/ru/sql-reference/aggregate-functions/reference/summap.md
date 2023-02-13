@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/summap
-sidebar_position: 141
+toc_priority: 141
 ---
 
 ## sumMap(key, value), sumMap(Tuple(key, value)) {#agg_functions-summap}
@@ -42,3 +41,4 @@ GROUP BY timeslot
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
 └─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
+
