@@ -21,7 +21,9 @@
 #include <vector>
 #include "Poco/Data/AbstractExtraction.h"
 #include "Poco/Data/Bulk.h"
+#include "Poco/Data/Column.h"
 #include "Poco/Data/Data.h"
+#include "Poco/Data/Position.h"
 #include "Poco/Data/Preparation.h"
 
 
