@@ -86,7 +86,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && dpkg -i /tmp/nfpm.deb \
     && rm /tmp/nfpm.deb
 
-ARG GO_VERSION=1.18.3
+ARG GO_VERSION=1.19.5
 # We need go for clickhouse-diagnostics
 RUN arch=${TARGETARCH:-amd64} \
     && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
