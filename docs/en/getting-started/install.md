@@ -4,7 +4,7 @@ keywords: [clickhouse, install, getting started, quick start]
 slug: /en/install
 ---
 
-# Installing ClickHouse
+# Install ClickHouse
 
 You have three options for getting up and running with ClickHouse:
 
