@@ -6,14 +6,9 @@
 
 #    include <IO/ReadBufferFromS3.h>
 #    include <IO/ReadHelpers.h>
-#    include <IO/S3Common.h>
+#    include <Storages/StorageS3.h>
 
 #    include <Formats/FormatFactory.h>
-
-#    include <Storages/StorageS3.h>
-#    include <aws/core/auth/AWSCredentials.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/ListObjectsV2Request.h>
 
 
 class ReadBuffer;
