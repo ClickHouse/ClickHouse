@@ -272,16 +272,16 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 	SocketList readyWriteList;
 	SocketList readyExceptList;
 
-	SocketList::iterator begE = exceptList.begin();
-	SocketList::iterator endE = exceptList.end();
+	SocketList::iterator beg = exceptList.begin();
+	SocketList::iterator end = exceptList.end();
 	for (int idx = 0; idx < nfd; ++idx)
 	{
 		SocketList::iterator slIt = std::find_if(begR, endR, Socket::FDCompare(pPollArr[idx].fd));
 		if (POLLIN & pPollArr[idx].revents && slIt != endR) readyReadList.push_back(*slIt);
 		slIt = std::find_if(begW, endW, Socket::FDCompare(pPollArr[idx].fd));
 		if (POLLOUT & pPollArr[idx].revents && slIt != endW) readyWriteList.push_back(*slIt);
-		slIt = std::find_if(begE, endE, Socket::FDCompare(pPollArr[idx].fd));
-		if (POLLERR & pPollArr[idx].revents && slIt != endE) readyExceptList.push_back(*slIt);
+		slIt = std::find_if(beg, end, Socket::FDCompare(pPollArr[idx].fd));
+		if (POLLERR & pPollArr[idx].revents && slIt != end) readyExceptList.push_back(*slIt);
 	}
 	std::swap(readList, readyReadList);
 	std::swap(writeList, readyWriteList);

@@ -30,7 +30,7 @@ namespace Poco {
 
 class Foundation_API FIFOBufferStreamBuf: public BufferedBidirectionalStreamBuf
 	/// This is the streambuf class used for reading from and writing to a FIFOBuffer.
-	/// FIFOBuffer is enabled for emtpy/non-empty/full state transitions notifications.
+	/// FIFOBuffer is enabled for empty/non-empty/full state transitions notifications.
 {
 public:
 	
