@@ -12,16 +12,26 @@
 namespace DB
 {
 
+struct S3MetaReadHelper
+{
+    static std::shared_ptr<ReadBuffer>
+    createReadBuffer(const String & key, ContextPtr context, const StorageS3::Configuration & base_configuration);
+
+    static std::vector<String>
+    listFilesMatchSuffix(const StorageS3::Configuration & base_configuration, const String & directory, const String & suffix);
+};
+
 // Class to parse iceberg metadata and find files needed for query in table
 // Iceberg table directory outlook:
 // table/
 //      data/
 //      metadata/
 // The metadata has three layers: metadata -> manifest list -> manifest files
+template <typename Configuration, typename MetaReadHelper>
 class IcebergMetaParser
 {
 public:
-    IcebergMetaParser(const StorageS3::Configuration & configuration_, ContextPtr context_);
+    IcebergMetaParser(const Configuration & configuration_, ContextPtr context_);
 
     std::vector<String> getFiles() const;
 
@@ -29,7 +39,7 @@ public:
 
 private:
     static constexpr auto metadata_directory = "metadata";
-    StorageS3::Configuration base_configuration;
+    Configuration base_configuration;
     ContextPtr context;
 
     /// Just get file name
@@ -47,7 +57,7 @@ struct StorageIcebergName
     static constexpr auto data_directory_prefix = "data";
 };
 
-using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetaParser>;
+using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3MetaReadHelper>>;
 }
 
 #endif

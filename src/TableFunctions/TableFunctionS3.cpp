@@ -29,7 +29,9 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration)
+template <bool get_format_from_file>
+void TableFunctionS3::parseArgumentsImpl(
+    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
     {
@@ -105,9 +107,13 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             s3_configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
     }
 
-    if (s3_configuration.format == "auto")
+    /// For DataLake table functions, we should specify default format.
+    if (s3_configuration.format == "auto" && get_format_from_file)
         s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
 }
+
+template void TableFunctionS3::parseArgumentsImpl<false>(
+    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration);
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {

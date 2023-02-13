@@ -39,6 +39,8 @@ template <typename Name, typename MetaParser>
 class IStorageDataLake;
 
 struct StorageIcebergName;
+struct S3MetaReadHelper;
+template <typename Configuration, typename MetaReadHelper>
 class IcebergMetaParser;
 
 struct StorageDeltaLakeName;
@@ -317,7 +319,7 @@ private:
     friend class TableFunctionS3Cluster;
     friend class IStorageDataLake<StorageHudiName, HudiMetaParser>;
     friend class IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser>;
-    friend class IStorageDataLake<StorageIcebergName, IcebergMetaParser>;
+    friend class IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3MetaReadHelper>>;
 
     Configuration s3_configuration;
     std::vector<String> keys;
