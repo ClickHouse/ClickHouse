@@ -942,7 +942,9 @@ class TestCase:
             description += "\n"
             description += trim_for_log(stderr)
             description += "\n"
-            description += f"\nstdout:\n{stdout}\n"
+            description += "\nstdout:\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
