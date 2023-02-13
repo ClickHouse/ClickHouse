@@ -23,7 +23,6 @@
 #include "Poco/Crypto/KeyPair.h"
 #include "Poco/Crypto/ECKeyImpl.h"
 
-
 namespace Poco {
 namespace Crypto {
 
@@ -52,7 +51,7 @@ public:
 		/// Extracts the EC private key from the given certificate.
 
 	ECKey(const std::string& eccGroup);
-		/// Creates the ECKey. Creates a new public/private keypair using the given parameters.
+		/// Creates the ECKey. Creates a new public/private key pair using the given parameters.
 		/// Can be used to sign data and verify signatures.
 
 	ECKey(const std::string& publicKeyFile, const std::string& privateKeyFile, const std::string& privateKeyPassphrase = "");

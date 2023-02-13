@@ -89,7 +89,9 @@ bool SystemConfiguration::getRaw(const std::string& key, std::string& value) con
 			Poco::Environment::NodeId id;
 			Poco::Environment::nodeId(id);
 			char result[13];
-			std::sprintf(result, "%02x%02x%02x%02x%02x%02x",
+			std::snprintf(result, 
+                sizeof(result),
+                "%02x%02x%02x%02x%02x%02x",
 				id[0],
 				id[1],
 				id[2],
