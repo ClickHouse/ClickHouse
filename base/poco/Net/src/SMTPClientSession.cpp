@@ -289,7 +289,7 @@ void SMTPClientSession::login(const std::string& hostname, LoginMethod loginMeth
 	}
 	else if (loginMethod != AUTH_NONE)
 	{
-		throw SMTPException("The autentication method is not supported");
+		throw SMTPException("The authentication method is not supported");
 	}
 }
 

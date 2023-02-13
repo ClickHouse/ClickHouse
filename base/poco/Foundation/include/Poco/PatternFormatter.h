@@ -134,7 +134,7 @@ private:
 	void parsePattern();
 		/// Will parse the _pattern string into the vector of PatternActions,
 		/// which contains the message key, any text that needs to be written first
-		/// a proprety in case of %[] and required length.
+		/// a property in case of %[] and required length.
 
 	std::vector<PatternAction> _patternActions;
 	bool _localTime;

@@ -143,7 +143,7 @@ void ServerApplication::ServiceControlHandler(DWORD control)
 	case SERVICE_CONTROL_INTERROGATE:
 		break;
 	}
-	SetServiceStatus(_serviceStatusHandle,  &_serviceStatus);
+	SetServiceStatus(_serviceStatusHandle, &_serviceStatus);
 }
 
 
