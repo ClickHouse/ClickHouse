@@ -103,7 +103,12 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                             return nullptr;
 
                         return std::make_shared<DistinctSortedChunkTransform>(
-                            header, set_size_limits, limit_hint, distinct_sort_desc, columns, false);
+                            header,
+                            set_size_limits,
+                            limit_hint,
+                            distinct_sort_desc,
+                            columns,
+                            input_stream.sort_scope == DataStream::SortScope::Stream);
                     });
                 return;
             }

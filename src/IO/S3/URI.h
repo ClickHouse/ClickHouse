@@ -30,6 +30,7 @@ struct URI
 
     bool is_virtual_hosted_style;
 
+    URI() = default;
     explicit URI(const std::string & uri_);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
