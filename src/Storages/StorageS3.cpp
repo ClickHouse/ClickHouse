@@ -961,7 +961,6 @@ StorageS3::StorageS3(
             format_name,
             s3_configuration,
             compression_method,
-            distributed_processing_,
             is_key_with_globs,
             format_settings,
             context_,
@@ -1342,14 +1341,13 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 
 ColumnsDescription StorageS3::getTableStructureFromData(
     StorageS3::Configuration & configuration,
-    bool distributed_processing,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
     ObjectInfos * object_infos)
 {
     updateS3Configuration(ctx, configuration);
     return getTableStructureFromDataImpl(
-        configuration.format, configuration, configuration.compression_method, distributed_processing,
+        configuration.format, configuration, configuration.compression_method,
         configuration.url.key.find_first_of("*?{") != std::string::npos, format_settings, ctx, object_infos);
 }
 
@@ -1357,7 +1355,6 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     const String & format,
     const Configuration & s3_configuration,
     const String & compression_method,
-    bool distributed_processing,
     bool is_key_with_globs,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
@@ -1369,7 +1366,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         s3_configuration,
         {s3_configuration.url.key},
         is_key_with_globs,
-        distributed_processing,
+        false,
         ctx, nullptr,
         {}, object_infos, &read_keys);
 
