@@ -688,23 +688,25 @@ CancelQuery UserOvercommitTracker::pickQueryToExclude(MemoryTracker * exhausted)
         }
     }
     picked_tracker = query_tracker;
-    return [=]
-    {
-        query_to_cancel->cancelQuery(
-            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-            fmt::format(
-                "Memory limit (user) exceeded: "
-                "current: {}, maximum: {}. "
-                "Query was selected to stop by OvercommitTracker.",
-                formatReadableSizeWithBinarySuffix(query_to_cancel->getMemoryTracker()->get()),
-                formatReadableSizeWithBinarySuffix(exhausted ? exhausted->getHardLimit() : 0)));
-    };
+    if (query_to_cancel)
+        return [query_to_cancel, current = query_to_cancel->getMemoryTracker()->get(), maximum = exhausted ? exhausted->getHardLimit() : 0]
+        {
+            query_to_cancel->cancelQuery(
+                DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                fmt::format(
+                    "Memory limit (user) exceeded: "
+                    "current: {}, maximum: {}. "
+                    "Query was selected to stop by OvercommitTracker.",
+                    formatReadableSizeWithBinarySuffix(current),
+                    formatReadableSizeWithBinarySuffix(maximum)));
+        };
+    else
+        return {};
 }
 
 GlobalOvercommitTracker::GlobalOvercommitTracker(DB::ProcessList * process_list_)
     : OvercommitTracker(process_list_)
-{
-}
+{}
 
 CancelQuery GlobalOvercommitTracker::pickQueryToExclude(MemoryTracker * exhausted)
 {
@@ -736,17 +738,20 @@ CancelQuery GlobalOvercommitTracker::pickQueryToExclude(MemoryTracker * exhauste
         }
     }
     picked_tracker = query_tracker;
-    return [=]
-    {
-        query_to_cancel->cancelQuery(
-            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-            fmt::format(
-                "Memory limit (total) exceeded: "
-                "current: {}, maximum: {}. "
-                "Query was selected to stop by OvercommitTracker.",
-                formatReadableSizeWithBinarySuffix(query_to_cancel->getMemoryTracker()->get()),
-                formatReadableSizeWithBinarySuffix(exhausted ? exhausted->getHardLimit() : 0)));
-    };
+    if (query_to_cancel)
+        return [query_to_cancel, current = query_to_cancel->getMemoryTracker()->get(), maximum = exhausted ? exhausted->getHardLimit() : 0]
+        {
+            query_to_cancel->cancelQuery(
+                DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                fmt::format(
+                    "Memory limit (total) exceeded: "
+                    "current: {}, maximum: {}. "
+                    "Query was selected to stop by OvercommitTracker.",
+                    formatReadableSizeWithBinarySuffix(current),
+                    formatReadableSizeWithBinarySuffix(maximum)));
+        };
+    else
+        return {};
 }
 
 }
