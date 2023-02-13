@@ -36,7 +36,7 @@ RUN arch=${TARGETARCH:-amd64} \
 # repo versions doesn't work correctly with C++17
 # also we push reports to s3, so we add index.html to subfolder urls
 # https://github.com/ClickHouse-Extras/woboq_codebrowser/commit/37e15eaf377b920acb0b48dbe82471be9203f76b
-RUN git clone https://github.com/ClickHouse/woboq_codebrowser \
+RUN git clone --branch merge-upstream https://github.com/ClickHouse/woboq_codebrowser \
   && cd woboq_codebrowser \
   && cmake . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang\+\+-${LLVM_VERSION} -DCMAKE_C_COMPILER=clang-${LLVM_VERSION} \
   && ninja \
