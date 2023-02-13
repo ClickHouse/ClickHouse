@@ -363,7 +363,6 @@ private:
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
-public:
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 };
 
@@ -372,18 +371,5 @@ struct ActionDAGNodes
 {
     ActionsDAG::NodeRawConstPtrs nodes;
 };
-
-struct ConjunctionNodes
-{
-    ActionsDAG::NodeRawConstPtrs allowed;
-    ActionsDAG::NodeRawConstPtrs rejected;
-};
-
-/// Take a node which result is predicate.
-/// Assuming predicate is a conjunction (probably, trivial).
-/// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
-/// Allowed predicate is a predicate which can be calculated using only nodes from allowed_nodes set.
-ConjunctionNodes getConjunctionNodes(const ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes);
-
 
 }
