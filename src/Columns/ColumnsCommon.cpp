@@ -307,6 +307,7 @@ void filterArraysImplOnlyData(
 
 
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
+/// NOLINTBEGIN(bugprone-macro-parentheses)
 #define INSTANTIATE(TYPE)                                     \
 template void filterArraysImpl<PaddedPODArray<TYPE>>(         \
     const PaddedPODArray<TYPE> &, const IColumn::Offsets &,   \
@@ -324,6 +325,7 @@ template void filterArraysImplOnlyData<RawVector<TYPE>>(      \
     const RawVector<TYPE> &, const IColumn::Offsets &,        \
     RawVector<TYPE> &,                                        \
     const IColumn::Filter &, ssize_t);                        \
+/// NOLINTEND(bugprone-macro-parentheses)
 
 INSTANTIATE(UInt8)
 INSTANTIATE(UInt16)
