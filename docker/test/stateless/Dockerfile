@@ -4,6 +4,7 @@ ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
+ARG duckdb_url="https://github.com/duckdb/duckdb/releases/download/v0.6.1/duckdb_cli-linux-amd64.zip"
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
 RUN apt-get update -y \
@@ -41,6 +42,7 @@ RUN apt-get update -y \
             zstd \
             file \
             pv \
+            unzip \
     && apt-get clean
 
 RUN pip3 install numpy scipy pandas Jinja2
@@ -51,6 +53,10 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
+
+RUN wget -nv -O /tmp/duckdb.zip ${duckdb_url} \
+   && unzip /tmp/duckdb.zip -d /usr/bin/ \
+   && rm -rf /tmp/duckdb.zip
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

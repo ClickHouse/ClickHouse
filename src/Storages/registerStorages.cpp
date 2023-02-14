@@ -89,6 +89,11 @@ void registerStorageFileLog(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory);
 #endif
 
+#if USE_DUCKDB
+void registerStorageDuckDB(StorageFactory & factory);
+#endif
+
+
 void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorages()
@@ -175,6 +180,10 @@ void registerStorages()
 
     #if USE_SQLITE
     registerStorageSQLite(factory);
+    #endif
+
+    #if USE_DUCKDB
+    registerStorageDuckDB(factory);
     #endif
 
     registerStorageKeeperMap(factory);

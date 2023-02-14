@@ -162,6 +162,10 @@ void insertPostgreSQLValue(
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
+        case ExternalResultDescription::ValueType::vtInt128:
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Int128 is not supported for PostgreSQL");
+        }
     }
 }
 

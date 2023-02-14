@@ -104,6 +104,8 @@ public:
 
     void consume(Chunk chunk) override
     {
+        // TODO: DuckDB Appender API
+
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         WriteBufferFromOwnString buf;
 
@@ -115,7 +117,7 @@ public:
         {
             if (it != block.begin())
                 buf << ", ";
-            buf << quoteString(it->name);
+            buf << doubleQuoteString(it->name);
         }
 
         buf << ") VALUES ";

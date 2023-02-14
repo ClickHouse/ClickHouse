@@ -30,8 +30,6 @@ private:
 
     Chunk generate() override;
 
-    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, duckdb::Value & value);
-
     String query_str;
     UInt64 max_block_size;
 

@@ -54,6 +54,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtInt32, is_nullable);
         else if (which.isInt64())
             types.emplace_back(ValueType::vtInt64, is_nullable);
+        else if (which.isInt128())
+            types.emplace_back(ValueType::vtInt128, is_nullable);
         else if (which.isFloat32())
             types.emplace_back(ValueType::vtFloat32, is_nullable);
         else if (which.isFloat64())
