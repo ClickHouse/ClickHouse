@@ -597,8 +597,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(
         client_configuration.s3_max_redirects,
-        std::move(credentials_provider),
-        std::move(client_configuration), // Client configuration.
+        credentials_provider,
+        client_configuration, // Client configuration.
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
         is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.
     );
