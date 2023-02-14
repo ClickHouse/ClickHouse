@@ -24,127 +24,125 @@
 #ifndef POCO_UTIL_NO_JSONCONFIGURATION
 
 
-#include "Poco/Util/AbstractConfiguration.h"
-#include "Poco/JSON/Object.h"
-#include <istream>
+#    include <istream>
+#    include "Poco/JSON/Object.h"
+#    include "Poco/Util/AbstractConfiguration.h"
 
 
-namespace Poco {
-namespace Util {
-
-
-class Util_API JSONConfiguration : public AbstractConfiguration
-	/// This configuration class extracts configuration properties
-	/// from a JSON object. An XPath-like syntax for property
-	/// names is supported to allow full access to the JSON object.
-	///
-	/// Given the following JSON object as an example:
-	/// {
-	///   "config" : {
-	///      "prop1" : "value1",
-	///      "prop2" : 10,
-	///      "prop3" : [
-	///        "element1",
-	///        "element2"
-	///      ],
-	///      "prop4" : {
-	///        "prop5" : false,
-	///        "prop6" : null
-	///      }
-	///   }
-	/// }
-	///	The following property names would be valid and would
-	/// yield the shown values:
-	///
-	/// config.prop1       --> "value1"
-	/// config.prop3[1]    --> "element2"
-	/// config.prop4.prop5 --> false
+namespace Poco
 {
-public:
-
-	JSONConfiguration();
-		/// Creates an empty configuration
+namespace Util
+{
 
 
-	JSONConfiguration(const std::string& path);
-		/// Creates a configuration and loads the JSON structure from the given file
+    class Util_API JSONConfiguration : public AbstractConfiguration
+    /// This configuration class extracts configuration properties
+    /// from a JSON object. An XPath-like syntax for property
+    /// names is supported to allow full access to the JSON object.
+    ///
+    /// Given the following JSON object as an example:
+    /// {
+    ///   "config" : {
+    ///      "prop1" : "value1",
+    ///      "prop2" : 10,
+    ///      "prop3" : [
+    ///        "element1",
+    ///        "element2"
+    ///      ],
+    ///      "prop4" : {
+    ///        "prop5" : false,
+    ///        "prop6" : null
+    ///      }
+    ///   }
+    /// }
+    ///	The following property names would be valid and would
+    /// yield the shown values:
+    ///
+    /// config.prop1       --> "value1"
+    /// config.prop3[1]    --> "element2"
+    /// config.prop4.prop5 --> false
+    {
+    public:
+        JSONConfiguration();
+        /// Creates an empty configuration
 
 
-	JSONConfiguration(std::istream& istr);
-		/// Creates a configuration and loads the JSON structure from the given stream
+        JSONConfiguration(const std::string & path);
+        /// Creates a configuration and loads the JSON structure from the given file
 
 
-	JSONConfiguration(const JSON::Object::Ptr& object);
-		/// Creates a configuration from the given JSON object
+        JSONConfiguration(std::istream & istr);
+        /// Creates a configuration and loads the JSON structure from the given stream
 
 
-	virtual ~JSONConfiguration();
-		/// Destructor
+        JSONConfiguration(const JSON::Object::Ptr & object);
+        /// Creates a configuration from the given JSON object
 
 
-	void load(const std::string& path);
-		/// Loads the configuration from the given file
+        virtual ~JSONConfiguration();
+        /// Destructor
 
 
-	void load(std::istream& istr);
-		/// Loads the configuration from the given stream
+        void load(const std::string & path);
+        /// Loads the configuration from the given file
 
 
-	void loadEmpty(const std::string& root);
-		/// Loads an empty object containing only a root object with the given name.
+        void load(std::istream & istr);
+        /// Loads the configuration from the given stream
 
 
-	void save(std::ostream& ostr, unsigned int indent = 2) const;
-		/// Saves the configuration to the given stream
+        void loadEmpty(const std::string & root);
+        /// Loads an empty object containing only a root object with the given name.
 
 
-	virtual void setInt(const std::string& key, int value);
+        void save(std::ostream & ostr, unsigned int indent = 2) const;
+        /// Saves the configuration to the given stream
 
 
-	virtual void setBool(const std::string& key, bool value);
+        virtual void setInt(const std::string & key, int value);
 
 
-	virtual void setDouble(const std::string& key, double value);
+        virtual void setBool(const std::string & key, bool value);
 
 
-	virtual void setString(const std::string& key, const std::string& value);
-	
-
-	virtual void removeRaw(const std::string& key);	
-	
-
-protected:
-
-	bool getRaw(const std::string & key, std::string & value) const;
+        virtual void setDouble(const std::string & key, double value);
 
 
-	void setRaw(const std::string& key, const std::string& value);
+        virtual void setString(const std::string & key, const std::string & value);
 
 
-	void enumerate(const std::string& key, Keys& range) const;
+        virtual void removeRaw(const std::string & key);
 
 
-private:
+    protected:
+        bool getRaw(const std::string & key, std::string & value) const;
 
 
-	JSON::Object::Ptr findStart(const std::string& key, std::string& lastPart);
+        void setRaw(const std::string & key, const std::string & value);
 
 
-	void getIndexes(std::string& name, std::vector<int>& indexes);
+        void enumerate(const std::string & key, Keys & range) const;
 
 
-	void setValue(const std::string& key, const Poco::DynamicAny& value);
+    private:
+        JSON::Object::Ptr findStart(const std::string & key, std::string & lastPart);
 
 
- 	JSON::Object::Ptr _object;
-};
+        void getIndexes(std::string & name, std::vector<int> & indexes);
 
 
-} } // namespace Poco::Util
+        void setValue(const std::string & key, const Poco::DynamicAny & value);
+
+
+        JSON::Object::Ptr _object;
+    };
+
+
+}
+} // namespace Poco::Util
 
 
 #endif // POCO_UTIL_NO_JSONCONFIGURATION
 
 
 #endif // Util_JSONConfiguration_INCLUDED
-
