@@ -42,10 +42,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    if (!primary_key.column_names.empty())
-        first_primary_key_column = primary_key.column_names[0];
-
     for (const auto & name : queried_columns)
     {
         auto it = column_sizes.find(name);
@@ -193,7 +189,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
             && !cannotBeMoved(node, is_final)
-            /// when use final, do not take into consideration the conditions consisting of column that not belong to the sorting key columns
+            /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
+            /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
             && (!is_final || isExpressionOverSortingKey(node))
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
