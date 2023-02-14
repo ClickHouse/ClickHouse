@@ -30,18 +30,20 @@
 
 #include "utils.h"
 
-namespace double_conversion {
+namespace double_conversion
+{
 
-enum FastDtoaMode {
-  // Computes the shortest representation of the given input. The returned
-  // result will be the most accurate number of this length. Longer
-  // representations might be more accurate.
-  FAST_DTOA_SHORTEST,
-  // Same as FAST_DTOA_SHORTEST but for single-precision floats.
-  FAST_DTOA_SHORTEST_SINGLE,
-  // Computes a representation where the precision (number of digits) is
-  // given as input. The precision is independent of the decimal point.
-  FAST_DTOA_PRECISION
+enum FastDtoaMode
+{
+    // Computes the shortest representation of the given input. The returned
+    // result will be the most accurate number of this length. Longer
+    // representations might be more accurate.
+    FAST_DTOA_SHORTEST,
+    // Same as FAST_DTOA_SHORTEST but for single-precision floats.
+    FAST_DTOA_SHORTEST_SINGLE,
+    // Computes a representation where the precision (number of digits) is
+    // given as input. The precision is independent of the decimal point.
+    FAST_DTOA_PRECISION
 };
 
 // FastDtoa will produce at most kFastDtoaMaximalLength digits. This does not
@@ -76,13 +78,8 @@ static const int kFastDtoaMaximalSingleLength = 9;
 //     If there are two values that are equally close, then FastDtoa returns
 //     false.
 // For both modes the buffer must be large enough to hold the result.
-bool FastDtoa(double d,
-              FastDtoaMode mode,
-              int requested_digits,
-              Vector<char> buffer,
-              int* length,
-              int* decimal_point);
+bool FastDtoa(double d, FastDtoaMode mode, int requested_digits, Vector<char> buffer, int * length, int * decimal_point);
 
-}  // namespace double_conversion
+} // namespace double_conversion
 
-#endif  // DOUBLE_CONVERSION_FAST_DTOA_H_
+#endif // DOUBLE_CONVERSION_FAST_DTOA_H_
