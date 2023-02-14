@@ -16,9 +16,7 @@
 #include <sstream>
 #include <cstdlib>
 #include <cstdio>
-#if defined(POCO_OS_FAMILY_WINDOWS)
-	#include "Poco/UnWindows.h"
-#elif defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
+#if   defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
 	#include <unistd.h>
 	#include <signal.h>
 #endif
@@ -38,22 +36,7 @@ namespace Poco {
 bool Debugger::isAvailable()
 {
 #if defined(_DEBUG)
-	#if defined(POCO_OS_FAMILY_WINDOWS)
-		#if defined(_WIN32_WCE)
-			#if (_WIN32_WCE >= 0x600)
-				BOOL isDebuggerPresent;
-				if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &isDebuggerPresent))
-				{
-					return isDebuggerPresent ? true : false;
-				}
-				return false;
-			#else
-				return false;
-			#endif
-		#else
-			return IsDebuggerPresent() ? true : false;
-		#endif
-	#elif defined(POCO_OS_FAMILY_UNIX)
+	#if   defined(POCO_OS_FAMILY_UNIX)
 		return std::getenv("POCO_ENABLE_DEBUGGER") ? true : false;
 	#endif
 #else
@@ -68,20 +51,6 @@ void Debugger::message(const std::string& msg)
 	std::fputs("\n%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n", stderr);
 	std::fputs(msg.c_str(), stderr);
 	std::fputs("\n%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n", stderr);
-	#if defined(POCO_OS_FAMILY_WINDOWS)
-	if (isAvailable())
-	{
-		#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-		std::wstring umsg;
-		UnicodeConverter::toUTF16(msg, umsg);
-		umsg += '\n';
-		OutputDebugStringW(umsg.c_str());
-		#else
-		OutputDebugStringA(msg.c_str());
-		OutputDebugStringA("\n");
-		#endif
-	}
-	#endif
 #endif
 }
 
@@ -99,12 +68,7 @@ void Debugger::message(const std::string& msg, const char* file, int line)
 void Debugger::enter()
 {
 #if defined(_DEBUG)
-	#if defined(POCO_OS_FAMILY_WINDOWS)
-	if (isAvailable())
-	{
-		DebugBreak();
-	}
-	#elif defined(POCO_OS_FAMILY_UNIX)
+	#if   defined(POCO_OS_FAMILY_UNIX)
 	if (isAvailable())
 	{
 		kill(getpid(), SIGINT);

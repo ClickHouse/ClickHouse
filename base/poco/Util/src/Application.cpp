@@ -35,9 +35,6 @@
 #include "Poco/String.h"
 #include "Poco/ConsoleChannel.h"
 #include "Poco/AutoPtr.h"
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#include "Poco/UnWindows.h"
-#endif
 #if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
 #include "Poco/SignalHandler.h"
 #endif
@@ -436,25 +433,6 @@ void Application::getApplicationPath(Poco::Path& appPath) const
 			appPath = Path(_workingDirAtLaunch, _command);
 		appPath.makeAbsolute();
 	}
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-	#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-		wchar_t path[1024];
-		int n = GetModuleFileNameW(0, path, sizeof(path)/sizeof(wchar_t));
-		if (n > 0)
-		{
-			std::string p;
-			Poco::UnicodeConverter::toUTF8(path, p);
-			appPath = p;
-		}
-		else throw SystemException("Cannot get application file name.");
-	#else
-		char path[1024];
-		int n = GetModuleFileNameA(0, path, sizeof(path));
-		if (n > 0)
-			appPath = path;
-		else
-			throw SystemException("Cannot get application file name.");
-	#endif
 #else
 	appPath = _command;
 #endif

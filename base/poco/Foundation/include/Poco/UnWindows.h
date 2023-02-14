@@ -38,11 +38,6 @@
 
 
 // Reduce bloat
-#if defined(_WIN32)
-#    if !defined(WIN32_LEAN_AND_MEAN) && !defined(POCO_BLOATED_WIN32)
-#        define WIN32_LEAN_AND_MEAN
-#    endif
-#endif
 
 
 // Microsoft Visual C++ includes copies of the Windows header files

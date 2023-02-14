@@ -35,13 +35,6 @@ typedef signed short Int16;
 typedef unsigned short UInt16;
 typedef signed int Int32;
 typedef unsigned int UInt32;
-#    if defined(_WIN64)
-#        define POCO_PTR_IS_64_BIT 1
-typedef signed long long IntPtr;
-typedef unsigned long long UIntPtr;
-typedef signed long long Int64;
-typedef unsigned long long UInt64;
-#    else
 typedef signed long IntPtr;
 typedef unsigned long UIntPtr;
 #        if defined(__LP64__)
@@ -53,7 +46,6 @@ typedef unsigned long UInt64;
 typedef signed long long Int64;
 typedef unsigned long long UInt64;
 #        endif
-#    endif
 #    define POCO_HAVE_INT64 1
 #endif
 

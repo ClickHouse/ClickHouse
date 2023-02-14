@@ -482,23 +482,6 @@ namespace Util
 //
 // Macro to implement main()
 //
-#if defined(_WIN32) && defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-#    define POCO_APP_MAIN(App) \
-        int wmain(int argc, wchar_t ** argv) \
-        { \
-            Poco::AutoPtr<App> pApp = new App; \
-            try \
-            { \
-                pApp->init(argc, argv); \
-            } \
-            catch (Poco::Exception & exc) \
-            { \
-                pApp->logger().log(exc); \
-                return Poco::Util::Application::EXIT_CONFIG; \
-            } \
-            return pApp->run(); \
-        }
-#else
 #    define POCO_APP_MAIN(App) \
         int main(int argc, char ** argv) \
         { \
@@ -514,7 +497,6 @@ namespace Util
             } \
             return pApp->run(); \
         }
-#endif
 
 
 #endif // Util_Application_INCLUDED

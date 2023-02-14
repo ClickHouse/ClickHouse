@@ -24,11 +24,6 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/times.h>
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#include "Poco/UnWindows.h"
-#if defined(_WIN32_WCE)
-#include <cmath>
-#endif
 #endif
 
 
@@ -210,26 +205,7 @@ Timestamp Timestamp::fromUtcTime(UtcTimeVal val)
 
 void Timestamp::update()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-
-	FILETIME ft;
-#if defined(_WIN32_WCE) && defined(POCO_WINCE_TIMESTAMP_HACK)
-	GetSystemTimeAsFileTimeWithMillisecondResolution(&ft);
-#else
-	GetSystemTimeAsFileTime(&ft);
-#endif
-
-	ULARGE_INTEGER epoch; // UNIX epoch (1970-01-01 00:00:00) expressed in Windows NT FILETIME
-	epoch.LowPart  = 0xD53E8000;
-	epoch.HighPart = 0x019DB1DE;
-
-	ULARGE_INTEGER ts;
-	ts.LowPart  = ft.dwLowDateTime;
-	ts.HighPart = ft.dwHighDateTime;
-	ts.QuadPart -= epoch.QuadPart;
-	_ts = ts.QuadPart/10;
-
-#elif defined(POCO_HAVE_CLOCK_GETTIME)
+#if   defined(POCO_HAVE_CLOCK_GETTIME)
 
 	struct timespec ts;
 	if (clock_gettime(CLOCK_REALTIME, &ts))
@@ -271,39 +247,6 @@ Timestamp& Timestamp::operator -= (const Timespan& span)
 }
 
 
-#if defined(_WIN32)
-
-
-Timestamp Timestamp::fromFileTimeNP(UInt32 fileTimeLow, UInt32 fileTimeHigh)
-{
-	ULARGE_INTEGER epoch; // UNIX epoch (1970-01-01 00:00:00) expressed in Windows NT FILETIME
-	epoch.LowPart  = 0xD53E8000;
-	epoch.HighPart = 0x019DB1DE;
-
-	ULARGE_INTEGER ts;
-	ts.LowPart  = fileTimeLow;
-	ts.HighPart = fileTimeHigh;
-	ts.QuadPart -= epoch.QuadPart;
-
-	return Timestamp(ts.QuadPart/10);
-}
-
-
-void Timestamp::toFileTimeNP(UInt32& fileTimeLow, UInt32& fileTimeHigh) const
-{
-	ULARGE_INTEGER epoch; // UNIX epoch (1970-01-01 00:00:00) expressed in Windows NT FILETIME
-	epoch.LowPart  = 0xD53E8000;
-	epoch.HighPart = 0x019DB1DE;
-
-	ULARGE_INTEGER ts;
-	ts.QuadPart  = _ts*10;
-	ts.QuadPart += epoch.QuadPart;
-	fileTimeLow  = ts.LowPart;
-	fileTimeHigh = ts.HighPart;
-}
-
-
-#endif
 
 
 } // namespace Poco

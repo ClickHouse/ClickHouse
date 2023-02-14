@@ -21,8 +21,6 @@
 #elif defined(POCO_OS_FAMILY_UNIX)
 #include <time.h>
 #include <unistd.h>
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#include "Poco/UnWindows.h"
 #endif
 #include <algorithm>
 #undef min
@@ -91,18 +89,7 @@ void Clock::swap(Clock& timestamp)
 
 void Clock::update()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-
-	LARGE_INTEGER perfCounter;
-	LARGE_INTEGER perfFreq;
-	if (QueryPerformanceCounter(&perfCounter) && QueryPerformanceFrequency(&perfFreq))
-	{
-		_clock = resolution()*(perfCounter.QuadPart/perfFreq.QuadPart);
-		_clock += (perfCounter.QuadPart % perfFreq.QuadPart)*resolution()/perfFreq.QuadPart;
-	}
-	else throw Poco::SystemException("cannot get system clock");
-
-#elif defined(__MACH__)
+#if   defined(__MACH__)
 
 	clock_serv_t cs;
 	mach_timespec_t ts;
@@ -131,17 +118,7 @@ void Clock::update()
 
 Clock::ClockDiff Clock::accuracy()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-
-	LARGE_INTEGER perfFreq;
-	if (QueryPerformanceFrequency(&perfFreq) && perfFreq.QuadPart > 0)
-	{
-		ClockVal acc = resolution()/perfFreq.QuadPart;
-		return acc > 0 ? acc : 1;
-	}
-	else throw Poco::SystemException("cannot get system clock accuracy");
-
-#elif defined(__MACH__)
+#if   defined(__MACH__)
 
 	clock_serv_t cs;
 	int nanosecs;
@@ -173,11 +150,7 @@ Clock::ClockDiff Clock::accuracy()
 	
 bool Clock::monotonic()
 {
-#if defined(POCO_OS_FAMILY_WINDOWS)
-
-	return true;
-
-#elif defined(__MACH__)
+#if   defined(__MACH__)
 
 	return true;
 
