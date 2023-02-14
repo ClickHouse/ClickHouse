@@ -139,6 +139,10 @@ namespace
             || typeid_cast<const WindowStep *>(step))
             return true;
 
+        /// those steps can be only after AggregatingStep, so we skip them here but check AggregatingStep separately
+        if (typeid_cast<const CubeStep *>(step) || typeid_cast<const RollupStep *>(step) || typeid_cast<const TotalsHavingStep *>(step))
+            return true;
+
         return false;
     }
 
@@ -172,8 +176,7 @@ namespace
         while (!node->children.empty())
         {
             const IQueryPlanStep * current_step = node->step.get();
-            if (typeid_cast<const AggregatingStep *>(current_step) || typeid_cast<const CubeStep *>(current_step)
-                || typeid_cast<const RollupStep *>(current_step) || typeid_cast<const TotalsHavingStep *>(current_step))
+            if (typeid_cast<const AggregatingStep *>(current_step))
             {
                 aggregation_before_distinct = current_step;
                 break;
@@ -205,16 +208,6 @@ namespace
 
             if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(aggregation_before_distinct); aggregating_step)
                 return compareAggregationKeysWithDistinctColumns(aggregating_step->getParams().keys, distinct_columns, actions);
-
-            if (const auto * cube_step = typeid_cast<const CubeStep *>(aggregation_before_distinct); cube_step)
-                return compareAggregationKeysWithDistinctColumns(cube_step->getParams().keys, distinct_columns, actions);
-
-            if (const auto * rollup_step = typeid_cast<const RollupStep *>(aggregation_before_distinct); rollup_step)
-                return compareAggregationKeysWithDistinctColumns(rollup_step->getParams().keys, distinct_columns, actions);
-
-            if (const auto * totals_step = typeid_cast<const TotalsHavingStep *>(aggregation_before_distinct); totals_step)
-                return compareAggregationKeysWithDistinctColumns(
-                    totals_step->getOutputStream().header.getNames(), distinct_columns, actions);
         }
 
         return false;
