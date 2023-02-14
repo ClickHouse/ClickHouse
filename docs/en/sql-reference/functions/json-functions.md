@@ -6,7 +6,13 @@ sidebar_label: JSON
 
 # Functions for Working with JSON
 
-ClickHouse has special functions for working with this JSON. All the JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
+There are two set of functions to parse JSON. 
+   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremly fast.
+   - `JSONExtract*` is made to parse normal JSON.
+
+# visitParam functions
+
+ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
 
 The following assumptions are made:
 
@@ -76,6 +82,8 @@ visitParamExtractString('{"abc":"hello}', 'abc') = '';
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
 The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+
+# JSONExtract functions
 
 ## isValidJSON(json)
 
