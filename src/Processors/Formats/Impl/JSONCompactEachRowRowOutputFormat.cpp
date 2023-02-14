@@ -52,17 +52,12 @@ void JSONCompactEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONCompactEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeChar(']', *ostr);
-}
-
-void JSONCompactEachRowRowOutputFormat::writeRowBetweenDelimiter()
-{
-    writeChar('\n', *ostr);
+    writeCString("]\n", *ostr);
 }
 
 void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    writeRowBetweenDelimiter();
+    writeChar('\n', *ostr);
     size_t columns_size = columns.size();
     writeRowStartDelimiter();
     for (size_t i = 0; i < columns_size; ++i)
@@ -73,7 +68,6 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
         writeField(*columns[i], *serializations[i], row_num);
     }
     writeRowEndDelimiter();
-    writeRowBetweenDelimiter();
 }
 
 void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & values)
@@ -96,22 +90,10 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
     const auto & header = getPort(PortKind::Main).getHeader();
 
     if (with_names)
-    {
         writeLine(JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, settings.json.validate_utf8));
-        writeRowBetweenDelimiter();
-    }
 
     if (with_types)
-    {
         writeLine(JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8));
-        writeRowBetweenDelimiter();
-    }
-}
-
-void JSONCompactEachRowRowOutputFormat::writeSuffix()
-{
-    if (haveWrittenData())
-        writeChar('\n', *ostr);
 }
 
 void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)

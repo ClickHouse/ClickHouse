@@ -7,7 +7,7 @@ services:
             MONGO_INITDB_ROOT_USERNAME: root
             MONGO_INITDB_ROOT_PASSWORD: clickhouse
         volumes:
-            - ${MONGO_CONFIG_PATH}:/mongo/
+            - ${MONGO_CONFIG_PATH:-}:/mongo/
         ports:
-            - ${MONGO_EXTERNAL_PORT}:${MONGO_INTERNAL_PORT}
+            - ${MONGO_EXTERNAL_PORT:-27017}:${MONGO_INTERNAL_PORT:-27017}
         command: --config /mongo/mongo_secure.conf --profile=2 --verbose

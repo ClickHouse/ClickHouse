@@ -1,3 +1,7 @@
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+endif ()
+
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
@@ -38,10 +42,6 @@ else ()
 endif ()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
-
-if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
-    target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
-endif()
 
 target_link_libraries (common
     PUBLIC

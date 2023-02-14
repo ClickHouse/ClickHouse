@@ -18,7 +18,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 
 
-可以使用 replication_alter_partitions_sync 设置在复制集上等待执行的操作。
+可以使用 alter_sync 设置在复制集上等待执行的操作。
 
 
 
@@ -27,6 +27,4 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 
 !!! info  "注意"
-    如果`replication_alter_partitions_sync` 被设置为`2`，并且某些复制集超过 `replication_wait_for_inactive_replica_timeout`设置的时间不激活，那么将抛出一个异常`UNFINISHED`。
-
-
+    如果`alter_sync` 被设置为`2`，并且某些复制集超过 `replication_wait_for_inactive_replica_timeout`设置的时间不激活，那么将抛出一个异常`UNFINISHED`。
