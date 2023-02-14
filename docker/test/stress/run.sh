@@ -547,7 +547,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
 
         # Turn on after 23.1
-        rm -f /etc/clickhouse-server/users.d/prefetch_settings.xml
+        rm -f /etc/clickhouse-server/users.d/prefetch_settings.xml ||:
 
         start
 
