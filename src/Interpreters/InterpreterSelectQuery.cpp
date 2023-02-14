@@ -448,10 +448,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// FIXME: Memory bound aggregation may cause another reading algorithm to be used on remote replicas
-    if (settings.allow_experimental_parallel_reading_from_replicas && settings.enable_memory_bound_merging_of_aggregation_results)
-        context->setSetting("enable_memory_bound_merging_of_aggregation_results", false);
-
     if (joined_tables.tablesCount() > 1 && settings.allow_experimental_parallel_reading_from_replicas)
     {
         LOG_WARNING(log, "Joins are not supported with parallel replicas. Query will be executed without using them.");
@@ -1534,7 +1530,25 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         auto join_kind = table_join.kind();
                         bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
+
+                        auto has_non_const = [](const Block & block, const auto & keys)
+                        {
+                            for (const auto & key : keys)
+                            {
+                                const auto & column = block.getByName(key).column;
+                                if (column && !isColumnConst(*column))
+                                    return true;
+                            }
+                            return false;
+                        };
+                        /// This optimization relies on the sorting that should buffer the whole stream before emitting any rows.
+                        /// It doesn't hold such a guarantee for streams with const keys.
+                        /// Note: it's also doesn't work with the read-in-order optimization.
+                        /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+                        bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream().header, join_clause.key_names_left)
+                            && has_non_const(joined_plan->getCurrentDataStream().header, join_clause.key_names_right);
+
+                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
                         {
                             auto * left_set = add_create_set(query_plan, join_clause.key_names_left, JoinTableSide::Left);
                             auto * right_set = add_create_set(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
@@ -2502,24 +2516,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     if (!group_by_info && settings.force_aggregation_in_order)
     {
-        /// Not the most optimal implementation here, but this branch handles very marginal case.
-
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
-
-        auto sorting_step = std::make_unique<SortingStep>(
-            query_plan.getCurrentDataStream(),
-            group_by_sort_description,
-            0 /* LIMIT */,
-            SortingStep::Settings(*context),
-            settings.optimize_sorting_by_input_stream_properties);
-        sorting_step->setStepDescription("Enforced sorting for aggregation in order");
-
-        query_plan.addStep(std::move(sorting_step));
-
-        group_by_info = std::make_shared<InputOrderInfo>(
-            group_by_sort_description, group_by_sort_description.size(), 1 /* direction */, 0 /* limit */);
-
-        sort_description_for_merging = group_by_info->sort_description_for_merging;
+        sort_description_for_merging = group_by_sort_description;
     }
 
     auto merge_threads = max_streams;
@@ -2546,7 +2544,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
-        settings.enable_memory_bound_merging_of_aggregation_results);
+        settings.enable_memory_bound_merging_of_aggregation_results,
+        !group_by_info && settings.force_aggregation_in_order);
     query_plan.addStep(std::move(aggregating_step));
 }
 

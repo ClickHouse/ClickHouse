@@ -87,4 +87,12 @@ inline String settingFullName<MergeTreeSettings>(std::string_view short_name)
     return full_name;
 }
 
+inline std::string resolveSettingName(std::string_view full_name)
+{
+    return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
+    {
+        return settingFullName<T>(T::Traits::resolveName(short_name));
+    });
+}
+
 }
