@@ -122,6 +122,11 @@ public:
     using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
     QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
 
+    /** Get a deep copy of the query tree.
+      * If node to clone is node to replace, then instead of clone it use replacement node.
+      */
+    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
+
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const
     {

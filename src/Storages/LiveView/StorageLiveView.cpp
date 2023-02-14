@@ -199,15 +199,6 @@ SelectQueryTreeDescription buildSelectQueryTreeDescription(const ASTPtr & select
     return {std::move(select_query_node), std::move(inner_query_node), std::move(dependent_table_node)};
 }
 
-QueryTreeNodePtr cloneQueryTreeAndReplaceTableExpression(const QueryTreeNodePtr & query_tree,
-    const QueryTreeNodePtr table_expression_to_replace,
-    const QueryTreeNodePtr & replacement_table_expression)
-{
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
-    replacement_map.emplace(table_expression_to_replace.get(), replacement_table_expression);
-    return query_tree->cloneAndReplace(replacement_map);
-}
-
 }
 
 StorageLiveView::StorageLiveView(
@@ -430,9 +421,9 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
                     TableLockHolder{},
                     std::move(storage_snapshot));
 
-                select_description.inner_query_node = cloneQueryTreeAndReplaceTableExpression(select_description.inner_query_node,
+                select_description.inner_query_node = select_description.inner_query_node->cloneAndReplace(
                     select_description.dependent_table_node,
-                    replacement_table_expression);
+                    std::move(replacement_table_expression));
             }
 
             InterpreterSelectQueryAnalyzer interpreter(select_description.inner_query_node,
@@ -637,9 +628,9 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
                 TableLockHolder{},
                 std::move(storage_snapshot));
 
-            select_description.select_query_node = cloneQueryTreeAndReplaceTableExpression(select_description.select_query_node,
+            select_description.select_query_node = select_description.select_query_node->cloneAndReplace(
                 select_description.dependent_table_node,
-                replacement_table_expression);
+                std::move(replacement_table_expression));
         }
 
         InterpreterSelectQueryAnalyzer interpreter(select_description.select_query_node,

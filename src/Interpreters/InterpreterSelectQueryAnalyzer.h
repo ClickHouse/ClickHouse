@@ -27,7 +27,7 @@ public:
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_,
-        const StoragePtr & storage);
+        const StoragePtr & storage_);
 
     /// Initialize interpreter with query tree
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
