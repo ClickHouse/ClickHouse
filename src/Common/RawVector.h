@@ -110,6 +110,9 @@ public:
     /// NOTE: that this differs from what PODArray does with roundUpToPowerOfTwoOrZero()
     void reserve(size_t size)
     {
+        if (this->capacity() > size)
+            return;
+
         size_t new_size = this->_recommend(size);
         get_stl_vector()->reserve(new_size);
     }
