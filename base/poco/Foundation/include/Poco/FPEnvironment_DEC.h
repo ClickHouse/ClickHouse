@@ -19,11 +19,7 @@
 
 
 #include "Poco/Foundation.h"
-#if defined(__VMS)
-#    include <ieeedef.h>
-#else
 #    include <machine/fpu.h>
-#endif
 
 
 namespace Poco
@@ -42,19 +38,11 @@ protected:
     };
     enum FlagImpl
     {
-#if defined(__VMS)
-        FP_DIVIDE_BY_ZERO_IMPL = IEEE$M_STATUS_DZE,
-        FP_INEXACT_IMPL = IEEE$M_STATUS_INE,
-        FP_OVERFLOW_IMPL = IEEE$M_STATUS_OVF,
-        FP_UNDERFLOW_IMPL = IEEE$M_STATUS_UNF,
-        FP_INVALID_IMPL = IEEE$M_STATUS_INV
-#else
         FP_DIVIDE_BY_ZERO_IMPL = IEEE_STATUS_DZE,
         FP_INEXACT_IMPL = IEEE_STATUS_INE,
         FP_OVERFLOW_IMPL = IEEE_STATUS_OVF,
         FP_UNDERFLOW_IMPL = IEEE_STATUS_UNF,
         FP_INVALID_IMPL = IEEE_STATUS_INV
-#endif
     };
     FPEnvironmentImpl();
     FPEnvironmentImpl(const FPEnvironmentImpl & env);
@@ -76,11 +64,7 @@ protected:
     static long double copySignImpl(long double target, long double source);
 
 private:
-#if defined(__VMS)
-    struct _ieee _env;
-#else
     unsigned long _env;
-#endif
 };
 
 

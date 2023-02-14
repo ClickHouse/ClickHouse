@@ -95,9 +95,6 @@
 #elif defined(_WIN32) || defined(_WIN64)
 #    define POCO_OS_FAMILY_WINDOWS 1
 #    define POCO_OS POCO_OS_WINDOWS_NT
-#elif defined(__VMS)
-#    define POCO_OS_FAMILY_VMS 1
-#    define POCO_OS POCO_OS_VMS
 #endif
 
 
