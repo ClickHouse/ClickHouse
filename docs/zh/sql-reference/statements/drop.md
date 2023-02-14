@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/drop
 sidebar_position: 44
 sidebar_label: DROP
 ---
@@ -96,5 +97,3 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ``` sql
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
-
-[原始文章](https://clickhouse.com/docs/zh/sql-reference/statements/drop/) <!--hide-->

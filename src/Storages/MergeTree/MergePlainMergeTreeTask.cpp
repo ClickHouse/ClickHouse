@@ -52,7 +52,7 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
-                write_part_log(ExecutionStatus::fromCurrentException());
+                write_part_log(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
         }
@@ -115,10 +115,9 @@ void MergePlainMergeTreeTask::prepare()
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-    auto builder = merge_task->getBuilder();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction, builder);
+    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
     transaction.commit();
 
     write_part_log({});

@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 #if USE_EMBEDDED_COMPILER
 #include <DataTypes/Native.h>
@@ -40,6 +41,36 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Column", column_name);
     map.add("Ascending", direction > 0);
     map.add("With Fill", with_fill);
+}
+
+bool SortDescription::hasPrefix(const SortDescription & prefix) const
+{
+    if (prefix.empty())
+        return true;
+
+    if (prefix.size() > size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if ((*this)[i] != prefix[i])
+            return false;
+    }
+    return true;
+}
+
+SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
+{
+    size_t i = 0;
+    for (; i < std::min(lhs.size(), rhs.size()); ++i)
+    {
+        if (lhs[i] != rhs[i])
+            break;
+    }
+
+    auto res = lhs;
+    res.erase(res.begin() + i, res.end());
+    return res;
 }
 
 #if USE_EMBEDDED_COMPILER

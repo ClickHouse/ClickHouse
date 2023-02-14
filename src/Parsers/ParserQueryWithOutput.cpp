@@ -15,6 +15,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ParserShowEngineQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
@@ -33,6 +34,7 @@ namespace DB
 bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserShowTablesQuery show_tables_p;
+    ParserShowEnginesQuery show_engine_p;
     ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserDescribeTableQuery describe_table_p;
@@ -60,6 +62,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)
+        || show_engine_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
         || describe_cache_p.parse(pos, query, expected)
         || describe_table_p.parse(pos, query, expected)
@@ -142,7 +145,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
         if (query->as<ASTSelectWithUnionQuery>())
         {
-            QueryWithOutputSettingsPushDownVisitor::Data data{query_with_output.settings_ast};
+            auto settings = query_with_output.settings_ast->clone();
+            assert_cast<ASTSetQuery *>(settings.get())->print_in_format = false;
+            QueryWithOutputSettingsPushDownVisitor::Data data{settings};
             QueryWithOutputSettingsPushDownVisitor(data).visit(query);
         }
     }

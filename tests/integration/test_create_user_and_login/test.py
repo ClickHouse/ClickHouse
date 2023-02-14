@@ -61,7 +61,6 @@ def test_login_as_dropped_user_xml():
                 "-c",
                 """
             cat > /etc/clickhouse-server/users.d/user_c.xml << EOF
-<?xml version="1.0"?>
 <clickhouse>
     <users>
         <C>
@@ -81,7 +80,11 @@ EOF""",
             ["bash", "-c", "rm /etc/clickhouse-server/users.d/user_c.xml"]
         )
 
-        expected_errors = ["no user with such name", "not found in user directories"]
+        expected_errors = [
+            "no user with such name",
+            "not found in user directories",
+            "User has been dropped",
+        ]
         while True:
             out, err = instance.query_and_get_answer_with_error("SELECT 1", user="C")
             found_error = [

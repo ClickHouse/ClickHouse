@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/string-functions
 sidebar_position: 40
 sidebar_label: Strings
 ---
@@ -123,7 +124,7 @@ leftPad('string', 'length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -161,7 +162,7 @@ leftPadUTF8('string','length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -199,7 +200,7 @@ rightPad('string', 'length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -237,7 +238,7 @@ rightPadUTF8('string','length'[, 'pad_string'])
 **Arguments**
 
 -   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
+-   `length` — The length of the resulting string. [UInt or Int](../data-types/int-uint.md). If the value is less than the input string length, then the input string is shortened to `length` characters.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
 **Returned value**
@@ -494,25 +495,23 @@ If the ‘s’ string is non-empty and does not contain the ‘c’ character at
 
 Returns the string ‘s’ that was converted from the encoding in ‘from’ to the encoding in ‘to’.
 
-## Base58Encode(plaintext), Base58Decode(encoded_text)
+## base58Encode(plaintext)
 
-Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
+Accepts a String and encodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
 
 **Syntax**
 
 ```sql
-base58Encode(decoded)
-base58Decode(encoded)
+base58Encode(plaintext)
 ```
 
 **Arguments**
 
-- `decoded` — [String](../../sql-reference/data-types/string.md) column or constant.
-- `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
+- `plaintext` — [String](../../sql-reference/data-types/string.md) column or constant.
 
 **Returned value**
 
--   A string containing encoded/decoded value of 1st argument.
+-   A string containing encoded value of 1st argument.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
@@ -522,34 +521,69 @@ Query:
 
 ``` sql
 SELECT base58Encode('Encoded');
-SELECT base58Encode('3dc8KtHrwM');
 ```
 
 Result:
 ```text
-┌─encodeBase58('Encoded')─┐
-│ 3dc8KtHrwM                         │
-└──────────────────────────────────┘
-┌─decodeBase58('3dc8KtHrwM')─┐
-│ Encoded                             │
-└────────────────────────────────────┘
+┌─base58Encode('Encoded')─┐
+│ 3dc8KtHrwM              │
+└─────────────────────────┘
 ```
+
+## base58Decode(encoded_text)
+
+Accepts a String and decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
+
+**Syntax**
+
+```sql
+base58Decode(encoded_text)
+```
+
+**Arguments**
+
+- `encoded_text` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
+
+**Returned value**
+
+-   A string containing decoded value of 1st argument.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT base58Decode('3dc8KtHrwM');
+```
+
+Result:
+```text
+┌─base58Decode('3dc8KtHrwM')─┐
+│ Encoded                    │
+└────────────────────────────┘
+```
+
+## tryBase58Decode(s)
+
+Similar to base58Decode, but returns an empty string in case of error.
 
 ## base64Encode(s)
 
-Encodes ‘s’ string into base64
+Encodes ‘s’ FixedString or String into base64.
 
 Alias: `TO_BASE64`.
 
 ## base64Decode(s)
 
-Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
+Decode base64-encoded FixedString or String ‘s’ into original string. In case of failure raises an exception.
 
 Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s)
 
-Similar to base64Decode, but in case of error an empty string would be returned.
+Similar to base64Decode, but returns an empty string in case of error.
 
 ## endsWith(s, suffix)
 
@@ -1116,3 +1150,49 @@ A text with tags .
 The content within <b>CDATA</b>
 Do Nothing for 2 Minutes 2:00 &nbsp;
 ```
+
+## ascii(s) {#ascii}
+
+Returns the ASCII code point of the first character of str.  The result type is Int32.
+
+If s is empty, the result is 0. If the first character is not an ASCII character or not part of the Latin-1 Supplement range of UTF-16, the result is undefined.
+
+
+
+## concatWithSeparator
+
+Returns the concatenation strings separated by string separator. If any of the argument values is `NULL`, the function returns `NULL`.
+
+**Syntax**
+
+``` sql
+concatWithSeparator(sep, expr1, expr2, expr3...)
+```
+
+**Arguments**
+-   sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   exprN — expression to be concatenated. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+
+**Returned values**
+-   The concatenated String.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT concatWithSeparator('a', '1', '2', '3', '4')
+```
+
+Result:
+
+``` text
+┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
+│ 1a2a3a4                           │
+└───────────────────────────────────┘
+```
+
+## concatWithSeparatorAssumeInjective
+Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
+
+The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.

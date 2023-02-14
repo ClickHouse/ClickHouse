@@ -15,6 +15,7 @@ from env_helper import (
     IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
+    S3_DOWNLOAD,
     TEMP_PATH,
 )
 from s3_helper import S3Helper
@@ -37,10 +38,6 @@ BUILD_LOG_NAME = "build_log.log"
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
-    if build_config["bundled"] != "bundled":
-        return False
-    if build_config["libraries"] == "shared":
-        return False
     if build_config["sanitizer"] != "":
         return True
     if build_config["build_type"] != "":
@@ -59,8 +56,9 @@ def get_packager_cmd(
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
+    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && ./packager --output-dir={output_path} "
+        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
@@ -68,8 +66,6 @@ def get_packager_cmd(
         cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
-    if build_config["libraries"] == "shared":
-        cmd += " --shared-libraries"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
@@ -121,8 +117,9 @@ def check_for_success_run(
     s3_prefix: str,
     build_name: str,
     build_config: BuildConfig,
-):
-    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix)
+) -> None:
+    # the final empty argument is necessary for distinguish build and build_suffix
+    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
     logging.info("Checking for artifacts in %s", logged_prefix)
     try:
         # TODO: theoretically, it would miss performance artifact for pr==0,
@@ -142,11 +139,9 @@ def check_for_success_run(
     for url in build_results:
         url_escaped = url.replace("+", "%2B").replace(" ", "%20")
         if BUILD_LOG_NAME in url:
-            log_url = f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
+            log_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}"
         else:
-            build_urls.append(
-                f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
-            )
+            build_urls.append(f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}")
     if not log_url:
         # log is uploaded the last, so if there's no log we need to rerun the build
         return
@@ -176,7 +171,7 @@ def create_json_artifact(
     build_config: BuildConfig,
     elapsed: int,
     success: bool,
-):
+) -> None:
     subprocess.check_call(
         f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
@@ -220,7 +215,7 @@ def upload_master_static_binaries(
     build_config: BuildConfig,
     s3_helper: S3Helper,
     build_output_path: str,
-):
+) -> None:
     """Upload binary artifacts to a static S3 links"""
     static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
@@ -250,7 +245,7 @@ def main():
 
     logging.info("Repo copy path %s", REPO_COPY)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     version = get_version_from_repo(git=Git(True))
     release_or_pr, performance_pr = get_release_or_pr(pr_info, version)
@@ -258,7 +253,7 @@ def main():
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
     # FIXME performance
     s3_performance_path = "/".join(
-        (performance_pr, pr_info.sha, build_name, "performance.tgz")
+        (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
     )
 
     # If this is rerun, then we try to find already created artifacts and just
@@ -293,7 +288,9 @@ def main():
 
     logging.info("Will try to fetch cache for our build")
     try:
-        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+        get_ccache_if_not_exists(
+            ccache_path, s3_helper, pr_info.number, TEMP_PATH, pr_info.release_pr
+        )
     except Exception as e:
         # In case there are issues with ccache, remove the path and do not fail a build
         logging.info("Failed to get ccache, building without it. Error: %s", e)
@@ -334,13 +331,13 @@ def main():
 
     # FIXME performance
     performance_urls = []
-    performance_path = os.path.join(build_output_path, "performance.tgz")
+    performance_path = os.path.join(build_output_path, "performance.tar.zst")
     if os.path.exists(performance_path):
         performance_urls.append(
             s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
         )
         logging.info(
-            "Uploaded performance.tgz to %s, now delete to avoid duplication",
+            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
             performance_urls[0],
         )
         os.remove(performance_path)

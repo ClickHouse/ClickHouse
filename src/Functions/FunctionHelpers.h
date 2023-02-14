@@ -134,7 +134,7 @@ using FunctionArgumentDescriptors = std::vector<FunctionArgumentDescriptor>;
  * (e.g. depending on result type or other trait).
  * First, checks that number of arguments is as expected (including optional arguments).
  * Second, checks that mandatory args present and have valid type.
- * Third, checks optional arguents types, skipping ones that are missing.
+ * Third, checks optional arguments types, skipping ones that are missing.
  *
  * Please note that if you have several optional arguments, like f([a, b, c]),
  * only these calls are considered valid:

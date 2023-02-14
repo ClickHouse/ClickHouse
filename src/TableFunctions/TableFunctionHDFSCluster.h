@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -28,7 +28,6 @@ public:
     {
         return name;
     }
-    bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr getStorage(

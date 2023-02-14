@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/special/external-data
 sidebar_position: 130
 sidebar_label: External Data
 ---
@@ -62,4 +63,3 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 ```
 
 For distributed query processing, the temporary tables are sent to all the remote servers.
-

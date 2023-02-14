@@ -61,7 +61,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -109,6 +109,8 @@ private:
 
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
+    bool tableSupportsPrewhere() const;
+
     friend class ReadFromMerge;
 };
 
@@ -140,9 +142,13 @@ public:
 
     void addFilter(ActionsDAGPtr expression, std::string column_name)
     {
-        added_filter = std::move(expression);
-        added_filter_column_name = std::move(column_name);
+        added_filter_dags.push_back(expression);
+        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
     }
+
+    const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
+
+    void requestReadingInOrder(InputOrderInfoPtr order_info_) { order_info = order_info_; }
 
 private:
     const size_t required_max_block_size;
@@ -160,8 +166,12 @@ private:
     ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;
 
-    ActionsDAGPtr added_filter;
+    std::vector<ActionsDAGPtr> added_filter_dags;
+    ActionDAGNodes added_filter_nodes;
+
     std::string added_filter_column_name;
+
+    InputOrderInfoPtr order_info;
 
     struct AliasData
     {
@@ -185,10 +195,10 @@ private:
         size_t streams_num,
         bool concat_streams = false);
 
-    void convertingSourceStream(
+    static void convertingSourceStream(
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
-        ContextPtr context, ASTPtr & query,
-        QueryPipelineBuilder & builder, QueryProcessingStage::Enum processed_stage);
+        ContextPtr context,
+        QueryPipelineBuilder & builder);
 };
 
 }

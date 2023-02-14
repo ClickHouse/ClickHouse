@@ -17,6 +17,7 @@
 #endif
 #if USE_MYSQL
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Databases/MySQL/ConnectionMySQLSettings.h>
 #endif
 #if USE_NATSIO
 #include <Storages/NATS/NATSSettings.h>
@@ -35,7 +36,7 @@ namespace ErrorCodes
 IMPLEMENT_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db",
+    "host", "port", "user", "password", "quota_key", "db",
     "database", "table", "schema", "replica",
     "update_field", "update_lag", "invalidate_query", "query",
     "where", "name", "secure", "uri", "collection"};
@@ -84,6 +85,7 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     port = conf.port;
     username = conf.username;
     password = conf.password;
+    quota_key = conf.quota_key;
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
@@ -123,6 +125,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         configuration.port = config.getInt(collection_prefix + ".port", 0);
         configuration.username = config.getString(collection_prefix + ".user", "");
         configuration.password = config.getString(collection_prefix + ".password", "");
+        configuration.quota_key = config.getString(collection_prefix + ".quota_key", "");
         configuration.database = config.getString(collection_prefix + ".database", "");
         configuration.table = config.getString(collection_prefix + ".table", config.getString(collection_prefix + ".collection", ""));
         configuration.schema = config.getString(collection_prefix + ".schema", "");
@@ -135,7 +138,8 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
             || configuration.database.empty() || (configuration.table.empty() && !is_database_engine)))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and no key-value arguments are added");
+                            "Named collection of connection parameters is missing some "
+                            "of the parameters and no key-value arguments are added");
         }
 
         /// Check key-value arguments.
@@ -169,6 +173,8 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
                         configuration.username = arg_value.safeGet<String>();
                     else if (arg_name == "password")
                         configuration.password = arg_value.safeGet<String>();
+                    else if (arg_name == "quota_key")
+                        configuration.quota_key = arg_value.safeGet<String>();
                     else if (arg_name == "database")
                         configuration.database = arg_value.safeGet<String>();
                     else if (arg_name == "table")
@@ -236,6 +242,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(collection_prefix + ".port", 0));
         configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
         configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
+        configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", config.getString(collection_prefix + ".quota_key", ""));
         configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(dict_config_prefix + ".database",
             config.getString(collection_prefix + ".db", config.getString(collection_prefix + ".database", ""))));
         configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));
@@ -244,7 +251,8 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are not added");
+                            "Named collection of connection parameters is missing some "
+                            "of the parameters and dictionary parameters are not added");
         }
         return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = {}, .settings_changes = config_settings };
     }
@@ -301,7 +309,8 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
             {
                 const auto header_prefix = headers_prefix + header;
                 configuration.headers.emplace_back(
-                    std::make_pair(headers_config->getString(header_prefix + ".name"), headers_config->getString(header_prefix + ".value")));
+                    headers_config->getString(header_prefix + ".name"),
+                    headers_config->getString(header_prefix + ".value"));
             }
         }
 
@@ -328,6 +337,7 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
         common_configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
         common_configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
         common_configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
+        common_configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", "");
         common_configuration.database = dict_config.getString(dict_config_prefix + ".db", dict_config.getString(dict_config_prefix + ".database", ""));
         common_configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
         common_configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
@@ -359,12 +369,14 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
                 replica_configuration.port = dict_config.getUInt(replica_name + ".port", common_configuration.port);
                 replica_configuration.username = dict_config.getString(replica_name + ".user", common_configuration.username);
                 replica_configuration.password = dict_config.getString(replica_name + ".password", common_configuration.password);
+                replica_configuration.quota_key = dict_config.getString(replica_name + ".quota_key", common_configuration.quota_key);
 
                 if (replica_configuration.host.empty() || replica_configuration.port == 0
                     || replica_configuration.username.empty() || replica_configuration.password.empty())
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Named collection of connection parameters is missing some of the parameters and no other dictionary parameters are added");
+                                    "Named collection of connection parameters is missing some "
+                                    "of the parameters and no other dictionary parameters are added");
                 }
 
                 configuration.replicas_configurations[priority].emplace_back(replica_configuration);
@@ -389,108 +401,6 @@ void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration 
     http_method = conf.http_method;
     headers = conf.headers;
 }
-
-
-std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
-{
-    if (args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
-
-    URLBasedDataSourceConfiguration configuration;
-    StorageSpecificArgs non_common_args;
-
-    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
-    {
-        const auto & config = context->getConfigRef();
-        auto config_prefix = fmt::format("named_collections.{}", collection->name());
-
-        if (!config.has(config_prefix))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
-
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(config_prefix, keys);
-        for (const auto & key : keys)
-        {
-            if (key == "url")
-            {
-                configuration.url = config.getString(config_prefix + ".url", "");
-            }
-            else if (key == "method")
-            {
-                configuration.http_method = config.getString(config_prefix + ".method", "");
-            }
-            else if (key == "format")
-            {
-                configuration.format = config.getString(config_prefix + ".format", "");
-            }
-            else if (key == "structure")
-            {
-                configuration.structure = config.getString(config_prefix + ".structure", "");
-            }
-            else if (key == "compression_method")
-            {
-                configuration.compression_method = config.getString(config_prefix + ".compression_method", "");
-            }
-            else if (key == "headers")
-            {
-                Poco::Util::AbstractConfiguration::Keys header_keys;
-                config.keys(config_prefix + ".headers", header_keys);
-                for (const auto & header : header_keys)
-                {
-                    const auto header_prefix = config_prefix + ".headers." + header;
-                    configuration.headers.emplace_back(std::make_pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
-                }
-            }
-            else
-            {
-                auto value = config.getString(config_prefix + '.' + key);
-                non_common_args.emplace_back(std::make_pair(key, std::make_shared<ASTLiteral>(value)));
-            }
-        }
-
-        /// Check key-value arguments.
-        for (size_t i = 1; i < args.size(); ++i)
-        {
-            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
-            {
-                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
-                auto function_args = args_expr->children;
-                if (function_args.size() != 2)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
-
-                if (arg_name == "url")
-                    configuration.url = arg_value.safeGet<String>();
-                else if (arg_name == "method")
-                    configuration.http_method = arg_value.safeGet<String>();
-                else if (arg_name == "format")
-                    configuration.format = arg_value.safeGet<String>();
-                else if (arg_name == "compression_method")
-                    configuration.compression_method = arg_value.safeGet<String>();
-                else if (arg_name == "structure")
-                    configuration.structure = arg_value.safeGet<String>();
-                else
-                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-            }
-        }
-
-        if (configuration.url.empty() || configuration.format.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Storage requires {}", configuration.url.empty() ? "url" : "format");
-
-        URLBasedDataSourceConfig source_config{ .configuration = configuration, .specific_args = non_common_args };
-        return source_config;
-    }
-    return std::nullopt;
-}
-
 
 template<typename T>
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
@@ -570,11 +480,16 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<ConnectionMySQLSettingsTraits> & storage_settings);
+
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
     ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<MySQLSettingsTraits> & settings);
 
 template
 SettingsChanges getSettingsChangesFromConfig(
     const BaseSettings<MySQLSettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
 #endif
 }

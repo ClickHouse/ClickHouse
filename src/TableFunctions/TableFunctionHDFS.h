@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 
@@ -25,6 +25,11 @@ public:
     }
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    {
+        return {"_path", "_file"};
+    }
 
 private:
     StoragePtr getStorage(
