@@ -352,10 +352,19 @@ def test_parallel_distributed_insert_select_with_schema_inference(started_cluste
         """
     )
 
-    count = int(node.query("SELECT count() FROM parallel_insert_select"))
     actual_count = int(
         node.query(
             "SELECT count() FROM s3('http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')"
         )
     )
+
+    attempt = 0
+    count = 0
+    while attempt < 100:
+        count = int(node.query("SELECT count() FROM parallel_insert_select"))
+        if count == actual_count:
+            break
+        attempt += 1
+        time.sleep(0.2)
+
     assert count == actual_count
