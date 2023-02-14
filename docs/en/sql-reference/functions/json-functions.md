@@ -4,10 +4,8 @@ sidebar_position: 56
 sidebar_label: JSON
 ---
 
-# Functions for Working with JSON
-
 There are two set of functions to parse JSON. 
-   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremly fast.
+   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
    - `JSONExtract*` is made to parse normal JSON.
 
 # visitParam functions
