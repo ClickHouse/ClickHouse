@@ -272,7 +272,9 @@ private:
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
-    UInt64 client_protocol_version;
+
+    /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
+    UInt64 client_protocol_version = 0;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
