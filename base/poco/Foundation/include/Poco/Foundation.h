@@ -65,31 +65,6 @@
 //
 // Automatically link Foundation library.
 //
-#if defined(_MSC_VER)
-#    if defined(POCO_DLL)
-#        if defined(_DEBUG)
-#            define POCO_LIB_SUFFIX "d.lib"
-#        else
-#            define POCO_LIB_SUFFIX ".lib"
-#        endif
-#    elif defined(_DLL)
-#        if defined(_DEBUG)
-#            define POCO_LIB_SUFFIX "mdd.lib"
-#        else
-#            define POCO_LIB_SUFFIX "md.lib"
-#        endif
-#    else
-#        if defined(_DEBUG)
-#            define POCO_LIB_SUFFIX "mtd.lib"
-#        else
-#            define POCO_LIB_SUFFIX "mt.lib"
-#        endif
-#    endif
-
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(Foundation_EXPORTS)
-#        pragma comment(lib, "PocoFoundation" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 //
@@ -150,8 +125,6 @@
 #    define POCO_DEPRECATED __attribute__((deprecated))
 #elif defined(__clang__)
 #    define POCO_DEPRECATED __attribute__((deprecated))
-#elif defined(_MSC_VER)
-#    define POCO_DEPRECATED __declspec(deprecated)
 #else
 #    define POCO_DEPRECATED
 #endif

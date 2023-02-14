@@ -22,9 +22,7 @@
 #include "zlib.h"
 
 #if defined(STDC) && !defined(Z_SOLO)
-#    if !(defined(_WIN32_WCE) && defined(_MSC_VER))
 #        include <stddef.h>
-#    endif
 #    include <stdlib.h>
 #    include <string.h>
 #endif
@@ -130,17 +128,6 @@ extern z_const char * const z_errmsg[10]; /* indexed by 2-zlib_error */
 #    define fdopen(fd, mode) NULL /* No fdopen() */
 #endif
 
-#if (defined(_MSC_VER) && (_MSC_VER > 600)) && !defined __INTERIX
-#    if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-#        define fdopen(fd, mode) NULL /* No fdopen() */
-#        ifndef _PTRDIFF_T_DEFINED
-typedef int ptrdiff_t;
-#            define _PTRDIFF_T_DEFINED
-#        endif
-#    else
-#        define fdopen(fd, type) _fdopen(fd, type)
-#    endif
-#endif
 
 /* provide prototypes for these when building zlib without LFS */
 #if !defined(_WIN32) && (!defined(_LARGEFILE64_SOURCE) || _LFS64_LARGEFILE - 0 == 0)

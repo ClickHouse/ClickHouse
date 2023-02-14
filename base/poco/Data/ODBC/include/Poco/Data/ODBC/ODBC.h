@@ -58,11 +58,6 @@
 //
 // Automatically link Data library.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(ODBC_EXPORTS)
-#        pragma comment(lib, "PocoDataODBC" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 #endif // ODBC_ODBC_INCLUDED

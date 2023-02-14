@@ -53,13 +53,6 @@
 //
 // Automatically link NetSSL and OpenSSL libraries.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS)
-#        if !defined(NetSSL_EXPORTS)
-#            pragma comment(lib, "PocoNetSSL" POCO_LIB_SUFFIX)
-#        endif
-#    endif // POCO_NO_AUTOMATIC_LIBS
-#endif
 
 
 namespace Poco

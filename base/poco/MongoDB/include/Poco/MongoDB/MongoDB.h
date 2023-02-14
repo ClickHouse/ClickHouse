@@ -54,11 +54,6 @@
 //
 // Automatically link MongoDB library.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(MongoDB_EXPORTS)
-#        pragma comment(lib, "PocoMongoDB" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 #endif // MongoDBMongoDB_INCLUDED
