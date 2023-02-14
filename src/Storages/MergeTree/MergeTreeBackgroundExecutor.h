@@ -267,6 +267,18 @@ public:
             pool.scheduleOrThrowOnError([this] { threadFunction(); });
     }
 
+    MergeTreeBackgroundExecutor(
+        String name_,
+        size_t threads_count_,
+        size_t max_tasks_count_,
+        CurrentMetrics::Metric metric_,
+        std::string_view policy)
+        requires requires(Queue queue) { queue.updatePolicy(policy); } // Because we use explicit template instantiation
+        : MergeTreeBackgroundExecutor(name_, threads_count_, max_tasks_count_, metric_)
+    {
+        pending.updatePolicy(policy);
+    }
+
     ~MergeTreeBackgroundExecutor()
     {
         wait();
