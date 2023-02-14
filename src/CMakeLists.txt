@@ -301,8 +301,6 @@ endmacro ()
 dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
-dbms_target_link_libraries(PUBLIC ch_rust::prql_lib)
-
 if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
 endif ()
@@ -580,10 +578,10 @@ if (TARGET ch_rust::skim)
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
-# if (TARGET ch_rust::prql_lib)
-#     # Add only -I, library is needed only for clickhouse-client/clickhouse-local
-#     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::prql_lib,INTERFACE_INCLUDE_DIRECTORIES>)
-# endif()
+if (TARGET ch_rust::prql_lib)
+    dbms_target_include_directories(PRIVATE ch_rust::prql_lib)
+    dbms_target_link_libraries(PRIVATE ch_rust::prql_lib)
+endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
