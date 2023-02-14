@@ -83,7 +83,7 @@ There is currently no support for code points in the format `\uXXXX\uYYYY` that 
 
 # JSONExtract functions
 
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements.
 
 ## isValidJSON(json)
 
