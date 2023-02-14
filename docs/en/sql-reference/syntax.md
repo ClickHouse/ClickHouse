@@ -130,18 +130,17 @@ Result:
 
 ## Defining and Using Query Parameters
 
-Query parameters can be defined using the syntax `param_name=value`, where `name` is the name of the parameter. Parameters can by defined using the `SET` command, or from the command-line using `--param`.
+Query parameters allow to write generic queries that contain abstract placeholders instead of concrete identifiers. When a query with query parameters is executed, all placeholders are resolved and replaced by the actual query parameter values.
 
-To retrieve a query parameter, you specify the name of the parameter along with its data type surrounded by curly braces:
+To define a query parameter, use the command `SET param_<name>=<value>`, or `--param_<name>='<value>'` as argument to clickhouse-client on the command line. `<name>` is the name of the query parameter and `<value>` is its value. 
 
-```sql
-{name:datatype}
-```
+A query parameter can be referenced in a query using syntax `{<name>: <datatype>}` where `<name>` is the query parameter  name and `<datatype>` is the datatype it is converted to.
 
 For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each of a different data type:
 
 ```sql
-SET param_a = 13, param_b = 'str';
+SET param_a = 13;
+SET param_b = 'str';
 SET param_c = '2022-08-04 18:30:53';
 SET param_d = {'10': [11, 12], '13': [14, 15]}';
 
@@ -177,6 +176,7 @@ SET param_mytablename = "uk_price_paid";
 SELECT * FROM {mytablename:Identifier};
 ```
 
+Note that query parameters are not general text substitutions which can be used in arbitary places in arbitrary SQL queries. They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
 
 ## Functions
 
