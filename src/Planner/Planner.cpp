@@ -313,7 +313,8 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
-        settings.enable_memory_bound_merging_of_aggregation_results);
+        settings.enable_memory_bound_merging_of_aggregation_results,
+        settings.force_aggregation_in_order);
     query_plan.addStep(std::move(aggregating_step));
 }
 

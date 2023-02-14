@@ -9,7 +9,7 @@ namespace DB
 class ASTStorage;
 
 
-#define KAFKA_RELATED_SETTINGS(M) \
+#define KAFKA_RELATED_SETTINGS(M, ALIAS) \
     M(String, kafka_broker_list, "", "A comma-separated list of brokers for Kafka engine.", 0) \
     M(String, kafka_topic_list, "", "A list of Kafka topics.", 0) \
     M(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
@@ -37,9 +37,9 @@ class ASTStorage;
     /* https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md */
     /* https://github.com/edenhill/librdkafka/blob/v1.4.2/src/rdkafka_conf.c */
 
-#define LIST_OF_KAFKA_SETTINGS(M) \
-    KAFKA_RELATED_SETTINGS(M) \
-    FORMAT_FACTORY_SETTINGS(M)
+#define LIST_OF_KAFKA_SETTINGS(M, ALIAS) \
+    KAFKA_RELATED_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS)
 
