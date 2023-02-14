@@ -29,7 +29,7 @@ namespace
     void logActionsDAG(const String & prefix, const ActionsDAGPtr & actions)
     {
         if constexpr (debug_logging_enabled)
-            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{}: {}", prefix, actions->dumpDAG());
+            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{} :\n{}", prefix, actions->dumpDAG());
     }
 
     void logDebug(String key, String value)
@@ -44,10 +44,10 @@ namespace
         /// find non-const columns in DISTINCT
         const ColumnsWithTypeAndName & distinct_columns = distinct->getOutputStream().header.getColumnsWithTypeAndName();
         std::set<std::string_view> non_const_columns;
-        const Names & column_names = distinct->getColumnNames();
+        std::unordered_set<std::string_view> column_names(cbegin(distinct->getColumnNames()), cend(distinct->getColumnNames()));
         for (const auto & column : distinct_columns)
         {
-            if (!isColumnConst(*column.column) && find(cbegin(column_names), cend(column_names), column.name) != column_names.cend())
+            if (!isColumnConst(*column.column) && column_names.contains(column.name))
                 non_const_columns.emplace(column.name);
         }
         return non_const_columns;
@@ -124,11 +124,12 @@ namespace
         if (dag_stack.empty())
             return nullptr;
 
-        ActionsDAGPtr path_actions = dag_stack.back();
+        ActionsDAGPtr path_actions = dag_stack.back()->clone();
         dag_stack.pop_back();
         while (!dag_stack.empty())
         {
             ActionsDAGPtr clone = dag_stack.back()->clone();
+            logActionsDAG("DAG to merge", clone);
             dag_stack.pop_back();
             path_actions->mergeInplace(std::move(*clone));
         }
@@ -174,7 +175,7 @@ namespace
         if (aggregation_before_distinct)
         {
             ActionsDAGPtr actions = buildActionsForPlanPath(dag_stack);
-            logActionsDAG("aggregation pass: merged DAG:\n{}", actions);
+            logActionsDAG("aggregation pass: merged DAG", actions);
 
             const auto distinct_columns = getDistinctColumns(distinct_step);
 
@@ -239,7 +240,7 @@ namespace
         {
             /// build actions DAG to find original column names
             path_actions = buildActionsForPlanPath(dag_stack);
-            logActionsDAG("distinct pass: merged DAG:\n{}", path_actions);
+            logActionsDAG("distinct pass: merged DAG", path_actions);
 
             /// compare columns of two DISTINCTs
             for (const auto & column : distinct_columns)
