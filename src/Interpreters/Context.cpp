@@ -3825,9 +3825,9 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        background_merges_mutations_scheduling_policy
     );
-    shared->merge_mutate_executor->updateSchedulingPolicy(background_merges_mutations_scheduling_policy);
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
         background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio, background_merges_mutations_scheduling_policy);
 
