@@ -89,9 +89,6 @@
 #elif defined(unix) || defined(__unix) || defined(__unix__)
 #    define POCO_OS_FAMILY_UNIX 1
 #    define POCO_OS POCO_OS_UNKNOWN_UNIX
-#elif defined(_WIN32_WCE)
-#    define POCO_OS_FAMILY_WINDOWS 1
-#    define POCO_OS POCO_OS_WINDOWS_CE
 #elif defined(_WIN32) || defined(_WIN64)
 #    define POCO_OS_FAMILY_WINDOWS 1
 #    define POCO_OS POCO_OS_WINDOWS_NT
