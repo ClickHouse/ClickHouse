@@ -26,7 +26,12 @@ namespace ErrorCodes
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
-{}
+{
+    /// Temporary database should not have any data on the moment of its creation
+    /// In case of sudden server shutdown remove database folder of temporary database
+    if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
+        removeDataPath(context_);
+}
 
 void DatabaseMemory::createTable(
     ContextPtr /*context*/,
@@ -127,10 +132,15 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
+void DatabaseMemory::removeDataPath(ContextPtr local_context)
+{
+    std::filesystem::remove_all(local_context->getPath() + data_path);
+}
+
 void DatabaseMemory::drop(ContextPtr local_context)
 {
     /// Remove data on explicit DROP DATABASE
-    std::filesystem::remove_all(local_context->getPath() + data_path);
+    removeDataPath(local_context);
 }
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
