@@ -878,12 +878,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
-    {
-        const auto & name = key_column_names[i];
+    for (const auto & name : key_column_names)
         if (!key_columns.contains(name))
-            key_columns[name] = i;
-    }
+            key_columns[name] = key_columns.size();
 
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
@@ -955,12 +952,9 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , strict(strict_)
 {
-    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
-    {
-        const auto & name = key_column_names[i];
+    for (const auto & name : key_column_names)
         if (!key_columns.contains(name))
-            key_columns[name] = i;
-    }
+            key_columns[name] = key_columns.size();
 
     for (const auto & [name, _] : syntax_analyzer_result->array_join_result_to_source)
         array_joined_columns.insert(name);
