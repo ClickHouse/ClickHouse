@@ -238,24 +238,14 @@
 #    define POCO_COMPILER_MINGW
 #elif defined(__INTEL_COMPILER) || defined(__ICC) || defined(__ECC) || defined(__ICL)
 #    define POCO_COMPILER_INTEL
-#elif defined(__SUNPRO_CC)
-#    define POCO_COMPILER_SUN
 #elif defined(__MWERKS__) || defined(__CWCC__)
 #    define POCO_COMPILER_CODEWARRIOR
 #elif defined(__sgi) || defined(sgi)
 #    define POCO_COMPILER_SGI
-#elif defined(__HP_aCC)
-#    define POCO_COMPILER_HP_ACC
 #elif defined(__BORLANDC__) || defined(__CODEGEARC__)
 #    define POCO_COMPILER_CBUILDER
 #elif defined(__DMC__)
 #    define POCO_COMPILER_DMARS
-#elif defined(__DECCXX)
-#    define POCO_COMPILER_COMPAC
-#elif (defined(__xlc__) || defined(__xlC__)) && defined(__IBMCPP__)
-#    define POCO_COMPILER_IBM_XLC // IBM XL C++
-#elif defined(__IBMCPP__) && defined(__COMPILER_VER__)
-#    define POCO_COMPILER_IBM_XLC_ZOS // IBM z/OS C++
 #endif
 
 
