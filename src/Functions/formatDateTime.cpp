@@ -527,6 +527,18 @@ private:
                 return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
+        static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto week_year = ToWeekYearImpl::execute(source, timezone);
+            return writeNumberWithPadding(dest, week_year, min_represent_digits);
+        }
+
+        static size_t jodaWeekOfWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto week_of_weekyear = ToWeekOfWeekYearImpl::execute(source, timezone);
+            return writeNumberWithPadding(dest, week_of_weekyear, min_represent_digits);
+        }
+
         static size_t jodaDayOfYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto day_of_year = ToDayOfYearImpl::execute(source, timezone);
@@ -595,6 +607,30 @@ private:
         {
             auto second_of_minute = ToSecondImpl::execute(source, timezone);
             return writeNumberWithPadding(dest, second_of_minute, min_represent_digits);
+        }
+
+        static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
+        {
+            if (min_represent_digits > 9)
+                min_represent_digits = 9;
+            if (fractional_second == 0)
+            {
+                for (UInt64 i = 0; i < min_represent_digits; ++i)
+                    dest[i] = '0';
+                return min_represent_digits;
+            }
+            auto str = toString(fractional_second);
+            if (min_represent_digits > scale)
+            {
+                for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
+                    str += '0';
+            }
+            else if (min_represent_digits < scale)
+            {
+                str = str.substr(0, min_represent_digits);
+            }
+            memcpy(dest, str.data(), str.size());
+            return min_represent_digits;
         }
 
         static size_t jodaTimezone(size_t min_represent_digits, char * dest, Time /*source*/, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -1147,9 +1183,15 @@ public:
                         reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                         break;
                     case 'x':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK_YEAR");
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekYear, repetitions));
+                        /// weekyear range [1900, 2299]
+                        reserve_size += std::max(repetitions, 4);
+                        break;
                     case 'w':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK_OF_WEEK_YEAR");
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekOfWeekYear, repetitions));
+                        /// Week of weekyear range [1, 52]
+                        reserve_size += std::max(repetitions, 2);
+                        break;
                     case 'e':
                         instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfWeek1Based, repetitions));
                         /// Day of week range [1, 7]
@@ -1234,7 +1276,11 @@ public:
                         reserve_size += std::max(repetitions, 2);
                         break;
                     case 'S':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for FRACTION_OF_SECOND");
+                        /// Default fraction of second is 0
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaFractionOfSecond, repetitions));
+                        /// 'S' repetitions range [0, 9]
+                        reserve_size += repetitions <= 9 ? repetitions : 9;
+                        break;
                     case 'z':
                         if (repetitions <= 3)
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
