@@ -47,7 +47,7 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
 
 
 /// This function builds a common DAG which is a gerge of DAGs from Filter and Expression steps chain.
-static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, ActionsDAG::NodeRawConstPtrs & filter_nodes)
+static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, ActionsDAG::NodeRawConstPtrs & filter_nodes, bool & need_remove_column)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -66,6 +66,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
             if (prewhere_info->prewhere_actions)
             {
                 appendExpression(dag, prewhere_info->prewhere_actions);
+                need_remove_column = prewhere_info->remove_prewhere_column;
                 if (const auto * filter_node = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
                     filter_nodes.push_back(filter_node);
                 else
@@ -78,7 +79,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
     if (node.children.size() != 1)
         return false;
 
-    if (!buildAggregatingDAG(*node.children.front(), dag, filter_nodes))
+    if (!buildAggregatingDAG(*node.children.front(), dag, filter_nodes, need_remove_column))
         return false;
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
@@ -88,6 +89,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
             return false;
 
         appendExpression(dag, actions);
+        need_remove_column = false;
         return true;
     }
 
@@ -98,6 +100,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
             return false;
 
         appendExpression(dag, actions);
+        need_remove_column = filter->removesFilterColumn();
         const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName());
         if (!filter_expression)
             return false;
@@ -483,8 +486,9 @@ bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Has agg projection");
 
     ActionsDAGPtr dag;
+    bool need_remove_column = false;
     ActionsDAG::NodeRawConstPtrs filter_nodes;
-    if (!buildAggregatingDAG(*node.children.front(), dag, filter_nodes))
+    if (!buildAggregatingDAG(*node.children.front(), dag, filter_nodes, need_remove_column))
         return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
@@ -748,6 +752,8 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     while (iter != stack.rend())
     {
         auto next = std::next(iter);
+        if (next == stack.rend())
+            break;
 
         if (!typeid_cast<FilterStep *>(next->node->step.get()) &&
             !typeid_cast<ExpressionStep *>(next->node->step.get()))
@@ -772,7 +778,8 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     ActionsDAGPtr dag;
     ActionsDAG::NodeRawConstPtrs filter_nodes;
-    if (!buildAggregatingDAG(*iter->node->children.front(), dag, filter_nodes))
+    bool need_remove_column = false;
+    if (!buildAggregatingDAG(*iter->node->children.front(), dag, filter_nodes, need_remove_column))
         return false;
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
@@ -780,17 +787,29 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     const ActionsDAG::Node * filter_node = nullptr;
     if (!filter_nodes.empty())
     {
-        filter_node = filter_nodes.front();
+        auto & outputs = dag->getOutputs();
+        filter_node = filter_nodes.back();
         if (filter_nodes.size() > 1)
         {
+            if (need_remove_column)
+            {
+                size_t pos = 0;
+                while (pos < outputs.size() && outputs[pos] != filter_node)
+                    ++pos;
+
+                if (pos < outputs.size())
+                    outputs.erase(outputs.begin() + pos);
+            }
+
             FunctionOverloadResolverPtr func_builder_and =
                 std::make_unique<FunctionToOverloadResolverAdaptor>(
                     std::make_shared<FunctionAnd>());
 
             filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
+            outputs.insert(outputs.begin(), filter_node);
         }
-
-        dag->getOutputs().push_back(filter_node);
+        else if (!need_remove_column)
+            outputs.insert(outputs.begin(), filter_node);
     }
 
     std::list<NormalProjectionCandidate> candidates;
@@ -860,6 +879,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             continue;
 
         auto & candidate = candidates.emplace_back();
+        candidate.projection = projection;
         candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
         candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->marks();
 
