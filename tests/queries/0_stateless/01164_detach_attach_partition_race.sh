@@ -28,7 +28,7 @@ function thread_detach_attach()
 function thread_drop_detached()
 {
     while true; do
-        $CLICKHOUSE_CLIENT --allow_drop_detached -q "alter table mt drop detached partition id 'all'";
+        $CLICKHOUSE_CLIENT --allow_drop_detached 1 -q "alter table mt drop detached partition id 'all'";
     done
 }
 
