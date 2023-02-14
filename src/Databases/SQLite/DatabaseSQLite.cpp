@@ -58,7 +58,7 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
 }
 
 
-std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
+NameSet DatabaseSQLite::fetchTablesList() const
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
