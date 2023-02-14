@@ -136,8 +136,7 @@ namespace
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
 
-                const bool grant_named_collection_access = named_collection_access && named_collection_access == access_and_columns.size();
-                if (grant_named_collection_access)
+                if (named_collection_access && named_collection_access == access_and_columns.size())
                 {
                     ASTPtr collection;
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))

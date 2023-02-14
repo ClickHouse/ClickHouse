@@ -52,8 +52,10 @@ struct AccessRightsElement
 
     bool sameDatabaseAndTable(const AccessRightsElement & other) const
     {
-        return (database == other.database) && (any_database == other.any_database) && (table == other.table)
-            && (any_table == other.any_table);
+        return (database == other.database) && (any_database == other.any_database)
+            && (table == other.table) && (any_table == other.any_table)
+            && (named_collection == other.named_collection) && (any_named_collection == other.any_named_collection)
+            && (isNamedCollectionAccess() == other.isNamedCollectionAccess());
     }
 
     bool sameOptions(const AccessRightsElement & other) const
