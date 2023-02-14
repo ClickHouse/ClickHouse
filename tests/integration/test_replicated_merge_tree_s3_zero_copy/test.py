@@ -174,10 +174,10 @@ def test_drop_table(cluster):
     )
     if "1" in replicas and "test_drop_table" not in node.query("show tables"):
         node2.query("system drop replica '1' from table test_drop_table")
-        node.query(
-            "create table test_drop_table (n int) engine=ReplicatedMergeTree('/test/drop_table', '1') "
-            "order by n partition by n % 99 settings storage_policy='s3'"
-        )
+    node.query(
+        "create table if not exists test_drop_table (n int) engine=ReplicatedMergeTree('/test/drop_table', '1') "
+        "order by n partition by n % 99 settings storage_policy='s3'"
+    )
     node.query("system sync replica test_drop_table", settings={"receive_timeout": 60})
     node2.query("drop table test_drop_table")
     assert "1000\t499500\n" == node.query(
