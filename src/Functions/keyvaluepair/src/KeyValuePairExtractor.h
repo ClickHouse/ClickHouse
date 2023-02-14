@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
+#include <Columns/ColumnString.h>
 
 namespace DB
 {
@@ -31,16 +31,13 @@ namespace DB
  * If we want to simplify this in the future, approach #2 in https://github.com/ClickHouse/ClickHouse/pull/43606#discussion_r1049541759 seems
  * to be the best bet.
  * */
-template <typename R = std::unordered_map<std::string, std::string>>
 struct KeyValuePairExtractor
 {
-    using Response = R;
-
     virtual ~KeyValuePairExtractor() = default;
 
-    virtual Response extract(const std::string & data) = 0;
+    virtual uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) = 0;
 
-    virtual Response extract(std::string_view data) = 0;
+    virtual uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) = 0;
 };
 
 }

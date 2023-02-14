@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string_view>
+#include "State.h"
 
 namespace DB
 {
@@ -12,20 +13,56 @@ enum QuotingStrategy
     WithoutQuoting
 };
 
-enum EscapingStrategy
+
+template <typename KeyStateHandler>
+concept CInlineEscapingKeyStateHandler = requires(KeyStateHandler handler)
 {
-    WithEscaping,
-    WithoutEscaping
+    { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
+    { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
+    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
+    { handler.readKeyValueDelimiter(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
 };
+
+template <typename KeyStateHandler>
+concept CNoEscapingKeyStateHandler = requires(KeyStateHandler handler)
+{
+    { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
+    { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
+    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
+    { handler.readKeyValueDelimiter(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
+};
+
+template <typename T>
+concept CKeyStateHandler = CInlineEscapingKeyStateHandler<T> || CNoEscapingKeyStateHandler<T>;
+
+template <typename ValueStateHandler>
+concept CInlineEscapingValueStateHandler = requires(ValueStateHandler handler)
+{
+    { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
+    { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
+    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
+    { handler.readEmpty(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
+};
+
+template <typename ValueStateHandler>
+concept CNoEscapingValueStateHandler = requires(ValueStateHandler handler)
+{
+    { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
+    { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
+    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
+    { handler.readEmpty(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
+};
+
+template <typename T>
+concept CValueStateHandler = CInlineEscapingValueStateHandler<T> || CNoEscapingValueStateHandler<T>;
 
 struct StateHandler
 {
-    StateHandler(char escape_character, std::optional<char> enclosing_character);
+    StateHandler(std::optional<char> enclosing_character);
     StateHandler(const StateHandler &) = default;
 
     virtual ~StateHandler() = default;
 
-    const char escape_character = '\\';
     const std::optional<char> enclosing_character;
 
 protected:

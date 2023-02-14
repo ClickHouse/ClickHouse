@@ -3,31 +3,58 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include "state/InlineEscapingKeyStateHandler.h"
-#include "state/InlineEscapingValueStateHandler.h"
+#include "state/StateHandler.h"
+#include "../KeyValuePairExtractor.h"
 
 
 namespace DB
 {
 
-template <CInlineEscapingKeyStateHandler InlineKeyStateHandler, CInlineEscapingValueStateHandler InlineValueStateHandler>
-class CHKeyValuePairExtractor
+template <typename Extractor>
+concept CKeyValuePairExtractor = requires(Extractor extractor)
 {
-public:
-    using Response = ColumnMap::Ptr;
+    {
+        extractor.extract(
+            std::string_view {},
+            std::declval<ColumnString::MutablePtr &>(),
+            std::declval<ColumnString::MutablePtr &>()
+        )
+    } -> std::same_as<uint64_t>;
 
-    CHKeyValuePairExtractor(InlineKeyStateHandler key_state_handler_, InlineValueStateHandler value_state_handler_)
+    {
+        extractor.extract(
+            std::declval<const std::string &>(),
+            std::declval<ColumnString::MutablePtr &>(),
+            std::declval<ColumnString::MutablePtr &>()
+        )
+    } -> std::same_as<uint64_t>;
+};
+
+template <CKeyStateHandler KeyStateHandler, CValueStateHandler ValueStateHandler>
+class CHKeyValuePairExtractor : public KeyValuePairExtractor
+{
+    using Key = typename KeyStateHandler::ElementType;
+    using Value = typename ValueStateHandler::ElementType;
+
+public:
+    CHKeyValuePairExtractor(KeyStateHandler key_state_handler_, ValueStateHandler value_state_handler_)
         : key_state_handler(std::move(key_state_handler_)), value_state_handler(std::move(value_state_handler_))
     {}
 
-    uint64_t extract(const std::string_view & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values)
+    uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
+    {
+        return extract(std::string_view {data}, keys, values);
+    }
+
+    uint64_t extract(std::string_view data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
     {
         auto state = State::WAITING_KEY;
 
         std::size_t pos = 0;
 
-        std::string key;
-        std::string value;
+        Key key;
+        Value value;
+
         uint64_t row_offset = 0;
 
         while (state != State::END)
@@ -43,8 +70,9 @@ public:
 
 private:
 
-    NextState processState(std::string_view file, std::size_t pos, State state, std::string & key,
-                           std::string & value, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values, uint64_t & row_offset)
+    NextState processState(std::string_view file, std::size_t pos, State state, Key & key,
+                           Value & value, ColumnString::MutablePtr & keys,
+                           ColumnString::MutablePtr & values, uint64_t & row_offset)
     {
         switch (state)
         {
@@ -71,11 +99,12 @@ private:
         }
     }
 
-    static NextState flushPair(const std::string_view & file, std::size_t pos, std::string & key,
-                        std::string & value, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values, uint64_t & row_offset)
+    NextState flushPair(const std::string_view & file, std::size_t pos, Key & key,
+                               Value & value, ColumnString::MutablePtr & keys,
+                               ColumnString::MutablePtr & values, uint64_t & row_offset)
     {
-        keys->insert(std::move(key));
-        values->insert(std::move(value));
+        keys->insertData(key.data(), key.size());
+        values->insertData(value.data(), value.size());
 
         key = {};
         value = {};
@@ -85,8 +114,8 @@ private:
         return {pos, pos == file.size() ? State::END : State::WAITING_KEY};
     }
 
-    InlineKeyStateHandler key_state_handler;
-    InlineValueStateHandler value_state_handler;
+    KeyStateHandler key_state_handler;
+    ValueStateHandler value_state_handler;
 };
 
 }

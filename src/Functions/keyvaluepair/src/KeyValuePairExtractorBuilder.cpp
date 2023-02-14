@@ -1,4 +1,9 @@
 #include "KeyValuePairExtractorBuilder.h"
+#include "impl/CHKeyValuePairExtractor.h"
+#include "impl/state/InlineEscapingKeyStateHandler.h"
+#include "impl/state/InlineEscapingValueStateHandler.h"
+#include "impl/state/NoEscapingKeyStateHandler.h"
+#include "impl/state/NoEscapingValueStateHandler.h"
 
 namespace DB
 {
@@ -27,16 +32,54 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withEnclosingCharac
     return *this;
 }
 
-std::shared_ptr<KeyValuePairExtractor<std::unordered_map<std::string, std::string>>> KeyValuePairExtractorBuilder::build()
+std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build()
 {
-    using KeyStateHandler = InlineEscapingKeyStateHandler<QuotingStrategy::WithoutQuoting, EscapingStrategy::WithoutEscaping>;
-    using ValueStateHandler = InlineEscapingValueStateHandler<QuotingStrategy::WithoutQuoting, EscapingStrategy::WithoutEscaping>;
+    if (escape_character)
+    {
+        return buildWithEscaping();
+    }
 
-    CInlineEscapingKeyStateHandler auto key_state_handler = KeyStateHandler(key_value_pair_delimiter, escape_character, enclosing_character);
+    return buildWithoutEscaping();
+}
 
-    CInlineEscapingValueStateHandler auto value_state_handler = ValueStateHandler(escape_character, item_delimiter, enclosing_character);
+std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithoutEscaping()
+{
+    using KeyStateHandler = NoEscapingKeyStateHandler<QuotingStrategy::WithQuoting>;
+    using ValueStateHandler = NoEscapingValueStateHandler<QuotingStrategy::WithQuoting>;
 
-    return std::make_shared<InlineKeyValuePairExtractor<KeyStateHandler, ValueStateHandler>>(key_state_handler, value_state_handler);
+    CKeyStateHandler auto key_state_handler = KeyStateHandler(
+        key_value_pair_delimiter.value_or(':'),
+        enclosing_character
+    );
+
+    CValueStateHandler auto value_state_handler = ValueStateHandler(
+        item_delimiter.value_or(','),
+        enclosing_character,
+        value_special_character_allowlist
+    );
+
+    return std::make_shared<CHKeyValuePairExtractor<KeyStateHandler, ValueStateHandler>>(key_state_handler, value_state_handler);
+}
+
+std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping()
+{
+    using KeyStateHandler = InlineEscapingKeyStateHandler<QuotingStrategy::WithQuoting>;
+    using ValueStateHandler = InlineEscapingValueStateHandler<QuotingStrategy::WithQuoting>;
+
+    CKeyStateHandler auto key_state_handler = KeyStateHandler(
+        key_value_pair_delimiter.value_or(':'),
+        escape_character.value_or('\\'),
+        enclosing_character
+    );
+
+    CValueStateHandler auto value_state_handler = ValueStateHandler(
+        escape_character.value_or('"'),
+        item_delimiter.value_or(','),
+        enclosing_character,
+        value_special_character_allowlist
+    );
+
+    return std::make_shared<CHKeyValuePairExtractor<KeyStateHandler, ValueStateHandler>>(key_state_handler, value_state_handler);
 }
 
 }

@@ -13,6 +13,7 @@ namespace DB
 
 class ExtractKeyValuePairs : public IFunction
 {
+public:
     using CharArgument = std::optional<char>;
     using SetArgument = std::unordered_set<char>;
 
@@ -24,18 +25,7 @@ class ExtractKeyValuePairs : public IFunction
         CharArgument item_delimiter;
         CharArgument enclosing_character;
         std::unordered_set<char> value_special_characters_allow_list;
-        bool ch_inline = false;
     };
-
-    struct RawColumns
-    {
-        ColumnString::Ptr keys;
-        ColumnString::Ptr values;
-        ColumnUInt64::Ptr offsets;
-    };
-
-public:
-    using EscapingProcessorOutput = std::unordered_map<std::string, std::string>;
 
     ExtractKeyValuePairs();
 
@@ -43,44 +33,27 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<ExtractKeyValuePairs>(); }
 
-    /// Get the main function name.
     String getName() const override;
 
-    ColumnPtr
-    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override;
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override;
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override;
 
     bool isVariadic() const override;
 
     size_t getNumberOfArguments() const override;
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override;
 
 private:
     DataTypePtr return_type;
 
     static ParsedArguments parseArguments(const ColumnsWithTypeAndName & arguments);
 
-    static char extractControlCharacter(ColumnPtr column);
+    static CharArgument extractControlCharacter(ColumnPtr column);
 
-    static std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> getExtractor(
-        CharArgument escape_character,
-        CharArgument key_value_pair_delimiter,
-        CharArgument item_delimiter,
-        CharArgument enclosing_character);
-
-    static RawColumns extract(std::shared_ptr<KeyValuePairExtractor<EscapingProcessorOutput>> extractor, ColumnPtr data_column);
-
-    static ColumnPtr escape(RawColumns & raw_columns, char escape_character);
-
-    static ColumnPtr chInline(
-        ColumnPtr data_column,
-        CharArgument escape_character,
-        CharArgument key_value_pair_delimiter,
-        CharArgument item_delimiter,
-        CharArgument enclosing_character,
-        SetArgument value_special_characters_allow_list) ;
+    static auto getExtractor(CharArgument escape_character, CharArgument key_value_pair_delimiter,
+                             CharArgument item_delimiter, CharArgument enclosing_character);
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override;
 };

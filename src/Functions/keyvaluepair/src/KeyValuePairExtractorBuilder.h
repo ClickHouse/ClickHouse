@@ -1,8 +1,9 @@
 #pragma once
 
-#include <unordered_set>
 #include "KeyValuePairExtractor.h"
-#include <Functions/keyvaluepair/src/impl/InlineKeyValuePairExtractor.h>
+#include "impl/CHKeyValuePairExtractor.h"
+#include "impl/state/NoEscapingKeyStateHandler.h"
+#include "impl/state/NoEscapingValueStateHandler.h"
 
 namespace DB
 {
@@ -24,14 +25,18 @@ public:
 
     KeyValuePairExtractorBuilder & withEnclosingCharacter(std::optional<char> enclosing_character_);
 
-    std::shared_ptr<KeyValuePairExtractor<std::unordered_map<std::string, std::string>>> build();
+    std::shared_ptr<KeyValuePairExtractor> build();
 
 private:
-    char key_value_pair_delimiter = ':';
-    char escape_character = '\\';
-    char item_delimiter = ',';
+    std::optional<char> key_value_pair_delimiter;
+    std::optional<char> escape_character;
+    std::optional<char> item_delimiter;
     std::optional<char> enclosing_character;
     std::unordered_set<char> value_special_character_allowlist;
+
+    std::shared_ptr<KeyValuePairExtractor> buildWithEscaping();
+
+    std::shared_ptr<KeyValuePairExtractor> buildWithoutEscaping();
 };
 
 }
