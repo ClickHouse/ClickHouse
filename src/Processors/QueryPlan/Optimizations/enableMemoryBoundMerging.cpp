@@ -88,7 +88,7 @@ void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &)
             reading->enforceAggregationInOrder();
     }
 
-    root_mergine_aggeregated->updateInputSortDescription(sort_description, DataStream::SortScope::Stream);
+    root_mergine_aggeregated->applyOrder(sort_description, DataStream::SortScope::Stream);
 }
 
 }
