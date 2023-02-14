@@ -50,9 +50,6 @@ namespace Net
         /// Creates the HostEntry from the data in an addrinfo structure.
 #endif
 
-#if defined(POCO_VXWORKS)
-        HostEntry(const std::string & name, const IPAddress & addr);
-#endif
 
         HostEntry(const HostEntry & entry);
         /// Creates the HostEntry by copying another one.

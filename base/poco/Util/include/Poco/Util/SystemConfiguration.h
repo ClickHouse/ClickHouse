@@ -88,9 +88,7 @@ namespace Util
         static const std::string TEMPDIR;
         static const std::string CONFIGDIR;
         static const std::string DATETIME;
-#if !defined(POCO_VXWORKS)
         static const std::string PID;
-#endif
         static const std::string ENV;
     };
 

@@ -73,60 +73,6 @@
 #    ifndef ADDRESS_FAMILY
 #        define ADDRESS_FAMILY USHORT
 #    endif
-#elif defined(POCO_VXWORKS)
-#    include <hostLib.h>
-#    include <ifLib.h>
-#    include <inetLib.h>
-#    include <ioLib.h>
-#    include <resolvLib.h>
-#    include <types.h>
-#    include <socket.h>
-#    include <netinet/tcp.h>
-#    define POCO_INVALID_SOCKET -1
-#    define poco_socket_t int
-#    define poco_socklen_t int
-#    define poco_ioctl_request_t int
-#    define poco_closesocket(s) ::close(s)
-#    define POCO_EINTR EINTR
-#    define POCO_EACCES EACCES
-#    define POCO_EFAULT EFAULT
-#    define POCO_EINVAL EINVAL
-#    define POCO_EMFILE EMFILE
-#    define POCO_EAGAIN EAGAIN
-#    define POCO_EWOULDBLOCK EWOULDBLOCK
-#    define POCO_EINPROGRESS EINPROGRESS
-#    define POCO_EALREADY EALREADY
-#    define POCO_ENOTSOCK ENOTSOCK
-#    define POCO_EDESTADDRREQ EDESTADDRREQ
-#    define POCO_EMSGSIZE EMSGSIZE
-#    define POCO_EPROTOTYPE EPROTOTYPE
-#    define POCO_ENOPROTOOPT ENOPROTOOPT
-#    define POCO_EPROTONOSUPPORT EPROTONOSUPPORT
-#    define POCO_ESOCKTNOSUPPORT ESOCKTNOSUPPORT
-#    define POCO_ENOTSUP ENOTSUP
-#    define POCO_EPFNOSUPPORT EPFNOSUPPORT
-#    define POCO_EAFNOSUPPORT EAFNOSUPPORT
-#    define POCO_EADDRINUSE EADDRINUSE
-#    define POCO_EADDRNOTAVAIL EADDRNOTAVAIL
-#    define POCO_ENETDOWN ENETDOWN
-#    define POCO_ENETUNREACH ENETUNREACH
-#    define POCO_ENETRESET ENETRESET
-#    define POCO_ECONNABORTED ECONNABORTED
-#    define POCO_ECONNRESET ECONNRESET
-#    define POCO_ENOBUFS ENOBUFS
-#    define POCO_EISCONN EISCONN
-#    define POCO_ENOTCONN ENOTCONN
-#    define POCO_ESHUTDOWN ESHUTDOWN
-#    define POCO_ETIMEDOUT ETIMEDOUT
-#    define POCO_ECONNREFUSED ECONNREFUSED
-#    define POCO_EHOSTDOWN EHOSTDOWN
-#    define POCO_EHOSTUNREACH EHOSTUNREACH
-#    define POCO_ESYSNOTREADY -4
-#    define POCO_ENOTINIT -5
-#    define POCO_HOST_NOT_FOUND HOST_NOT_FOUND
-#    define POCO_TRY_AGAIN TRY_AGAIN
-#    define POCO_NO_RECOVERY NO_RECOVERY
-#    define POCO_NO_DATA NO_DATA
 #elif defined(POCO_OS_FAMILY_UNIX)
 #    include <unistd.h>
 #    include <errno.h>

@@ -29,8 +29,6 @@
 #    endif
 #elif defined(POCO_OS_FAMILY_WINDOWS)
 #    include "Poco/Process_WIN32.h"
-#elif defined(POCO_VXWORKS)
-#    include "Poco/Process_VX.h"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/Process_UNIX.h"
 #endif

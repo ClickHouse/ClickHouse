@@ -18,10 +18,8 @@
 #include "Poco/Util/OptionException.h"
 #include "Poco/FileStream.h"
 #include "Poco/Exception.h"
-#if !defined(POCO_VXWORKS)
 #include "Poco/Process.h"
 #include "Poco/NamedEvent.h"
-#endif
 #include "Poco/NumberFormatter.h"
 #include "Poco/Logger.h"
 #include "Poco/String.h"
@@ -515,52 +513,6 @@ int ServerApplication::run(int argc, wchar_t** argv)
 
 
 #endif // _WIN32_WCE
-#elif defined(POCO_VXWORKS)
-//
-// VxWorks specific code
-//
-void ServerApplication::waitForTerminationRequest()
-{
-	_terminate.wait();
-}
-
-
-int ServerApplication::run(int argc, char** argv)
-{
-	try
-	{
-		init(argc, argv);
-	}
-	catch (Exception& exc)
-	{
-		logger().log(exc);
-		return EXIT_CONFIG;
-	}
-	return run();
-}
-
-
-int ServerApplication::run(const std::vector<std::string>& args)
-{
-	try
-	{
-		init(args);
-	}
-	catch (Exception& exc)
-	{
-		logger().log(exc);
-		return EXIT_CONFIG;
-	}
-	return run();
-}
-
-
-void ServerApplication::defineOptions(OptionSet& options)
-{
-	Application::defineOptions(options);
-}
-
-
 #elif defined(POCO_OS_FAMILY_UNIX)
 
 

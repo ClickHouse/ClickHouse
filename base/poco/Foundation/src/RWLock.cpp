@@ -23,8 +23,6 @@
 #endif
 #elif POCO_OS == POCO_OS_ANDROID
 #include "RWLock_Android.cpp"
-#elif defined(POCO_VXWORKS)
-#include "RWLock_VX.cpp"
 #else
 #include "RWLock_POSIX.cpp"
 #endif

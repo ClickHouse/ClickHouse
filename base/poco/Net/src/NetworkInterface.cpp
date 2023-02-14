@@ -1288,61 +1288,6 @@ NetworkInterface::Map NetworkInterface::map(bool ipOnly, bool upOnly)
 } } // namespace Poco::Net
 
 
-#elif defined(POCO_VXWORKS)
-//
-// VxWorks
-//
-
-#error TODO
-
-/*
-namespace Poco {
-namespace Net {
-
-
-NetworkInterface::NetworkInterfaceList NetworkInterface::list()
-{
-	FastMutex::ScopedLock lock(_mutex);
-	NetworkInterfaceList result;
-
-	int ifIndex = 1;
-	char ifName[32];
-	char ifAddr[INET_ADDR_LEN];
-
-	for (;;)
-	{
-		if (ifIndexToIfName(ifIndex, ifName) == OK)
-		{
-			std::string name(ifName);
-			IPAddress addr;
-			IPAddress mask;
-			IPAddress bcst;
-			if (ifAddrGet(ifName, ifAddr) == OK)
-			{
-				addr = IPAddress(std::string(ifAddr));
-			}
-			int ifMask;
-			if (ifMaskGet(ifName, &ifMask) == OK)
-			{
-				mask = IPAddress(&ifMask, sizeof(ifMask));
-			}
-			if (ifBroadcastGet(ifName, ifAddr) == OK)
-			{
-				bcst = IPAddress(std::string(ifAddr));
-			}
-			result.push_back(NetworkInterface(name, name, name, addr, mask, bcst));
-			ifIndex++;
-		}
-		else break;
-	}
-
-	return result;
-}
-
-
-} } // namespace Poco::Net
-*/
-
 #elif defined(POCO_OS_FAMILY_BSD) || (POCO_OS == POCO_OS_QNX) || (POCO_OS == POCO_OS_SOLARIS)
 //
 // BSD variants, QNX(?) and Solaris

@@ -24,8 +24,6 @@
 
 #if defined(POCO_OS_FAMILY_WINDOWS)
 #    include "Poco/Semaphore_WIN32.h"
-#elif defined(POCO_VXWORKS)
-#    include "Poco/Semaphore_VX.h"
 #else
 #    include "Poco/Semaphore_POSIX.h"
 #endif

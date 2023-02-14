@@ -391,15 +391,11 @@ Poco::UInt16 SocketAddress::resolveService(const std::string& service)
 	}
 	else
 	{
-#if defined(POCO_VXWORKS)
-		throw ServiceNotFoundException(service);
-#else
 		struct servent* se = getservbyname(service.c_str(), NULL);
 		if (se)
 			return ntohs(se->s_port);
 		else
 			throw ServiceNotFoundException(service);
-#endif
 	}
 }
 

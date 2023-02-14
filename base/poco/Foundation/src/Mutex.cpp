@@ -21,8 +21,6 @@
 #else
 #include "Mutex_WIN32.cpp"
 #endif
-#elif defined(POCO_VXWORKS)
-#include "Mutex_VX.cpp"
 #else
 #include "Mutex_POSIX.cpp"
 #endif
