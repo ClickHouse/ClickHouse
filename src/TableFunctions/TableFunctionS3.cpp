@@ -50,7 +50,7 @@ void TableFunctionS3::parseArgumentsImpl(
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         /// Size -> argument indexes
-        static auto size_to_args = std::map<size_t, std::map<String, size_t>>
+        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_args
         {
             {1, {{}}},
             {2, {{"format", 1}}},
@@ -58,7 +58,7 @@ void TableFunctionS3::parseArgumentsImpl(
             {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
         };
 
-        std::map<String, size_t> args_to_idx;
+        std::unordered_map<std::string_view, size_t> args_to_idx;
         /// For 4 arguments we support 2 possible variants:
         /// s3(source, format, structure, compression_method) and s3(source, access_key_id, access_key_id, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.

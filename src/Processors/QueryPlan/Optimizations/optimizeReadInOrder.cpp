@@ -1200,7 +1200,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!aggregating)
         return;
 
-    if (aggregating->inOrder() || aggregating->isGroupingSets())
+    if ((aggregating->inOrder() && !aggregating->explicitSortingRequired()) || aggregating->isGroupingSets())
         return;
 
     /// TODO: maybe add support for UNION later.

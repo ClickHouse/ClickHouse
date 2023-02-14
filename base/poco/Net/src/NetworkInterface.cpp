@@ -39,6 +39,9 @@
 #include <iostream>
 #include <iomanip>
 
+#include <sys/types.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 
 using Poco::NumberFormatter;
 using Poco::FastMutex;
@@ -1204,7 +1207,7 @@ NetworkInterface::Map NetworkInterface::map(bool ipOnly, bool upOnly)
 					bool hasBroadcast = (pAddress->IfType == IF_TYPE_ETHERNET_CSMACD) || (pAddress->IfType == IF_TYPE_SOFTWARE_LOOPBACK) || (pAddress->IfType == IF_TYPE_IEEE80211);
 					if (hasBroadcast)
 					{
-						// On Windows, a valid broadcast address will be all 1's (== address | ~subnetMask); additionaly, on pre-Vista versions of
+						// On Windows, a valid broadcast address will be all 1's (== address | ~subnetMask); additionally, on pre-Vista versions of
 						// OS, master address structure does not contain member for prefix length; we go an extra mile here in order to make sure
 						// we reflect the actual values held by system and protect against misconfiguration (e.g. bad DHCP config entry)
 						ULONG prefixLength = 0;
@@ -1344,10 +1347,7 @@ NetworkInterface::NetworkInterfaceList NetworkInterface::list()
 //
 // BSD variants, QNX(?) and Solaris
 //
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <ifaddrs.h>
-#include <net/if.h>
 #include <net/if_dl.h>
 #ifndef POCO_NO_NET_IFTYPES
 #include <net/if_types.h>
@@ -1517,16 +1517,16 @@ NetworkInterface::Map NetworkInterface::map(bool ipOnly, bool upOnly)
 //
 
 
-#include <sys/types.h>
+/// #include <sys/types.h>
 #if POCO_OS != POCO_OS_ANDROID // Android doesn't have <ifaddrs.h>
-#include <ifaddrs.h>
+/// #include <ifaddrs.h>
 #endif
-#include <net/if.h>
+/// #include <net/if.h>
 #ifndef POCO_NO_LINUX_IF_PACKET_H
 #include <linux/if_packet.h>
 #endif
 #include <net/if_arp.h>
-#include <iostream>
+/// #include <iostream>
 
 namespace Poco {
 namespace Net {

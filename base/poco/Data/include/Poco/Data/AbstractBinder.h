@@ -170,7 +170,7 @@ public:
 		/// Binds a long.
 
 	virtual void bind(std::size_t pos, const unsigned long& val, Direction dir = PD_IN) = 0;
-		/// Binds an unsiged long.
+		/// Binds an unsigned long.
 
 	virtual void bind(std::size_t pos, const std::vector<long>& val, Direction dir = PD_IN);
 		/// Binds a long vector.

@@ -63,7 +63,7 @@ class Data_API RecordSet: private Statement
 	///
 	/// The third (optional) argument passed to the Recordset constructor is a RowFormatter
 	/// implementation. The formatter is used in conjunction with << operator for recordset
-	/// data formating.
+	/// data formatting.
 	/// 
 	/// The number of rows in the RecordSet can be limited by specifying
 	/// a limit for the Statement.
@@ -460,7 +460,7 @@ private:
 		}
 		else 
 		{
-			throw Poco::BadCastException(Poco::format("Type cast failed!\nColumn: %z\nTarget type:\t%s",  
+			throw Poco::BadCastException(Poco::format("Type cast failed!\nColumn: %z\nTarget type:\t%s",
 				pos,
 				std::string(typeid(T).name())));
 		}

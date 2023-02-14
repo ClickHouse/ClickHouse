@@ -86,8 +86,8 @@ private:
     Queue queue;
 
     InsertsByTime inserts_by_time;
-    time_t min_unprocessed_insert_time = 0;
-    time_t max_processed_insert_time = 0;
+    std::atomic<time_t> min_unprocessed_insert_time = 0;
+    std::atomic<time_t> max_processed_insert_time = 0;
 
     time_t last_queue_update = 0;
 

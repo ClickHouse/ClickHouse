@@ -103,8 +103,6 @@ private:
 
     /// Record of pending acknowledgements from the server; its size never exceeds size of returned.queue
     std::map<UInt64, Payload> delivery_record;
-
-    Poco::Logger * log;
 };
 
 }

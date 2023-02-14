@@ -5,15 +5,19 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Columns/FilterDescription.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-
-
 #include <city.h>
+
+namespace ProfileEvents
+{
+    extern const Event WaitPrefetchTaskMicroseconds;
+};
 
 namespace DB
 {
@@ -61,6 +65,8 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
+    , owned_uncompressed_cache(use_uncompressed_cache ? storage.getContext()->getUncompressedCache() : nullptr)
+    , owned_mark_cache(storage.getContext()->getMarkCache())
 {
     header_without_const_virtual_columns = applyPrewhereActions(std::move(header), prewhere_info);
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
@@ -176,33 +182,89 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
     return {Chunk(), num_read_rows, num_read_bytes};
 }
 
-void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForPart(
-    MergeTreeData::DataPartPtr & data_part,
-    const MergeTreeReadTaskColumns & task_columns, const StorageMetadataPtr & metadata_snapshot,
-    const MarkRanges & mark_ranges, const IMergeTreeReader::ValueSizeMap & value_size_map,
+void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
+    const StorageMetadataPtr & metadata_snapshot,
+    const IMergeTreeReader::ValueSizeMap & value_size_map,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    reader = data_part->getReader(task_columns.columns, metadata_snapshot, mark_ranges,
-        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-        value_size_map, profile_callback);
+    if (!task)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no task");
 
+    if (task->reader.valid())
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
+        reader = task->reader.get();
+    }
+    else
+    {
+        reader = task->data_part->getReader(
+            task->task_columns.columns, metadata_snapshot, task->mark_ranges,
+            owned_uncompressed_cache.get(), owned_mark_cache.get(),
+            reader_settings, value_size_map, profile_callback);
+    }
+
+    if (!task->pre_reader_for_step.empty())
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
+        pre_reader_for_step.clear();
+        for (auto & pre_reader : task->pre_reader_for_step)
+            pre_reader_for_step.push_back(pre_reader.get());
+    }
+    else
+    {
+        initializeMergeTreePreReadersForPart(
+            task->data_part, task->task_columns, metadata_snapshot,
+            task->mark_ranges, value_size_map, profile_callback);
+    }
+}
+
+void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForPart(
+    MergeTreeData::DataPartPtr & data_part,
+    const MergeTreeReadTaskColumns & task_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MarkRanges & mark_ranges,
+    const IMergeTreeReader::ValueSizeMap & value_size_map,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+{
+    reader = data_part->getReader(
+        task_columns.columns, metadata_snapshot, mark_ranges,
+        owned_uncompressed_cache.get(), owned_mark_cache.get(),
+        reader_settings, value_size_map, profile_callback);
+
+    initializeMergeTreePreReadersForPart(
+        data_part, task_columns, metadata_snapshot,
+        mark_ranges, value_size_map, profile_callback);
+}
+
+void IMergeTreeSelectAlgorithm::initializeMergeTreePreReadersForPart(
+    MergeTreeData::DataPartPtr & data_part,
+    const MergeTreeReadTaskColumns & task_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MarkRanges & mark_ranges,
+    const IMergeTreeReader::ValueSizeMap & value_size_map,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
+{
     pre_reader_for_step.clear();
 
     /// Add lightweight delete filtering step
     if (reader_settings.apply_deleted_mask && data_part->hasLightweightDelete())
     {
-        pre_reader_for_step.push_back(data_part->getReader({LightweightDeleteDescription::FILTER_COLUMN}, metadata_snapshot, mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                value_size_map, profile_callback));
+        pre_reader_for_step.push_back(
+            data_part->getReader(
+                {LightweightDeleteDescription::FILTER_COLUMN}, metadata_snapshot,
+                mark_ranges, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+                reader_settings, value_size_map, profile_callback));
     }
 
     if (prewhere_info)
     {
         for (const auto & pre_columns_per_step : task_columns.pre_columns)
         {
-            pre_reader_for_step.push_back(data_part->getReader(pre_columns_per_step, metadata_snapshot, mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                value_size_map, profile_callback));
+            pre_reader_for_step.push_back(
+                data_part->getReader(
+                    pre_columns_per_step, metadata_snapshot, mark_ranges,
+                    owned_uncompressed_cache.get(), owned_mark_cache.get(),
+                    reader_settings, value_size_map, profile_callback));
         }
     }
 }
