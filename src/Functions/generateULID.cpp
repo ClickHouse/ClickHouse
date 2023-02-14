@@ -74,7 +74,19 @@ public:
 
 REGISTER_FUNCTION(GenerateULID)
 {
-    factory.registerFunction<FunctionGenerateULID>();
+    factory.registerFunction<FunctionGenerateULID>(
+    {
+        R"(
+Generates a Universally Unique Lexicographically Sortable Identifier (ULID).
+This function takes an optional argument, the value of which is discarded to generate different values in case the function is called multiple times.
+The function returns a value of type FixedString(26).
+)",
+        Documentation::Examples{
+            {"ulid", "SELECT generateULID()"},
+            {"multiple", "SELECT generateULID(1), generateULID(2)"}},
+        Documentation::Categories{"ULID"}
+    },
+    FunctionFactory::CaseSensitive);
 }
 
 }
