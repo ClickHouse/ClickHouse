@@ -28,7 +28,7 @@ namespace MongoDB {
 
 
 class MongoDB_API DeleteRequest: public RequestMessage
-	/// A DeleteRequest is used to delete one ore more documents from a database.
+	/// A DeleteRequest is used to delete one or more documents from a database.
 	///
 	/// Specific flags for this request
 	///   - DELETE_DEFAULT: default delete operation
