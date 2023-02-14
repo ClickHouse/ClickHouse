@@ -115,9 +115,7 @@ extern z_const char * const z_errmsg[10]; /* indexed by 2-zlib_error */
 #endif
 
 #ifdef WIN32
-#    ifndef __CYGWIN__ /* Cygwin is Unix, not Win32 */
 #        define OS_CODE 0x0b
-#    endif
 #endif
 
 #ifdef __50SERIES /* Prime/PRIMOS */
