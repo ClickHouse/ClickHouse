@@ -8,8 +8,7 @@ endif()
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/ulid-c")
 
 set (SRCS
-    "${LIBRARY_DIR}/include/ulid.h"
-    "${LIBRARY_DIR}/include/ulid.c"
+    "${LIBRARY_DIR}/src/ulid.c"
 )
 
 add_library(_ulid ${SRCS})
