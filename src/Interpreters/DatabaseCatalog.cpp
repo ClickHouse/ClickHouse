@@ -121,14 +121,9 @@ TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
     {
-        /// Table maybe dropped before by DROP TEMPORARY TABLE
-        /// Thus we need to verify the existence of the table before calling dropTable
-        auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
-        if (table && !table->is_dropped)
-        {
-            table->flushAndShutdown();
-            temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
-        }
+        auto table = getTable();
+        table->flushAndShutdown();
+        temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
     }
 }
 
