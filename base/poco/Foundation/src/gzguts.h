@@ -61,11 +61,6 @@
 #    endif
 #endif
 
-#if defined(__CYGWIN__)
-#    ifndef HAVE_VSNPRINTF
-#        define HAVE_VSNPRINTF
-#    endif
-#endif
 
 #ifndef HAVE_VSNPRINTF
 #    ifdef __TURBOC__
