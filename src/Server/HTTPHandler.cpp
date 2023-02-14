@@ -558,10 +558,11 @@ void HTTPHandler::processQuery(
     auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));
 
-    if (params.has("client_protocol_version")) {
-        String version_param = params.get("client_protocol_version");
-        char * end;
-        context->setClientProtocolVersion(strtol(&version_param.front(), &end, 10));
+    /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
+    if (params.has("client_protocol_version"))
+    {
+        UInt64 version_param = parse<UInt64>(params.get("client_protocol_version"));
+        context->setClientProtocolVersion(version_param);
     }
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
