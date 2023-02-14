@@ -953,7 +953,12 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     {
         LOG_TRACE(log, "Will copy file {}", adjusted_path);
 
-        if (!num_entries)
+        bool has_entries = false;
+        {
+            std::lock_guard lock{mutex};
+            has_entries = num_entries > 0;
+        }
+        if (!has_entries)
             checkLockFile(true);
 
         if (use_archives)

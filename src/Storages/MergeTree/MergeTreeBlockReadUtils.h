@@ -5,6 +5,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 
 
 namespace DB
@@ -67,6 +68,16 @@ struct MergeTreeReadTask
     /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but noit a vector
     std::deque<MergeTreeRangeReader> pre_range_readers;
 
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
+    std::future<MergeTreeReaderPtr> reader;
+    std::vector<std::future<MergeTreeReaderPtr>> pre_reader_for_step;
+
+    int64_t priority = 0; /// Priority of the task. Bigger value, bigger priority.
+    bool operator <(const MergeTreeReadTask & rhs) const
+    {
+        return priority < rhs.priority;
+    }
+
     bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
@@ -76,8 +87,12 @@ struct MergeTreeReadTask
         const NameSet & column_name_set_,
         const MergeTreeReadTaskColumns & task_columns_,
         bool remove_prewhere_column_,
-        MergeTreeBlockSizePredictorPtr && size_predictor_);
+        MergeTreeBlockSizePredictorPtr size_predictor_,
+        int64_t priority_ = 0,
+        std::future<MergeTreeReaderPtr> reader_ = {},
+        std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_ = {});
 };
+
 
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,

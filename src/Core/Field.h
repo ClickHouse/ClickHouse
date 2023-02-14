@@ -102,6 +102,37 @@ struct AggregateFunctionStateData
     }
 };
 
+struct CustomType
+{
+    struct CustomTypeImpl
+    {
+        virtual ~CustomTypeImpl() = default;
+        virtual const char * getTypeName() const = 0;
+        virtual String toString() const = 0;
+
+        virtual bool operator < (const CustomTypeImpl &) const = 0;
+        virtual bool operator <= (const CustomTypeImpl &) const = 0;
+        virtual bool operator > (const CustomTypeImpl &) const = 0;
+        virtual bool operator >= (const CustomTypeImpl &) const = 0;
+        virtual bool operator == (const CustomTypeImpl &) const = 0;
+    };
+
+    CustomType() = default;
+    explicit CustomType(std::shared_ptr<const CustomTypeImpl> impl_) : impl(impl_) {}
+
+    const char * getTypeName() const { return impl->getTypeName(); }
+    String toString() const { return impl->toString(); }
+    const CustomTypeImpl & getImpl() { return *impl; }
+
+    bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
+    bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
+    bool operator > (const CustomType & rhs) const { return *impl > *rhs.impl; }
+    bool operator >= (const CustomType & rhs) const { return *impl >= *rhs.impl; }
+    bool operator == (const CustomType & rhs) const { return *impl == *rhs.impl; }
+
+    std::shared_ptr<const CustomTypeImpl> impl;
+};
+
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -233,6 +264,7 @@ template <> struct NearestFieldTypeImpl<bool> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
+template <> struct NearestFieldTypeImpl<CustomType> { using Type = CustomType; };
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
@@ -297,6 +329,7 @@ public:
             Object = 29,
             IPv4 = 30,
             IPv6 = 31,
+            CustomType = 32,
         };
     };
 
@@ -486,6 +519,7 @@ public:
             case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
             case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
+            case Types::CustomType:  return get<CustomType>() < rhs.get<CustomType>();
         }
 
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -527,6 +561,7 @@ public:
             case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
             case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
+            case Types::CustomType:  return get<CustomType>() <= rhs.get<CustomType>();
         }
 
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -572,6 +607,7 @@ public:
             case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
             case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
+            case Types::CustomType:  return get<CustomType>() == rhs.get<CustomType>();
         }
 
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
@@ -615,6 +651,7 @@ public:
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
+            case Types::CustomType: return f(field.template get<CustomType>());
         }
 
         UNREACHABLE();
@@ -627,7 +664,7 @@ private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData
+        AggregateFunctionStateData, CustomType
         > storage;
 
     Types::Which which;
@@ -731,6 +768,9 @@ private:
             case Types::AggregateFunctionState:
                 destroy<AggregateFunctionStateData>();
                 break;
+            case Types::CustomType:
+                destroy<CustomType>();
+                break;
             default:
                  break;
         }
@@ -774,6 +814,7 @@ template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static constexpr
 template <> struct Field::TypeToEnum<DecimalField<Decimal256>>{ static constexpr Types::Which value = Types::Decimal256; };
 template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
+template <> struct Field::TypeToEnum<CustomType>{ static constexpr Types::Which value = Types::CustomType; };
 template <> struct Field::TypeToEnum<bool>{ static constexpr Types::Which value = Types::Bool; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
@@ -797,6 +838,7 @@ template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
+template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
 inline constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
@@ -935,6 +977,10 @@ void readBinary(Object & x, ReadBuffer & buf);
 
 void writeBinary(const Object & x, WriteBuffer & buf);
 void writeText(const Object & x, WriteBuffer & buf);
+
+void writeBinary(const CustomType & x, WriteBuffer & buf);
+void writeText(const CustomType & x, WriteBuffer & buf);
+
 [[noreturn]] inline void writeQuoted(const Object &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Object quoted."); }
 
 __attribute__ ((noreturn)) inline void writeText(const AggregateFunctionStateData &, WriteBuffer &)
