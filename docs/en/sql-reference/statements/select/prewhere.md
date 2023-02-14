@@ -65,5 +65,5 @@ WHERE B = 0;
 
 1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
 
--- This query with manual `PREWHERE` processes slightly less data 158.89 MB VS 168.89 MB
+-- This query with manual `PREWHERE` processes slightly less data: 158.89 MB VS 168.89 MB
 ```
