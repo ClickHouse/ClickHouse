@@ -52,11 +52,6 @@
 //
 // Automatically link Util library.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(Util_EXPORTS)
-#        pragma comment(lib, "PocoUtil" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 #endif // Util_Util_INCLUDED

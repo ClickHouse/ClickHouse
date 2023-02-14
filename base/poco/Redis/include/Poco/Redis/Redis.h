@@ -52,11 +52,6 @@
 //
 // Automatically link Redis library.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(Redis_EXPORTS)
-#        pragma comment(lib, "PocoRedis" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 #endif // RedisRedis_INCLUDED

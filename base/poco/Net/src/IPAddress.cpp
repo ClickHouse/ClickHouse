@@ -42,13 +42,11 @@ namespace Poco {
 namespace Net {
 
 
-#if !defined(_MSC_VER) || defined(__STDC__)
 // Go home MSVC, you're drunk...
 // See http://stackoverflow.com/questions/5899857/multiple-definition-error-for-static-const-class-members
 const IPAddress::Family IPAddress::IPv4;
 #if defined(POCO_HAVE_IPv6)
 const IPAddress::Family IPAddress::IPv6;
-#endif
 #endif
 
 

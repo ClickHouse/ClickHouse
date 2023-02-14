@@ -52,11 +52,6 @@
 //
 // Automatically link XML library.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(XML_EXPORTS)
-#        pragma comment(lib, "PocoXML" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 #endif // XML_XML_INCLUDED
