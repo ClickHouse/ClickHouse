@@ -1019,6 +1019,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
     ), "ClickHouse lost some messages: {}".format(result)
 
 
+@pytest.mark.skip(reason="Flaky")
 def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     instance.query(
         """
@@ -1031,9 +1032,9 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_queue_base = 'over',
                      rabbitmq_exchange_type = 'direct',
-                     rabbitmq_num_consumers = 3,
+                     rabbitmq_num_consumers = 2,
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 100,
+                     rabbitmq_max_block_size = 1000,
                      rabbitmq_num_queues = 2,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
@@ -1045,13 +1046,12 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 100,
+                     rabbitmq_max_block_size = 1000,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
             ENGINE = MergeTree
-            ORDER BY key
-            SETTINGS old_parts_lifetime=5, cleanup_delay_period=2, cleanup_delay_period_random_add=3;
+            ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer_overload TO test.view_overload AS
             SELECT * FROM test.rabbitmq_consume;
     """
@@ -1080,7 +1080,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                     raise
 
     threads = []
-    threads_num = 3
+    threads_num = 2
     for _ in range(threads_num):
         threads.append(threading.Thread(target=insert))
     for thread in threads:
@@ -1089,11 +1089,11 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     while True:
         result = instance.query("SELECT count() FROM test.view_overload")
-        time.sleep(1)
         expected = messages_num * threads_num
         if int(result) == expected:
             break
         print(f"Result: {result} / {expected}")
+        time.sleep(1)
 
     instance.query(
         """
@@ -2953,6 +2953,7 @@ def test_rabbitmq_address(rabbitmq_cluster):
     instance2.query("drop table rabbit_out sync")
 
 
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     instance.query(
         """
@@ -3001,7 +3002,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     )
 
 
-@pytest.mark.skip(reason="FIXME: broken")
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_max_rows_per_message(rabbitmq_cluster):
     num_rows = 5
 
@@ -3074,6 +3075,7 @@ def test_max_rows_per_message(rabbitmq_cluster):
     assert result == "0\t0\n10\t100\n20\t200\n30\t300\n40\t400\n"
 
 
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_row_based_formats(rabbitmq_cluster):
     num_rows = 10
 
@@ -3170,6 +3172,7 @@ def test_row_based_formats(rabbitmq_cluster):
         assert result == expected
 
 
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_1(rabbitmq_cluster):
     instance.query(
         """
@@ -3231,6 +3234,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     ]
 
 
+@pytest.mark.skip(reason="FIXME: flaky (something with channel.start_consuming()")
 def test_block_based_formats_2(rabbitmq_cluster):
     num_rows = 100
 

@@ -413,7 +413,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     std::move(sort_description_for_merging),
                     std::move(group_by_sort_description),
                     should_produce_results_in_order_of_bucket_number,
-                    settings.enable_memory_bound_merging_of_aggregation_results);
+                    settings.enable_memory_bound_merging_of_aggregation_results,
+                    !group_by_info && settings.force_aggregation_in_order);
                 query_plan->addStep(std::move(aggregating_step));
             };
 

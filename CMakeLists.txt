@@ -433,6 +433,11 @@ else()
     link_libraries(global-group)
 endif ()
 
+option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
+if (NOT OS_LINUX AND NOT OS_ANDROID)
+    set(ENABLE_GWP_ASAN OFF)
+endif ()
+
 option(WERROR "Enable -Werror compiler option" ON)
 
 if (WERROR)
@@ -471,7 +476,12 @@ enable_testing() # Enable for tests without binary
 
 option(ENABLE_OPENSSL "This option performs a build with OpenSSL. NOTE! This option is insecure and should never be used. By default, ClickHouse uses and only supports BoringSSL" OFF)
 
-option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." OFF)
+if (ARCH_S390X)
+    set(ENABLE_OPENSSL_DYNAMIC_DEFAULT ON)
+else ()
+    set(ENABLE_OPENSSL_DYNAMIC_DEFAULT OFF)
+endif ()
+option(ENABLE_OPENSSL_DYNAMIC "This option removes SSL from ClickHouse and will link to the OpenSSL version supplied by OS." ${ENABLE_OPENSSL_DYNAMIC_DEFAULT})
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
