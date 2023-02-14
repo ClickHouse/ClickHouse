@@ -1,39 +1,38 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/Settings.h>
-#include <Core/UUID.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Storages/IStorage_fwd.h>
+#include <base/types.h>
+#include <Common/isLocalAddress.h>
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool.h>
-#include <Common/isLocalAddress.h>
-#include <base/types.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
-#include <Storages/ColumnsDescription.h>
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
+#include <Core/UUID.h>
+#include <IO/AsyncReadCounters.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 #include <IO/IResourceManager.h>
-
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST_fwd.h>
+#include <Processors/ResizeProcessor.h>
+#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Server/HTTP/HTTPContext.h>
-
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
 
 #include "config.h"
 
 #include <boost/container/flat_set.hpp>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-
 #include <thread>
-#include <exception>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -81,6 +80,7 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
+class QueryCache;
 class QueryLog;
 class QueryThreadLog;
 class QueryViewsLog;
@@ -96,8 +96,13 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
+class IAsynchronousReader;
 struct MergeTreeSettings;
+struct InitialAllRangesAnnouncement;
+struct ParallelReadRequest;
+struct ParallelReadResponse;
 class StorageS3Settings;
 class IDatabase;
 class DDLWorker;
@@ -171,10 +176,14 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
-using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
+using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
+using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+
+class ParallelReplicasReadingCoordinator;
+using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
 #if USE_ROCKSDB
 class MergeTreeMetadataCache;
@@ -261,6 +270,8 @@ private:
     /// Used in parallel reading from replicas. A replica tells about its intentions to read
     /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
+    std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
+    UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -360,6 +371,8 @@ private:
 
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Query metrics for reading data asynchronously with IAsynchronousReader.
+    mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -377,11 +390,9 @@ private:
 
     inline static ContextPtr global_context_instance;
 
-    /// A flag, used to mark if reader needs to apply deleted rows mask.
-    bool apply_deleted_mask = true;
-
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -403,6 +414,8 @@ public:
     };
 
     KitchenSink kitchen_sink;
+
+    ParallelReplicasReadingCoordinatorPtr parallel_reading_coordinator;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -847,6 +860,13 @@ public:
     void dropMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
+    ThreadPool & getPrefetchThreadpool() const;
+
+    /// Note: prefetchThreadpool is different from threadpoolReader
+    /// in the way that its tasks are - wait for marks to be loaded
+    /// and make a prefetch by putting a read task to threadpoolReader.
+    size_t getPrefetchThreadpoolSize() const;
+
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -861,6 +881,12 @@ public:
     void setMMappedFileCache(size_t cache_size_in_num_entries);
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void dropMMappedFileCache() const;
+
+    /// Create a cache of query results for statements which run repeatedly.
+    void setQueryCache(const Poco::Util::AbstractConfiguration & config);
+    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryCache> getQueryCache() const;
+    void dropQueryCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -928,6 +954,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
@@ -952,14 +979,17 @@ public:
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
+    using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
+    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
 
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
-
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+
+    StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
@@ -972,9 +1002,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool applyDeletedMask() const { return apply_deleted_mask; }
-    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -1045,6 +1072,12 @@ public:
     MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
     void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
+    MergeTreeAllRangesCallback getMergeTreeAllRangesCallback() const;
+    void setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback);
+
+    UUID getParallelReplicasGroupUUID() const;
+    void setParallelReplicasGroupUUID(UUID uuid);
+
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
     bool areBackgroundExecutorsInitialized();
@@ -1063,6 +1096,10 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 
+    size_t getThreadPoolReaderSize(FilesystemReaderType type) const;
+
+    std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
+
     ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
@@ -1070,6 +1107,10 @@ public:
 
     /** Get settings for writing to filesystem. */
     WriteSettings getWriteSettings() const;
+
+    /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    bool canUseParallelReplicasOnInitiator() const;
+    bool canUseParallelReplicasOnFollower() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -1088,7 +1129,9 @@ private:
 
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
-    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
+
+    DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
 };
 
 struct HTTPContext : public IHTTPContext

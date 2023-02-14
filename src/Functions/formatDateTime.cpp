@@ -344,13 +344,13 @@ private:
 
         static size_t mysqlDayOfWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            *dest = '0' + ToDayOfWeekImpl::execute(source, timezone);
+            *dest = '0' + ToDayOfWeekImpl::execute(source, 0, timezone);
             return 1;
         }
 
         static size_t mysqlDayOfWeek0To6(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto day = ToDayOfWeekImpl::execute(source, timezone);
+            auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
             *dest = '0' + (day == 7 ? 0 : day);
             return 1;
         }
@@ -478,7 +478,7 @@ private:
             return res.size();
         }
 
-        static size_t jodaCentryOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        static size_t jodaCenturyOfEra(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto year = static_cast<Int32>(ToYearImpl::execute(source, timezone));
             year = (year < 0 ? -year : year);
@@ -499,13 +499,13 @@ private:
 
         static size_t jodaDayOfWeek1Based(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
             return writeNumberWithPadding(dest, week_day, min_represent_digits);
         }
 
         static size_t jodaDayOfWeekText(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, timezone);
+            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
             if (week_day == 7)
                 week_day = 0;
 
@@ -525,6 +525,18 @@ private:
             }
             else
                 return writeNumberWithPadding(dest, year, min_represent_digits);
+        }
+
+        static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto week_year = ToWeekYearImpl::execute(source, timezone);
+            return writeNumberWithPadding(dest, week_year, min_represent_digits);
+        }
+
+        static size_t jodaWeekOfWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto week_of_weekyear = ToWeekOfWeekYearImpl::execute(source, timezone);
+            return writeNumberWithPadding(dest, week_of_weekyear, min_represent_digits);
         }
 
         static size_t jodaDayOfYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -597,6 +609,30 @@ private:
             return writeNumberWithPadding(dest, second_of_minute, min_represent_digits);
         }
 
+        static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
+        {
+            if (min_represent_digits > 9)
+                min_represent_digits = 9;
+            if (fractional_second == 0)
+            {
+                for (UInt64 i = 0; i < min_represent_digits; ++i)
+                    dest[i] = '0';
+                return min_represent_digits;
+            }
+            auto str = toString(fractional_second);
+            if (min_represent_digits > scale)
+            {
+                for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
+                    str += '0';
+            }
+            else if (min_represent_digits < scale)
+            {
+                str = str.substr(0, min_represent_digits);
+            }
+            memcpy(dest, str.data(), str.size());
+            return min_represent_digits;
+        }
+
         static size_t jodaTimezone(size_t min_represent_digits, char * dest, Time /*source*/, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             if (min_represent_digits <= 3)
@@ -641,8 +677,9 @@ public:
                     arguments[0].type->getName(), getName());
             if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDate32(arguments[0].type) || isDateTime64(arguments[0].type)))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 2 or 3. Should be a integer or a date with time",
-                    arguments[0].type->getName(), getName());
+                                "Illegal type {} of first argument of function {} when arguments size is 2 or 3. "
+                                "Should be a integer or a date with time",
+                                arguments[0].type->getName(), getName());
         }
         else
         {
@@ -686,8 +723,9 @@ public:
                     }))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime or DateTime64 when arguments size is 1.",
-                        arguments[0].column->getName(), getName());
+                                    "Illegal column {} of function {}, must be Integer, Date, Date32, DateTime "
+                                    "or DateTime64 when arguments size is 1.",
+                                    arguments[0].column->getName(), getName());
                 }
             }
             else
@@ -867,7 +905,7 @@ public:
 
                 pos = percent_pos + 1;
                 if (pos >= end)
-                    throw Exception("Sign '%' is the last in format, if you need it, use '%%'", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign '%' is the last in format, if you need it, use '%%'");
 
                 switch (*pos)
                 {
@@ -1103,7 +1141,7 @@ public:
                     // Case 2: find closing single quote
                     Int64 count = numLiteralChars(cur_token + 1, end);
                     if (count == -1)
-                        throw Exception("No closing single quote for literal", ErrorCodes::BAD_ARGUMENTS);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No closing single quote for literal");
                     else
                     {
                         for (Int64 i = 1; i <= count; i++)
@@ -1135,7 +1173,7 @@ public:
                         reserve_size += repetitions <= 3 ? 2 : 13;
                         break;
                     case 'C':
-                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCentryOfEra, repetitions));
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaCenturyOfEra, repetitions));
                         /// Year range [1900, 2299]
                         reserve_size += std::max(repetitions, 2);
                         break;
@@ -1145,9 +1183,15 @@ public:
                         reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                         break;
                     case 'x':
-                        throw Exception("format is not supported for WEEK_YEAR", ErrorCodes::NOT_IMPLEMENTED);
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekYear, repetitions));
+                        /// weekyear range [1900, 2299]
+                        reserve_size += std::max(repetitions, 4);
+                        break;
                     case 'w':
-                        throw Exception("format is not supported for WEEK_OF_WEEK_YEAR", ErrorCodes::NOT_IMPLEMENTED);
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekOfWeekYear, repetitions));
+                        /// Week of weekyear range [1, 52]
+                        reserve_size += std::max(repetitions, 2);
+                        break;
                     case 'e':
                         instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfWeek1Based, repetitions));
                         /// Day of week range [1, 7]
@@ -1232,7 +1276,11 @@ public:
                         reserve_size += std::max(repetitions, 2);
                         break;
                     case 'S':
-                        throw Exception("format is not supported for FRACTION_OF_SECOND", ErrorCodes::NOT_IMPLEMENTED);
+                        /// Default fraction of second is 0
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaFractionOfSecond, repetitions));
+                        /// 'S' repetitions range [0, 9]
+                        reserve_size += repetitions <= 9 ? repetitions : 9;
+                        break;
                     case 'z':
                         if (repetitions <= 3)
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
@@ -1242,7 +1290,7 @@ public:
                         reserve_size += 32;
                         break;
                     case 'Z':
-                        throw Exception("format is not supported for TIMEZONE_OFFSET_ID", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for TIMEZONE_OFFSET_ID");
                     default:
                         if (isalpha(*cur_token))
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for {}", String(cur_token, repetitions));

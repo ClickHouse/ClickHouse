@@ -350,7 +350,7 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 
 4. Copy snapshot to ClickHouse server nodes with a configured `keeper` or start ClickHouse Keeper instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become a leader.
 
-[Original article](https://clickhouse.com/docs/en/operations/clickhouse-keeper/) <!--hide-->
+
 
 ## Recovering after losing quorum
 

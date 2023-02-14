@@ -21,6 +21,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <base/IPv4andIPv6.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -160,7 +161,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     }
 
     if (result <= 0)
-        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
     return result;
 }
 
@@ -633,6 +634,9 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
+void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf);
+void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf);
+
 template <typename DecimalType>
 inline void writeDateTime64FractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
 {
@@ -858,6 +862,8 @@ inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 
@@ -881,6 +887,8 @@ inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(Local
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
+inline void writeText(const IPv4 & x, WriteBuffer & buf) { writeIPv4Text(x, buf); }
+inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf); }
 
 template <typename T>
 void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
@@ -999,6 +1007,19 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+inline void writeQuoted(const IPv4 & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
+
+inline void writeQuoted(const IPv6 & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
@@ -1032,6 +1053,19 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('"', buf);
 }
 
+inline void writeDoubleQuoted(const IPv4 & x, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    writeText(x, buf);
+    writeChar('"', buf);
+}
+
+inline void writeDoubleQuoted(const IPv6 & x, WriteBuffer & buf)
+{
+    writeChar('"', buf);
+    writeText(x, buf);
+    writeChar('"', buf);
+}
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
@@ -1042,6 +1076,8 @@ inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, 
 inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
 template <typename T>
 void writeBinary(const std::vector<T> & x, WriteBuffer & buf)

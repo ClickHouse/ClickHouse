@@ -108,11 +108,6 @@ mv ./programs/clickhouse* /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 
-# Exclude cargo build directory since it may have some shared libraries
-# (even though they are not required for the clickhouse binary)
-find . -name '*.so' -not -path '*/cargo/*' -print -exec mv '{}' /output \;
-find . -name '*.so.*' -not -path '*/cargo/*' -print -exec mv '{}' /output \;
-
 prepare_combined_output () {
     local OUTPUT
     OUTPUT="$1"
@@ -164,23 +159,23 @@ then
     git -C "$PERF_OUTPUT"/ch log -5
     (
         cd "$PERF_OUTPUT"/..
-        tar -cv -I pigz -f /output/performance.tgz output
+        tar -cv --zstd -f /output/performance.tar.zst output
     )
 fi
 
-# May be set for split build or for performance test.
+# May be set for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then
     prepare_combined_output /output
-    tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
+    tar -cv --zstd -f "$COMBINED_OUTPUT.tar.zst" /output
     rm -r /output/*
-    mv "$COMBINED_OUTPUT.tgz" /output
+    mv "$COMBINED_OUTPUT.tar.zst" /output
 fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    tar -cv -I pigz -f "coverity-scan.tgz" cov-int
-    mv "coverity-scan.tgz" /output
+    tar -cv --zstd -f "coverity-scan.tar.zst" cov-int
+    mv "coverity-scan.tar.zst" /output
 fi
 
 ccache_status

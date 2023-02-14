@@ -14,6 +14,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/StreamInQueryCacheTransform.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -181,24 +182,26 @@ static void logException(ContextPtr context, QueryLogElement & elem)
     if (!elem.log_comment.empty())
         comment = fmt::format(" (comment: {})", elem.log_comment);
 
+    /// Message patterns like "{} (from {}){} (in query: {})" are not really informative,
+    /// so we pass elem.exception_format_string as format string instead.
+    PreformattedMessage message;
+    message.format_string = elem.exception_format_string;
+
     if (elem.stack_trace.empty())
-        LOG_ERROR(
-            &Poco::Logger::get("executeQuery"),
-            "{} (from {}){} (in query: {})",
-            elem.exception,
-            context->getClientInfo().current_address.toString(),
-            comment,
-            toOneLineQuery(elem.query));
+        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
+                        context->getClientInfo().current_address.toString(),
+                        comment,
+                        toOneLineQuery(elem.query));
     else
-        LOG_ERROR(
-            &Poco::Logger::get("executeQuery"),
-            "{} (from {}){} (in query: {})"
-            ", Stack trace (when copying this message, always include the lines below):\n\n{}",
+        message.text = fmt::format(
+            "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
             toOneLineQuery(elem.query),
             elem.stack_trace);
+
+    LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
 }
 
 static void onExceptionBeforeStart(
@@ -232,10 +235,10 @@ static void onExceptionBeforeStart(
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
-    // Try log query_kind if ast is valid
+    // Log query_kind if ast is valid
     if (ast)
     {
-        elem.query_kind = magic_enum::enum_name(ast->getQueryKind());
+        elem.query_kind = ast->getQueryKind();
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
@@ -243,7 +246,9 @@ static void onExceptionBeforeStart(
     // We don't calculate databases, tables and columns when the query isn't able to start
 
     elem.exception_code = getCurrentExceptionCode();
-    elem.exception = getCurrentExceptionMessage(false);
+    auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+    elem.exception = std::move(exception_message.text);
+    elem.exception_format_string = exception_message.format_string;
 
     elem.client_info = context->getClientInfo();
 
@@ -395,8 +400,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
             query_end = insert_query->data;
 
+        bool is_create_parameterized_view = false;
+        if (const auto * create_query = ast->as<ASTCreateQuery>())
+            is_create_parameterized_view = create_query->isParameterizedView();
+
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        if (context->hasQueryParameters())
+        if (!is_create_parameterized_view && context->hasQueryParameters())
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
@@ -699,10 +708,59 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (OpenTelemetry::CurrentContext().isTraceEnabled())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
+                    String class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                 }
+
                 res = interpreter->execute();
+
+                /// If
+                /// - it is a SELECT query,
+                /// - passive (read) use of the query cache is enabled, and
+                /// - the query cache knows the query result
+                /// then replace the pipeline by a new pipeline with a single source that is populated from the query cache
+                auto query_cache = context->getQueryCache();
+                bool read_result_from_query_cache = false; /// a query must not read from *and* write to the query cache at the same time
+                if (query_cache != nullptr
+                    && (settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_reads_from_query_cache)
+                    && res.pipeline.pulling())
+                {
+                    QueryCache::Key key(
+                        ast, res.pipeline.getHeader(),
+                        std::make_optional<String>(context->getUserName()),
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+                    QueryCache::Reader reader = query_cache->createReader(key);
+                    if (reader.hasCacheEntryForKey())
+                    {
+                        res.pipeline = QueryPipeline(reader.getPipe());
+                        read_result_from_query_cache = true;
+                    }
+                }
+
+                /// If
+                /// - it is a SELECT query, and
+                /// - active (write) use of the query cache is enabled
+                /// then add a processor on top of the pipeline which stores the result in the query cache.
+                if (!read_result_from_query_cache
+                    && query_cache != nullptr
+                    && settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_writes_to_query_cache
+                    && res.pipeline.pulling()
+                    && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
+                {
+                    QueryCache::Key key(
+                        ast, res.pipeline.getHeader(),
+                        settings.query_cache_share_between_users ? std::nullopt : std::make_optional<String>(context->getUserName()),
+                        std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl));
+
+                    const size_t num_query_runs = query_cache->recordQueryRun(key);
+                    if (num_query_runs > settings.query_cache_min_query_runs)
+                    {
+                        auto stream_in_query_cache_transform = std::make_shared<StreamInQueryCacheTransform>(res.pipeline.getHeader(), query_cache, key,
+                                std::chrono::milliseconds(context->getSettings().query_cache_min_query_duration.totalMilliseconds()));
+                        res.pipeline.streamIntoQueryCache(stream_in_query_cache_transform);
+                    }
+                }
+
             }
         }
 
@@ -749,6 +807,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (settings.log_formatted_queries)
                 elem.formatted_query = queryToString(ast);
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
+            elem.query_kind = ast->getQueryKind();
 
             elem.client_info = client_info;
 
@@ -844,12 +903,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 element.used_functions = factories_info.functions;
                 element.used_storages = factories_info.storages;
                 element.used_table_functions = factories_info.table_functions;
+
+                element.async_read_counters = context_ptr->getAsyncReadCounters();
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
             auto finish_callback = [elem,
                                     context,
                                     ast,
+                                    allow_experimental_query_cache = settings.allow_experimental_query_cache,
+                                    use_query_cache = settings.use_query_cache,
+                                    enable_writes_to_query_cache = settings.enable_writes_to_query_cache,
+                                    query_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
                                     log_queries_min_type = settings.log_queries_min_type,
                                     log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
@@ -859,6 +924,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
+                /// If active (write) use of the query cache is enabled and the query is eligible for result caching, then store the query
+                /// result buffered in the special-purpose cache processor (added on top of the pipeline) into the cache.
+                auto query_cache = context->getQueryCache();
+                if (query_cache != nullptr
+                    && pulling_pipeline
+                    && allow_experimental_query_cache && use_query_cache && enable_writes_to_query_cache
+                    && (!astContainsNonDeterministicFunctions(ast, context) || query_cache_store_results_of_queries_with_nondeterministic_functions))
+                {
+                    query_pipeline.finalizeWriteInQueryCache();
+                }
+
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
 
                 if (process_list_elem)
@@ -1015,7 +1091,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
                 elem.exception_code = getCurrentExceptionCode();
-                elem.exception = getCurrentExceptionMessage(false);
+                auto exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+                elem.exception = std::move(exception_message.text);
+                elem.exception_format_string = exception_message.format_string;
 
                 QueryStatusPtr process_list_elem = context->getProcessListElement();
                 const Settings & current_settings = context->getSettingsRef();
@@ -1189,7 +1267,7 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)
-                    throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
+                    throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
 

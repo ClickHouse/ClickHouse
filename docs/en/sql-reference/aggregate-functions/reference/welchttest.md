@@ -69,4 +69,3 @@ Result:
 
 -   [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
 -   [studentTTest function](studentttest.md#studentttest)
-

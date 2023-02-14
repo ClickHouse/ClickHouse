@@ -453,7 +453,7 @@ ALTER TABLE table-name MODIFY TTL ttl-expression
 
 对于不可复制的表，所有 `ALTER`操作都是同步执行的。对于可复制的表，ALTER操作会将指令添加到ZooKeeper中，然后会尽快的执行它们。然而，该操作可以等待其它所有副本将指令执行完毕。
 
-对于 `ALTER ... ATTACH|DETACH|DROP`操作，可以通过设置 `replication_alter_partitions_sync` 来启用等待。可用参数值： `0` – 不需要等待; `1` – 仅等待自己执行(默认); `2` – 等待所有节点
+对于 `ALTER ... ATTACH|DETACH|DROP`操作，可以通过设置 `alter_sync` 来启用等待。可用参数值： `0` – 不需要等待; `1` – 仅等待自己执行(默认); `2` – 等待所有节点
 
 ### Mutations {#alter-mutations}
 
@@ -586,5 +586,3 @@ ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
 ```
-
-[Original article](https://clickhouse.com/docs/en/query_language/alter/) <!--hide-->

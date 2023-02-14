@@ -1,10 +1,11 @@
 ---
 sidebar_label: Install
 keywords: [clickhouse, install, getting started, quick start]
+description: Install ClickHouse
 slug: /en/install
 ---
 
-# Installing ClickHouse
+# Install ClickHouse
 
 You have three options for getting up and running with ClickHouse:
 
@@ -270,6 +271,9 @@ You’ll need to create data and metadata folders manually and `chown` them for 
       /var/lib/clickhouse/metadata/default/
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
+
+### From CI checks pre-built binaries
+ClickHouse binaries are built for each [commit](/docs/en/development/build.md#you-dont-have-to-build-clickhouse).
 
 ## Launch {#launch}
 

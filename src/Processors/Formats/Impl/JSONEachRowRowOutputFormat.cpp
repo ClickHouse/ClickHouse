@@ -41,7 +41,10 @@ void JSONEachRowRowOutputFormat::writeRowStartDelimiter()
 
 void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("}", *ostr);
+    if (settings.json.array_of_rows)
+        writeChar('}', *ostr);
+    else
+        writeCString("}\n", *ostr);
     field_number = 0;
 }
 
@@ -49,9 +52,7 @@ void JSONEachRowRowOutputFormat::writeRowEndDelimiter()
 void JSONEachRowRowOutputFormat::writeRowBetweenDelimiter()
 {
     if (settings.json.array_of_rows)
-        writeChar(',', *ostr);
-
-    writeChar('\n', *ostr);
+        writeCString(",\n", *ostr);
 }
 
 
@@ -68,8 +69,6 @@ void JSONEachRowRowOutputFormat::writeSuffix()
 {
     if (settings.json.array_of_rows)
         writeCString("\n]\n", *ostr);
-    else if (haveWrittenData())
-        writeChar('\n', *ostr);
 }
 
 

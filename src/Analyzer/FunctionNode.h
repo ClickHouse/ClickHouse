@@ -1,12 +1,14 @@
 #pragma once
 
 #include <memory>
-#include <Core/IResolvedFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-#include <Analyzer/ConstantValue.h>
 #include <Common/typeid_cast.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/IResolvedFunction.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -18,12 +20,6 @@ namespace ErrorCodes
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
-
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 
 /** Function node represents function in query tree.
   * Function syntax: function_name(parameter_1, ...)(argument_1, ...).
@@ -63,66 +59,37 @@ public:
     explicit FunctionNode(String function_name_);
 
     /// Get function name
-    const String & getFunctionName() const
-    {
-        return function_name;
-    }
+    const String & getFunctionName() const { return function_name; }
 
     /// Get parameters
-    const ListNode & getParameters() const
-    {
-        return children[parameters_child_index]->as<const ListNode &>();
-    }
+    const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
 
     /// Get parameters
-    ListNode & getParameters()
-    {
-        return children[parameters_child_index]->as<ListNode &>();
-    }
+    ListNode & getParameters() { return children[parameters_child_index]->as<ListNode &>(); }
 
     /// Get parameters node
-    const QueryTreeNodePtr & getParametersNode() const
-    {
-        return children[parameters_child_index];
-    }
+    const QueryTreeNodePtr & getParametersNode() const { return children[parameters_child_index]; }
 
     /// Get parameters node
-    QueryTreeNodePtr & getParametersNode()
-    {
-        return children[parameters_child_index];
-    }
+    QueryTreeNodePtr & getParametersNode() { return children[parameters_child_index]; }
 
     /// Get arguments
-    const ListNode & getArguments() const
-    {
-        return children[arguments_child_index]->as<const ListNode &>();
-    }
+    const ListNode & getArguments() const { return children[arguments_child_index]->as<const ListNode &>(); }
 
     /// Get arguments
-    ListNode & getArguments()
-    {
-        return children[arguments_child_index]->as<ListNode &>();
-    }
+    ListNode & getArguments() { return children[arguments_child_index]->as<ListNode &>(); }
 
     /// Get arguments node
-    const QueryTreeNodePtr & getArgumentsNode() const
-    {
-        return children[arguments_child_index];
-    }
+    const QueryTreeNodePtr & getArgumentsNode() const { return children[arguments_child_index]; }
 
     /// Get arguments node
-    QueryTreeNodePtr & getArgumentsNode()
-    {
-        return children[arguments_child_index];
-    }
+    QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
-    ColumnsWithTypeAndName getArgumentTypes() const;
+    const DataTypes & getArgumentTypes() const;
+    ColumnsWithTypeAndName getArgumentColumns() const;
 
     /// Returns true if function node has window, false otherwise
-    bool hasWindow() const
-    {
-        return children[window_child_index] != nullptr;
-    }
+    bool hasWindow() const { return children[window_child_index] != nullptr; }
 
     /** Get window node.
       * Valid only for window function node.
@@ -130,18 +97,12 @@ public:
       * 1. It can be identifier node if window function is defined as expr OVER window_name.
       * 2. It can be window node if window function is defined as expr OVER (window_name ...).
       */
-    const QueryTreeNodePtr & getWindowNode() const
-    {
-        return children[window_child_index];
-    }
+    const QueryTreeNodePtr & getWindowNode() const { return children[window_child_index]; }
 
     /** Get window node.
       * Valid only for window function node.
       */
-    QueryTreeNodePtr & getWindowNode()
-    {
-        return children[window_child_index];
-    }
+    QueryTreeNodePtr & getWindowNode() { return children[window_child_index]; }
 
     /** Get non aggregate function.
       * If function is not resolved nullptr returned.
@@ -150,7 +111,7 @@ public:
     {
         if (kind != FunctionKind::ORDINARY)
             return {};
-        return std::reinterpret_pointer_cast<const IFunctionBase>(function);
+        return std::static_pointer_cast<const IFunctionBase>(function);
     }
 
     /** Get aggregate function.
@@ -161,32 +122,20 @@ public:
     {
         if (kind == FunctionKind::UNKNOWN || kind == FunctionKind::ORDINARY)
             return {};
-        return std::reinterpret_pointer_cast<const IAggregateFunction>(function);
+        return std::static_pointer_cast<const IAggregateFunction>(function);
     }
 
     /// Is function node resolved
-    bool isResolved() const
-    {
-        return function != nullptr;
-    }
+    bool isResolved() const { return function != nullptr; }
 
     /// Is function node window function
-    bool isWindowFunction() const
-    {
-        return hasWindow();
-    }
+    bool isWindowFunction() const { return hasWindow(); }
 
     /// Is function node aggregate function
-    bool isAggregateFunction() const
-    {
-        return kind == FunctionKind::AGGREGATE;
-    }
+    bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
 
     /// Is function node ordinary function
-    bool isOrdinaryFunction() const
-    {
-        return kind == FunctionKind::ORDINARY;
-    }
+    bool isOrdinaryFunction() const { return kind == FunctionKind::ORDINARY; }
 
     /** Resolve function node as non aggregate function.
       * It is important that function name is updated with resolved function name.
@@ -195,6 +144,11 @@ public:
       * Function name must be updated accordingly.
       */
     void resolveAsFunction(FunctionBasePtr function_value);
+
+    void resolveAsFunction(const FunctionOverloadResolverPtr & resolver)
+    {
+        resolveAsFunction(resolver->build(getArgumentColumns()));
+    }
 
     /** Resolve function node as aggregate function.
       * It is important that function name is updated with resolved function name.
@@ -208,10 +162,7 @@ public:
       */
     void resolveAsWindowFunction(AggregateFunctionPtr window_function_value);
 
-    QueryTreeNodeType getNodeType() const override
-    {
-        return QueryTreeNodeType::FUNCTION;
-    }
+    QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::FUNCTION; }
 
     DataTypePtr getResultType() const override
     {
