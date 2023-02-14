@@ -18,6 +18,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
+
 namespace DB
 {
 
@@ -1414,7 +1415,6 @@ void WindowTransform::work()
     assert(prev_frame_start <= frame_start);
     const auto first_used_block = std::min(next_output_block_number,
         std::min(prev_frame_start.block, current_row.block));
-
     if (first_block_number < first_used_block)
     {
 //        fmt::print(stderr, "will drop blocks from {} to {}\n", first_block_number,
@@ -2019,6 +2019,7 @@ struct WindowFunctionNtile final : public WindowFunction
         if (transform->current_row_number == 1) [[unlikely]]
         {
             current_partition_rows = 0;
+            current_partition_inserted_row = 0;
             start_row = transform->current_row;
         }
         current_partition_rows++;
@@ -2033,20 +2034,22 @@ struct WindowFunctionNtile final : public WindowFunction
             const auto & end_row = transform->partition_end;
             if (current_row != end_row)
             {
-                if (!transform->input_is_finished || end_row.block != current_row.block + 1 || end_row.row)
+
+                if (current_row.row < transform->blockRowsNumber(current_row))
+                    return;
+                if (end_row.block != current_row.block + 1 || end_row.row)
                 {
                     return;
                 }
                 // else, current_row is the last input row.
             }
         }
-
         auto bucket_capacity = current_partition_rows / buckets;
         auto capacity_diff = current_partition_rows - bucket_capacity * buckets;
 
         // bucket number starts from 1.
         UInt64 bucket_num = 1;
-        for (UInt64 r = 0; r < current_partition_rows;)
+        while (current_partition_inserted_row < current_partition_rows)
         {
             auto current_bucket_capacity = bucket_capacity;
             if (capacity_diff > 0)
@@ -2074,8 +2077,7 @@ struct WindowFunctionNtile final : public WindowFunction
                     start_row.row = 0;
                 }
             }
-
-            r += current_bucket_capacity;
+            current_partition_inserted_row += current_bucket_capacity;
             bucket_num += 1;
         }
     }
@@ -2083,6 +2085,7 @@ private:
     UInt64 buckets = 0;
     RowNumber start_row;
     UInt64 current_partition_rows = 0;
+    UInt64 current_partition_inserted_row = 0;
 
     void checkWindowFrameType(const WindowTransform * transform)
     {
@@ -2090,16 +2093,19 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's window frame must have order by clause");
         if (transform->window_description.frame.type != WindowFrame::FrameType::ROWS)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame type must be rows");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame type must be ROWS");
         }
         if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame start type must be Unbounded");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame start type must be UNBOUNDED PRECEDING");
         }
 
-        if (transform->window_description.frame.end_type != WindowFrame::BoundaryType::Current)
+        if (transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame end type must be Current");
+            // We must wait all for the partition end and get the total rows number in this
+            // partition. So before the end of this partition, there is no any block could be
+            // dropped out.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame end type must be UNBOUNDED FOLLOWING");
         }
     }
 };
