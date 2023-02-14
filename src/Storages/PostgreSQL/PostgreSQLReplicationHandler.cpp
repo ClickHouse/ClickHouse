@@ -982,8 +982,16 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                 auto ast_rename = std::make_shared<ASTRenameQuery>();
                 ASTRenameQuery::Element elem
                 {
-                    ASTRenameQuery::Table{table_id.database_name, table_id.table_name},
-                    ASTRenameQuery::Table{temp_table_id.database_name, temp_table_id.table_name}
+                    ASTRenameQuery::Table
+                    {
+                        table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                        std::make_shared<ASTIdentifier>(table_id.table_name)
+                    },
+                    ASTRenameQuery::Table
+                    {
+                        temp_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(temp_table_id.database_name),
+                        std::make_shared<ASTIdentifier>(temp_table_id.table_name)
+                    }
                 };
                 ast_rename->elements.push_back(std::move(elem));
                 ast_rename->exchange = true;
