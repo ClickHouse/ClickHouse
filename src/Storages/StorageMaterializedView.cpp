@@ -347,7 +347,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
             },
             ASTRenameQuery::Table
             {
-                target_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(target_table_id.database_name),
+                new_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(new_table_id.database_name),
                 std::make_shared<ASTIdentifier>(new_target_table_name)
             }
         };
