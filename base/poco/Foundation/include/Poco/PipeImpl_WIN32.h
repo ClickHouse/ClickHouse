@@ -23,28 +23,29 @@
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API PipeImpl: public RefCountedObject
-	/// A dummy implementation of PipeImpl for platforms
-	/// that do not support pipes.
+class Foundation_API PipeImpl : public RefCountedObject
+/// A dummy implementation of PipeImpl for platforms
+/// that do not support pipes.
 {
 public:
-	typedef HANDLE Handle;
+    typedef HANDLE Handle;
 
-	PipeImpl();
-	~PipeImpl();
-	int writeBytes(const void* buffer, int length);
-	int readBytes(void* buffer, int length);
-	Handle readHandle() const;
-	Handle writeHandle() const;
-	void closeRead();
-	void closeWrite();
-	
+    PipeImpl();
+    ~PipeImpl();
+    int writeBytes(const void * buffer, int length);
+    int readBytes(void * buffer, int length);
+    Handle readHandle() const;
+    Handle writeHandle() const;
+    void closeRead();
+    void closeWrite();
+
 private:
-	HANDLE _readHandle;
-	HANDLE _writeHandle;
+    HANDLE _readHandle;
+    HANDLE _writeHandle;
 };
 
 
