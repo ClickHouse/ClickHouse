@@ -15,6 +15,13 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlight, powered by github.dev.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
-## Upcoming events
+## Upcoming Events
+* [**ClickHouse Workshop**](https://clickhouse.com/company/events/2023-02-15-clickhouse-workshop?utm_source=github&utm_medium=social&utm_campaign=workshop) - Feb 15 & 16 - In this 2-day (3 hrs per day) free training, topics range from introductory content to a deep dive on interacting with and understanding your data. There will be both live training and hands-on labs.
+* [**v23.2 Release Webinar**](https://clickhouse.com/company/events/v23-2-release-webinar?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-02) - Feb 23 - 23.2 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
+* [**ClickHouse Meetup in Amsterdam**](https://www.meetup.com/clickhouse-netherlands-user-group/events/291485868/) - Mar 9 - The first ClickHouse Amsterdam Meetup of 2023 is here! 🎉 Join us for short lightning talks and long discussions. Food, drinks & good times on us.
+* [**ClickHouse Meetup in SF Bay Area**](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/291490121/) - Mar 14 - A night to meet with ClickHouse team in the San Francisco area! Food and drink are a given...but networking is the primary focus.
+* [**ClickHouse Meetup in Austin**](https://www.meetup.com/clickhouse-austin-user-group/events/291486654/) - Mar 16 - The first ClickHouse Meetup in Austin is happening soon! Interested in speaking, let us know!
+
+## Recent Recordings
+* **FOSDEM 2023**: In the "Fast and Streaming Data" room Alexey gave a talk entitled "Building Analytical Apps With ClickHouse" that looks at the landscape of data tools, an interesting data set, and how you can interact with data quickly. Check out the recording on **[YouTube](https://www.youtube.com/watch?v=JlcI2Vfz_uk)**.
 * **Recording available**: [**v23.1 Release Webinar**](https://www.youtube.com/watch?v=zYSZXBnTMSE) 23.1 is the ClickHouse New Year release. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release. Inverted indices, query cache, and so -- very -- much more.
-* **Recording available**: [**ClickHouse Meetup at the CHEQ office in Tel Aviv**](https://www.meetup.com/clickhouse-tel-aviv-user-group/events/289599423/) - We are very excited to be holding our next in-person ClickHouse meetup at the CHEQ office in Tel Aviv! Hear from CHEQ, ServiceNow and Contentsquare, as well as a deep dive presentation from ClickHouse CTO Alexey Milovidov. Join us for a fun evening of talks, food and discussion!
