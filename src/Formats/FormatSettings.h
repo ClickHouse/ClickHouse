@@ -94,6 +94,7 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
     } arrow;
 
     struct
@@ -183,6 +184,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
         UInt64 max_block_size = 8192;
     } parquet;
 
