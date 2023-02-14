@@ -18,26 +18,27 @@
 #define Foundation_Mutex_WINCE_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API MutexImpl
 {
 protected:
-	MutexImpl();
-	~MutexImpl();
-	void lockImpl();
-	bool tryLockImpl();
-	bool tryLockImpl(long milliseconds);
-	void unlockImpl();
-	
+    MutexImpl();
+    ~MutexImpl();
+    void lockImpl();
+    bool tryLockImpl();
+    bool tryLockImpl(long milliseconds);
+    void unlockImpl();
+
 private:
-	HANDLE _mutex;
+    HANDLE _mutex;
 };
 
 
