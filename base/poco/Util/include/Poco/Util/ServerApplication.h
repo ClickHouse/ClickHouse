@@ -161,9 +161,7 @@ namespace Util
     protected:
         int run();
         virtual void waitForTerminationRequest();
-#if !defined(_WIN32_WCE)
         void defineOptions(OptionSet & options);
-#endif
 
     private:
 #if   defined(POCO_OS_FAMILY_UNIX)
