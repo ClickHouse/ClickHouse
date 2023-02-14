@@ -31,8 +31,6 @@
 #    endif
 #elif defined(POCO_OS_FAMILY_WINDOWS)
 #    include "Poco/File_WIN32.h"
-#elif defined(POCO_VXWORKS)
-#    include "Poco/File_VX.h"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/File_UNIX.h"
 #endif

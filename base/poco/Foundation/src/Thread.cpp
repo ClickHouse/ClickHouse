@@ -26,8 +26,6 @@
 #else
 #include "Thread_WIN32.cpp"
 #endif
-#elif defined(POCO_VXWORKS)
-#include "Thread_VX.cpp"
 #else
 #include "Thread_POSIX.cpp"
 #endif

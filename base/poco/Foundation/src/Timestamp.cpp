@@ -22,12 +22,8 @@
 #if defined(POCO_OS_FAMILY_UNIX)
 #include <time.h>
 #include <unistd.h>
-#if defined(POCO_VXWORKS)
-#include <timers.h>
-#else
 #include <sys/time.h>
 #include <sys/times.h>
-#endif
 #elif defined(POCO_OS_FAMILY_WINDOWS)
 #include "Poco/UnWindows.h"
 #if defined(_WIN32_WCE)

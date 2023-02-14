@@ -87,12 +87,6 @@ HostEntry DNS::hostByName(const std::string& hostname, unsigned
 	{
 		aierror(rc, hostname);
 	}
-#elif defined(POCO_VXWORKS)
-	int addr = hostGetByName(const_cast<char*>(hostname.c_str()));
-	if (addr != ERROR)
-	{
-		return HostEntry(hostname, IPAddress(&addr, sizeof(addr)));
-	}
 #else
 	struct hostent* he = gethostbyname(hostname.c_str());
 	if (he)
@@ -140,12 +134,6 @@ HostEntry DNS::hostByAddress(const IPAddress& address, unsigned
 	else
 	{
 		aierror(rc, address.toString());
-	}
-#elif defined(POCO_VXWORKS)
-	char name[MAXHOSTNAMELEN + 1];
-	if (hostGetByAddr(*reinterpret_cast<const int*>(address.addr()), name) == OK)
-	{
-		return HostEntry(std::string(name), address);
 	}
 #else
 	struct hostent* he = gethostbyaddr(reinterpret_cast<const char*>(address.addr()), address.length(), address.af());
@@ -332,8 +320,6 @@ int DNS::lastError()
 {
 #if defined(_WIN32)
 	return GetLastError();
-#elif defined(POCO_VXWORKS)
-	return errno;
 #else
 	return h_errno;
 #endif

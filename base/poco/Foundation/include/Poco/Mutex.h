@@ -29,8 +29,6 @@
 #    else
 #        include "Poco/Mutex_WIN32.h"
 #    endif
-#elif defined(POCO_VXWORKS)
-#    include "Poco/Mutex_VX.h"
 #else
 #    include "Poco/Mutex_POSIX.h"
 #endif

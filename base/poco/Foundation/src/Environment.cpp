@@ -18,9 +18,7 @@
 #include <cstdio> // sprintf()
 
 
-#if defined(POCO_VXWORKS)
-#include "Environment_VX.cpp"
-#elif defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_UNIX)
 #include "Environment_UNIX.cpp"
 #elif defined(POCO_OS_FAMILY_WINDOWS)
 #if defined(_WIN32_WCE)

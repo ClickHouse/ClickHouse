@@ -55,8 +55,6 @@ namespace
 #endif
 #elif defined(POCO_OS_FAMILY_WINDOWS)
 #include "Process_WIN32.cpp"
-#elif defined(POCO_VXWORKS)
-#include "Process_VX.cpp"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #include "Process_UNIX.cpp"
 #endif

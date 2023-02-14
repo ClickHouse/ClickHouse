@@ -29,8 +29,6 @@
 #    else
 #        include "Poco/Thread_WIN32.h"
 #    endif
-#elif defined(POCO_VXWORKS)
-#    include "Poco/Thread_VX.h"
 #else
 #    include "Poco/Thread_POSIX.h"
 #endif

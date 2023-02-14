@@ -53,8 +53,6 @@ bool Debugger::isAvailable()
 		#else
 			return IsDebuggerPresent() ? true : false;
 		#endif
-	#elif defined(POCO_VXWORKS)
-		return false;
 	#elif defined(POCO_OS_FAMILY_UNIX)
 		return std::getenv("POCO_ENABLE_DEBUGGER") ? true : false;
 	#endif
@@ -105,10 +103,6 @@ void Debugger::enter()
 	if (isAvailable())
 	{
 		DebugBreak();
-	}
-	#elif defined(POCO_VXWORKS)
-	{
-		// not supported
 	}
 	#elif defined(POCO_OS_FAMILY_UNIX)
 	if (isAvailable())
