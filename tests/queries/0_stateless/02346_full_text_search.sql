@@ -1,5 +1,3 @@
--- Tags: no-ordinary-database
-
 SET allow_experimental_inverted_index = 1;
 SET log_queries = 1;
 
