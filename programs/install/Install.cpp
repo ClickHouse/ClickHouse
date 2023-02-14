@@ -359,6 +359,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         {
             "clickhouse-server",
             "clickhouse-client",
+            "clickhouse-top",
             "clickhouse-local",
             "clickhouse-benchmark",
             "clickhouse-copier",
