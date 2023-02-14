@@ -70,21 +70,30 @@ static Names findIdentifiersOfNode(const ActionsDAG::Node * node)
 {
     Names res;
 
+    /// We treat all INPUT as identifier
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        res.emplace_back(node->result_name);
+        return res;
+    }
+
     std::queue<const ActionsDAG::Node *> queue;
     queue.push(node);
 
     while (!queue.empty())
     {
         const auto * top = queue.front();
-        /// We treat all INPUT as identifier
-        if (top->type == ActionsDAG::ActionType::INPUT)
+        for (const auto * child : top->children)
         {
-            res.emplace_back(top->result_name);
-        }
-        else
-        {
-            for (const auto * child : top->children)
+            if (child->type == ActionsDAG::ActionType::INPUT)
+            {
+                res.emplace_back(child->result_name);
+            }
+            else
+            {
+                /// Only push non INPUT child into the queue
                 queue.push(child);
+            }
         }
         queue.pop();
     }
