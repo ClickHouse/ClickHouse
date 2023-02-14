@@ -1,20 +1,18 @@
 #pragma once
 
-#include <optional>
-#include <string>
 #include "StateHandler.h"
 
 namespace DB
 {
 
 template <QuotingStrategy QUOTING_STRATEGY>
-class InlineEscapingKeyStateHandler : public StateHandler
+class NoEscapingKeyStateHandler : public StateHandler
 {
 public:
-    using ElementType = std::string;
+    using ElementType = std::string_view;
 
-    InlineEscapingKeyStateHandler(char key_value_delimiter_, char escape_character_, std::optional<char> enclosing_character_)
-        : StateHandler(enclosing_character_), escape_character(escape_character_), key_value_delimiter(key_value_delimiter_)
+    NoEscapingKeyStateHandler(char key_value_delimiter_, std::optional<char> enclosing_character_)
+        : StateHandler(enclosing_character_), key_value_delimiter(key_value_delimiter_)
     {
     }
 
@@ -24,11 +22,6 @@ public:
         {
             const auto current_character = file[pos];
 
-            if (current_character == escape_character)
-            {
-                return {pos, State::READING_KEY};
-            }
-
             if (isalnum(current_character))
             {
                 return {pos, State::READING_KEY};
@@ -36,7 +29,7 @@ public:
 
             if constexpr (QUOTING_STRATEGY == QuotingStrategy::WithQuoting)
             {
-                if (current_character == enclosing_character)
+                if (enclosing_character && current_character == enclosing_character)
                 {
                     return {pos + 1u, State::READING_ENCLOSED_KEY};
                 }
@@ -50,37 +43,24 @@ public:
 
     [[nodiscard]] NextState read(std::string_view file, size_t pos, ElementType & key) const
     {
-        bool escape = false;
+        auto start_index = pos;
 
-        key.clear();
+        key = {};
 
         while (pos < file.size())
         {
             const auto current_character = file[pos++];
 
-            if (escape)
-            {
-                key.push_back(current_character);
-                escape = false;
-                continue;
-            }
-            else if (escape_character == current_character)
-            {
-                escape = true;
-                continue;
-            }
-
             if (current_character == key_value_delimiter)
             {
+                // not checking for empty key because with current waitKey implementation
+                // there is no way this piece of code will be reached for the very first key character
+                key = createElement(file, start_index, pos - 1);
                 return {pos, State::WAITING_VALUE};
             }
             else if (!std::isalnum(current_character) && current_character != '_')
             {
                 return {pos, State::WAITING_KEY};
-            }
-            else
-            {
-                key.push_back(current_character);
             }
         }
 
@@ -89,24 +69,25 @@ public:
 
     [[nodiscard]] NextState readEnclosed(std::string_view file, size_t pos, ElementType & key)
     {
-        key.clear();
+        auto start_index = pos;
+
+        key = {};
 
         while (pos < file.size())
         {
             const auto current_character = file[pos++];
 
-            if (*enclosing_character == current_character)
+            if (enclosing_character == current_character)
             {
-                if (key.empty())
+                auto is_key_empty = start_index == pos;
+
+                if (is_key_empty)
                 {
                     return {pos, State::WAITING_KEY};
                 }
 
+                key = createElement(file, start_index, pos - 1);
                 return {pos, State::READING_KV_DELIMITER};
-            }
-            else
-            {
-                key.push_back(current_character);
             }
         }
 
@@ -127,7 +108,6 @@ public:
     }
 
 private:
-    const char escape_character;
     const char key_value_delimiter;
 };
 

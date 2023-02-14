@@ -1,11 +1,10 @@
 #include "StateHandler.h"
-#include <string>
 
 namespace DB
 {
 
-StateHandler::StateHandler(char escape_character_, std::optional<char> enclosing_character_)
-    : escape_character(escape_character_), enclosing_character(enclosing_character_)
+StateHandler::StateHandler(std::optional<char> enclosing_character_)
+    : enclosing_character(enclosing_character_)
 {
 }
 
