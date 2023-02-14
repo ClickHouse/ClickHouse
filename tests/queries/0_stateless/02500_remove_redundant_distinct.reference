@@ -397,3 +397,70 @@ Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
 2
 1
 0
+-- GROUP BY WITH TOTALS before DISTINCT with on different columns => do _not_ remove DISTINCT
+-- query
+SELECT DISTINCT c
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY a WITH TOTALS
+)
+-- explain
+Expression (Projection)
+  Distinct
+    Distinct (Preliminary DISTINCT)
+      Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+        TotalsHaving
+          Aggregating
+            Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+              Join (JOIN FillRightFirst)
+                Expression (Before JOIN)
+                  ReadFromStorage (SystemNumbers)
+                Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                  ReadFromStorage (SystemNumbers)
+-- execute
+12
+
+36
+-- GROUP BY WITH TOTALS before DISTINCT with on the same columns => remove DISTINCT
+-- query
+SELECT DISTINCT a
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY a WITH TOTALS
+)
+-- explain
+Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
+  TotalsHaving
+    Aggregating
+      Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+        Join (JOIN FillRightFirst)
+          Expression (Before JOIN)
+            ReadFromStorage (SystemNumbers)
+          Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+            ReadFromStorage (SystemNumbers)
+-- execute
+0
+2
+1
+
+0

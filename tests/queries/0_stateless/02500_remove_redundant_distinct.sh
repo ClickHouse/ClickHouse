@@ -220,3 +220,39 @@ FROM
     GROUP BY a WITH CUBE
 )"
 run_query "$query"
+
+echo "-- GROUP BY WITH TOTALS before DISTINCT with on different columns => do _not_ remove DISTINCT"
+query="SELECT DISTINCT c
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY a WITH TOTALS
+)"
+run_query "$query"
+
+echo "-- GROUP BY WITH TOTALS before DISTINCT with on the same columns => remove DISTINCT"
+query="SELECT DISTINCT a
+FROM
+(
+    SELECT
+        a,
+        sum(b) AS c
+    FROM
+    (
+        SELECT
+            x.number AS a,
+            y.number AS b
+        FROM numbers(3) AS x, numbers(3, 3) AS y
+    )
+    GROUP BY a WITH TOTALS
+)"
+run_query "$query"

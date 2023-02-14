@@ -26,16 +26,26 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
     constexpr bool debug_logging_enabled = true;
+
+    template <typename T>
+    void logDebug(String key, const T & value, const char * separator = " : ")
+    {
+        if constexpr (debug_logging_enabled)
+        {
+            WriteBufferFromOwnString ss;
+            if constexpr (std::is_pointer_v<T>)
+                ss << *value;
+            else
+                ss << value;
+
+            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{}{}{}", key, separator, ss.str());
+        }
+    }
+
     void logActionsDAG(const String & prefix, const ActionsDAGPtr & actions)
     {
         if constexpr (debug_logging_enabled)
             LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{} :\n{}", prefix, actions->dumpDAG());
-    }
-
-    void logDebug(String key, String value)
-    {
-        if constexpr (debug_logging_enabled)
-            LOG_DEBUG(&Poco::Logger::get("redundantDistinct"), "{} : {}", key, value);
     }
 
     using DistinctColumns = std::set<std::string_view>;
@@ -59,14 +69,17 @@ namespace
         const ActionsDAG::Node * output_alias = nullptr;
         for (const auto * node : actions->getOutputs())
         {
-            if (node->result_name == output_name && node->type == ActionsDAG::ActionType::ALIAS)
+            if (node->result_name == output_name)
             {
                 output_alias = node;
                 break;
             }
         }
         if (!output_alias)
+        {
+            logDebug("getOriginalNodeForOutputAlias: no output alias found", output_name);
             return nullptr;
+        }
 
         /// find original(non alias) node it refers to
         const ActionsDAG::Node * node = output_alias;
@@ -84,18 +97,29 @@ namespace
     bool compareAggregationKeysWithDistinctColumns(
         const Names & aggregation_keys, const DistinctColumns & distinct_columns, const ActionsDAGPtr & path_actions)
     {
+        logDebug("aggregation_keys", aggregation_keys);
+        logDebug("aggregation_keys size", aggregation_keys.size());
+        logDebug("distinct_columns size", distinct_columns.size());
         if (aggregation_keys.size() != distinct_columns.size())
             return false;
 
         /// compare columns of two DISTINCTs
         for (const auto & column : distinct_columns)
         {
+            logDebug("distinct column name", column);
             const auto * alias_node = getOriginalNodeForOutputAlias(path_actions, String(column));
             if (!alias_node)
+            {
+                logDebug("original name for alias is not found for", column);
                 return false;
+            }
 
+            logDebug("alias result name", alias_node->result_name);
             if (std::find(cbegin(aggregation_keys), cend(aggregation_keys), alias_node->result_name) == aggregation_keys.cend())
+            {
+                logDebug("alias result name is not found in aggregation keys", alias_node->result_name);
                 return false;
+            }
         }
         return true;
     }
@@ -187,6 +211,10 @@ namespace
 
             if (const auto * rollup_step = typeid_cast<const RollupStep *>(aggregation_before_distinct); rollup_step)
                 return compareAggregationKeysWithDistinctColumns(rollup_step->getParams().keys, distinct_columns, actions);
+
+            if (const auto * totals_step = typeid_cast<const TotalsHavingStep *>(aggregation_before_distinct); totals_step)
+                return compareAggregationKeysWithDistinctColumns(
+                    totals_step->getOutputStream().header.getNames(), distinct_columns, actions);
         }
 
         return false;
