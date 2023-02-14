@@ -404,7 +404,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     const auto & settings = global_ctx->context->getSettingsRef();
     size_t max_delayed_streams = 0;
-    if (global_ctx->new_data_part->getDataPartStorage().supportParallelWrite())
+    if (global_ctx->new_data_part->volume->getDisk()->supportParallelWrite())
     {
         if (settings.max_insert_delayed_streams_for_parallel_write.changed)
             max_delayed_streams = settings.max_insert_delayed_streams_for_parallel_write;
