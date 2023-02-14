@@ -246,25 +246,22 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
     return result;
 }
 
-QueryTreeNodePtr & extractLeftTableExpression(QueryTreeNodePtr & join_tree_node)
+QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node)
 {
-    QueryTreeNodePtr * result = nullptr;
+    QueryTreeNodePtr result;
 
-    std::deque<QueryTreeNodePtr *> nodes_to_process;
-    nodes_to_process.push_back(&join_tree_node);
+    std::deque<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push_back(join_tree_node);
 
     while (!nodes_to_process.empty())
     {
-        auto * node_to_process_ptr = nodes_to_process.front();
+        auto node_to_process = std::move(nodes_to_process.front());
         nodes_to_process.pop_front();
 
-        const auto & node_to_process = *node_to_process_ptr;
         auto node_type = node_to_process->getNodeType();
 
         switch (node_type)
         {
-            case QueryTreeNodeType::IDENTIFIER:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::QUERY:
@@ -273,32 +270,32 @@ QueryTreeNodePtr & extractLeftTableExpression(QueryTreeNodePtr & join_tree_node)
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                result = node_to_process_ptr;
+                result = std::move(node_to_process);
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
-                nodes_to_process.push_front(&array_join_node.getTableExpression());
+                nodes_to_process.push_front(array_join_node.getTableExpression());
                 break;
             }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
-                nodes_to_process.push_front(&join_node.getLeftTableExpression());
+                nodes_to_process.push_front(join_node.getLeftTableExpression());
                 break;
             }
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Unexpected node type for table expression. "
-                                "Expected identifier, table, table function, query, union, join or array join. Actual {}",
+                                "Expected table, table function, query, union, join or array join. Actual {}",
                                 node_to_process->getNodeTypeName());
             }
         }
     }
 
-    return *result;
+    return result;
 }
 
 namespace
@@ -483,6 +480,59 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
     visitor.visit(node);
 
     return visitor.hasFunction();
+}
+
+namespace
+{
+
+class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
+{
+public:
+    explicit ReplaceColumnsVisitor(const QueryTreeNodePtr & table_expression_node_,
+        const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node_)
+        : table_expression_node(table_expression_node_)
+        , column_name_to_node(column_name_to_node_)
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (column_source != table_expression_node)
+            return;
+
+        auto node_it = column_name_to_node.find(column_node->getColumnName());
+        if (node_it == column_name_to_node.end())
+            return;
+
+        node = node_it->second;
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    {
+        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+private:
+    QueryTreeNodePtr table_expression_node;
+    const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node;
+};
+
+}
+
+void replaceColumns(QueryTreeNodePtr & node,
+    const QueryTreeNodePtr & table_expression_node,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node)
+{
+    ReplaceColumnsVisitor visitor(table_expression_node, column_name_to_node);
+    visitor.visit(node);
 }
 
 }

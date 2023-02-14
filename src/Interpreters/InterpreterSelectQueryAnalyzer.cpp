@@ -69,17 +69,18 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
-void replaceStorageInQueryTree(const QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
+void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
     auto query_to_replace_table_expression = query_tree;
+    QueryTreeNodePtr table_expression_to_replace;
 
-    while (true)
+    while (!table_expression_to_replace)
     {
         if (auto * union_node = query_to_replace_table_expression->as<UnionNode>())
             query_to_replace_table_expression = union_node->getQueries().getNodes().at(0);
 
         auto & query_to_replace_table_expression_typed = query_to_replace_table_expression->as<QueryNode &>();
-        auto & left_table_expression = extractLeftTableExpression(query_to_replace_table_expression_typed.getJoinTree());
+        auto left_table_expression = extractLeftTableExpression(query_to_replace_table_expression_typed.getJoinTree());
         auto left_table_expression_node_type = left_table_expression->getNodeType();
 
         switch (left_table_expression_node_type)
@@ -87,27 +88,27 @@ void replaceStorageInQueryTree(const QueryTreeNodePtr & query_tree, const Contex
             case QueryTreeNodeType::QUERY:
             case QueryTreeNodeType::UNION:
             {
-                query_to_replace_table_expression = left_table_expression;
-                continue;
+                query_to_replace_table_expression = std::move(left_table_expression);
+                break;
             }
             case QueryTreeNodeType::TABLE:
+            case QueryTreeNodeType::TABLE_FUNCTION:
             case QueryTreeNodeType::IDENTIFIER:
             {
-                auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-                auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-                left_table_expression = std::make_shared<TableNode>(storage,
-                    std::move(storage_lock),
-                    std::move(storage_snapshot));
-                return;
+                table_expression_to_replace = std::move(left_table_expression);
+                break;
             }
             default:
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Expected table or identifier node to replace with storage. Actual {}",
+                    "Expected table, table function or identifier node to replace with storage. Actual {}",
                     left_table_expression->formatASTForErrorMessage());
             }
         }
     }
+
+    auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
+    query_tree = query_tree->cloneAndReplace(table_expression_to_replace, std::move(replacement_table_expression));
 }
 
 QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
@@ -117,9 +118,6 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
 {
     auto query_tree = buildQueryTree(query, context);
 
-    if (storage)
-        replaceStorageInQueryTree(query_tree, context, storage);
-
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
 
@@ -127,6 +125,9 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
     else
         query_tree_pass_manager.run(query_tree);
+
+    if (storage)
+        replaceStorageInQueryTree(query_tree, context, storage);
 
     return query_tree;
 }
@@ -154,11 +155,11 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
     const SelectQueryOptions & select_query_options_,
-    const StoragePtr & storage)
+    const StoragePtr & storage_)
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
 {
 }
@@ -210,7 +211,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
     BlockIO result;
     result.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 
-    if (!select_query_options.ignore_quota && (select_query_options.to_stage == QueryProcessingStage::Complete))
+    if (!select_query_options.ignore_quota && select_query_options.to_stage == QueryProcessingStage::Complete)
         result.pipeline.setQuota(context->getQuota());
 
     return result;

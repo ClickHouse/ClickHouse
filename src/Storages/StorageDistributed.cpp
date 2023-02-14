@@ -701,10 +701,7 @@ QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const Sele
 
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
-    replacement_map.emplace(query_info.table_expression.get(), std::move(replacement_table_expression));
-
-    return query_info.query_tree->cloneAndReplace(replacement_map);
+    return query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 }
 
 }

@@ -306,6 +306,14 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
     return result_cloned_node_place;
 }
 
+QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const
+{
+    ReplacementMap replacement_map;
+    replacement_map.emplace(node_to_replace.get(), std::move(replacement_node));
+
+    return cloneAndReplace(replacement_map);
+}
+
 ASTPtr IQueryTreeNode::toAST() const
 {
     auto converted_node = toASTImpl();

@@ -184,6 +184,11 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
+    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
+        const ContextPtr & modified_context,
+        const StorageWithLockAndName & storage_with_lock_and_name,
+        const StorageSnapshotPtr & storage_snapshot);
+
     QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
