@@ -718,7 +718,7 @@ mv /var/log/clickhouse-server/stderr.log /test_output/
 
 # Write check result into check_status.tsv
 # Try to choose most specific error for the whole check status
-clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
 (test like 'Backward compatibility check%'),  -- BC check goes last
 (test like '%Sanitizer%') DESC,
 (test like '%Killed by signal%') DESC,
@@ -732,7 +732,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 (test like '%Error message%') DESC,
 (test like '%previous release%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps
