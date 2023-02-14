@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/MutationsInterpreter.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -21,6 +22,7 @@
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KVStorageUtils.h>
@@ -35,6 +37,8 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <base/types.h>
 
@@ -594,9 +598,8 @@ std::optional<bool> StorageKeeperMap::isTableValid() const
         {
             auto client = getClient();
 
-            std::string stored_metadata_string;
             Coordination::Stat metadata_stat;
-            client->tryGet(metadata_path, stored_metadata_string, &metadata_stat);
+            auto stored_metadata_string = client->get(metadata_path, &metadata_stat);
 
             if (metadata_stat.numChildren == 0)
             {
@@ -738,6 +741,105 @@ void StorageKeeperMap::rename(const String & /*new_path_to_table_data*/, const S
 {
     checkTableCanBeRenamed(new_table_id);
     renameInMemory(new_table_id);
+}
+
+void StorageKeeperMap::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+{
+    if (commands.empty())
+        return;
+
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations cannot be combined for KeeperMap");
+
+    const auto command_type = commands.front().type;
+    if (command_type != MutationCommand::Type::UPDATE && command_type != MutationCommand::Type::DELETE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only DELETE and UPDATE mutation supported for KeeperMap");
+}
+
+void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr local_context)
+{
+    checkTable<true>();
+
+    if (commands.empty())
+        return;
+
+    assert(commands.size() == 1);
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
+
+    if (commands.front().type == MutationCommand::Type::DELETE)
+    {
+        auto interpreter = std::make_unique<MutationsInterpreter>(
+            storage_ptr,
+            metadata_snapshot,
+            commands,
+            local_context,
+            /*can_execute_*/ true,
+            /*return_all_columns_*/ true,
+            /*return_deleted_rows_*/ true);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        auto header = interpreter->getUpdatedHeader();
+        auto primary_key_pos = header.getPositionByName(primary_key);
+
+        auto client = getClient();
+        Block block;
+        while (executor.pull(block))
+        {
+            auto & column_type_name = block.getByPosition(primary_key_pos);
+            auto column = column_type_name.column;
+            auto size = column->size();
+
+            WriteBufferFromOwnString wb_key;
+            Coordination::Requests delete_requests;
+            for (size_t i = 0; i < size; ++i)
+            {
+                wb_key.restart();
+
+                column_type_name.type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
+                delete_requests.emplace_back(zkutil::makeRemoveRequest(fullPathForKey(base64Encode(wb_key.str(), true)), -1));
+            }
+
+            Coordination::Responses responses;
+            auto status = client->tryMulti(delete_requests, responses);
+
+            if (status == Coordination::Error::ZOK)
+                return;
+
+            if (status != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperMultiException(status, delete_requests, responses);
+
+            LOG_INFO(log, "Failed to delete all nodes at once, will try one by one");
+
+            for (const auto & delete_request : delete_requests)
+            {
+                auto code = client->tryRemove(delete_request->getPath());
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw zkutil::KeeperException(code, delete_request->getPath());
+            }
+        }
+
+        return;
+    }
+
+    assert(commands.front().type == MutationCommand::Type::UPDATE);
+    if (commands.front().column_to_update_expression.contains(primary_key))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated");
+
+    auto interpreter = std::make_unique<MutationsInterpreter>(
+        storage_ptr, metadata_snapshot, commands, local_context, /*can_execute_*/ true, /*return_all_columns*/ true);
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+    PullingPipelineExecutor executor(pipeline);
+
+    auto sink = std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot);
+
+    Block block;
+    while (executor.pull(block))
+        sink->consume(Chunk{block.getColumns(), block.rows()});
+    sink->onFinish();
 }
 
 namespace
