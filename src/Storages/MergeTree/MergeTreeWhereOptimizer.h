@@ -103,7 +103,6 @@ private:
 
     using StringSet = std::unordered_set<std::string>;
 
-    String first_primary_key_column;
     const StringSet table_columns;
     const Names queried_columns;
     const NameSet sorting_key_names;
