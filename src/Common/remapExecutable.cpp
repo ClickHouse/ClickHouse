@@ -4,7 +4,7 @@
 
 #include <sys/mman.h>
 #include <unistd.h>
-#include <cstring>
+#include <string.h>
 #include <sys/syscall.h>
 
 #include <emmintrin.h>
