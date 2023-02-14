@@ -50,4 +50,4 @@ configure_file (io_uring_version.h.in ${LIBURING_VERSION_HEADER})
 add_library (_liburing ${SRCS})
 add_library (ch_contrib::liburing ALIAS _liburing)
 
-target_include_directories (_liburing SYSTEM PUBLIC ${LIBURING_COMPAT_INCLUDE_DIR} ${LIBURING_GENERATED_INCLUDE_DIR} "${LIBURING_SOURCE_DIR}/include")
+target_include_directories (_liburing SYSTEM PUBLIC ${LIBURING_COMPAT_INCLUDE_DIR} ${LIBURING_GENERATED_INCLUDE_DIR} ${LIBURING_INCLUDE_DIR})
