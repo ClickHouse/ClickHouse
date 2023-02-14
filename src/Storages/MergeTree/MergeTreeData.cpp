@@ -308,6 +308,7 @@ MergeTreeData::MergeTreeData(
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
     const auto settings = getSettings();
+
     allow_nullable_key = attach || settings->allow_nullable_key;
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
@@ -378,7 +379,17 @@ MergeTreeData::MergeTreeData(
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
-    return getContext()->getStoragePolicy(getSettings()->storage_policy);
+    auto settings = getSettings();
+    const auto & context = getContext();
+
+    StoragePolicyPtr storage_policy;
+
+    if (settings->disk.changed)
+        storage_policy = context->getStoragePolicyFromDisk(settings->disk);
+    else
+        storage_policy = context->getStoragePolicy(settings->storage_policy);
+
+    return storage_policy;
 }
 
 bool MergeTreeData::supportsFinal() const
@@ -840,8 +851,14 @@ Block MergeTreeData::getSampleBlockWithVirtualColumns() const
 {
     DataTypePtr partition_value_type = getPartitionValueType();
     return {
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
-        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(
+            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "_part"),
+        ColumnWithTypeAndName(
+            DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "_partition_id"),
         ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
         ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
 }
@@ -1480,7 +1497,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
-            if (disk->isBroken())
+            if (disk->isBroken() || disk->isCustomDisk())
                 continue;
 
             if (!defined_disk_names.contains(disk_name)
@@ -1889,7 +1906,9 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
                 {
                     if (temporary_parts.contains(basename))
                     {
-                        LOG_WARNING(log, "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
+                        /// Actually we don't rely on temporary_directories_lifetime when removing old temporaries directoties,
+                        /// it's just an extra level of protection just in case we have a bug.
+                        LOG_INFO(log, "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
                         continue;
                     }
                     else
@@ -2790,7 +2809,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings.allow_non_metadata_alters)
     {
-
         auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, getContext());
 
         if (!mutation_commands.empty())
@@ -3983,7 +4001,7 @@ size_t MergeTreeData::getTotalActiveSizeInRows() const
 }
 
 
-size_t MergeTreeData::getPartsCount() const
+size_t MergeTreeData::getActivePartsCount() const
 {
     return total_active_size_parts.load(std::memory_order_acquire);
 }
@@ -4054,7 +4072,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
-    const size_t parts_count_in_total = getPartsCount();
+    const size_t parts_count_in_total = getActivePartsCount();
 
     /// check if have too many parts in total
     if (parts_count_in_total >= settings->max_parts_in_total)
@@ -5295,6 +5313,23 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     }
 
     return res;
+}
+
+size_t MergeTreeData::getAllPartsCount() const
+{
+    auto lock = lockParts();
+    return data_parts_by_info.size();
+}
+
+size_t MergeTreeData::getTotalMarksCount() const
+{
+    size_t total_marks = 0;
+    auto lock = lockParts();
+    for (const auto & part : data_parts_by_info)
+    {
+        total_marks += part->getMarksCount();
+    }
+    return total_marks;
 }
 
 bool MergeTreeData::supportsLightweightDelete() const
@@ -7576,7 +7611,19 @@ MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
     if (!write_ahead_log)
     {
         auto reservation = reserveSpace(getSettings()->write_ahead_log_max_bytes);
-        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, reservation->getDisk());
+        for (const auto & disk: reservation->getDisks())
+        {
+            if (!disk->isRemote())
+            {
+                write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk);
+                break;
+            }
+        }
+
+        if (!write_ahead_log)
+            throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Can't store write ahead log in remote disk. It makes no sense.");
     }
 
     return write_ahead_log;
@@ -7585,10 +7632,10 @@ MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog()
 NamesAndTypesList MergeTreeData::getVirtuals() const
 {
     return NamesAndTypesList{
-        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
         NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
-        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
