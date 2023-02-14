@@ -73,9 +73,6 @@
 
 #if !defined(POCO_IOS_INIT_HACK)
 // Microsoft Visual Studio with Dinkumware STL (but not STLport)
-#    if   defined(__QNX__) && !defined(__GLIBCPP__)
-#        define POCO_IOS_INIT_HACK 1
-#    endif
 #endif
 
 
