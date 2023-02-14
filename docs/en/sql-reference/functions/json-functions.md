@@ -81,9 +81,9 @@ visitParamExtractString('{"abc":"hello}', 'abc') = '';
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
-
 # JSONExtract functions
+
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
 
 ## isValidJSON(json)
 
