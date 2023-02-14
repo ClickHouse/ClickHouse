@@ -546,6 +546,9 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         # it uses recently introduced settings which previous versions may not have
         rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
 
+        # Turn on after 23.1
+        rm -f /etc/clickhouse-server/users.d/prefetch_settings.xml
+
         start
 
         clickhouse-client --query="SELECT 'Server version: ', version()"
