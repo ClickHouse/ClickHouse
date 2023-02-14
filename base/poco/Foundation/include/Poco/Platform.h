@@ -86,9 +86,6 @@
 #elif defined(sun) || defined(__sun)
 #    define POCO_OS_FAMILY_UNIX 1
 #    define POCO_OS POCO_OS_SOLARIS
-#elif defined(__QNX__)
-#    define POCO_OS_FAMILY_UNIX 1
-#    define POCO_OS POCO_OS_QNX
 #elif defined(unix) || defined(__unix) || defined(__unix__)
 #    define POCO_OS_FAMILY_UNIX 1
 #    define POCO_OS POCO_OS_UNKNOWN_UNIX
