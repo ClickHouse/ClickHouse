@@ -1268,8 +1268,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
 
-        create.setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
         String temporary_table_name = create.getTable();
         auto creator = [&](const StorageID & table_id)
