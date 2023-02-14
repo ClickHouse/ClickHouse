@@ -1,4 +1,4 @@
--- Tags: long, no-s3-storage
+-- Tags: long, no-s3-storage, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS check_system_tables;
 
@@ -12,7 +12,7 @@ CREATE TABLE check_system_tables
     ORDER BY name1
     PARTITION BY name2
     SAMPLE BY name1
-    SETTINGS min_bytes_for_wide_part = 0;
+    SETTINGS min_bytes_for_wide_part = 0, compress_marks=false, compress_primary_key=false;
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key, storage_policy, total_rows
 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase()
@@ -36,7 +36,8 @@ CREATE TABLE check_system_tables
     sign Int8
   ) ENGINE = VersionedCollapsingMergeTree(sign, version)
     PARTITION BY date
-    ORDER BY date;
+    ORDER BY date
+    SETTINGS compress_marks=false, compress_primary_key=false;
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key
 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase()

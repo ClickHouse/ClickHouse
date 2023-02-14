@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/part_log
+---
 # system.part_log {#system_tables-part-log}
 
 Системная таблица `system.part_log` создается только в том случае, если задана серверная настройка [part_log](../server-configuration-parameters/settings.md#server_configuration_parameters-part-log).
@@ -76,4 +79,3 @@ peak_memory_usage:             0
 error:                         0
 exception:
 ```
-

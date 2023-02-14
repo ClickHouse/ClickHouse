@@ -335,10 +335,7 @@ bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const ASTPtr & ast) con
         return true;
     }
 
-    if (isConstant(ast) || sorting_key_names.contains(ast->getColumnName()))
-        return true;
-    else
-        return false;
+    return isConstant(ast) || sorting_key_names.contains(ast->getColumnName());
 }
 
 

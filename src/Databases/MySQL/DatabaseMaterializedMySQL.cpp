@@ -1,4 +1,4 @@
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 
@@ -63,11 +63,11 @@ void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exceptio
     exception = exception_;
 }
 
-void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
+    DatabaseAtomic::startupTables(thread_pool, mode);
 
-    if (!force_attach)
+    if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
         materialize_thread.assertMySQLAvailable();
 
     materialize_thread.startSynchronization();
@@ -103,13 +103,13 @@ void DatabaseMaterializedMySQL::renameTable(ContextPtr context_, const String & 
     checkIsInternalQuery(context_, "RENAME TABLE");
 
     if (exchange)
-        throw Exception("MaterializedMySQL database does not support EXCHANGE TABLE.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support EXCHANGE TABLE.");
 
     if (dictionary)
-        throw Exception("MaterializedMySQL database does not support RENAME DICTIONARY.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MaterializedMySQL database does not support RENAME DICTIONARY.");
 
     if (to_database.getDatabaseName() != DatabaseAtomic::getDatabaseName())
-        throw Exception("Cannot rename with other database for MaterializedMySQL database.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename with other database for MaterializedMySQL database.");
 
     DatabaseAtomic::renameTable(context_, name, *this, to_name, exchange, dictionary);
 }

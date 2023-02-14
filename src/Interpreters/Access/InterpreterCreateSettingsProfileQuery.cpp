@@ -48,15 +48,20 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     else
         getContext()->checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
 
+    std::optional<SettingsProfileElements> settings_from_query;
+    if (query.settings)
+    {
+        settings_from_query = SettingsProfileElements{*query.settings, access_control};
+
+        if (!query.attach)
+            getContext()->checkSettingsConstraints(*settings_from_query);
+    }
+
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
         return executeDDLQueryOnCluster(query_ptr, getContext());
     }
-
-    std::optional<SettingsProfileElements> settings_from_query;
-    if (query.settings)
-        settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.to_roles)

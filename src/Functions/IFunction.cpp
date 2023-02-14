@@ -2,7 +2,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/LRUCache.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -18,7 +17,7 @@
 #include <cstdlib>
 #include <memory>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -124,7 +123,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Argument at index {} for function {} must be constant",
-                toString(arg_num),
+                arg_num,
                 getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
@@ -387,8 +386,8 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Number of arguments for function {} doesn't match: passed {}, should be {}",
             getName(),
-            toString(number_of_arguments),
-            toString(expected_number_of_arguments));
+            number_of_arguments,
+            expected_number_of_arguments);
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const

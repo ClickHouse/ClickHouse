@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/statements/set-role
 sidebar_position: 51
 sidebar_label: SET ROLE
+title: "SET ROLE Statement"
 ---
-
-# SET ROLE Statement
 
 Activates roles for the current user.
 
@@ -41,7 +41,7 @@ Purge default roles from a user:
 SET DEFAULT ROLE NONE TO user
 ```
 
-Set all the granted roles as default excepting some of them:
+Set all the granted roles as default except for specific roles `role1` and `role2`:
 
 ``` sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user

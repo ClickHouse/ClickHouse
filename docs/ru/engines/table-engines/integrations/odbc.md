@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/odbc
 sidebar_position: 2
 sidebar_label: ODBC
 ---
@@ -127,4 +128,3 @@ SELECT * FROM odbc_t
 
 -   [Внешние словари ODBC](../../../engines/table-engines/integrations/odbc.md#dicts-external_dicts_dict_sources-odbc)
 -   [Табличная функция odbc](../../../engines/table-engines/integrations/odbc.md)
-

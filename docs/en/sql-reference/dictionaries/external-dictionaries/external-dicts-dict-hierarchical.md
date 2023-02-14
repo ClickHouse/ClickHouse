@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical
 sidebar_position: 45
 sidebar_label: Hierarchical dictionaries
 ---
@@ -64,4 +65,3 @@ For our example, the structure of dictionary can be the following:
     </structure>
 </dictionary>
 ```
-

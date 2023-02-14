@@ -2,18 +2,6 @@
 # Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64
 # Tag no-fasttest: avoid dependency on qemu -- invonvenient when running locally
 
-# More than a decade after AVX was released, AVX is still not supported by QEMU, even if "-cpu help" pretends to. As a result, we cannot use
-# QEMU to verify that a ClickHouse binary compiled for a SIMD level up to AVX runs on a system with a SIMD level up to AVX. The alternative
-# is to disassemble the binary and grep for unwanted instructions (e.g. AVX512) which is just too fragile ...
-#
-# https://gitlab.com/qemu-project/qemu/-/issues/164
-# https://www.mail-archive.com/qemu-devel@nongnu.org/msg713932.html
-# https://lore.kernel.org/all/CAObpvQmejWBh+RNz2vhk16-kcY_QveM_pSmM5ZeWqWv1d8AJzQ@mail.gmail.com/T/
-
-exit 0
-
-# keeping the original test because it is instructive and maybe QEMU will be fixed at some point ...
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh

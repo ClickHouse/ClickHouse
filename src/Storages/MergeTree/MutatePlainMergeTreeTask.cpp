@@ -60,7 +60,6 @@ void MutatePlainMergeTreeTask::prepare()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
-
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
@@ -82,15 +81,13 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
-
-                auto builder = mutate_task->getBuilder();
-                if (!builder)
-                    builder = new_part->data_part_storage->getBuilder();
-
+                auto & data_part_storage = new_part->getDataPartStorage();
+                if (data_part_storage.hasActiveTransaction())
+                    data_part_storage.precommitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction, builder);
+                storage.renameTempPartAndReplace(new_part, transaction);
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");
@@ -103,15 +100,15 @@ bool MutatePlainMergeTreeTask::executeStep()
             {
                 if (merge_mutate_entry->txn)
                     merge_mutate_entry->txn->onException();
-                String exception_message = getCurrentExceptionMessage(false);
-                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), "{}", exception_message);
-                storage.updateMutationEntriesErrors(future_part, false, exception_message);
-                write_part_log(ExecutionStatus::fromCurrentException());
+                PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
+                LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), exception_message);
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
+                write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
             }
         }
-        case State::NEED_FINISH :
+        case State::NEED_FINISH:
         {
             // Nothing to do
             state = State::SUCCESS;

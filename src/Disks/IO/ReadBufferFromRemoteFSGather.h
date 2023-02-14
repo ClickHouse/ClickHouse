@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/AsynchronousReader.h>
@@ -47,8 +47,10 @@ public:
 
     size_t getImplementationBufferOffset() const;
 
+    const StoredObject & getCurrentObject() const { return current_object; }
+
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size);
+    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
 
     bool nextImpl() override;
 
@@ -68,8 +70,7 @@ private:
 
     size_t read_until_position = 0;
 
-    String current_file_path;
-    size_t current_file_size = 0;
+    StoredObject current_object;
 
     bool with_cache;
 

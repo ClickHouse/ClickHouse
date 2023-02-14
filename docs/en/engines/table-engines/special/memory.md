@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/special/memory
 sidebar_position: 110
 sidebar_label:  Memory
 ---
@@ -14,5 +15,3 @@ When restarting a server, data disappears from the table and the table becomes e
 Normally, using this table engine is not justified. However, it can be used for tests, and for tasks where maximum speed is required on a relatively small number of rows (up to approximately 100,000,000).
 
 The Memory engine is used by the system for temporary tables with external query data (see the section “External data for processing a query”), and for implementing `GLOBAL IN` (see the section “IN operators”).
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/memory/) <!--hide-->

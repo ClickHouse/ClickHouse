@@ -1,7 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_AVRO
 
@@ -37,13 +36,15 @@ public:
 
 private:
     using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
+    using DeserializeNestedFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
+
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
     DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
     SkipFn createSkipFn(avro::NodePtr root_node);
 
     struct Action
     {
-        enum Type {Noop, Deserialize, Skip, Record, Union};
+        enum Type {Noop, Deserialize, Skip, Record, Union, Nested};
         Type type;
         /// Deserialize
         int target_column_idx;
@@ -52,6 +53,9 @@ private:
         SkipFn skip_fn;
         /// Record | Union
         std::vector<Action> actions;
+        /// For flattened Nested column
+        std::vector<size_t> nested_column_indexes;
+        std::vector<DeserializeFn> nested_deserializers;
 
 
         Action() : type(Noop) {}
@@ -64,6 +68,11 @@ private:
         explicit Action(SkipFn skip_fn_)
             : type(Skip)
             , skip_fn(skip_fn_) {}
+
+        Action(std::vector<size_t> nested_column_indexes_, std::vector<DeserializeFn> nested_deserializers_)
+            : type(Nested)
+            , nested_column_indexes(nested_column_indexes_)
+            , nested_deserializers(nested_deserializers_) {}
 
         static Action recordAction(std::vector<Action> field_actions) { return Action(Type::Record, field_actions); }
 
@@ -87,11 +96,14 @@ private:
                     for (const auto & action : actions)
                         action.execute(columns, decoder, ext);
                     break;
+                case Nested:
+                    deserializeNested(columns, decoder, ext);
+                    break;
                 case Union:
                     auto index = decoder.decodeUnionIndex();
                     if (index >= actions.size())
                     {
-                        throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
                     }
                     actions[index].execute(columns, decoder, ext);
                     break;
@@ -101,6 +113,8 @@ private:
         Action(Type type_, std::vector<Action> actions_)
             : type(type_)
             , actions(actions_) {}
+
+        void deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
     };
 
     /// Populate actions by recursively traversing root schema
@@ -149,6 +163,7 @@ public:
 
 private:
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
 
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;

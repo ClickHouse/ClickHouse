@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/part_log
+---
 # part_log
 
 The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
@@ -76,5 +79,3 @@ peak_memory_usage:             0
 error:                         0
 exception:
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/part_log) <!--hide-->
