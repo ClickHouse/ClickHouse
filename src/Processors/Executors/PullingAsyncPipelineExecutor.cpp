@@ -121,7 +121,6 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     if (is_execution_finished)
     {
-        LOG_DEBUG(&Poco::Logger::get("PullingAsyncPipelineExecutor::pull"), "execution_finished");
         /// If lazy format is finished, we don't cancel pipeline but wait for main thread to be finished.
         data->is_finished = true;
         /// Wait thread and rethrow exception if any.
@@ -131,7 +130,6 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     if (lazy_format)
     {
-        LOG_DEBUG(&Poco::Logger::get("PullingAsyncPipelineExecutor::pull"), "Get chunk. Ms: {}", milliseconds);
         chunk = lazy_format->getChunk(milliseconds);
         data->rethrowExceptionIfHas();
         return true;
