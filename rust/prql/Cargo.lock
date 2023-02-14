@@ -3,6 +3,15 @@
 version = 3
 
 [[package]]
+name = "_prql_library"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "prql-compiler",
+ "serde_json",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -412,15 +421,6 @@ dependencies = [
  "sqlparser",
  "strum",
  "strum_macros",
-]
-
-[[package]]
-name = "prql_integration"
-version = "0.1.0"
-dependencies = [
- "libc",
- "prql-compiler",
- "serde_json",
 ]
 
 [[package]]

@@ -77,7 +77,7 @@
 
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
-#include "prql.h"
+#include <prql.h>
 
 namespace ProfileEvents
 {
@@ -395,9 +395,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else if (settings.dialect == Dialect::prql && !internal)
         {
             using std::calloc;
-            char * input = calloc(1, end - begin + 1);
+            char * input = reinterpret_cast<char *>(calloc(1, end - begin + 1));
             char * tmp1 = input;
-            char * tmp2 = begin;
+            const char * tmp2 = begin;
             while (tmp2 != end) {
                 *tmp1 = *tmp2;
                 ++tmp1;
@@ -406,7 +406,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             *tmp1 = 0;
             char * new_begin = nullptr;
             int res = to_sql(input, new_begin);
-            throw 0;
+            if (res == -1) {
+                throw;
+            }
             char * new_end = new_begin;
             while (*new_end != 0) {
                 ++new_end;
