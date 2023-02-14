@@ -77,9 +77,7 @@ namespace
             if (i != elements.size() - 1)
             {
                 const auto & next_element = elements[i + 1];
-                if ((element.database == next_element.database) && (element.any_database == next_element.any_database)
-                    && (element.table == next_element.table) && (element.any_table == next_element.any_table)
-                    && (element.named_collection == next_element.named_collection))
+                if (element.sameDatabaseAndTable(next_element))
                     next_element_on_same_db_and_table = true;
             }
 
