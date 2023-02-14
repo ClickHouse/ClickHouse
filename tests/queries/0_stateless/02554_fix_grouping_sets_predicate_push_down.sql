@@ -98,7 +98,6 @@ FROM
             day_,
             type_1
         FROM test_grouping_sets_predicate
-        WHERE day_ = '2023-01-05'
         GROUP BY
             GROUPING SETS (
                 (day_, type_1),
