@@ -66,18 +66,29 @@ static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & gro
     return true;
 }
 
-static void findIdentifiersOfNode(const ActionsDAG::Node * node, Names & names)
+static Names findIdentifiersOfNode(const ActionsDAG::Node * node)
 {
-    /// We treat all INPUT as identifier
-    if (node->type == ActionsDAG::ActionType::INPUT)
+    Names res;
+
+    std::queue<const ActionsDAG::Node *> queue;
+    queue.push(node);
+
+    while (!queue.empty())
     {
-        names.emplace_back(node->result_name);
-        return;
+        const auto * top = queue.front();
+        /// We treat all INPUT as identifier
+        if (top->type == ActionsDAG::ActionType::INPUT)
+        {
+            res.emplace_back(top->result_name);
+        }
+        else
+        {
+            for (const auto * child : top->children)
+                queue.push(child);
+        }
+        queue.pop();
     }
-    for (const auto & child : node->children)
-    {
-        findIdentifiersOfNode(child, names);
-    }
+    return res;
 }
 
 static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
@@ -211,8 +222,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             const auto & actions = filter->getExpression();
             const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());
 
-            Names identifiers_in_predicate;
-            findIdentifiersOfNode(&filter_node, identifiers_in_predicate);
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
 
             if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
                 return 0;
