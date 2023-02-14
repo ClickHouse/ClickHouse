@@ -26,7 +26,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>

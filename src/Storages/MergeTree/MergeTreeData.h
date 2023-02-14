@@ -477,6 +477,12 @@ public:
 
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
+
+    size_t getAllPartsCount() const;
+
+    /// Return the number of marks in all parts
+    size_t getTotalMarksCount() const;
+
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
@@ -521,7 +527,7 @@ public:
 
     size_t getTotalActiveSizeInRows() const;
 
-    size_t getPartsCount() const;
+    size_t getActivePartsCount() const;
 
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
     /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)

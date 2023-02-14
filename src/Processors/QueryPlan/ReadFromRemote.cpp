@@ -12,7 +12,6 @@
 #include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include "Common/logger_useful.h"
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>

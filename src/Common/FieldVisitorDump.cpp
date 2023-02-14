@@ -125,5 +125,15 @@ String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
     return wb.str();
 }
 
+String FieldVisitorDump::operator() (const CustomType & x) const
+{
+    WriteBufferFromOwnString wb;
+    wb << "CustomType_(";
+    writeQuoted(std::string_view(x.getTypeName()), wb);
+    wb << ", ";
+    writeQuoted(x.toString(), wb);
+    wb << ')';
+    return wb.str();
 }
 
+}

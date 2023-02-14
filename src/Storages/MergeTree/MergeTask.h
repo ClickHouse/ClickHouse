@@ -262,9 +262,9 @@ private:
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Begin dependencies from previous stage
-        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
-        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<PocoTemporaryFile> rows_sources_file;
+        std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
+        std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
         DiskPtr tmp_disk{nullptr};
