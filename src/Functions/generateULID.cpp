@@ -9,7 +9,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
-#include <ulid.c>
+#include <ulid.h>
 
 
 namespace DB
