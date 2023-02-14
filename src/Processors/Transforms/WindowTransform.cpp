@@ -961,7 +961,7 @@ void WindowTransform::updateAggregationState()
             auto * arena_ptr = arena.get();
             if constexpr (enable_batch_aggregate)
             {
-                // For [rows unbouned preceding and unbounded following,
+                // For [rows unbounded preceding and unbounded following,
                 // first_row = past_the_end_row is the major case
                 if (first_row != past_the_end_row)
                     a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
@@ -1102,7 +1102,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
         assertSameColumns(input_header.getColumns(), block.input_columns);
     }
 
-    // std::function<void()> update_aggregate_state;
     void (WindowTransform::*update_aggregate_state)() = nullptr;
     if (enable_aggregate_batch_add)
         update_aggregate_state = &WindowTransform::updateAggregationState<true>;
