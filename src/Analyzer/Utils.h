@@ -20,7 +20,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
 
 /// Extract left table expression from join tree
-QueryTreeNodePtr & extractLeftTableExpression(QueryTreeNodePtr & join_tree_node);
+QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
   *
@@ -55,5 +55,14 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
   * Do not visit subqueries.
   */
 bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name);
+
+/** Replace columns in node children.
+  * If there is column node and its source is specified table expression node and there is
+  * node for column name in map replace column node with node from map.
+  * Do not visit subqueries.
+  */
+void replaceColumns(QueryTreeNodePtr & node,
+    const QueryTreeNodePtr & table_expression_node,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node);
 
 }
