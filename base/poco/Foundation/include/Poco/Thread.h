@@ -23,15 +23,7 @@
 #include "Poco/Mutex.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#    if defined(_WIN32_WCE)
-#        include "Poco/Thread_WINCE.h"
-#    else
-#        include "Poco/Thread_WIN32.h"
-#    endif
-#else
 #    include "Poco/Thread_POSIX.h"
-#endif
 
 
 namespace Poco

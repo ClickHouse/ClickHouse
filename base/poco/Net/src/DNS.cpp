@@ -318,11 +318,7 @@ std::string DNS::decodeIDNLabel(const std::string& encodedIDN)
 
 int DNS::lastError()
 {
-#if defined(_WIN32)
-	return GetLastError();
-#else
 	return h_errno;
-#endif
 }
 
 
@@ -357,11 +353,9 @@ void DNS::aierror(int code, const std::string& arg)
 		throw DNSException("Temporary DNS error while resolving", arg);
 	case EAI_FAIL:
 		throw DNSException("Non recoverable DNS error while resolving", arg);
-#if !defined(_WIN32) // EAI_NODATA and EAI_NONAME have the same value
 #if defined(EAI_NODATA) // deprecated in favor of EAI_NONAME on FreeBSD
 	case EAI_NODATA:
 		throw NoAddressFoundException(arg);
-#endif
 #endif
 	case EAI_NONAME:
 		throw HostNotFoundException(arg);
@@ -369,10 +363,6 @@ void DNS::aierror(int code, const std::string& arg)
 	case EAI_SYSTEM:
 		error(lastError(), arg);
 		break;
-#endif
-#if defined(_WIN32)
-	case WSANO_DATA: // may happen on XP
-		throw HostNotFoundException(arg);
 #endif
 	default:
 		throw DNSException("EAI", gai_strerror(code));

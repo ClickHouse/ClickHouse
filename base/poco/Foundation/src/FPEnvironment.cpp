@@ -25,8 +25,6 @@
 #include "FPEnvironment_SUN.cpp"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #include "FPEnvironment_C99.cpp"
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#include "FPEnvironment_WIN32.cpp"
 #else
 #include "FPEnvironment_DUMMY.cpp"
 #endif

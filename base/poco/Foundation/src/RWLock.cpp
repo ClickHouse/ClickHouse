@@ -15,13 +15,7 @@
 #include "Poco/RWLock.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#if defined(_WIN32_WCE)
-#include "RWLock_WINCE.cpp"
-#else
-#include "RWLock_WIN32.cpp"
-#endif
-#elif POCO_OS == POCO_OS_ANDROID
+#if   POCO_OS == POCO_OS_ANDROID
 #include "RWLock_Android.cpp"
 #else
 #include "RWLock_POSIX.cpp"

@@ -21,59 +21,7 @@
 #define POCO_ENOERR 0
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#    include "Poco/UnWindows.h"
-#    include <winsock2.h>
-#    include <ws2tcpip.h>
-#    define POCO_INVALID_SOCKET INVALID_SOCKET
-#    define poco_socket_t SOCKET
-#    define poco_socklen_t int
-#    define poco_ioctl_request_t int
-#    define poco_closesocket(s) closesocket(s)
-#    define POCO_EINTR WSAEINTR
-#    define POCO_EACCES WSAEACCES
-#    define POCO_EFAULT WSAEFAULT
-#    define POCO_EINVAL WSAEINVAL
-#    define POCO_EMFILE WSAEMFILE
-#    define POCO_EAGAIN WSAEWOULDBLOCK
-#    define POCO_EWOULDBLOCK WSAEWOULDBLOCK
-#    define POCO_EINPROGRESS WSAEINPROGRESS
-#    define POCO_EALREADY WSAEALREADY
-#    define POCO_ENOTSOCK WSAENOTSOCK
-#    define POCO_EDESTADDRREQ WSAEDESTADDRREQ
-#    define POCO_EMSGSIZE WSAEMSGSIZE
-#    define POCO_EPROTOTYPE WSAEPROTOTYPE
-#    define POCO_ENOPROTOOPT WSAENOPROTOOPT
-#    define POCO_EPROTONOSUPPORT WSAEPROTONOSUPPORT
-#    define POCO_ESOCKTNOSUPPORT WSAESOCKTNOSUPPORT
-#    define POCO_ENOTSUP WSAEOPNOTSUPP
-#    define POCO_EPFNOSUPPORT WSAEPFNOSUPPORT
-#    define POCO_EAFNOSUPPORT WSAEAFNOSUPPORT
-#    define POCO_EADDRINUSE WSAEADDRINUSE
-#    define POCO_EADDRNOTAVAIL WSAEADDRNOTAVAIL
-#    define POCO_ENETDOWN WSAENETDOWN
-#    define POCO_ENETUNREACH WSAENETUNREACH
-#    define POCO_ENETRESET WSAENETRESET
-#    define POCO_ECONNABORTED WSAECONNABORTED
-#    define POCO_ECONNRESET WSAECONNRESET
-#    define POCO_ENOBUFS WSAENOBUFS
-#    define POCO_EISCONN WSAEISCONN
-#    define POCO_ENOTCONN WSAENOTCONN
-#    define POCO_ESHUTDOWN WSAESHUTDOWN
-#    define POCO_ETIMEDOUT WSAETIMEDOUT
-#    define POCO_ECONNREFUSED WSAECONNREFUSED
-#    define POCO_EHOSTDOWN WSAEHOSTDOWN
-#    define POCO_EHOSTUNREACH WSAEHOSTUNREACH
-#    define POCO_ESYSNOTREADY WSASYSNOTREADY
-#    define POCO_ENOTINIT WSANOTINITIALISED
-#    define POCO_HOST_NOT_FOUND WSAHOST_NOT_FOUND
-#    define POCO_TRY_AGAIN WSATRY_AGAIN
-#    define POCO_NO_RECOVERY WSANO_RECOVERY
-#    define POCO_NO_DATA WSANO_DATA
-#    ifndef ADDRESS_FAMILY
-#        define ADDRESS_FAMILY USHORT
-#    endif
-#elif defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_UNIX)
 #    include <unistd.h>
 #    include <errno.h>
 #    include <sys/types.h>
@@ -274,11 +222,7 @@ extern "C" {
 
 
 #if !defined(s6_addr16)
-#    if defined(POCO_OS_FAMILY_WINDOWS)
-#        define s6_addr16 u.Word
-#    else
 #        define s6_addr16 __u6_addr.__u6_addr16
-#    endif
 #endif
 
 

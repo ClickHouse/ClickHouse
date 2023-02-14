@@ -29,8 +29,6 @@
 #    include "Poco/FPEnvironment_SUN.h"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/FPEnvironment_C99.h"
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#    include "Poco/FPEnvironment_WIN32.h"
 #else
 #    include "Poco/FPEnvironment_DUMMY.h"
 #endif

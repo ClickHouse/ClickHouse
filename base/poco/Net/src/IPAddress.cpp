@@ -182,21 +182,6 @@ IPAddress::IPAddress(unsigned prefix, Family family)
 }
 
 
-#if defined(_WIN32)
-IPAddress::IPAddress(const SOCKET_ADDRESS& socket_address)
-	: _pImpl(0)
-{
-	ADDRESS_FAMILY family = socket_address.lpSockaddr->sa_family;
-	if (family == AF_INET)
-		newIPv4(&reinterpret_cast<const struct sockaddr_in*>(socket_address.lpSockaddr)->sin_addr);
-#if defined(POCO_HAVE_IPv6)
-	else if (family == AF_INET6)
-		newIPv6(&reinterpret_cast<const struct sockaddr_in6*>(socket_address.lpSockaddr)->sin6_addr,
-			reinterpret_cast<const struct sockaddr_in6*>(socket_address.lpSockaddr)->sin6_scope_id);
-#endif
-	else throw Poco::InvalidArgumentException("Invalid or unsupported address family passed to IPAddress()");
-}
-#endif
 
 
 IPAddress::IPAddress(const struct sockaddr& sockaddr)

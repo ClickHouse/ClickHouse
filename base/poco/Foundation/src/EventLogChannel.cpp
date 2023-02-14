@@ -224,17 +224,9 @@ void EventLogChannel::setUpRegistry() const
 		std::wstring path;
 		#if defined(POCO_DLL)
 			#if defined(_DEBUG)
-				#if defined(_WIN64)
-					path = findLibrary(L"PocoFoundation64d.dll");
-				#else
 					path = findLibrary(L"PocoFoundationd.dll");
-				#endif
 			#else
-				#if defined(_WIN64)
-					path = findLibrary(L"PocoFoundation64.dll");
-				#else
 					path = findLibrary(L"PocoFoundation.dll");
-				#endif
 			#endif
 		#endif
 		
@@ -244,17 +236,9 @@ void EventLogChannel::setUpRegistry() const
 		std::string path;
 		#if defined(POCO_DLL)
 			#if defined(_DEBUG)
-				#if defined(_WIN64)
-					path = findLibrary("PocoFoundation64d.dll");
-				#else
 					path = findLibrary("PocoFoundationd.dll");
-				#endif
 			#else
-				#if defined(_WIN64)
-					path = findLibrary("PocoFoundation64.dll");
-				#else
 					path = findLibrary("PocoFoundation.dll");
-				#endif
 			#endif
 		#endif
 		

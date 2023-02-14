@@ -143,10 +143,7 @@
 #    define POCO_ARCH_LITTLE_ENDIAN 1
 #elif defined(__mips__) || defined(__mips) || defined(__MIPS__) || defined(_M_MRX000)
 #    define POCO_ARCH POCO_ARCH_MIPS
-#    if defined(POCO_OS_FAMILY_WINDOWS)
-// Is this OK? Supports windows only little endian??
-#        define POCO_ARCH_LITTLE_ENDIAN 1
-#    elif defined(__MIPSEB__) || defined(_MIPSEB) || defined(__MIPSEB)
+#    if   defined(__MIPSEB__) || defined(_MIPSEB) || defined(__MIPSEB)
 #        define POCO_ARCH_BIG_ENDIAN 1
 #    elif defined(__MIPSEL__) || defined(_MIPSEL) || defined(__MIPSEL)
 #        define POCO_ARCH_LITTLE_ENDIAN 1
@@ -249,11 +246,7 @@
 #endif
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#    define POCO_DEFAULT_NEWLINE_CHARS "\r\n"
-#else
 #    define POCO_DEFAULT_NEWLINE_CHARS "\n"
-#endif
 
 
 #endif // Foundation_Platform_INCLUDED

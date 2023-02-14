@@ -29,11 +29,6 @@
 //
 // Ensure that POCO_DLL is default unless POCO_STATIC is defined
 //
-#if defined(_WIN32) && defined(_DLL)
-#    if !defined(POCO_DLL) && !defined(POCO_STATIC)
-#        define POCO_DLL
-#    endif
-#endif
 
 
 //
@@ -71,9 +66,7 @@
 // Include platform-specific definitions
 //
 #include "Poco/Platform.h"
-#if defined(_WIN32)
-#    include "Poco/Platform_WIN32.h"
-#elif defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/Platform_POSIX.h"
 #endif
 
@@ -86,15 +79,9 @@
 //
 // Cleanup inconsistencies
 //
-#ifdef POCO_OS_FAMILY_WINDOWS
-#    if defined(POCO_WIN32_UTF8) && defined(POCO_NO_WSTRING)
-#        error POCO_WIN32_UTF8 and POCO_NO_WSTRING are mutually exclusive.
-#    endif
-#else
 #    ifdef POCO_WIN32_UTF8
 #        undef POCO_WIN32_UTF8
 #    endif
-#endif
 
 
 //
