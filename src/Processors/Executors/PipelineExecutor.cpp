@@ -67,10 +67,12 @@ const Processors & PipelineExecutor::getProcessors() const
     return graph->getProcessors();
 }
 
-void PipelineExecutor::cancel()
+void PipelineExecutor::cancel(bool hard_cancel)
 {
     cancelled = true;
-    graph->cancel();
+    if (hard_cancel)
+        finish();
+    graph->cancel(hard_cancel);
 }
 
 void PipelineExecutor::finish()
@@ -146,10 +148,8 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
-        {
             cancel();
-            finish();
-        }
+
         return continuing;
     }
 
@@ -229,10 +229,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 break;
 
             if (!context.executeTask())
-            {
                 cancel();
-                finish();
-            }
 
             if (tasks.isFinished())
                 break;
