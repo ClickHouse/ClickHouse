@@ -137,7 +137,7 @@ public:
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
     bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
-    void cancel();
+    void cancel(bool hard_cancel = false);
 
 private:
     /// Add single edge to edges list. Check processor is known.

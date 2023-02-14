@@ -48,7 +48,7 @@ public:
     const Processors & getProcessors() const;
 
     /// Cancel execution. May be called from another thread.
-    void cancel();
+    void cancel(bool hard_cancel = false);
 
     /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
     bool checkTimeLimit();

@@ -390,7 +390,7 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
     return true;
 }
 
-void ExecutingGraph::cancel()
+void ExecutingGraph::cancel(bool hard_cancel)
 {
     std::exception_ptr exception_ptr;
 
@@ -401,7 +401,7 @@ void ExecutingGraph::cancel()
             try
             {
                 bool is_source = processor->getInputs().empty();
-                if (is_source)
+                if (hard_cancel || is_source)
                     processor->cancel();
             }
             catch (...)
