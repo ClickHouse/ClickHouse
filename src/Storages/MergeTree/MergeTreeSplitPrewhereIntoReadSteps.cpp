@@ -44,7 +44,7 @@ void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const
 }
 
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
-/// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earliers steps.
+/// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earlier steps.
 struct DAGNodeRef
 {
     ActionsDAGPtr dag;
