@@ -301,7 +301,7 @@ namespace
 
             all_flags_grantable_on_table_level = all_flags_for_target[TABLE] | all_flags_for_target[DICTIONARY] | all_flags_for_target[COLUMN];
             all_flags_grantable_on_global_with_parameter_level = all_flags_for_target[NAMED_COLLECTION];
-            all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_for_target[NAMED_COLLECTION] | all_flags_grantable_on_table_level;
+            all_flags_grantable_on_database_level = all_flags_for_target[DATABASE] | all_flags_grantable_on_table_level;
         }
 
         Helper()
@@ -365,15 +365,12 @@ bool AccessFlags::isGlobalWithParameter() const
 
 AccessFlags::ParameterType AccessFlags::getParameterType() const
 {
-    if (isEmpty() || contains(AccessFlags::allGlobalFlags()))
+    if (isEmpty() || !AccessFlags::allGlobalWithParameterFlags().contains(*this))
         return AccessFlags::NONE;
 
     /// All flags refer to NAMED COLLECTION access type.
     if (AccessFlags::allNamedCollectionFlags().contains(*this))
         return AccessFlags::NAMED_COLLECTION;
-
-    if (!contains(AccessFlags::allGlobalWithParameterFlags()))
-        return AccessFlags::NONE;
 
     throw Exception(ErrorCodes::MIXED_ACCESS_PARAMETER_TYPES, "Having mixed parameter types: {}", toString());
 }

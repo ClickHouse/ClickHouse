@@ -214,7 +214,7 @@ namespace
         switch (level)
         {
             case GLOBAL_LEVEL: return AccessFlags::allFlagsGrantableOnGlobalLevel();
-            case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel();
+            case DATABASE_LEVEL: return AccessFlags::allFlagsGrantableOnDatabaseLevel() | AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
             case TABLE_LEVEL: return AccessFlags::allFlagsGrantableOnTableLevel();
             case COLUMN_LEVEL: return AccessFlags::allFlagsGrantableOnColumnLevel();
         }
