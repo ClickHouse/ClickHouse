@@ -33,7 +33,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    void updateInputSortDescription(SortDescription input_sort_description, DataStream::SortScope sort_scope);
+    void applyOrder(SortDescription input_sort_description, DataStream::SortScope sort_scope);
 
     bool memoryBoundMergingWillBeUsed() const;
 
@@ -48,7 +48,7 @@ private:
     size_t memory_efficient_merge_threads;
     const size_t max_block_size;
     const size_t memory_bound_merging_max_block_bytes;
-    const SortDescription group_by_sort_description;
+    SortDescription group_by_sort_description;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
