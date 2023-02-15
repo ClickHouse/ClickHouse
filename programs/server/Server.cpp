@@ -1223,23 +1223,23 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            size_t background_memory_usage_soft_limit = config->getUInt64("background_memory_usage_soft_limit", 0);
-            double background_memory_usage_to_ram_ratio = config->getDouble("background_memory_usage_to_ram_ratio", 0.5);
+            size_t merges_mutations_memory_usage_soft_limit = config->getUInt64("merges_mutations_memory_usage_soft_limit", 0);
+            double merges_mutations_memory_usage_to_ram_ratio = config->getDouble("merges_mutations_memory_usage_to_ram_ratio", 0.5);
 
-            size_t default_background_server_memory_usage = static_cast<size_t>(memory_amount * background_memory_usage_to_ram_ratio);
-            if (background_memory_usage_soft_limit == 0 || background_memory_usage_soft_limit > default_background_server_memory_usage)
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(memory_amount * merges_mutations_memory_usage_to_ram_ratio);
+            if (merges_mutations_memory_usage_soft_limit == 0 || merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
-                background_memory_usage_soft_limit = default_background_server_memory_usage;
-                LOG_WARNING(log, "Setting background_memory_usage_soft_limit was set to {}"
-                    " ({} available * {:.2f} background_memory_usage_to_ram_ratio)",
-                    formatReadableSizeWithBinarySuffix(background_memory_usage_soft_limit),
+                merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+                LOG_WARNING(log, "Setting merges_mutations_memory_usage_soft_limit was set to {}"
+                    " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                    formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(memory_amount),
-                    background_memory_usage_to_ram_ratio);
+                    merges_mutations_memory_usage_to_ram_ratio);
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
-                formatReadableSizeWithBinarySuffix(background_memory_usage_soft_limit));
-            background_memory_tracker.setSoftLimit(background_memory_usage_soft_limit);
+                formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit));
+            background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
             background_memory_tracker.setDescription("(background)");
             background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
 
