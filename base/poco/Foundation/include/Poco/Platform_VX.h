@@ -19,9 +19,9 @@
 #define Foundation_Platform_VX_INCLUDED
 
 
-#define POCO_NO_SYS_SELECT_H 
+#define POCO_NO_SYS_SELECT_H
 #define POCO_NO_FPENVIRONMENT
-#define POCO_NO_WSTRING 
+#define POCO_NO_WSTRING
 #define POCO_NO_SHAREDMEMORY
 #define POCO_NO_SYSLOGCHANNEL
 
