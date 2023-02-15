@@ -19,9 +19,9 @@ def test_http_native_returns_timezone():
     # No timezone when no protocol version sent
     query = "SELECT toDateTime(1676369730, 'Asia/Shanghai') as dt FORMAT Native"
     raw = instance.http_query(query)
-    assert raw.hex(' ', 2) == '0101 0264 7408 4461 7465 5469 6d65 425f eb63'
+    assert raw.hex(" ", 2) == '0101 0264 7408 4461 7465 5469 6d65 425f eb63'
 
     # Timezone available when protocol version sent
-    raw = instance.http_query(query, params={'client_protocol_version': 54337})
+    raw = instance.http_query(query, params={"client_protocol_version": 54337})
     ch_type = raw[14:39].decode()
     assert ch_type == "DateTime('Asia/Shanghai')"
