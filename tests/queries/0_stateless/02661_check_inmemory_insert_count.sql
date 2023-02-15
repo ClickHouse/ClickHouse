@@ -10,3 +10,4 @@ INSERT INTO inmemory_insert_test(id, report_time) VALUES('abcdefghijklmnopqrstuv
 INSERT INTO inmemory_insert_test(id, report_time) VALUES('a1234567890123456789012345', '1675326231000');
 
 SELECT COUNT(1) FROM inmemory_insert_test;
+DROP TABLE inmemory_insert_test;
