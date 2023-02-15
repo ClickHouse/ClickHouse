@@ -18,31 +18,32 @@
 #define Foundation_SharedLibrary_VX_INCLUDED
 
 
+#include <moduleLib.h>
 #include "Poco/Foundation.h"
 #include "Poco/Mutex.h"
-#include <moduleLib.h>
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API SharedLibraryImpl
 {
 protected:
-	SharedLibraryImpl();
-	~SharedLibraryImpl();
-	void loadImpl(const std::string& path, int flags);
-	void unloadImpl();
-	bool isLoadedImpl() const;
-	void* findSymbolImpl(const std::string& name);
-	const std::string& getPathImpl() const;
-	static std::string suffixImpl();
-	static bool setSearchPathImpl(const std::string& path);
+    SharedLibraryImpl();
+    ~SharedLibraryImpl();
+    void loadImpl(const std::string & path, int flags);
+    void unloadImpl();
+    bool isLoadedImpl() const;
+    void * findSymbolImpl(const std::string & name);
+    const std::string & getPathImpl() const;
+    static std::string suffixImpl();
+    static bool setSearchPathImpl(const std::string & path);
 
 private:
-	std::string _path;
-	MODULE_ID _moduleId;
-	static FastMutex _mutex;
+    std::string _path;
+    MODULE_ID _moduleId;
+    static FastMutex _mutex;
 };
 
 
