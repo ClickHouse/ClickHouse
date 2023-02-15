@@ -164,13 +164,9 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Value of 'sample_ratio' must be in interval (0.0; 1.0], but got: {}", sample_ratio);
 
-    /// Randomize a little to avoid boundary effects.
-    std::uniform_int_distribution<size_t> dist(1, static_cast<size_t>(1.0 / sample_ratio));
-
     size_t num_rows = size();
-    size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
-    size_t num_checked_rows = dist(thread_local_rng);
-    num_sampled_rows = std::min(num_sampled_rows + dist(thread_local_rng), num_rows);
+    size_t num_sampled_rows = std::min(static_cast<size_t>(num_rows * sample_ratio), num_rows);
+    size_t num_checked_rows = 0;
     size_t res = 0;
 
     if (num_sampled_rows == num_rows)
@@ -190,6 +186,9 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
             }
         }
     }
+
+    if (num_checked_rows == 0)
+        return 0.0;
 
     return static_cast<double>(res) / num_checked_rows;
 }
