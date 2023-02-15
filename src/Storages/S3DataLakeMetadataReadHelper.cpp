@@ -2,9 +2,10 @@
 
 #if USE_AWS_S3
 
+#    include <IO/ReadBufferFromS3.h>
 #    include <IO/S3/Requests.h>
 #    include <Interpreters/Context.h>
-#    include <Storages/S3DataLakeMetaReadHelper.h>
+#    include <Storages/S3DataLakeMetadataReadHelper.h>
 #    include <aws/core/auth/AWSCredentials.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/ListObjectsV2Request.h>
@@ -19,7 +20,7 @@ namespace ErrorCodes
 }
 
 std::shared_ptr<ReadBuffer>
-S3DataLakeMetaReadHelper::createReadBuffer(const String & key, ContextPtr context, const StorageS3::Configuration & base_configuration)
+S3DataLakeMetadataReadHelper::createReadBuffer(const String & key, ContextPtr context, const StorageS3::Configuration & base_configuration)
 {
     S3Settings::RequestSettings request_settings;
     request_settings.max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
@@ -31,7 +32,8 @@ S3DataLakeMetaReadHelper::createReadBuffer(const String & key, ContextPtr contex
         request_settings,
         context->getReadSettings());
 }
-std::vector<String> S3DataLakeMetaReadHelper::listFilesMatchSuffix(
+
+std::vector<String> S3DataLakeMetadataReadHelper::listFilesMatchSuffix(
     const StorageS3::Configuration & base_configuration, const String & directory, const String & suffix)
 {
     const auto & table_path = base_configuration.url.key;
@@ -77,7 +79,7 @@ std::vector<String> S3DataLakeMetaReadHelper::listFilesMatchSuffix(
     return res;
 }
 
-std::vector<String> S3DataLakeMetaReadHelper::listFiles(const StorageS3::Configuration & configuration)
+std::vector<String> S3DataLakeMetadataReadHelper::listFiles(const StorageS3::Configuration & configuration)
 {
     const auto & client = configuration.client;
     const auto & table_path = configuration.url.key;

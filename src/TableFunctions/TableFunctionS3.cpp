@@ -29,9 +29,8 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-template <bool get_format_from_file>
 void TableFunctionS3::parseArgumentsImpl(
-    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration)
+    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration, bool get_format_from_file)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
     {
@@ -111,9 +110,6 @@ void TableFunctionS3::parseArgumentsImpl(
     if (s3_configuration.format == "auto" && get_format_from_file)
         s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
 }
-
-template void TableFunctionS3::parseArgumentsImpl<false>(
-    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration);
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {

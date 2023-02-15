@@ -5,7 +5,7 @@
 #if USE_AWS_S3
 
 #    include <Storages/IStorageDataLake.h>
-#    include <Storages/S3DataLakeMetaReadHelper.h>
+#    include <Storages/S3DataLakeMetadataReadHelper.h>
 
 namespace DB
 {
@@ -16,11 +16,11 @@ namespace DB
 //      data/
 //      metadata/
 // The metadata has three layers: metadata -> manifest list -> manifest files
-template <typename Configuration, typename MetaReadHelper>
-class IcebergMetaParser
+template <typename Configuration, typename MetadataReadHelper>
+class IcebergMetadataParser
 {
 public:
-    IcebergMetaParser(const Configuration & configuration_, ContextPtr context_);
+    IcebergMetadataParser(const Configuration & configuration_, ContextPtr context_);
 
     std::vector<String> getFiles() const;
 
@@ -45,7 +45,7 @@ struct StorageIcebergName
     static constexpr auto data_directory_prefix = "data";
 };
 
-using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
+using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 }
 
 #endif
