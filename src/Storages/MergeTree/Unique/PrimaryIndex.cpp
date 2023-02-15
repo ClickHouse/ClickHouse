@@ -5,9 +5,9 @@
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/Unique/PrimaryIndex.h>
+#include <Storages/MergeTree/Unique/PrimaryKeysEncoder.h>
 #include <Storages/StorageUniqueMergeTree.h>
-#include <Storages/UniqueMergeTree/PrimaryIndex.h>
-#include <Storages/UniqueMergeTree/PrimaryKeysEncoder.h>
 #include <Common/PODArray.h>
 #include <Common/filesystemHelpers.h>
 

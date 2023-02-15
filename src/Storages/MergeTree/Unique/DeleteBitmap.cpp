@@ -4,7 +4,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteIntText.h>
 #include <IO/WriteSettings.h>
-#include <Storages/UniqueMergeTree/DeleteBitmap.h>
+#include <Storages/MergeTree/Unique/DeleteBitmap.h>
 #include <roaring/roaring.h>
 #include <Common/filesystemHelpers.h>
 

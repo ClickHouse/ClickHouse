@@ -2,7 +2,7 @@
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/UniqueMergeTree/DeleteBitmap.h>
+#include <Storages/MergeTree/Unique/DeleteBitmap.h>
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/UniqueMergeTree/PrimaryIndex.h>
+#include <Storages/MergeTree/Unique/PrimaryIndex.h>
 #include <Common/CacheBase.h>
 
 namespace DB

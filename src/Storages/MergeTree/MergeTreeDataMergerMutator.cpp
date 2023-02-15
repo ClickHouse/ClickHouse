@@ -36,8 +36,8 @@
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
 
+#include <Storages/MergeTree/Unique/TableVersion.h>
 #include <Storages/StorageUniqueMergeTree.h>
-#include <Storages/UniqueMergeTree/TableVersion.h>
 
 #include <cmath>
 #include <ctime>

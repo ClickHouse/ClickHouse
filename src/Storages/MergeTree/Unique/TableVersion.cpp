@@ -3,7 +3,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/UniqueMergeTree/TableVersion.h>
+#include <Storages/MergeTree/Unique/TableVersion.h>
 
 namespace DB
 {

@@ -1,7 +1,7 @@
 #pragma once
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <Storages/UniqueMergeTree/TableVersion.h>
+#include <Storages/MergeTree/Unique/TableVersion.h>
 
 namespace DB
 {

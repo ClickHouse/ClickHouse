@@ -1,20 +1,17 @@
 #pragma once
 
-#include <base/defines.h>
-#include <Common/SimpleIncrement.h>
-#include <Common/SharedMutex.h>
-#include <Common/MultiVersion.h>
-#include <Storages/IStorage.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <Interpreters/PartLog.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/IStorage.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
@@ -27,17 +24,17 @@
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/TemporaryParts.h>
-#include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/extractKeyExpressionList.h>
-#include <Storages/PartitionCommands.h>
-#include <Interpreters/PartLog.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
-#include <Storages/UniqueMergeTree/DeleteBuffer.h>
-#include <Storages/UniqueMergeTree/PrimaryIndex.h>
-#include <Storages/UniqueMergeTree/TableVersion.h>
+#include <Storages/PartitionCommands.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <base/defines.h>
 #include <Common/MultiVersion.h>
+#include <Common/SharedMutex.h>
 #include <Common/SimpleIncrement.h>
+
+#include <Storages/MergeTree/Unique/DeleteBuffer.h>
+#include <Storages/MergeTree/Unique/PrimaryIndex.h>
+#include <Storages/MergeTree/Unique/TableVersion.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>

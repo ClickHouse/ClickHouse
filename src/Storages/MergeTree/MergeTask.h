@@ -1,19 +1,19 @@
 #pragma once
 
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Storages/MergeTree/ColumnSizeEstimator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
+#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
-#include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Storages/UniqueMergeTree/TableVersion.h>
-#include <Storages/UniqueMergeTree/UniqueMergeTreeWriteState.h>
+#include <Storages/MergeTree/Unique/TableVersion.h>
+#include <Storages/MergeTree/Unique/UniqueMergeTreeWriteState.h>
 #include <Common/filesystemHelpers.h>
 
 #include <memory>

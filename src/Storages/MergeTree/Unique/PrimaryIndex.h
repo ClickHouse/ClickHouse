@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/UniqueMergeTree/LRULockFree.h>
+#include <Storages/MergeTree/Unique/LRULockFree.h>
 #include <base/types.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>

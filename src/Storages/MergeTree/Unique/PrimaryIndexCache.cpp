@@ -1,5 +1,5 @@
+#include <Storages/MergeTree/Unique/PrimaryIndexCache.h>
 #include <Storages/StorageUniqueMergeTree.h>
-#include <Storages/UniqueMergeTree/PrimaryIndexCache.h>
 
 namespace DB
 {
