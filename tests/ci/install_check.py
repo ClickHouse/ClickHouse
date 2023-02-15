@@ -52,9 +52,11 @@ for i in {1..20}; do
 done
 for i in {1..5}; do
     echo wait for clickhouse-keeper to answer on mntr request
-    exec 13<>/dev/tcp/127.0.0.1/9181
-    echo mntr >&13
-    cat <&13 | grep zk_version && break || sleep 1
+    {
+        exec 13<>/dev/tcp/127.0.0.1/9181
+        echo mntr >&13
+        cat <&13 | grep zk_version
+    } && break || sleep 1
     exec 13>&-
 done
 exec 13>&-"""
@@ -72,9 +74,11 @@ for i in {1..20}; do
 done
 for i in {1..5}; do
     echo wait for clickhouse-keeper to answer on mntr request
-    exec 13<>/dev/tcp/127.0.0.1/9181
-    echo mntr >&13
-    cat <&13 | grep zk_version && break || sleep 1
+    {
+        exec 13<>/dev/tcp/127.0.0.1/9181
+        echo mntr >&13
+        cat <&13 | grep zk_version
+    } && break || sleep 1
     exec 13>&-
 done
 exec 13>&-"""
@@ -247,12 +251,16 @@ def main():
     if args.download:
 
         def filter_artifacts(path: str) -> bool:
-            return (
-                path.endswith(".deb")
-                or path.endswith(".rpm")
-                or path.endswith(".tgz")
-                or path.endswith("/clickhouse")
-            )
+            is_match = False
+            if args.deb or args.rpm:
+                is_match = is_match or path.endswith("/clickhouse")
+            if args.deb:
+                is_match = is_match or path.endswith(".deb")
+            if args.rpm:
+                is_match = is_match or path.endswith(".rpm")
+            if args.tgz:
+                is_match = is_match or path.endswith(".tgz")
+            return is_match
 
         download_builds_filter(
             args.check_name, REPORTS_PATH, TEMP_PATH, filter_artifacts
