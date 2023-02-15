@@ -52,8 +52,10 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
+        std::cerr << "============ Found ReadFromMergeTreen";
         if (const auto * prewhere_info = reading->getPrewhereInfo())
         {
+            std::cerr << "============ Found prewhere info\n";
             if (prewhere_info->row_level_filter)
             {
                 appendExpression(dag, prewhere_info->row_level_filter);
@@ -65,7 +67,9 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
 
             if (prewhere_info->prewhere_actions)
             {
+                std::cerr << "============ Found prewhere actions\n";
                 appendExpression(dag, prewhere_info->prewhere_actions);
+                std::cerr << "============ Cur dag \n" << dag->dumpDAG();
                 need_remove_column = prewhere_info->remove_prewhere_column;
                 if (const auto * filter_node = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
                     filter_nodes.push_back(filter_node);
@@ -89,6 +93,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
             return false;
 
         appendExpression(dag, actions);
+        std::cerr << "============ Cur e dag \n" << dag->dumpDAG();
         need_remove_column = false;
         return true;
     }
@@ -100,6 +105,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
             return false;
 
         appendExpression(dag, actions);
+        std::cerr << "============ Cur f dag \n" << dag->dumpDAG();
         need_remove_column = filter->removesFilterColumn();
         const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName());
         if (!filter_expression)
@@ -468,6 +474,10 @@ bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (!reading)
         return false;
 
+    /// Probably some projection already was applied.
+    if (reading->hasAnalyzedResult())
+        return false;
+
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 5");
 
     const auto metadata = reading->getStorageMetadata();
@@ -748,6 +758,14 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (!reading)
         return false;
 
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"),
+        "Reading {} {} has analyzed result {}",
+        reading->getName(), reading->getStepDescription(), reading->hasAnalyzedResult());
+
+    /// Probably some projection already was applied.
+    if (reading->hasAnalyzedResult())
+        return false;
+
     auto iter = stack.rbegin();
     while (iter != stack.rend())
     {
@@ -782,7 +800,11 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (!buildAggregatingDAG(*iter->node->children.front(), dag, filter_nodes, need_remove_column))
         return false;
 
-    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
+    if (dag)
+    {
+        dag->removeUnusedActions();
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
+    }
 
     const ActionsDAG::Node * filter_node = nullptr;
     if (!filter_nodes.empty())
@@ -815,12 +837,17 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     std::list<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
-    const Block & header = frame.node->step->getOutputStream().header;
+    //const Block & header = frame.node->step->getOutputStream().header;
     const Names & required_columns = reading->getRealColumnNames();
     const auto & parts = reading->getParts();
     const auto & query_info = reading->getQueryInfo();
     ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
+
+    auto ordinary_reading_select_result = reading->selectRangesToRead(parts);
+    size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
+
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Marks for ordinary reading {}", ordinary_reading_marks);
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
     if (context->getSettingsRef().select_sequential_consistency)
@@ -866,7 +893,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         auto projection_result_ptr = reader.estimateNumMarksToRead(
             std::move(projection_parts),
             nullptr,
-            header.getNames(),
+            required_columns,
             metadata,
             projection->metadata,
             query_info, /// How it is actually used? I hope that for index we need only added_filter_nodes
@@ -897,12 +924,16 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             }
         }
 
-        if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Marks for projection {} {}", projection->name ,candidate.sum_marks);
+        if (candidate.sum_marks < ordinary_reading_marks && (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks))
             best_candidate = &candidate;
     }
 
     if (!best_candidate)
+    {
+        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
         return false;
+    }
 
     auto storage_snapshot = reading->getStorageSnapshot();
     auto proj_snapshot = std::make_shared<StorageSnapshot>(
@@ -913,7 +944,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     auto projection_reading = reader.readFromParts(
         {},
-        header.getNames(),
+        required_columns,
         proj_snapshot,
         query_info,
         context,
@@ -925,7 +956,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     if (!projection_reading)
     {
-        Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(header.getNames())));
+        Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
@@ -938,36 +969,42 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     projection_reading->setStepDescription(best_candidate->projection->name);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
-    auto & expr_or_filter_node = nodes.emplace_back();
+    auto * next_node = &projection_reading_node;
 
-    if (filter_node)
+    if (dag)
     {
-        expr_or_filter_node.step = std::make_unique<FilterStep>(
-            projection_reading_node.step->getOutputStream(),
-            dag,
-            dag->getOutputs().front()->result_name,
-            true);
-    }
-    else
-        expr_or_filter_node.step = std::make_unique<ExpressionStep>(
-            projection_reading_node.step->getOutputStream(),
-            dag);
+        auto & expr_or_filter_node = nodes.emplace_back();
 
-    expr_or_filter_node.children.push_back(&projection_reading_node);
+        if (filter_node)
+        {
+            expr_or_filter_node.step = std::make_unique<FilterStep>(
+                projection_reading_node.step->getOutputStream(),
+                dag,
+                dag->getOutputs().front()->result_name,
+                true);
+        }
+        else
+            expr_or_filter_node.step = std::make_unique<ExpressionStep>(
+                projection_reading_node.step->getOutputStream(),
+                dag);
+
+        expr_or_filter_node.children.push_back(&projection_reading_node);
+        next_node = &expr_or_filter_node;
+    }
 
     if (!has_nornal_parts)
     {
         /// All parts are taken from projection
-        iter->node->children.front() = &expr_or_filter_node;
+        iter->node->children.front() = next_node;
 
         //optimizeAggregationInOrder(node, nodes);
     }
     else
     {
         auto & union_node = nodes.emplace_back();
-        DataStreams input_streams = {iter->node->children.front()->step->getOutputStream(), expr_or_filter_node.step->getOutputStream()};
+        DataStreams input_streams = {iter->node->children.front()->step->getOutputStream(), next_node->step->getOutputStream()};
         union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
-        union_node.children = {iter->node->children.front(), &expr_or_filter_node};
+        union_node.children = {iter->node->children.front(), next_node};
         iter->node->children.front() = &union_node;
 
         iter->next_child = 0;
