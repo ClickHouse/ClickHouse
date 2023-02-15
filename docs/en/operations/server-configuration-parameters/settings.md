@@ -1010,6 +1010,33 @@ Default value: 2.
 <background_merges_mutations_concurrency_ratio>3</background_merges_mutations_concurrency_ratio>
 ```
 
+## merges_mutations_memory_usage_soft_limit {#merges_mutations_memory_usage_soft_limit}
+
+Sets the limit how much RAM is allowed to use for performing merge and mutation operations.
+Zero means unlimited.
+If ClickHouse reaches this limit, it won't schedule any new background merge or mutation operations, but will continue to execute already scheduled tasks.
+
+Possible values:
+
+-   Any positive integer.
+
+**Example**
+
+```xml
+<merges_mutations_memory_usage_soft_limit>0</merges_mutations_memory_usage_soft_limit>
+```
+
+## merges_mutations_memory_usage_to_ram_ratio {#merges_mutations_memory_usage_to_ram_ratio}
+
+The default `merges_mutations_memory_usage_soft_limit` value is calculated as `memory_amount * merges_mutations_memory_usage_to_ram_ratio`.
+
+Default value: `0.5`.
+
+**See also**
+
+-   [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
+-   [merges_mutations_memory_usage_soft_limit](#merges_mutations_memory_usage_soft_limit)
+
 ## background_move_pool_size {#background_move_pool_size}
 
 Sets the number of threads performing background moves for tables with MergeTree engines. Could be increased at runtime and could be applied at server startup from the `default` profile for backward compatibility.
