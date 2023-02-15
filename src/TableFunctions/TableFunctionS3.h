@@ -35,7 +35,7 @@ public:
     {
         return {"_path", "_file"};
     }
-    void parseArgumentsImpl(
+    static void parseArgumentsImpl(
         const String & error_message,
         ASTs & args,
         ContextPtr context,
