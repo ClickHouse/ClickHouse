@@ -1415,7 +1415,6 @@ void WindowTransform::work()
     assert(prev_frame_start <= frame_start);
     const auto first_used_block = std::min(next_output_block_number,
         std::min(prev_frame_start.block, current_row.block));
-
     if (first_block_number < first_used_block)
     {
 //        fmt::print(stderr, "will drop blocks from {} to {}\n", first_block_number,
@@ -1970,6 +1969,147 @@ struct WindowFunctionRowNumber final : public WindowFunction
     }
 };
 
+// Usage: ntile(n). n is the number of buckets.
+struct WindowFunctionNtile final : public WindowFunction
+{
+    WindowFunctionNtile(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+    {
+        if (argument_types.size() != 1)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one parameter", name_);
+        }
+        auto type_id = argument_types[0]->getTypeId();
+        if (type_id != TypeIndex::UInt8 && type_id != TypeIndex::UInt16 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt32 && type_id != TypeIndex::UInt64)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument type must be an unsigned integer (not larger then 64-bit), but got {}", argument_types[0]->getName());
+        }
+    }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        if (!buckets) [[unlikely]]
+        {
+            checkWindowFrameType(transform);
+            const auto & current_block = transform->blockAt(transform->current_row);
+            const auto & workspace = transform->workspaces[function_index];
+            const auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
+            if (!isColumnConst(arg_col))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must be a constant");
+            auto type_id = argument_types[0]->getTypeId();
+            if (type_id == TypeIndex::UInt8)
+                buckets = arg_col[transform->current_row.row].get<UInt8>();
+            else if (type_id == TypeIndex::UInt16)
+                buckets = arg_col[transform->current_row.row].get<UInt16>();
+            else if (type_id == TypeIndex::UInt32)
+                buckets = arg_col[transform->current_row.row].get<UInt32>();
+            else if (type_id == TypeIndex::UInt64)
+                buckets = arg_col[transform->current_row.row].get<UInt64>();
+
+            if (!buckets)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must > 0");
+            }
+        }
+        // new partition
+        if (transform->current_row_number == 1) [[unlikely]]
+        {
+            current_partition_rows = 0;
+            current_partition_inserted_row = 0;
+            start_row = transform->current_row;
+        }
+        current_partition_rows++;
+
+        // Only do the action when we meet the last row in this partition.
+        if (!transform->partition_ended)
+            return;
+        else
+        {
+            auto current_row = transform->current_row;
+            current_row.row++;
+            const auto & end_row = transform->partition_end;
+            if (current_row != end_row)
+            {
+
+                if (current_row.row < transform->blockRowsNumber(current_row))
+                    return;
+                if (end_row.block != current_row.block + 1 || end_row.row)
+                {
+                    return;
+                }
+                // else, current_row is the last input row.
+            }
+        }
+        auto bucket_capacity = current_partition_rows / buckets;
+        auto capacity_diff = current_partition_rows - bucket_capacity * buckets;
+
+        // bucket number starts from 1.
+        UInt64 bucket_num = 1;
+        while (current_partition_inserted_row < current_partition_rows)
+        {
+            auto current_bucket_capacity = bucket_capacity;
+            if (capacity_diff > 0)
+            {
+                current_bucket_capacity += 1;
+                capacity_diff--;
+            }
+            auto left_rows = current_bucket_capacity;
+            while (left_rows)
+            {
+                auto available_block_rows = transform->blockRowsNumber(start_row) - start_row.row;
+                IColumn & to = *transform->blockAt(start_row).output_columns[function_index];
+                auto & pod_array = assert_cast<ColumnUInt64 &>(to).getData();
+                if (left_rows < available_block_rows)
+                {
+                    pod_array.resize_fill(pod_array.size() + left_rows, bucket_num);
+                    start_row.row += left_rows;
+                    left_rows = 0;
+                }
+                else
+                {
+                    pod_array.resize_fill(pod_array.size() + available_block_rows, bucket_num);
+                    left_rows -= available_block_rows;
+                    start_row.block++;
+                    start_row.row = 0;
+                }
+            }
+            current_partition_inserted_row += current_bucket_capacity;
+            bucket_num += 1;
+        }
+    }
+private:
+    UInt64 buckets = 0;
+    RowNumber start_row;
+    UInt64 current_partition_rows = 0;
+    UInt64 current_partition_inserted_row = 0;
+
+    static void checkWindowFrameType(const WindowTransform * transform)
+    {
+        if (transform->order_by_indices.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's window frame must have order by clause");
+        if (transform->window_description.frame.type != WindowFrame::FrameType::ROWS)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame type must be ROWS");
+        }
+        if (transform->window_description.frame.begin_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame start type must be UNBOUNDED PRECEDING");
+        }
+
+        if (transform->window_description.frame.end_type != WindowFrame::BoundaryType::Unbounded)
+        {
+            // We must wait all for the partition end and get the total rows number in this
+            // partition. So before the end of this partition, there is no any block could be
+            // dropped out.
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's frame end type must be UNBOUNDED FOLLOWING");
+        }
+    }
+};
+
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
 struct WindowFunctionLagLeadInFrame final : public WindowFunction
@@ -2335,6 +2475,13 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
+                parameters);
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+
+    factory.registerFunction("ntile", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionNtile>(name, argument_types,
                 parameters);
         }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
