@@ -125,7 +125,8 @@ public:
     {
         if (kind != FunctionKind::ORDINARY)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-              "Function node with name '{}' is not resolved as ordinary function");
+              "Function node with name '{}' is not resolved as ordinary function",
+              function_name);
 
         return std::static_pointer_cast<const IFunctionBase>(function);
     }

@@ -533,23 +533,34 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
 {
     const auto & [database_name, storage, storage_lock, table_name] = storage_with_lock_and_name;
     const StorageID current_storage_id = storage->getStorageID();
-    bool is_storage_merge_engine = storage->as<StorageMerge>();
 
     SelectQueryInfo modified_query_info = query_info;
 
     if (modified_query_info.table_expression)
     {
         auto replacement_table_expression = std::make_shared<TableNode>(storage, storage_lock, storage_snapshot);
+        if (query_info.table_expression_modifiers)
+            replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
+
         modified_query_info.query_tree = modified_query_info.query_tree->cloneAndReplace(modified_query_info.table_expression,
             replacement_table_expression);
         modified_query_info.table_expression = replacement_table_expression;
+        modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
-        if (!is_storage_merge_engine)
-        {
-            std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+        if (storage_snapshot->storage.supportsSubcolumns())
+            get_column_options.withSubcolumns();
+
+        std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+
+        if (!storage_snapshot->tryGetColumn(get_column_options, "_table"))
             column_name_to_node.emplace("_table", std::make_shared<ConstantNode>(current_storage_id.table_name));
+
+        if (!storage_snapshot->tryGetColumn(get_column_options, "_database"))
             column_name_to_node.emplace("_database", std::make_shared<ConstantNode>(current_storage_id.database_name));
 
+        if (!column_name_to_node.empty())
+        {
             replaceColumns(modified_query_info.query_tree,
                 replacement_table_expression,
                 column_name_to_node);
@@ -559,6 +570,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & quer
     }
     else
     {
+        bool is_storage_merge_engine = storage->as<StorageMerge>();
         modified_query_info.query = query_info.query->clone();
 
         /// Original query could contain JOIN but we need only the first joined table and its columns.
@@ -585,7 +597,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     const Block & header,
     const Aliases & aliases,
     const StorageWithLockAndName & storage_with_lock,
-    Names & real_column_names,
+    Names real_column_names,
     ContextMutablePtr modified_context,
     size_t streams_num,
     bool concat_streams)
@@ -604,88 +616,88 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         modified_select.setFinal();
     }
 
-    if (modified_context->getSettingsRef().allow_experimental_analyzer)
+    bool allow_experimental_analyzer = modified_context->getSettingsRef().allow_experimental_analyzer;
+
+    auto storage_stage = storage->getQueryProcessingStage(modified_context,
+        QueryProcessingStage::Complete,
+        storage_snapshot,
+        modified_query_info);
+    if (processed_stage <= storage_stage || (allow_experimental_analyzer && processed_stage == QueryProcessingStage::FetchColumns))
     {
-        InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query,
-            modified_context,
-            SelectQueryOptions(processed_stage).ignoreProjections(),
-            storage);
-        builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
+        /// If there are only virtual columns in query, you must request at least one other column.
+        if (real_column_names.empty())
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+
+        QueryPlan plan;
+
+        StorageView * view = dynamic_cast<StorageView *>(storage.get());
+        if (!view || allow_experimental_analyzer)
+        {
+            storage->read(plan,
+                real_column_names,
+                storage_snapshot,
+                modified_query_info,
+                modified_context,
+                processed_stage,
+                max_block_size,
+                UInt32(streams_num));
+        }
+        else
+        {
+            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
+            /// The most intuitive way is to use InterpreterSelectQuery.
+
+            /// Intercept the settings
+            modified_context->setSetting("max_threads", streams_num);
+            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+            modified_context->setSetting("max_block_size", max_block_size);
+
+            InterpreterSelectQuery interpreter(modified_query_info.query,
+                modified_context,
+                storage,
+                view->getInMemoryMetadataPtr(),
+                SelectQueryOptions(processed_stage));
+            interpreter.buildQueryPlan(plan);
+        }
+
+        if (!plan.isInitialized())
+            return {};
+
+        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
+            read_from_merge_tree->addFilterNodes(added_filter_nodes);
+
+        builder = plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(modified_context),
+            BuildQueryPipelineSettings::fromContext(modified_context));
+    }
+    else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
+    {
+        /// Maximum permissible parallelism is streams_num
+        modified_context->setSetting("max_threads", streams_num);
+        modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+
+        if (allow_experimental_analyzer)
+        {
+            InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
+                modified_context,
+                SelectQueryOptions(processed_stage).ignoreProjections());
+            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
+        }
+        else
+        {
+            modified_select.replaceDatabaseAndTable(database_name, table_name);
+            /// TODO: Find a way to support projections for StorageMerge
+            InterpreterSelectQuery interpreter{modified_query_info.query,
+                modified_context,
+                SelectQueryOptions(processed_stage).ignoreProjections()};
+            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
+        }
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
         builder->addSimpleTransform([](const Block & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
-    }
-    else
-    {
-        auto storage_stage
-            = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, storage_snapshot, modified_query_info);
-        if (processed_stage <= storage_stage)
-        {
-            /// If there are only virtual columns in query, you must request at least one other column.
-            if (real_column_names.empty())
-                real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
-
-            QueryPlan plan;
-            if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
-            {
-                /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
-                /// The most intuitive way is to use InterpreterSelectQuery.
-
-                /// Intercept the settings
-                modified_context->setSetting("max_threads", streams_num);
-                modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
-                modified_context->setSetting("max_block_size", max_block_size);
-
-                InterpreterSelectQuery(
-                    modified_query_info.query, modified_context, storage, view->getInMemoryMetadataPtr(), SelectQueryOptions(processed_stage))
-                    .buildQueryPlan(plan);
-            }
-            else
-            {
-                storage->read(
-                    plan,
-                    real_column_names,
-                    storage_snapshot,
-                    modified_query_info,
-                    modified_context,
-                    processed_stage,
-                    max_block_size,
-                    UInt32(streams_num));
-            }
-
-            if (!plan.isInitialized())
-                return {};
-
-            if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-                read_from_merge_tree->addFilterNodes(added_filter_nodes);
-
-            builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(modified_context),
-                BuildQueryPipelineSettings::fromContext(modified_context));
-        }
-        else if (processed_stage > storage_stage)
-        {
-            modified_select.replaceDatabaseAndTable(database_name, table_name);
-
-            /// Maximum permissible parallelism is streams_num
-            modified_context->setSetting("max_threads", streams_num);
-            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
-
-            /// TODO: Find a way to support projections for StorageMerge
-            InterpreterSelectQuery interpreter{
-                modified_query_info.query, modified_context, SelectQueryOptions(processed_stage).ignoreProjections()};
-
-            builder = std::make_unique<QueryPipelineBuilder>(interpreter.buildQueryPipeline());
-
-            /** Materialization is needed, since from distributed storage the constants come materialized.
-              * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
-              * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
-              */
-            builder->addSimpleTransform([](const Block & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
-        }
     }
 
     if (builder->initialized())
@@ -739,7 +751,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, *builder);
+        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, *builder, processed_stage);
     }
 
     return builder;
@@ -914,7 +926,8 @@ void ReadFromMerge::convertingSourceStream(
     const StorageMetadataPtr & metadata_snapshot,
     const Aliases & aliases,
     ContextPtr local_context,
-    QueryPipelineBuilder & builder)
+    QueryPipelineBuilder & builder,
+    const QueryProcessingStage::Enum & processed_stage)
 {
     Block before_block_header = builder.getHeader();
 
@@ -940,7 +953,7 @@ void ReadFromMerge::convertingSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    if (local_context->getSettingsRef().allow_experimental_analyzer)
+    if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns)
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
