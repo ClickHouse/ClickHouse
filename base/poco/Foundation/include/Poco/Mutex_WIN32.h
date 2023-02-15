@@ -18,26 +18,27 @@
 #define Foundation_Mutex_WIN32_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API MutexImpl
 {
 protected:
-	MutexImpl();
-	~MutexImpl();
-	void lockImpl();
-	bool tryLockImpl();
-	bool tryLockImpl(long milliseconds);
-	void unlockImpl();
-	
+    MutexImpl();
+    ~MutexImpl();
+    void lockImpl();
+    bool tryLockImpl();
+    bool tryLockImpl(long milliseconds);
+    void unlockImpl();
+
 private:
-	CRITICAL_SECTION _cs;
+    CRITICAL_SECTION _cs;
 };
 
 
@@ -49,33 +50,33 @@ typedef MutexImpl FastMutexImpl;
 //
 inline void MutexImpl::lockImpl()
 {
-	try
-	{
-		EnterCriticalSection(&_cs);
-	}
-	catch (...)
-	{
-		throw SystemException("cannot lock mutex");
-	}
+    try
+    {
+        EnterCriticalSection(&_cs);
+    }
+    catch (...)
+    {
+        throw SystemException("cannot lock mutex");
+    }
 }
 
 
 inline bool MutexImpl::tryLockImpl()
 {
-	try
-	{
-		return TryEnterCriticalSection(&_cs) != 0;
-	}
-	catch (...)
-	{
-	}
-	throw SystemException("cannot lock mutex");
+    try
+    {
+        return TryEnterCriticalSection(&_cs) != 0;
+    }
+    catch (...)
+    {
+    }
+    throw SystemException("cannot lock mutex");
 }
 
 
 inline void MutexImpl::unlockImpl()
 {
-	LeaveCriticalSection(&_cs);
+    LeaveCriticalSection(&_cs);
 }
 
 
