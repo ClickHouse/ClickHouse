@@ -886,7 +886,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     if (cgroupmem_limit_in_bytes || cgroupmem_usage_in_bytes || cgroupmem_v2_limit_in_bytes || cgroupmem_v2_usage_in_bytes)
     {
-        try {
+        try
+        {
             cgroupmem_limit_in_bytes->rewind();
             cgroupmem_usage_in_bytes->rewind();
 
@@ -896,9 +897,11 @@ void AsynchronousMetrics::update(TimePoint update_time)
             readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
             readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
 
-            if (!cgroup_mem_limit_in_bytes && !cgroup_mem_limit_in_bytes) {
+            if (!cgroup_mem_limit_in_bytes && !cgroup_mem_limit_in_bytes)
+            {
                 cgroupmem_v2_limit_in_bytes->rewind();
                 cgroupmem_v2_usage_in_bytes->rewind();
+
                 readText(cgroup_mem_limit_in_bytes, *cgroupmem_v2_limit_in_bytes);
                 readText(cgroup_mem_usage_in_bytes, *cgroupmem_v2_usage_in_bytes);
             }
