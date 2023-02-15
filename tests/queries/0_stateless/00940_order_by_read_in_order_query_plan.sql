@@ -4,6 +4,12 @@ create table tab (a UInt32, b UInt32, c UInt32, d UInt32) engine = MergeTree ord
 insert into tab select number, number, number, number from numbers(5);
 insert into tab select number, number, number, number from numbers(5);
 
+-- ubsan
+-- https://s3.amazonaws.com/clickhouse-test-reports/45461/29f8958590c990f52b14d0fa786d5374fed842e3/stateless_tests__ubsan__[1/2]/run.log
+
+-- tsan
+-- https://s3.amazonaws.com/clickhouse-test-reports/45461/29f8958590c990f52b14d0fa786d5374fed842e3/stateless_tests__tsan__s3_storage__[5/5].html
+
 -- { echoOn }
 
 -- Exact match, single key

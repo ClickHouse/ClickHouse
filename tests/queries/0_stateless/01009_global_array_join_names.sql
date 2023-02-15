@@ -19,3 +19,4 @@ WHERE 1;
 
 DROP TABLE test1;
 DROP TABLE test2;
+

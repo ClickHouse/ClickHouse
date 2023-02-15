@@ -1,5 +1,6 @@
 -- This is a regression test for EINTR handling in MultiplexedConnections::getReplicaForReading()
 
+
 select * from remote('127.{2,4}', view(
     -- This is the emulation of the slow query, the server will return a line each 0.1 second
     select sleep(0.1) from numbers(20) settings max_block_size=1)

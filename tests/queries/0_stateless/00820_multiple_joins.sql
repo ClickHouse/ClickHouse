@@ -9,6 +9,7 @@ CREATE TABLE table2 (a UInt32, b UInt32) ENGINE = Memory;
 CREATE TABLE table3 (b UInt32, c UInt32) ENGINE = Memory;
 CREATE TABLE table5 (a UInt32, b UInt32, c UInt32) ENGINE = Memory;
 
+
 INSERT INTO table1 SELECT number FROM numbers(21);
 INSERT INTO table2 SELECT number * 2, number * 20 FROM numbers(11);
 INSERT INTO table3 SELECT number * 30, number * 300 FROM numbers(10);
