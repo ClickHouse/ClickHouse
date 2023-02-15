@@ -266,7 +266,7 @@ void RabbitMQProducer::startProducingTaskLoop()
 }
 
 
-bool RabbitMQProducer::iterateEventLoop()
+int RabbitMQProducer::iterateEventLoop()
 {
     return connection.getHandler().iterateLoop();
 }
