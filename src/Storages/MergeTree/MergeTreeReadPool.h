@@ -14,6 +14,7 @@
 namespace DB
 {
 
+
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
 
@@ -115,21 +116,6 @@ public:
 
     BackoffSettings backoff_settings;
 
-private:
-    /** State to track numbers of slow reads.
-      */
-    struct BackoffState
-    {
-        size_t current_threads;
-        Stopwatch time_since_prev_event {CLOCK_MONOTONIC_COARSE};
-        size_t num_events = 0;
-
-        explicit BackoffState(size_t threads) : current_threads(threads) {}
-    };
-
-    BackoffState backoff_state;
-
-public:
     MergeTreeReadPool(
         size_t threads_,
         size_t sum_marks_,
@@ -144,6 +130,7 @@ public:
         bool do_not_steal_tasks_ = false);
 
     ~MergeTreeReadPool() override = default;
+
     MergeTreeReadTaskPtr getTask(size_t thread) override;
 
     /** Each worker could call this method and pass information about read performance.
@@ -159,6 +146,26 @@ private:
     void fillPerThreadInfo(
         size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
         const RangesInDataParts & parts);
+
+    /// State to track numbers of slow reads.
+    struct BackoffState
+    {
+        size_t current_threads;
+        Stopwatch time_since_prev_event {CLOCK_MONOTONIC_COARSE};
+        size_t num_events = 0;
+
+        explicit BackoffState(size_t threads) : current_threads(threads) {}
+    };
+
+    BackoffState backoff_state;
+
+    struct Part
+    {
+        MergeTreeData::DataPartPtr data_part;
+        size_t part_index_in_query;
+    };
+
+    std::vector<Part> parts_with_idx;
 
     struct ThreadTask
     {

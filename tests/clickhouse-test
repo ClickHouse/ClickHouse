@@ -4,7 +4,6 @@
 # pylint: disable=global-variable-not-assigned
 # pylint: disable=too-many-lines
 # pylint: disable=anomalous-backslash-in-string
-# pylint: disable=raise-missing-from
 
 import enum
 from queue import Full
@@ -77,7 +76,10 @@ def trim_for_log(s):
     if not s:
         return s
     lines = s.splitlines()
-    return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    if len(lines) > 100:
+        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    else:
+        return "\n".join(lines)
 
 
 class HTTPError(Exception):
@@ -121,7 +123,6 @@ def clickhouse_execute_http(
     if default_format is not None:
         params["default_format"] = default_format
 
-    error_message = ""
     for i in range(max_http_retries):
         try:
             client.request(
@@ -132,9 +133,8 @@ def clickhouse_execute_http(
             data = res.read()
             break
         except Exception as ex:
-            error_message += "\tAttempt {} failed: {}\n{}\n".format(i, str(ex), traceback.format_exc())
             if i == max_http_retries - 1:
-                raise Exception("Failed to send a request after {} retries:\n{}".format(max_http_retries, error_message))
+                raise ex
 
             sleep(i + 1)
 
@@ -942,7 +942,9 @@ class TestCase:
             description += "\n"
             description += trim_for_log(stderr)
             description += "\n"
-            description += f"\nstdout:\n{stdout}\n"
+            description += "\nstdout:\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
