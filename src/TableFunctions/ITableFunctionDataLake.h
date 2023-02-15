@@ -5,17 +5,10 @@
 #if USE_AWS_S3
 
 #    include <TableFunctions/ITableFunction.h>
-#    include <filesystem>
 #    include <Access/Common/AccessFlags.h>
 #    include <Formats/FormatFactory.h>
-#    include <IO/S3Common.h>
 #    include <Interpreters/Context.h>
-#    include <Interpreters/evaluateConstantExpression.h>
 #    include <Interpreters/parseColumnsListForTableFunction.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Storages/ExternalDataSourceConfiguration.h>
-#    include <Storages/StorageURL.h>
-#    include <Storages/checkAndGetLiteralArgument.h>
 #    include <TableFunctions/TableFunctionS3.h>
 
 namespace DB

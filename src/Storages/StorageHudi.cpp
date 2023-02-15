@@ -6,11 +6,7 @@
 #include <Common/logger_useful.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/S3/Requests.h>
-#include <IO/ReadHelpers.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <aws/core/auth/AWSCredentials.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -96,7 +92,9 @@ std::vector<std::string> HudiMetadataParser<Configuration, MetadataReadHelper>::
 
 template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser(
     const StorageS3::Configuration & configuration_, ContextPtr context_);
+
 template std::vector<String> HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles() const;
+
 template String HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::generateQueryFromKeys(
     const std::vector<String> & keys, const String & format);
 

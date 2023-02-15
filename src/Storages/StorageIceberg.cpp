@@ -8,17 +8,9 @@
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/IColumn.h>
 
-#    include <IO/ReadHelpers.h>
-#    include <IO/ReadSettings.h>
-
 #    include <Storages/StorageFactory.h>
-#    include <Storages/checkAndGetLiteralArgument.h>
 
 #    include <Formats/FormatFactory.h>
-
-#    include <aws/core/auth/AWSCredentials.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/ListObjectsV2Request.h>
 
 #    include <fmt/format.h>
 
@@ -227,13 +219,19 @@ String IcebergMetadataParser<Configuration, MetadataReadHelper>::generateQueryFr
 
 template IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::IcebergMetadataParser(
     const StorageS3::Configuration & configuration_, ContextPtr context_);
+
 template std::vector<String> IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles() const;
+
 template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::generateQueryFromKeys(
     const std::vector<String> & keys, const String & format);
+
 template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getNewestMetaFile() const;
+
 template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getManiFestList(const String & metadata_name) const;
+
 template std::vector<String>
 IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getManifestFiles(const String & manifest_list) const;
+
 template std::vector<String>
 IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFilesForRead(const std::vector<String> & manifest_files) const;
 

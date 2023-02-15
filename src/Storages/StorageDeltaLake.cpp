@@ -4,16 +4,9 @@
 #include <Storages/StorageDeltaLake.h>
 #include <Common/logger_useful.h>
 
-#include <IO/ReadBufferFromS3.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
-#include <IO/S3/Requests.h>
-
 #include <Storages/StorageFactory.h>
 
 #include <Formats/FormatFactory.h>
-
-#include <aws/core/auth/AWSCredentials.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -134,11 +127,16 @@ String DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::generateQuery
 
 template DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::DeltaLakeMetadataParser(
     const StorageS3::Configuration & configuration_, ContextPtr context);
+
 template std::vector<String> DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles();
+
 template String DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::generateQueryFromKeys(
     const std::vector<String> & keys, const String & format);
+
 template void DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::init(ContextPtr context);
+
 template std::vector<String> DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getJsonLogFiles() const;
+
 template void DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::handleJSON(const JSON & json);
 
 void registerStorageDeltaLake(StorageFactory & factory)
