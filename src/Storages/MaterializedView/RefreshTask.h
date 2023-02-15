@@ -85,9 +85,11 @@ private:
 
     ExecutionResult executeRefresh();
 
-    void initializeRefresh(std::shared_ptr<StorageMaterializedView> view);
+    void initializeRefresh(std::shared_ptr<const StorageMaterializedView> view);
 
     void completeRefresh(std::shared_ptr<StorageMaterializedView> view);
+
+    void cancelRefresh(std::shared_ptr<const StorageMaterializedView> view);
 
     std::chrono::sys_seconds calculateRefreshTime(std::chrono::system_clock::time_point now) const;
 

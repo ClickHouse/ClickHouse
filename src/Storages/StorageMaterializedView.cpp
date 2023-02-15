@@ -285,7 +285,7 @@ bool StorageMaterializedView::optimize(
     return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
 }
 
-std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefreshQuery()
+StorageID StorageMaterializedView::createFreshTable() const
 {
     auto inner_table_id = getTargetTableId();
     auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
@@ -305,26 +305,29 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefreshQuery()
     create_interpreter.setInternal(true);
     create_interpreter.execute();
 
-    auto insert_query = std::make_shared<ASTInsertQuery>();
-    insert_query->setTable(new_table_name);
-    insert_query->setDatabase(db->getDatabaseName());
-    insert_query->select = getInMemoryMetadataPtr()->getSelectQuery().select_query;
+    return DatabaseCatalog::instance().getTable({create_query.getDatabase(), create_query.getTable()}, getContext())->getStorageID();
+}
 
+std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefreshQuery() const
+{
+    auto insert_query = std::make_shared<ASTInsertQuery>();
+    insert_query->select = getInMemoryMetadataPtr()->getSelectQuery().select_query;
     return insert_query;
 }
 
-void StorageMaterializedView::updateInnerTableAfterRefresh(std::shared_ptr<ASTInsertQuery> refresh_query)
+StorageID StorageMaterializedView::exchangeTargetTable(const StorageID & fresh_table)
 {
-    auto inner_table_id = getTargetTableId();
+    auto stale_table_id = getTargetTableId();
 
-    auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
-    auto target_db = DatabaseCatalog::instance().getDatabase(refresh_query->getDatabase());
+    auto db = DatabaseCatalog::instance().getDatabase(stale_table_id.database_name);
+    auto target_db = DatabaseCatalog::instance().getDatabase(fresh_table.database_name);
 
     auto rename_ctx = Context::createCopy(getContext());
     target_db->renameTable(
-        rename_ctx, refresh_query->getTable(), *db, inner_table_id.table_name, /*exchange=*/true, /*dictionary=*/false);
+        rename_ctx, fresh_table.table_name, *db, stale_table_id.table_name, /*exchange=*/true, /*dictionary=*/false);
 
-    setTargetTableId(db->getTable(refresh_query->getTable(), getContext())->getStorageID());
+    setTargetTableId(fresh_table);
+    return stale_table_id;
 }
 
 void StorageMaterializedView::alter(
