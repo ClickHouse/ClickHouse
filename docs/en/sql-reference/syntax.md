@@ -180,7 +180,7 @@ SELECT * FROM {mytablename:Identifier};
 ```
 
 :::note
-Query parameters are not general text substitutions which can be used in arbitary places in arbitrary SQL queries. They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
+Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries. They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
 :::
 
 ## Functions
