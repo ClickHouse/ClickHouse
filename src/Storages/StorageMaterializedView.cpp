@@ -315,7 +315,7 @@ std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefreshQuery() c
     return insert_query;
 }
 
-StorageID StorageMaterializedView::exchangeTargetTable(const StorageID & fresh_table)
+StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table)
 {
     auto stale_table_id = getTargetTableId();
 
@@ -326,7 +326,9 @@ StorageID StorageMaterializedView::exchangeTargetTable(const StorageID & fresh_t
     target_db->renameTable(
         rename_ctx, fresh_table.table_name, *db, stale_table_id.table_name, /*exchange=*/true, /*dictionary=*/false);
 
-    setTargetTableId(fresh_table);
+    std::swap(stale_table_id.database_name, fresh_table.database_name);
+    std::swap(stale_table_id.table_name, fresh_table.table_name);
+    setTargetTableId(std::move(fresh_table));
     return stale_table_id;
 }
 

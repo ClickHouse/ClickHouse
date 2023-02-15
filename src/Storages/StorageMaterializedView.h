@@ -121,7 +121,7 @@ private:
 
     StorageID createFreshTable() const;
     std::shared_ptr<ASTInsertQuery> prepareRefreshQuery() const;
-    StorageID exchangeTargetTable(const StorageID & fresh_table);
+    StorageID exchangeTargetTable(StorageID fresh_table);
 
     StorageID getTargetTableId() const;
     void setTargetTableId(StorageID id);

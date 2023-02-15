@@ -188,6 +188,11 @@ RefreshTask::ExecutionResult RefreshTask::executeRefresh()
     while (!interrupt_execution.load() && not_finished)
         not_finished = refresh_executor->executeStep(interrupt_execution);
 
+    auto defer = make_scope_guard([this]
+                                  {
+                                      canceled.store(false);
+                                      interrupt_execution.store(false);
+                                  });
     if (!not_finished)
         return ExecutionResult::Finished;
     if (interrupt_execution.load() && !canceled.load())
@@ -205,9 +210,6 @@ void RefreshTask::initializeRefresh(std::shared_ptr<const StorageMaterializedVie
     auto refresh_context = Context::createCopy(view->getContext());
     refresh_block = InterpreterInsertQuery(refresh_query, refresh_context).execute();
     refresh_block->pipeline.setProgressCallback([this](const Progress & progress){ progressCallback(progress); });
-
-    canceled.store(false);
-    interrupt_execution.store(false);
 
     refresh_executor.emplace(refresh_block->pipeline);
 }
