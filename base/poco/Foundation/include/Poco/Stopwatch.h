@@ -18,51 +18,52 @@
 #define Foundation_Stopwatch_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/Clock.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API Stopwatch
-	/// A simple facility to measure time intervals
-	/// with microsecond resolution.
+/// A simple facility to measure time intervals
+/// with microsecond resolution.
 {
 public:
-	Stopwatch();
-	~Stopwatch();
+    Stopwatch();
+    ~Stopwatch();
 
-	void start();
-		/// Starts (or restarts) the stopwatch.
-		
-	void stop();
-		/// Stops or pauses the stopwatch.
-	
-	void reset();
-		/// Resets the stopwatch.
-		
-	void restart();
-		/// Resets and starts the stopwatch.
-		
-	Clock::ClockDiff elapsed() const;
-		/// Returns the elapsed time in microseconds
-		/// since the stopwatch started.
-		
-	int elapsedSeconds() const;
-		/// Returns the number of seconds elapsed
-		/// since the stopwatch started.
+    void start();
+    /// Starts (or restarts) the stopwatch.
 
-	static Clock::ClockVal resolution();
-		/// Returns the resolution of the stopwatch.
+    void stop();
+    /// Stops or pauses the stopwatch.
+
+    void reset();
+    /// Resets the stopwatch.
+
+    void restart();
+    /// Resets and starts the stopwatch.
+
+    Clock::ClockDiff elapsed() const;
+    /// Returns the elapsed time in microseconds
+    /// since the stopwatch started.
+
+    int elapsedSeconds() const;
+    /// Returns the number of seconds elapsed
+    /// since the stopwatch started.
+
+    static Clock::ClockVal resolution();
+    /// Returns the resolution of the stopwatch.
 
 private:
-	Stopwatch(const Stopwatch&);
-	Stopwatch& operator = (const Stopwatch&);
+    Stopwatch(const Stopwatch &);
+    Stopwatch & operator=(const Stopwatch &);
 
-	Clock            _start;
-	Clock::ClockDiff _elapsed;
-	bool             _running;
+    Clock _start;
+    Clock::ClockDiff _elapsed;
+    bool _running;
 };
 
 
@@ -71,34 +72,34 @@ private:
 //
 inline void Stopwatch::start()
 {
-	if (!_running)
-	{
-		_start.update();
-		_running = true;
-	}
+    if (!_running)
+    {
+        _start.update();
+        _running = true;
+    }
 }
 
 
 inline void Stopwatch::stop()
 {
-	if (_running)
-	{
-		Clock current;
-		_elapsed += current - _start;
-		_running = false;
-	}
+    if (_running)
+    {
+        Clock current;
+        _elapsed += current - _start;
+        _running = false;
+    }
 }
 
 
 inline int Stopwatch::elapsedSeconds() const
 {
-	return int(elapsed()/resolution());
+    return int(elapsed() / resolution());
 }
 
 
 inline Clock::ClockVal Stopwatch::resolution()
 {
-	return Clock::resolution();
+    return Clock::resolution();
 }
 
 
