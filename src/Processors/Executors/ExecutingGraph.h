@@ -6,6 +6,7 @@
 #include <mutex>
 #include <queue>
 #include <stack>
+#include <vector>
 
 
 namespace DB
@@ -152,6 +153,7 @@ private:
     bool expandPipeline(std::stack<uint64_t> & stack, uint64_t pid);
 
     std::shared_ptr<Processors> processors;
+    std::vector<bool> source_processors;
     std::mutex processors_mutex;
 
     UpgradableMutex nodes_mutex;
