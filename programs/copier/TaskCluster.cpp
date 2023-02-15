@@ -19,7 +19,7 @@ void DB::TaskCluster::loadTasks(const Poco::Util::AbstractConfiguration & config
 
     clusters_prefix = prefix + "remote_servers";
     if (!config.has(clusters_prefix))
-        throw Exception("You should specify list of clusters in " + clusters_prefix, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You should specify list of clusters in {}", clusters_prefix);
 
     Poco::Util::AbstractConfiguration::Keys tables_keys;
     config.keys(prefix + "tables", tables_keys);
@@ -67,7 +67,7 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     set_default_value(settings_pull.preferred_block_size_bytes, 0);
 
     set_default_value(settings_push.insert_distributed_timeout, 0);
-    set_default_value(settings_push.replication_alter_partitions_sync, 2);
+    set_default_value(settings_push.alter_sync, 2);
 }
 
 }

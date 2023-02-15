@@ -1,5 +1,5 @@
 SET allow_experimental_analyzer = 1;
-SET optimize_syntax_fuse_functions = 1, optimize_fuse_sum_count_avg = 1;
+SET optimize_syntax_fuse_functions = 1;
 
 DROP TABLE IF EXISTS fuse_tbl;
 

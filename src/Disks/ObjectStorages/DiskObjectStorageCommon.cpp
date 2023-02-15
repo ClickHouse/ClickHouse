@@ -13,7 +13,7 @@ static String getDiskMetadataPath(
     const String & config_prefix,
     ContextPtr context)
 {
-    return config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
+    return config.getString(config_prefix + ".metadata_path", fs::path(context->getPath()) / "disks" / name / "");
 }
 
 std::pair<String, DiskPtr> prepareForLocalMetadata(

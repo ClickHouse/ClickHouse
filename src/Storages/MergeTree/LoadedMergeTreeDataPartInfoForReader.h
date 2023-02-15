@@ -27,6 +27,10 @@ public:
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
 
+    const ColumnsDescription & getColumnsDescription() const override { return data_part->getColumnsDescription(); }
+
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const override { return data_part->getColumnsDescriptionWithCollectedNested(); }
+
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
     AlterConversions getAlterConversions() const override { return data_part->storage.getAlterConversionsForPart(data_part); }

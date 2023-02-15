@@ -156,7 +156,7 @@ void MergeTreeSink::finishDelayedChunk()
                 if (!res.second)
                 {
                     ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
+                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
                     continue;
                 }
             }
