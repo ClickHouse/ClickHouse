@@ -15,7 +15,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Stores the ist of columns required to compute a node in the DAG.
+/// Stores the list of columns required to compute a node in the DAG.
 struct NodeInfo
 {
     NameSet required_columns;
