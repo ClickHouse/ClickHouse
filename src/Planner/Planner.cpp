@@ -979,34 +979,28 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    const SelectQueryOptions & select_query_options_,
-    PlannerConfiguration planner_configuration_)
+    const SelectQueryOptions & select_query_options_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options, std::make_shared<GlobalPlannerContext>()))
-    , planner_configuration(std::move(planner_configuration_))
 {
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     const SelectQueryOptions & select_query_options_,
-    GlobalPlannerContextPtr global_planner_context_,
-    PlannerConfiguration planner_configuration_)
+    GlobalPlannerContextPtr global_planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree_, select_query_options, std::move(global_planner_context_)))
-    , planner_configuration(std::move(planner_configuration_))
 {
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     const SelectQueryOptions & select_query_options_,
-    PlannerContextPtr planner_context_,
-    PlannerConfiguration planner_configuration_)
+    PlannerContextPtr planner_context_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(std::move(planner_context_))
-    , planner_configuration(std::move(planner_configuration_))
 {
 }
 
@@ -1015,7 +1009,7 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
-    if (query_tree->as<UnionNode>())
+    if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
         buildPlanForUnionNode();
     else
         buildPlanForQueryNode();
@@ -1174,7 +1168,7 @@ void Planner::buildPlanForQueryNode()
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
-    if (planner_configuration.only_analyze)
+    if (select_query_options.only_analyze)
     {
         Block join_tree_block;
 

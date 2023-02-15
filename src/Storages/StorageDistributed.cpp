@@ -736,9 +736,7 @@ void StorageDistributed::read(
 
         query_ast = queryNodeToSelectQuery(query_tree_with_replaced_distributed_table);
 
-        Planner planner(query_tree_with_replaced_distributed_table,
-            SelectQueryOptions(processed_stage),
-            PlannerConfiguration{.only_analyze = true});
+        Planner planner(query_tree_with_replaced_distributed_table, SelectQueryOptions(processed_stage).analyze());
         planner.buildQueryPlanIfNeeded();
 
         header = planner.getQueryPlan().getCurrentDataStream().header;
