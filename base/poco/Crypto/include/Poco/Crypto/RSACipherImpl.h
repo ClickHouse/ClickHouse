@@ -18,60 +18,63 @@
 #define Crypto_RSACipherImpl_INCLUDED
 
 
-#include "Poco/Crypto/Crypto.h"
-#include "Poco/Crypto/Cipher.h"
-#include "Poco/Crypto/RSAKey.h"
-#include "Poco/Crypto/OpenSSLInitializer.h"
 #include <openssl/evp.h>
+#include "Poco/Crypto/Cipher.h"
+#include "Poco/Crypto/Crypto.h"
+#include "Poco/Crypto/OpenSSLInitializer.h"
+#include "Poco/Crypto/RSAKey.h"
 
 
-namespace Poco {
-namespace Crypto {
-
-
-class RSACipherImpl: public Cipher
-	/// An implementation of the Cipher class for 
-	/// asymmetric (public-private key) encryption
-	/// based on the the RSA algorithm in OpenSSL's 
-	/// crypto library.
-	///
-	/// Encryption is using the public key, decryption
-	/// requires the private key.
+namespace Poco
 {
-public:
-	RSACipherImpl(const RSAKey& key, RSAPaddingMode paddingMode);
-		/// Creates a new RSACipherImpl object for the given RSAKey
-		/// and using the given padding mode.
-
-	virtual ~RSACipherImpl();
-		/// Destroys the RSACipherImpl.
-
-	const std::string& name() const;
-		/// Returns the name of the Cipher.
-	
-	CryptoTransform* createEncryptor();
-		/// Creates an encryptor object.
-
-	CryptoTransform* createDecryptor();
-		/// Creates a decryptor object.
-
-private:
-	RSAKey _key;
-	RSAPaddingMode _paddingMode;
-	OpenSSLInitializer _openSSLInitializer;
-};
-
-
-//
-// Inlines
-//
-inline const std::string& RSACipherImpl::name() const
+namespace Crypto
 {
-	return _key.name();
+
+
+    class RSACipherImpl : public Cipher
+    /// An implementation of the Cipher class for
+    /// asymmetric (public-private key) encryption
+    /// based on the the RSA algorithm in OpenSSL's
+    /// crypto library.
+    ///
+    /// Encryption is using the public key, decryption
+    /// requires the private key.
+    {
+    public:
+        RSACipherImpl(const RSAKey & key, RSAPaddingMode paddingMode);
+        /// Creates a new RSACipherImpl object for the given RSAKey
+        /// and using the given padding mode.
+
+        virtual ~RSACipherImpl();
+        /// Destroys the RSACipherImpl.
+
+        const std::string & name() const;
+        /// Returns the name of the Cipher.
+
+        CryptoTransform * createEncryptor();
+        /// Creates an encryptor object.
+
+        CryptoTransform * createDecryptor();
+        /// Creates a decryptor object.
+
+    private:
+        RSAKey _key;
+        RSAPaddingMode _paddingMode;
+        OpenSSLInitializer _openSSLInitializer;
+    };
+
+
+    //
+    // Inlines
+    //
+    inline const std::string & RSACipherImpl::name() const
+    {
+        return _key.name();
+    }
+
+
 }
-
-
-} } // namespace Poco::Crypto
+} // namespace Poco::Crypto
 
 
 #endif // Crypto_RSACipherImpl_INCLUDED
