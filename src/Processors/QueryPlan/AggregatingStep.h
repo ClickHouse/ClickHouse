@@ -40,7 +40,8 @@ public:
         SortDescription sort_description_for_merging_,
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_,
-        bool memory_bound_merging_of_aggregation_results_enabled_);
+        bool memory_bound_merging_of_aggregation_results_enabled_,
+        bool explicit_sorting_required_for_aggregation_in_order_);
 
     static Block appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls);
 
@@ -56,6 +57,7 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
     bool inOrder() const { return !sort_description_for_merging.empty(); }
+    bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
@@ -84,6 +86,7 @@ private:
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
+    bool explicit_sorting_required_for_aggregation_in_order;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;

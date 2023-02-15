@@ -17,10 +17,10 @@ Supported platforms:
 
 The following tutorial is based on the Ubuntu Linux system. With appropriate changes, it should also work on any other Linux distribution.
 
-### Install Git, CMake, Python and Ninja {#install-git-cmake-python-and-ninja}
+### Install Prerequisites {#install-prerequisites}
 
 ``` bash
-sudo apt-get install git cmake ccache python3 ninja-build
+sudo apt-get install git cmake ccache python3 ninja-build yasm gawk
 ```
 
 Or cmake3 instead of cmake on older systems.
@@ -87,13 +87,15 @@ The build requires the following components:
 -   Ninja
 -   C++ compiler: clang-14 or newer
 -   Linker: lld
+-   Yasm
+-   Gawk
 
 If all the components are installed, you may build in the same way as the steps above.
 
 Example for Ubuntu Eoan:
 ``` bash
 sudo apt update
-sudo apt install git cmake ninja-build clang++ python
+sudo apt install git cmake ninja-build clang++ python yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -102,7 +104,7 @@ ninja
 
 Example for OpenSUSE Tumbleweed:
 ``` bash
-sudo zypper install git cmake ninja clang-c++ python lld
+sudo zypper install git cmake ninja clang-c++ python lld yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -112,7 +114,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-sudo yum --nogpg install git cmake make clang python3 ccache
+sudo yum --nogpg install git cmake make clang python3 ccache yasm gawk
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
