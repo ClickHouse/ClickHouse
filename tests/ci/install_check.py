@@ -36,6 +36,8 @@ DEB_IMAGE = "clickhouse/install-deb-test"
 TEMP_PATH = Path(TEMP)
 SUCCESS = "success"
 FAILURE = "failure"
+OK = "OK"
+FAIL = "FAIL"
 
 
 def prepare_test_scripts():
@@ -156,9 +158,9 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
         with TeePopen(install_command, log_file) as process:
             retcode = process.wait()
             if retcode == 0:
-                status = SUCCESS
+                status = OK
             else:
-                status = FAILURE
+                status = FAIL
 
         subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
         test_results.append(
@@ -266,9 +268,11 @@ def main():
         test_results.extend(test_install_tgz(docker_images[RPM_IMAGE]))
 
     state = SUCCESS
+    test_status = OK
     description = "Packages installed successfully"
-    if FAILURE in (result.status for result in test_results):
+    if FAIL in (result.status for result in test_results):
         state = FAILURE
+        test_status = FAIL
         description = "Failed to install packages: " + ", ".join(
             result.name for result in test_results
         )
@@ -298,7 +302,7 @@ def main():
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
         test_results,
-        state,
+        test_status,
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         report_url,
