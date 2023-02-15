@@ -38,9 +38,6 @@
 #if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
 #include "Poco/SignalHandler.h"
 #endif
-#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-#include "Poco/UnicodeConverter.h"
-#endif
 
 
 using Poco::Logger;
@@ -131,19 +128,6 @@ void Application::init(int argc, char* argv[])
 }
 
 
-#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-void Application::init(int argc, wchar_t* argv[])
-{
-	std::vector<std::string> args;
-	for (int i = 0; i < argc; ++i)
-	{
-		std::string arg;
-		Poco::UnicodeConverter::toUTF8(argv[i], arg);
-		args.push_back(arg);
-	}
-	init(args);
-}
-#endif
 
 
 void Application::init(const ArgVec& args)

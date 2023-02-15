@@ -79,9 +79,6 @@
 //
 // Cleanup inconsistencies
 //
-#    ifdef POCO_WIN32_UTF8
-#        undef POCO_WIN32_UTF8
-#    endif
 
 
 //

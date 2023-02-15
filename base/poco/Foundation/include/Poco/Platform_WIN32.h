@@ -149,9 +149,7 @@
 #endif
 
 
-#if !defined(POCO_WIN32_UTF8)
 #    pragma message("Compiling POCO on Windows without #define POCO_WIN32_UTF8 is deprecated.")
-#endif
 
 
 // Turn off some annoying warnings

@@ -32,9 +32,6 @@
 #include <sys/stat.h>
 #include <fstream>
 #endif
-#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-#include "Poco/UnicodeConverter.h"
-#endif
 
 
 using Poco::NumberFormatter;

@@ -20,9 +20,6 @@
 	#include <unistd.h>
 	#include <signal.h>
 #endif
-#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-#include "Poco/UnicodeConverter.h"
-#endif
 
 
 // NOTE: In this module, we use the C library functions (fputs) for,
