@@ -70,6 +70,8 @@ public:
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
     virtual std::string getName() const = 0;
+    
+    static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps);
 
 protected:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
@@ -100,9 +102,6 @@ protected:
     /// Used for filling header with no rows as well as block with data
     static void
     injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
-
-public:
-    static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps = true);
 
 protected:
     static void initializeRangeReadersImpl(
