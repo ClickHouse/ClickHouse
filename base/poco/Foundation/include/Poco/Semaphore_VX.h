@@ -18,25 +18,26 @@
 #define Foundation_Semaphore_VX_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/Exception.h"
 #include <semLib.h>
+#include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API SemaphoreImpl
 {
 protected:
-	SemaphoreImpl(int n, int max);		
-	~SemaphoreImpl();
-	void setImpl();
-	void waitImpl();
-	bool waitImpl(long milliseconds);
-	
+    SemaphoreImpl(int n, int max);
+    ~SemaphoreImpl();
+    void setImpl();
+    void waitImpl();
+    bool waitImpl(long milliseconds);
+
 private:
-	SEM_ID _sem;
+    SEM_ID _sem;
 };
 
 
@@ -45,8 +46,8 @@ private:
 //
 inline void SemaphoreImpl::setImpl()
 {
-	if (semGive(_sem) != OK)
-		throw SystemException("cannot signal semaphore");
+    if (semGive(_sem) != OK)
+        throw SystemException("cannot signal semaphore");
 }
 
 

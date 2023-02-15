@@ -22,21 +22,22 @@
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API NamedEventImpl
 {
 protected:
-	NamedEventImpl(const std::string& name);	
-	~NamedEventImpl();
-	void setImpl();
-	void waitImpl();
-	
+    NamedEventImpl(const std::string & name);
+    ~NamedEventImpl();
+    void setImpl();
+    void waitImpl();
+
 private:
-	std::string  _name;
-	std::wstring _uname;
-	HANDLE      _event;	
+    std::string _name;
+    std::wstring _uname;
+    HANDLE _event;
 };
 
 
