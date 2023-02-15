@@ -49,9 +49,9 @@ private:
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
-    bool skip_unknown_columns;
-    bool null_as_default;
-    BlockMissingValues * block_missing_values;
+    bool skip_unknown_columns = false;
+    bool null_as_default = false;
+    BlockMissingValues * block_missing_values = nullptr;
 
     bool use_index = false;
     IndexForNativeFormat::Blocks::const_iterator index_block_it;
