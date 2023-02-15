@@ -7,12 +7,9 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
-#include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -21,8 +18,6 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
-#include <ranges>
 
 namespace DB
 {

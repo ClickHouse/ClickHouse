@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/StorageFactory.h>

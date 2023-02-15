@@ -6,23 +6,12 @@
 
 #    include <Common/logger_useful.h>
 
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/IColumn.h>
-
-#    include <IO/ReadBufferFromS3.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/ReadSettings.h>
-#    include <IO/S3Common.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Storages/NamedCollectionsHelpers.h>
 
 #    include <Storages/ExternalDataSourceConfiguration.h>
-#    include <Storages/StorageFactory.h>
 #    include <Storages/StorageURL.h>
 #    include <Storages/checkAndGetLiteralArgument.h>
-
-#    include <Formats/FormatFactory.h>
 
 #    include <aws/core/auth/AWSCredentials.h>
 #    include <aws/s3/S3Client.h>

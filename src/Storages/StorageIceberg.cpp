@@ -1,7 +1,6 @@
 #include "config.h"
 #if USE_AWS_S3
 
-#    include <Storages/NamedCollectionsHelpers.h>
 #    include <Storages/StorageIceberg.h>
 #    include <Common/logger_useful.h>
 
@@ -9,12 +8,9 @@
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/IColumn.h>
 
-#    include <IO/ReadBufferFromS3.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/ReadSettings.h>
-#    include <IO/S3Common.h>
 
-#    include <Storages/ExternalDataSourceConfiguration.h>
 #    include <Storages/StorageFactory.h>
 #    include <Storages/checkAndGetLiteralArgument.h>
 
@@ -24,11 +20,7 @@
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/ListObjectsV2Request.h>
 
-#    include <QueryPipeline/Pipe.h>
-
 #    include <fmt/format.h>
-#    include <fmt/ranges.h>
-#    include <ranges>
 
 #    include <Processors/Formats/Impl/AvroRowInputFormat.h>
 

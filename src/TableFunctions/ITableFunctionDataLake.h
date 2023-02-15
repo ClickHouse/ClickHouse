@@ -87,7 +87,7 @@ protected:
 
         auto & args = args_func.at(0)->children;
 
-        TableFunctionS3::parseArgumentsImpl<false>(message, args, context, configuration);
+        TableFunctionS3::parseArgumentsImpl(message, args, context, configuration, false);
 
         if (configuration.format == "auto")
             configuration.format = "Parquet";
