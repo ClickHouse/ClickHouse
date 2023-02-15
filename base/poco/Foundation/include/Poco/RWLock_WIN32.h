@@ -18,36 +18,37 @@
 #define Foundation_RWLock_WIN32_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API RWLockImpl
 {
 protected:
-	RWLockImpl();
-	~RWLockImpl();
-	void readLockImpl();
-	bool tryReadLockImpl();
-	void writeLockImpl();
-	bool tryWriteLockImpl();
-	void unlockImpl();
-	
-private:
-	void addWriter();
-	void removeWriter();
-	DWORD tryReadLockOnce();
+    RWLockImpl();
+    ~RWLockImpl();
+    void readLockImpl();
+    bool tryReadLockImpl();
+    void writeLockImpl();
+    bool tryWriteLockImpl();
+    void unlockImpl();
 
-	HANDLE   _mutex;
-	HANDLE   _readEvent;
-	HANDLE   _writeEvent;
-	unsigned _readers;
-	unsigned _writersWaiting;
-	unsigned _writers;
+private:
+    void addWriter();
+    void removeWriter();
+    DWORD tryReadLockOnce();
+
+    HANDLE _mutex;
+    HANDLE _readEvent;
+    HANDLE _writeEvent;
+    unsigned _readers;
+    unsigned _writersWaiting;
+    unsigned _writers;
 };
 
 
