@@ -18,28 +18,29 @@
 #define Foundation_RWLock_VX_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/Exception.h"
-#include <pthread.h>
 #include <errno.h>
+#include <pthread.h>
+#include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API RWLockImpl
 {
 protected:
-	RWLockImpl();
-	~RWLockImpl();
-	void readLockImpl();
-	bool tryReadLockImpl();
-	void writeLockImpl();
-	bool tryWriteLockImpl();
-	void unlockImpl();
-	
+    RWLockImpl();
+    ~RWLockImpl();
+    void readLockImpl();
+    bool tryReadLockImpl();
+    void writeLockImpl();
+    bool tryWriteLockImpl();
+    void unlockImpl();
+
 private:
-	pthread_mutex_t _mutex;
+    pthread_mutex_t _mutex;
 };
 
 
@@ -48,41 +49,39 @@ private:
 //
 inline void RWLockImpl::readLockImpl()
 {
-	if (pthread_mutex_lock(&_mutex)) 
-		throw SystemException("cannot lock mutex");
+    if (pthread_mutex_lock(&_mutex))
+        throw SystemException("cannot lock mutex");
 }
 
 
 inline bool RWLockImpl::tryReadLockImpl()
 {
-	int rc = pthread_mutex_trylock(&_mutex);
-	if (rc == 0)
-		return true;
-	else if (rc == EBUSY)
-		return false;
-	else
-		throw SystemException("cannot lock mutex");
-
+    int rc = pthread_mutex_trylock(&_mutex);
+    if (rc == 0)
+        return true;
+    else if (rc == EBUSY)
+        return false;
+    else
+        throw SystemException("cannot lock mutex");
 }
 
 
 inline void RWLockImpl::writeLockImpl()
 {
-	readLockImpl();
+    readLockImpl();
 }
 
 
 inline bool RWLockImpl::tryWriteLockImpl()
 {
-	return tryReadLockImpl();
-
+    return tryReadLockImpl();
 }
 
 
 inline void RWLockImpl::unlockImpl()
 {
-	if (pthread_mutex_unlock(&_mutex))
-		throw SystemException("cannot unlock mutex");
+    if (pthread_mutex_unlock(&_mutex))
+        throw SystemException("cannot unlock mutex");
 }
 
 
