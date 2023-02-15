@@ -488,7 +488,7 @@ void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(block);
+    output_format->setExtremes(materializeBlock(block));
 }
 
 
