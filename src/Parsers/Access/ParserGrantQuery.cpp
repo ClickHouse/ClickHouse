@@ -123,30 +123,30 @@ namespace
                 if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
                     return false;
 
-                String database_name, table_name, collection_name;
-                bool any_database = false, any_table = false, any_named_collection = true;
+                String database_name, table_name, parameter;
+                bool any_database = false, any_table = false, any_global_with_parameter = true;
 
-                size_t named_collection_access = 0;
+                size_t is_global_with_parameter = 0;
                 for (const auto & elem : access_and_columns)
                 {
-                    if (elem.first.isNamedCollectionAccess())
-                        ++named_collection_access;
+                    if (elem.first.isGlobalWithParameter())
+                        ++is_global_with_parameter;
                 }
 
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
 
-                if (named_collection_access && named_collection_access == access_and_columns.size())
+                if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
                 {
-                    ASTPtr collection;
+                    ASTPtr parameter_ast;
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     {
-                        any_named_collection = true;
+                        any_global_with_parameter = true;
                     }
-                    else if (ParserIdentifier{}.parse(pos, collection, expected))
+                    else if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
                     {
-                        any_named_collection = false;
-                        collection_name = getIdentifierName(collection);
+                        any_global_with_parameter = false;
+                        parameter = getIdentifierName(parameter_ast);
                     }
                     else
                         return false;
@@ -167,9 +167,9 @@ namespace
                     element.any_database = any_database;
                     element.database = database_name;
                     element.any_table = any_table;
-                    element.any_named_collection = any_named_collection;
-                    element.named_collection = collection_name;
+                    element.any_global_with_parameter = any_global_with_parameter;
                     element.table = table_name;
+                    element.parameter = parameter;
                     res_elements.emplace_back(std::move(element));
                 }
 
@@ -202,6 +202,8 @@ namespace
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", old_flags.toString());
             else if (!element.any_database)
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", old_flags.toString());
+            else if (!element.any_global_with_parameter)
+                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", old_flags.toString());
             else
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
         });

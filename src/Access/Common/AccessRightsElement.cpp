@@ -24,12 +24,12 @@ namespace
     void formatONClause(const AccessRightsElement & element, String & result)
     {
         result += "ON ";
-        if (element.isNamedCollectionAccess())
+        if (element.isGlobalWithParameter())
         {
-            if (element.any_named_collection)
+            if (element.any_global_with_parameter)
                 result += "*";
             else
-                result += backQuoteIfNeed(element.named_collection);
+                result += backQuoteIfNeed(element.parameter);
         }
         else if (element.any_database)
         {
@@ -206,6 +206,8 @@ void AccessRightsElement::eraseNonGrantable()
         access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
     else if (!any_database)
         access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+    else if (!any_global_with_parameter)
+        access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
     else
         access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
 }
