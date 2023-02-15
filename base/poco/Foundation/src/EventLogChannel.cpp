@@ -184,13 +184,6 @@ void EventLogChannel::setUpRegistry() const
 	if (disp == REG_CREATED_NEW_KEY)
 	{
 		std::string path;
-		#if defined(POCO_DLL)
-			#if defined(_DEBUG)
-					path = findLibrary("PocoFoundationd.dll");
-			#else
-					path = findLibrary("PocoFoundation.dll");
-			#endif
-		#endif
 		
 		if (path.empty())
 			path = findLibrary("PocoMsg.dll");
