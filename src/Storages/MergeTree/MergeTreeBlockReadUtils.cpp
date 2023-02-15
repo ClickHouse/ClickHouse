@@ -5,7 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
-#include "Storages/MergeTree/MergeTreeBaseSelectProcessor.h"
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
