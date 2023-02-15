@@ -89,7 +89,7 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
 
 ### Inserts
 
-When new rows are inserted into `EmbeddedRocksDB`, if the key already exists, the value will be updated, otherwise new key is created.
+When new rows are inserted into `EmbeddedRocksDB`, if the key already exists, the value will be updated, otherwise a new key is created.
 
 Example:
 
