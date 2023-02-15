@@ -18,71 +18,57 @@
 #define Foundation_ExpirationDecorator_INCLUDED
 
 
-#include "Poco/Timestamp.h"
 #include "Poco/Timespan.h"
+#include "Poco/Timestamp.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 template <typename TArgs>
 class ExpirationDecorator
-	/// ExpirationDecorator adds an expiration method to values so that they can be used
-	/// with the UniqueExpireCache.
+/// ExpirationDecorator adds an expiration method to values so that they can be used
+/// with the UniqueExpireCache.
 {
 public:
-	ExpirationDecorator():
-		_value(),
-		_expiresAt()
-	{
-	}
+    ExpirationDecorator() : _value(), _expiresAt() { }
 
-	ExpirationDecorator(const TArgs& p, const Poco::Timespan::TimeDiff& diffInMs):
-			/// Creates an element that will expire in diff milliseconds
-		_value(p),
-		_expiresAt()
-	{
-		_expiresAt += (diffInMs*1000);
-	}
+    ExpirationDecorator(const TArgs & p, const Poco::Timespan::TimeDiff & diffInMs)
+        : /// Creates an element that will expire in diff milliseconds
+        _value(p)
+        , _expiresAt()
+    {
+        _expiresAt += (diffInMs * 1000);
+    }
 
-	ExpirationDecorator(const TArgs& p, const Poco::Timespan& timeSpan):
-		/// Creates an element that will expire after the given timeSpan
-		_value(p),
-		_expiresAt()
-	{
-		_expiresAt += timeSpan.totalMicroseconds();
-	}
+    ExpirationDecorator(const TArgs & p, const Poco::Timespan & timeSpan)
+        : /// Creates an element that will expire after the given timeSpan
+        _value(p)
+        , _expiresAt()
+    {
+        _expiresAt += timeSpan.totalMicroseconds();
+    }
 
-	ExpirationDecorator(const TArgs& p, const Poco::Timestamp& timeStamp):
-		/// Creates an element that will expire at the given time point
-		_value(p),
-		_expiresAt(timeStamp)
-	{
-	}
+    ExpirationDecorator(const TArgs & p, const Poco::Timestamp & timeStamp)
+        : /// Creates an element that will expire at the given time point
+        _value(p)
+        , _expiresAt(timeStamp)
+    {
+    }
 
 
-	~ExpirationDecorator()
-	{
-	}
-	
-	const Poco::Timestamp& getExpiration() const
-	{
-		return _expiresAt;
-	}
+    ~ExpirationDecorator() { }
 
-	const TArgs& value() const
-	{
-		return _value;
-	}
+    const Poco::Timestamp & getExpiration() const { return _expiresAt; }
 
-	TArgs& value()
-	{
-		return _value;
-	}
+    const TArgs & value() const { return _value; }
+
+    TArgs & value() { return _value; }
 
 private:
-	TArgs     _value;
-	Timestamp _expiresAt;
+    TArgs _value;
+    Timestamp _expiresAt;
 };
 
 
