@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -187,8 +188,15 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                 if (e.code() == ErrorCodes::UNKNOWN_FORMAT
                     || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
                     || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
-                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
+                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE
+                    || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
                 {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
+                        "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
+                        metadata_storage.getPath() + path_to_remove,
+                        e.message());
+
                     tx->unlinkFile(path_to_remove);
                 }
                 else
