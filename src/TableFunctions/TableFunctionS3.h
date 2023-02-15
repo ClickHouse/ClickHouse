@@ -35,9 +35,12 @@ public:
     {
         return {"_path", "_file"};
     }
-
-    template <bool get_format_from_file = true>
-    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & configuration);
+    void parseArgumentsImpl(
+        const String & error_message,
+        ASTs & args,
+        ContextPtr context,
+        StorageS3::Configuration & configuration,
+        bool get_format_from_file = true);
 
 protected:
 

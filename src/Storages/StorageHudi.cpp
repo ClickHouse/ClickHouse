@@ -27,7 +27,7 @@ namespace ErrorCodes
 }
 
 template <typename Configuration, typename MetaReadHelper>
-HudiMetaParser<Configuration, MetaReadHelper>::HudiMetaParser(const Configuration & configuration_, ContextPtr context_)
+HudiMetadataParser<Configuration, MetaReadHelper>::HudiMetadataParser(const Configuration & configuration_, ContextPtr context_)
     : configuration(configuration_), context(context_), log(&Poco::Logger::get("StorageHudi"))
 {
 }
@@ -38,7 +38,7 @@ HudiMetaParser<Configuration, MetaReadHelper>::HudiMetaParser(const Configuratio
 /// To find needed parts we need to find out latest part file for every partition.
 /// Part format is usually parquet, but can differ.
 template <typename Configuration, typename MetaReadHelper>
-String HudiMetaParser<Configuration, MetaReadHelper>::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
+String HudiMetadataParser<Configuration, MetaReadHelper>::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
 {
     /// For each partition path take only latest file.
     struct FileInfo
@@ -90,15 +90,15 @@ String HudiMetaParser<Configuration, MetaReadHelper>::generateQueryFromKeys(cons
 }
 
 template <typename Configuration, typename MetaReadHelper>
-std::vector<std::string> HudiMetaParser<Configuration, MetaReadHelper>::getFiles() const
+std::vector<std::string> HudiMetadataParser<Configuration, MetaReadHelper>::getFiles() const
 {
     return MetaReadHelper::listFiles(configuration);
 }
 
-template HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::HudiMetaParser(
+template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser(
     const StorageS3::Configuration & configuration_, ContextPtr context_);
-template std::vector<String> HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getFiles() const;
-template String HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::generateQueryFromKeys(
+template std::vector<String> HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles() const;
+template String HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::generateQueryFromKeys(
     const std::vector<String> & keys, const String & format);
 
 void registerStorageHudi(StorageFactory & factory)

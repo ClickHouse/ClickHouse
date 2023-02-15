@@ -35,22 +35,22 @@ class PullingPipelineExecutor;
 class StorageS3SequentialSource;
 class NamedCollection;
 
-template <typename Name, typename MetaParser>
+template <typename Name, typename MetadataParser>
 class IStorageDataLake;
 
-struct S3DataLakeMetaReadHelper;
+struct S3DataLakeMetadataReadHelper;
 
 struct StorageIcebergName;
-template <typename Configuration, typename MetaReadHelper>
-class IcebergMetaParser;
+template <typename Configuration, typename MetadataReadHelper>
+class IcebergMetadataParser;
 
 struct StorageDeltaLakeName;
-template <typename Configuration, typename MetaReadHelper>
-class DeltaLakeMetaParser;
+template <typename Configuration, typename MetadataReadHelper>
+class DeltaLakeMetadataParser;
 
 struct StorageHudiName;
-template <typename Configuration, typename MetaReadHelper>
-class HudiMetaParser;
+template <typename Configuration, typename MetadataReadHelper>
+class HudiMetadataParser;
 
 class StorageS3Source : public ISource, WithContext
 {
@@ -320,9 +320,9 @@ public:
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
-    friend class IStorageDataLake<StorageHudiName, HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
-    friend class IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
-    friend class IStorageDataLake<StorageIcebergName, IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
+    friend class IStorageDataLake<StorageHudiName, HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
+    friend class IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
+    friend class IStorageDataLake<StorageIcebergName, IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 
     Configuration s3_configuration;
     std::vector<String> keys;

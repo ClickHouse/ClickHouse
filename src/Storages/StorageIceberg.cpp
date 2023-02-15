@@ -46,14 +46,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-template <typename Configuration, typename MetaReadHelper>
-IcebergMetaParser<Configuration, MetaReadHelper>::IcebergMetaParser(const Configuration & configuration_, ContextPtr context_)
+template <typename Configuration, typename MetadataReadHelper>
+IcebergMetadataParser<Configuration, MetadataReadHelper>::IcebergMetadataParser(const Configuration & configuration_, ContextPtr context_)
     : base_configuration(configuration_), context(context_)
 {
 }
 
-template <typename Configuration, typename MetaReadHelper>
-std::vector<String> IcebergMetaParser<Configuration, MetaReadHelper>::getFiles() const
+template <typename Configuration, typename MetadataReadHelper>
+std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::getFiles() const
 {
     auto metadata = getNewestMetaFile();
     auto manifest_list = getManiFestList(metadata);
@@ -68,14 +68,14 @@ std::vector<String> IcebergMetaParser<Configuration, MetaReadHelper>::getFiles()
     return getFilesForRead(manifest_files);
 }
 
-template <typename Configuration, typename MetaReadHelper>
-String IcebergMetaParser<Configuration, MetaReadHelper>::getNewestMetaFile() const
+template <typename Configuration, typename MetadataReadHelper>
+String IcebergMetadataParser<Configuration, MetadataReadHelper>::getNewestMetaFile() const
 {
     /// Iceberg stores all the metadata.json in metadata directory, and the
     /// newest version has the max version name, so we should list all of them
     /// then find the newest metadata.
     static constexpr auto meta_file_suffix = ".json";
-    auto metadata_files = MetaReadHelper::listFilesMatchSuffix(base_configuration, metadata_directory, meta_file_suffix);
+    auto metadata_files = MetadataReadHelper::listFilesMatchSuffix(base_configuration, metadata_directory, meta_file_suffix);
 
     if (metadata_files.empty())
         throw Exception(
@@ -85,10 +85,10 @@ String IcebergMetaParser<Configuration, MetaReadHelper>::getNewestMetaFile() con
     return *it;
 }
 
-template <typename Configuration, typename MetaReadHelper>
-String IcebergMetaParser<Configuration, MetaReadHelper>::getManiFestList(const String & metadata_name) const
+template <typename Configuration, typename MetadataReadHelper>
+String IcebergMetadataParser<Configuration, MetadataReadHelper>::getManiFestList(const String & metadata_name) const
 {
-    auto buffer = MetaReadHelper::createReadBuffer(metadata_name, context, base_configuration);
+    auto buffer = MetadataReadHelper::createReadBuffer(metadata_name, context, base_configuration);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buffer);
 
@@ -132,10 +132,10 @@ parseAvro(const std::unique_ptr<avro::DataFileReaderBase> & file_reader, const D
     return columns;
 }
 
-template <typename Configuration, typename MetaReadHelper>
-std::vector<String> IcebergMetaParser<Configuration, MetaReadHelper>::getManifestFiles(const String & manifest_list) const
+template <typename Configuration, typename MetadataReadHelper>
+std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::getManifestFiles(const String & manifest_list) const
 {
-    auto buffer = MetaReadHelper::createReadBuffer(manifest_list, context, base_configuration);
+    auto buffer = MetadataReadHelper::createReadBuffer(manifest_list, context, base_configuration);
 
     auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
@@ -169,13 +169,13 @@ std::vector<String> IcebergMetaParser<Configuration, MetaReadHelper>::getManifes
         col->getFamilyName());
 }
 
-template <typename Configuration, typename MetaReadHelper>
-std::vector<String> IcebergMetaParser<Configuration, MetaReadHelper>::getFilesForRead(const std::vector<String> & manifest_files) const
+template <typename Configuration, typename MetadataReadHelper>
+std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::getFilesForRead(const std::vector<String> & manifest_files) const
 {
     std::vector<String> keys;
     for (const auto & manifest_file : manifest_files)
     {
-        auto buffer = MetaReadHelper::createReadBuffer(manifest_file, context, base_configuration);
+        auto buffer = MetadataReadHelper::createReadBuffer(manifest_file, context, base_configuration);
 
         auto file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
@@ -226,24 +226,24 @@ std::vector<String> IcebergMetaParser<Configuration, MetaReadHelper>::getFilesFo
 
 // generateQueryFromKeys constructs query from all parquet filenames
 // for underlying StorageS3 engine
-template <typename Configuration, typename MetaReadHelper>
-String IcebergMetaParser<Configuration, MetaReadHelper>::generateQueryFromKeys(const std::vector<String> & keys, const String &)
+template <typename Configuration, typename MetadataReadHelper>
+String IcebergMetadataParser<Configuration, MetadataReadHelper>::generateQueryFromKeys(const std::vector<String> & keys, const String &)
 {
     std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
     return new_query;
 }
 
-template IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::IcebergMetaParser(
+template IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::IcebergMetadataParser(
     const StorageS3::Configuration & configuration_, ContextPtr context_);
-template std::vector<String> IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getFiles() const;
-template String IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::generateQueryFromKeys(
+template std::vector<String> IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles() const;
+template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::generateQueryFromKeys(
     const std::vector<String> & keys, const String & format);
-template String IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getNewestMetaFile() const;
-template String IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getManiFestList(const String & metadata_name) const;
+template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getNewestMetaFile() const;
+template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getManiFestList(const String & metadata_name) const;
 template std::vector<String>
-IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getManifestFiles(const String & manifest_list) const;
+IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getManifestFiles(const String & manifest_list) const;
 template std::vector<String>
-IcebergMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>::getFilesForRead(const std::vector<String> & manifest_files) const;
+IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFilesForRead(const std::vector<String> & manifest_files) const;
 
 void registerStorageIceberg(StorageFactory & factory)
 {

@@ -61,7 +61,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "secret_access_key",
 };
 
-template <typename Name, typename MetaParser>
+template <typename Name, typename MetadataParser>
 class IStorageDataLake : public IStorage
 {
 public:
@@ -141,11 +141,11 @@ public:
     static StorageS3::Configuration
     getAdjustedS3Configuration(const ContextPtr & context, StorageS3::Configuration & configuration, Poco::Logger * log)
     {
-        MetaParser parser{configuration, context};
+        MetadataParser parser{configuration, context};
 
         auto keys = parser.getFiles();
         String new_uri = std::filesystem::path(configuration.url.uri.toString()) / Name::data_directory_prefix
-            / MetaParser::generateQueryFromKeys(keys, configuration.format);
+            / MetadataParser::generateQueryFromKeys(keys, configuration.format);
 
         StorageS3::Configuration new_configuration(configuration);
         new_configuration.url = S3::URI(new_uri);

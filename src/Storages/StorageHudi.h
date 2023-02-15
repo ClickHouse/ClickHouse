@@ -6,7 +6,7 @@
 
 #    include <Storages/IStorage.h>
 #    include <Storages/IStorageDataLake.h>
-#    include <Storages/S3DataLakeMetaReadHelper.h>
+#    include <Storages/S3DataLakeMetadataReadHelper.h>
 #    include <Storages/StorageS3.h>
 
 namespace DB
@@ -14,10 +14,10 @@ namespace DB
 
 
 template <typename Configuration, typename MetaReadHelper>
-class HudiMetaParser
+class HudiMetadataParser
 {
 public:
-    HudiMetaParser(const Configuration & configuration_, ContextPtr context_);
+    HudiMetadataParser(const Configuration & configuration_, ContextPtr context_);
 
     std::vector<String> getFiles() const;
 
@@ -35,7 +35,7 @@ struct StorageHudiName
     static constexpr auto data_directory_prefix = "";
 };
 
-using StorageHudi = IStorageDataLake<StorageHudiName, HudiMetaParser<StorageS3::Configuration, S3DataLakeMetaReadHelper>>;
+using StorageHudi = IStorageDataLake<StorageHudiName, HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 }
 
 #endif
