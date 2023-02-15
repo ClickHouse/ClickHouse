@@ -16,9 +16,11 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Interpreters/Context.h>
@@ -108,6 +110,18 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     }
 
     auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+
+    if (auto * table_node = table_expression_to_replace->as<TableNode>())
+        table_expression_modifiers = table_node->getTableExpressionModifiers();
+    else if (auto * table_function_node = table_expression_to_replace->as<TableFunctionNode>())
+        table_expression_modifiers = table_function_node->getTableExpressionModifiers();
+    else if (auto * identifier_node = table_expression_to_replace->as<IdentifierNode>())
+        table_expression_modifiers = identifier_node->getTableExpressionModifiers();
+
+    if (table_expression_modifiers)
+        replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
+
     query_tree = query_tree->cloneAndReplace(table_expression_to_replace, std::move(replacement_table_expression));
 }
 
@@ -132,11 +146,6 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     return query_tree;
 }
 
-PlannerConfiguration buildPlannerConfiguration(const SelectQueryOptions & select_query_options)
-{
-    return {.only_analyze = select_query_options.only_analyze};
-}
-
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -147,7 +156,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
-    , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
+    , planner(query_tree, select_query_options)
 {
 }
 
@@ -160,7 +169,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
-    , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
+    , planner(query_tree, select_query_options)
 {
 }
 
@@ -172,7 +181,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
-    , planner(query_tree, select_query_options, buildPlannerConfiguration(select_query_options))
+    , planner(query_tree, select_query_options)
 {
 }
 

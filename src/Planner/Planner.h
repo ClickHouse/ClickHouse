@@ -16,30 +16,22 @@ using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
-struct PlannerConfiguration
-{
-    bool only_analyze = false;
-};
-
 class Planner
 {
 public:
     /// Initialize planner with query tree after analysis phase
     Planner(const QueryTreeNodePtr & query_tree_,
-        const SelectQueryOptions & select_query_options_,
-        PlannerConfiguration planner_configuration_ = {});
+        const SelectQueryOptions & select_query_options_);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
         const SelectQueryOptions & select_query_options_,
-        GlobalPlannerContextPtr global_planner_context_,
-        PlannerConfiguration planner_configuration_ = {});
+        GlobalPlannerContextPtr global_planner_context_);
 
     /// Initialize planner with query tree after query analysis phase and planner context
     Planner(const QueryTreeNodePtr & query_tree_,
         const SelectQueryOptions & select_query_options_,
-        PlannerContextPtr planner_context_,
-        PlannerConfiguration planner_configuration_ = {});
+        PlannerContextPtr planner_context_);
 
     const QueryPlan & getQueryPlan() const
     {
@@ -69,7 +61,6 @@ private:
     QueryPlan query_plan;
     SelectQueryOptions select_query_options;
     PlannerContextPtr planner_context;
-    PlannerConfiguration planner_configuration;
     StorageLimitsList storage_limits;
 };
 

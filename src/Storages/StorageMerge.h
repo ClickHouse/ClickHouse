@@ -197,15 +197,18 @@ private:
         const Block & header,
         const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
-        Names & real_column_names,
+        Names real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);
 
     static void convertingSourceStream(
-        const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
+        const Block & header,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Aliases & aliases,
         ContextPtr context,
-        QueryPipelineBuilder & builder);
+        QueryPipelineBuilder & builder,
+        const QueryProcessingStage::Enum & processed_stage);
 };
 
 }

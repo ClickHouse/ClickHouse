@@ -370,9 +370,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     else
     {
         Planner planner(select_query_info.query_tree,
-            SelectQueryOptions(from_stage),
-            select_query_info.planner_context,
-            PlannerConfiguration{.only_analyze = true});
+            SelectQueryOptions(from_stage).analyze(),
+            select_query_info.planner_context);
         planner.buildQueryPlanIfNeeded();
 
         auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
