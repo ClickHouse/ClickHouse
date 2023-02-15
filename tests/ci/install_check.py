@@ -7,7 +7,7 @@ import logging
 import sys
 import subprocess
 from pathlib import Path
-
+from shutil import copy2
 from typing import Dict
 
 from github import Github
@@ -61,8 +61,7 @@ for i in {1..5}; do
 done
 exec 13>&-"""
     binary_test = r"""#!/bin/bash
-chmod +x /packages/clickhouse
-/packages/clickhouse install
+/packages/clickhouse.copy install
 clickhouse-server start --daemon
 for i in {1..5}; do
     clickhouse-client -q 'SELECT version()' && break || sleep 1
@@ -267,6 +266,14 @@ def main():
         )
 
     test_results = []  # type: TestResults
+    ch_binary = Path(TEMP_PATH) / "clickhouse"
+    if ch_binary.exists():
+        # make a copy of clickhouse to avoid redownload of exctracted binary
+        ch_binary.chmod(0o755)
+        ch_copy = ch_binary.parent / "clickhouse.copy"
+        copy2(ch_binary, ch_binary.parent / "clickhouse.copy")
+        subprocess.check_output(f"{ch_copy.absolute()} local -q 'SELECT 1'", shell=True)
+
     if args.deb:
         test_results.extend(test_install_deb(docker_images[DEB_IMAGE]))
     if args.rpm:
