@@ -119,9 +119,9 @@ private:
 
     void checkStatementCanBeForwarded() const;
 
-    std::shared_ptr<ASTInsertQuery> prepareRefreshQuery();
-
-    void updateInnerTableAfterRefresh(std::shared_ptr<ASTInsertQuery> refresh_query);
+    StorageID createFreshTable() const;
+    std::shared_ptr<ASTInsertQuery> prepareRefreshQuery() const;
+    StorageID exchangeTargetTable(const StorageID & fresh_table);
 
     StorageID getTargetTableId() const;
     void setTargetTableId(StorageID id);
