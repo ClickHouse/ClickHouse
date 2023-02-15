@@ -148,7 +148,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
-            cancel();
+            cancel(/*hard_cancel*/ true);
 
         return continuing;
     }
@@ -229,7 +229,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 break;
 
             if (!context.executeTask())
-                cancel();
+                cancel(/*hard_cancel*/ true);
 
             if (tasks.isFinished())
                 break;
