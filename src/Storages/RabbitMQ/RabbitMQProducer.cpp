@@ -31,7 +31,8 @@ RabbitMQProducer::RabbitMQProducer(
     const bool persistent_,
     std::atomic<bool> & shutdown_called_,
     Poco::Logger * log_)
-    : connection(configuration_, log_)
+    : AsynchronousMessageProducer(log_)
+    , connection(configuration_, log_)
     , routing_keys(routing_keys_)
     , exchange_name(exchange_name_)
     , exchange_type(exchange_type_)
@@ -40,7 +41,6 @@ RabbitMQProducer::RabbitMQProducer(
     , shutdown_called(shutdown_called_)
     , payloads(BATCH)
     , returned(RETURNED_LIMIT)
-    , log(log_)
 {
 }
 

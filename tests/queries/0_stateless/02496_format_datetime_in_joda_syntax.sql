@@ -62,20 +62,30 @@ with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) a
 with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'G\'\'DDD'), formatDateTimeInJodaSyntax(datetime64, 'G\'\'DDD'), formatDateTimeInJodaSyntax(date, 'G\'\'DDD'), formatDateTimeInJodaSyntax(date32, 'G\'\'DDD');
 with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'G\'aaa\'DDD'), formatDateTimeInJodaSyntax(datetime64, 'G\'aaa\'DDD'), formatDateTimeInJodaSyntax(date, 'G\'aaa\'DDD'), formatDateTimeInJodaSyntax(date32, 'G\'aaa\'DDD');
 with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'G\'a\'\'aa\'DDD'), formatDateTimeInJodaSyntax(datetime64, 'G\'a\'\'aa\'DDD'), formatDateTimeInJodaSyntax(date, 'G\'a\'\'aa\'DDD'), formatDateTimeInJodaSyntax(date32, 'G\'a\'\'aa\'DDD');
+
+with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'x'), formatDateTimeInJodaSyntax(datetime64, 'x'), formatDateTimeInJodaSyntax(date, 'x'), formatDateTimeInJodaSyntax(date32, 'x');
+
+with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'w'), formatDateTimeInJodaSyntax(datetime64, 'w'), formatDateTimeInJodaSyntax(date, 'w'), formatDateTimeInJodaSyntax(date32, 'w');
+
+with '2018-01-12 22:33:44' as s, toDateTime(s) as datetime, toDateTime64(s, 6) as datetime64, toDate(s) as date, toDate32(s) as date32 SELECT formatDateTimeInJodaSyntax(datetime, 'S'), formatDateTimeInJodaSyntax(datetime64, 'S'), formatDateTimeInJodaSyntax(date, 'S'), formatDateTimeInJodaSyntax(date32, 'S');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'S');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSSS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSSSS');
+with '2018-01-12 22:33:44.55' as s, toDateTime64(s, 6) as datetime64 SELECT formatDateTimeInJodaSyntax(datetime64, 'SSSSSSSSSS');
 -- { echoOff }
 
-SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'x'); -- { serverError 48 }
-SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'w'); -- { serverError 48 }
-SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'S'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'z'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'zz'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'zzz'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'Z'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDateTime('2018-01-12 22:33:44'), 'b'); -- { serverError 48 }
 
-SELECT formatDateTimeInJodaSyntax(toDate32('2018-01-12 22:33:44'), 'x'); -- { serverError 48 }
-SELECT formatDateTimeInJodaSyntax(toDate32('2018-01-12 22:33:44'), 'w'); -- { serverError 48 }
-SELECT formatDateTimeInJodaSyntax(toDate32('2018-01-12 22:33:44'), 'S'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDate32('2018-01-12 22:33:44'), 'z'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDate32('2018-01-12 22:33:44'), 'zz'); -- { serverError 48 }
 SELECT formatDateTimeInJodaSyntax(toDate32('2018-01-12 22:33:44'), 'zzz'); -- { serverError 48 }
