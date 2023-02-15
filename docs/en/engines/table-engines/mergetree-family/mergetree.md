@@ -77,7 +77,7 @@ Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting th
 
 #### PARTITION BY
 
-`PARTITION BY` — The [partitioning key](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases you don't need partition key, and in most other cases you don't need partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — The [partitioning key](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
 For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/en/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
@@ -470,6 +470,9 @@ The `set` index can be used with all functions. Function subsets for other index
 | [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
 | hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+| hasTokenOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+| hasTokenCaseInsensitive                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+| hasTokenCaseInsensitiveOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
@@ -608,7 +611,10 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 -   `TO VOLUME 'bbb'` - move part to the disk `bbb`;
 -   `GROUP BY` - aggregate expired rows.
 
-With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves or recompression).
+`DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
+``` sql
+TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
+```
 
 `GROUP BY` expression must be a prefix of the table primary key.
 
@@ -920,14 +926,24 @@ Configuration markup:
             <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </s3>
+        <s3_cache>
+            <type>cache</type>
+            <disk>s3</disk>
+            <path>/var/lib/clickhouse/disks/s3_cache/</path>
+            <max_size>10Gi</max_size>
+        </s3_cache>
     </disks>
     ...
 </storage_configuration>
 ```
+
+:::note cache configuration
+ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
+:::
+
+### Configuring the S3 disk
 
 Required parameters:
 
@@ -948,14 +964,36 @@ Optional parameters:
 -   `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
 -   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
 -   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
--   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`.
--   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 -   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
 -   `s3_max_put_rps` — Maximum PUT requests per second rate before throttling. Default value is `0` (unlimited).
 -   `s3_max_put_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_put_rps`.
 -   `s3_max_get_rps` — Maximum GET requests per second rate before throttling. Default value is `0` (unlimited).
 -   `s3_max_get_burst` — Max number of requests that can be issued simultaneously before hitting request per second limit. By default (`0` value) equals to `s3_max_get_rps`.
+
+### Configuring the cache
+
+This is the cache configuration from above:
+```xml
+        <s3_cache>
+            <type>cache</type>
+            <disk>s3</disk>
+            <path>/var/lib/clickhouse/disks/s3_cache/</path>
+            <max_size>10Gi</max_size>
+        </s3_cache>
+```
+
+These parameters define the cache layer:
+-   `type` — If a disk is of type `cache` it caches mark and index files in memory.
+-   `disk` — The name of the disk that will be cached.
+
+Cache parameters:
+-   `path` — The path where metadata for the cache is stored.
+-   `max_size` — The size (amount of memory) that the cache can grow to.
+
+:::tip
+There are several other cache parameters that you can use to tune your storage, see [using local cache](/docs/en/operations/storing-data.md/#using-local-cache) for the details.
+:::
 
 S3 disk can be configured as `main` or `cold` storage:
 ``` xml

@@ -382,8 +382,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Settings & settings = context->getSettingsRef();
 
     if (settings.max_subquery_depth && options.subquery_depth > settings.max_subquery_depth)
-        throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
-            ErrorCodes::TOO_DEEP_SUBQUERIES);
+        throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}",
+            settings.max_subquery_depth.toString());
 
     bool has_input = input_pipe != std::nullopt;
     if (input_pipe)
@@ -446,6 +446,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 continue;
             checkStorageSupportsTransactionsIfNeeded(storage, context);
         }
+    }
+
+    if (joined_tables.tablesCount() > 1 && settings.allow_experimental_parallel_reading_from_replicas)
+    {
+        LOG_WARNING(log, "Joins are not supported with parallel replicas. Query will be executed without using them.");
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
     }
 
     /// Rewrite JOINs
@@ -543,6 +549,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             parameter_values,
             parameter_types);
 
+
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
 
@@ -562,7 +569,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && storage->canMoveConditionsToPrewhere() && query.where() && !query.prewhere())
+        if (try_move_to_prewhere
+            && storage && storage->canMoveConditionsToPrewhere()
+            && query.where() && !query.prewhere()
+            && !query.hasJoin()) /// Join may produce rows with nulls or default values, it's difficult to analyze if they affected or not.
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -606,17 +616,23 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (!options.only_analyze)
         {
             if (query.sampleSize() && (input_pipe || !storage || !storage->supportsSampling()))
-                throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+                throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
             if (query.final() && (input_pipe || !storage || !storage->supportsFinal()))
-                throw Exception(
-                    (!input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL",
-                    ErrorCodes::ILLEGAL_FINAL);
+            {
+                if (!input_pipe && storage)
+                    throw Exception(ErrorCodes::ILLEGAL_FINAL, "Storage {} doesn't support FINAL", storage->getName());
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_FINAL, "Illegal FINAL");
+            }
 
             if (query.prewhere() && (input_pipe || !storage || !storage->supportsPrewhere()))
-                throw Exception(
-                    (!input_pipe && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE",
-                    ErrorCodes::ILLEGAL_PREWHERE);
+            {
+                if (!input_pipe && storage)
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE", storage->getName());
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Illegal PREWHERE");
+            }
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
@@ -936,7 +952,8 @@ static std::pair<Field, DataTypePtr> getWithFillFieldValue(const ASTPtr & node, 
     auto field_type = evaluateConstantExpression(node, context);
 
     if (!isColumnedAsNumber(field_type.second))
-        throw Exception("Illegal type " + field_type.second->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                        "Illegal type {} of WITH FILL expression, must be numeric type", field_type.second->getName());
 
     return field_type;
 }
@@ -951,7 +968,8 @@ static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPt
     if (isColumnedAsNumber(type))
         return std::make_pair(std::move(field), std::nullopt);
 
-    throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                    "Illegal type {} of WITH FILL expression, must be numeric type", type->getName());
 }
 
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, const ContextPtr & context)
@@ -969,32 +987,30 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         descr.fill_step = order_by_elem.direction;
 
     if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
-        throw Exception("WITH FILL STEP value cannot be zero", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
 
     if (order_by_elem.direction == 1)
     {
         if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
-            throw Exception("WITH FILL STEP value cannot be negative for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be negative for sorting in ascending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
         {
-            throw Exception("WITH FILL TO value cannot be less than FROM value for sorting in ascending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
         }
     }
     else
     {
         if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
-            throw Exception("WITH FILL STEP value cannot be positive for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be positive for sorting in descending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
         {
-            throw Exception("WITH FILL FROM value cannot be less than TO value for sorting in descending direction",
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
         }
     }
 
@@ -1123,14 +1139,13 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context,
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isNativeNumber(type))
-        throw Exception(
-            "Illegal type " + type->getName() + " of " + expr + " expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "Illegal type {} of {} expression, must be numeric type",
+            type->getName(), expr);
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
-        throw Exception(
-            "The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as UInt64",
-            ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION, "The value {} of {} expression is not representable as UInt64",
+            applyVisitor(FieldVisitorToString(), field), expr);
 
     return converted.safeGet<UInt64>();
 }
@@ -1339,7 +1354,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
     }
 
     if (query_info.projection && query_info.projection->input_order_info && query_info.input_order_info)
-       throw Exception("InputOrderInfo is set for projection and for query", ErrorCodes::LOGICAL_ERROR);
+       throw Exception(ErrorCodes::LOGICAL_ERROR, "InputOrderInfo is set for projection and for query");
     InputOrderInfoPtr input_order_info_for_order;
     if (!expressions.need_aggregate)
         input_order_info_for_order = query_info.projection ? query_info.projection->input_order_info : query_info.input_order_info;
@@ -1382,7 +1397,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         if (intermediate_stage)
         {
             if (expressions.first_stage || expressions.second_stage)
-                throw Exception("Query with intermediate stage cannot have any other stages", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query with intermediate stage cannot have any other stages");
 
             preliminary_sort();
             if (expressions.need_aggregate)
@@ -1392,7 +1407,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         if (from_aggregation_stage)
         {
             if (intermediate_stage || expressions.first_stage || expressions.second_stage)
-                throw Exception("Query with after aggregation stage cannot have any other stages", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Query with after aggregation stage cannot have any other stages");
         }
 
         if (expressions.first_stage)
@@ -1515,7 +1530,25 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         auto join_kind = table_join.kind();
                         bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
+
+                        auto has_non_const = [](const Block & block, const auto & keys)
+                        {
+                            for (const auto & key : keys)
+                            {
+                                const auto & column = block.getByName(key).column;
+                                if (column && !isColumnConst(*column))
+                                    return true;
+                            }
+                            return false;
+                        };
+                        /// This optimization relies on the sorting that should buffer the whole stream before emitting any rows.
+                        /// It doesn't hold such a guarantee for streams with const keys.
+                        /// Note: it's also doesn't work with the read-in-order optimization.
+                        /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+                        bool has_non_const_keys = has_non_const(query_plan.getCurrentDataStream().header, join_clause.key_names_left)
+                            && has_non_const(joined_plan->getCurrentDataStream().header, join_clause.key_names_right);
+
+                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering && has_non_const_keys)
                         {
                             auto * left_set = add_create_set(query_plan, join_clause.key_names_left, JoinTableSide::Left);
                             auto * right_set = add_create_set(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
@@ -1628,7 +1661,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeHaving(query_plan, expressions.before_having, expressions.remove_having_filter);
             }
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_grouping_sets)
-                throw Exception("WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation");
 
             // Now we must execute:
             // 1) expressions before window functions,
@@ -1640,9 +1673,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (from_aggregation_stage)
             {
                 if (query_analyzer->hasWindow())
-                    throw Exception(
-                        "Window functions does not support processing from WithMergeableStateAfterAggregation",
-                        ErrorCodes::NOT_IMPLEMENTED);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window functions does not support processing from WithMergeableStateAfterAggregation");
             }
             else if (expressions.need_aggregate)
             {
@@ -1896,22 +1927,6 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     }
 }
 
-void InterpreterSelectQuery::setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback)
-{
-    context->getClientInfo().collaborate_with_initiator = true;
-    context->setMergeTreeReadTaskCallback(std::move(callback));
-}
-
-void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t replica_count)
-{
-    context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    context->getClientInfo().count_participating_replicas = replica_count;
-    context->getClientInfo().number_of_current_replica = replica_num;
-    context->getClientInfo().connection_client_version_major = DBMS_VERSION_MAJOR;
-    context->getClientInfo().connection_client_version_minor = DBMS_VERSION_MINOR;
-    context->getClientInfo().connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
-}
-
 RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 {
     return row_policy_filter;
@@ -1919,8 +1934,6 @@ RowPolicyFilterPtr InterpreterSelectQuery::getRowPolicyFilter() const
 
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
-    elem.query_kind = "Select";
-
     for (const auto & row_policy : row_policy_filter->policies)
     {
         auto name = row_policy->getFullName().toString();
@@ -2242,7 +2255,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 
     if (!max_block_size)
-        throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Setting 'max_block_size' cannot be zero");
 
     storage_limits.emplace_back(local_limits);
 
@@ -2256,7 +2269,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// Subquery.
         ASTPtr subquery = extractTableExpression(query, 0);
         if (!subquery)
-            throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Subquery expected");
 
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
             subquery, getSubqueryContext(context),
@@ -2367,7 +2380,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         }
     }
     else
-        throw Exception("Logical error in InterpreterSelectQuery: nowhere to read", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in InterpreterSelectQuery: nowhere to read");
 
     /// Specify the number of threads only if it wasn't specified in storage.
     ///
@@ -2503,24 +2516,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     if (!group_by_info && settings.force_aggregation_in_order)
     {
-        /// Not the most optimal implementation here, but this branch handles very marginal case.
-
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
-
-        auto sorting_step = std::make_unique<SortingStep>(
-            query_plan.getCurrentDataStream(),
-            group_by_sort_description,
-            0 /* LIMIT */,
-            SortingStep::Settings(*context),
-            settings.optimize_sorting_by_input_stream_properties);
-        sorting_step->setStepDescription("Enforced sorting for aggregation in order");
-
-        query_plan.addStep(std::move(sorting_step));
-
-        group_by_info = std::make_shared<InputOrderInfo>(
-            group_by_sort_description, group_by_sort_description.size(), 1 /* direction */, 0 /* limit */);
-
-        sort_description_for_merging = group_by_info->sort_description_for_merging;
+        sort_description_for_merging = group_by_sort_description;
     }
 
     auto merge_threads = max_streams;
@@ -2547,7 +2544,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
-        settings.enable_memory_bound_merging_of_aggregation_results);
+        settings.enable_memory_bound_merging_of_aggregation_results,
+        !group_by_info && settings.force_aggregation_in_order);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -2568,12 +2566,13 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 
     const bool should_produce_results_in_order_of_bucket_number = options.to_stage == QueryProcessingStage::WithMergeableState
         && (settings.distributed_aggregation_memory_efficient || settings.enable_memory_bound_merging_of_aggregation_results);
+    const bool parallel_replicas_from_merge_tree = storage->isMergeTree() && context->canUseParallelReplicasOnInitiator();
 
     executeMergeAggregatedImpl(
         query_plan,
         overflow_row,
         final,
-        storage && storage->isRemote(),
+        storage && (storage->isRemote() || parallel_replicas_from_merge_tree),
         has_grouping_sets,
         context->getSettingsRef(),
         query_analyzer->aggregationKeys(),
@@ -2945,7 +2944,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         if (query.limit_with_ties)
         {
             if (!query.orderBy())
-                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
             order_descr = getSortDescription(query, context);
         }
 

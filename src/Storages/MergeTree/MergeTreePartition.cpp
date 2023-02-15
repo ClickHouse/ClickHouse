@@ -181,6 +181,15 @@ namespace
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
         }
+        void operator() (const CustomType & x) const
+        {
+            UInt8 type = Field::Types::CustomType;
+            hash.update(type);
+            hash.update(x.getTypeName());
+            auto result = x.toString();
+            hash.update(result.size());
+            hash.update(result.data(), result.size());
+        }
         void operator() (const bool & x) const
         {
             UInt8 type = Field::Types::Bool;
@@ -200,7 +209,7 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
 String MergeTreePartition::getID(const Block & partition_key_sample) const
 {
     if (value.size() != partition_key_sample.columns())
-        throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid partition key size: {}", value.size());
 
     if (value.empty())
         return "all"; /// It is tempting to use an empty string here. But that would break directory structure in ZK.

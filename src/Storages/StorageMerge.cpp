@@ -449,7 +449,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
         /// If sampling requested, then check that table supports it.
         if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
-            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+            throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table doesn't support sampling");
 
         Aliases aliases;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -566,11 +566,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
     }
 
-    bool final = false;
-    if (modified_query_info.table_expression_modifiers)
-        final = modified_query_info.table_expression_modifiers->hasFinal();
-    else
-        final = modified_select.final();
+    bool final = isFinal(modified_query_info);
 
     if (!final && storage->needRewriteQueryWithFinal(real_column_names))
     {
@@ -664,7 +660,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
-            column.type = std::make_shared<DataTypeString>();
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(database_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -682,7 +678,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
-            column.type = std::make_shared<DataTypeString>();
+            column.type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
             column.column = column.type->createColumnConst(0, Field(table_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -739,7 +735,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
                 continue;
 
             if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
-                throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
+                throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE.", storage->getName());
 
             if (storage.get() != this)
             {
@@ -912,6 +908,25 @@ void ReadFromMerge::convertingSourceStream(
     }
 }
 
+bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
+{
+    /// Disable read-in-order optimization for reverse order with final.
+    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
+    if (order_info_->direction != 1 && isFinal(query_info))
+        return false;
+
+    order_info = order_info_;
+    return true;
+}
+
+bool ReadFromMerge::isFinal(const SelectQueryInfo & query_info)
+{
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->hasFinal();
+    const auto & select_query = query_info.query->as<ASTSelectQuery &>();
+    return select_query.final();
+}
+
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
     ColumnSizeByName column_sizes;
@@ -931,11 +946,11 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     if (const auto * func = node->as<ASTFunction>(); func && func->name == "REGEXP")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception("REGEXP in Merge ENGINE takes only one argument", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "REGEXP in Merge ENGINE takes only one argument");
 
         auto * literal = func->arguments->children[0]->as<ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::Which::String || literal->value.safeGet<String>().empty())
-            throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument for REGEXP in Merge ENGINE should be a non empty String Literal");
 
         return {true, func->arguments->children[0]};
     }
@@ -956,9 +971,9 @@ void registerStorageMerge(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
-            throw Exception("Storage Merge requires exactly 2 parameters"
-                " - name of source database and regexp for table names.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage Merge requires exactly 2 parameters - name "
+                            "of source database and regexp for table names.");
 
         auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
@@ -980,7 +995,9 @@ void registerStorageMerge(StorageFactory & factory)
 
 NamesAndTypesList StorageMerge::getVirtuals() const
 {
-    NamesAndTypesList virtuals{{"_database", std::make_shared<DataTypeString>()}, {"_table", std::make_shared<DataTypeString>()}};
+    NamesAndTypesList virtuals{
+        {"_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 
     auto first_table = getFirstTable([](auto && table) { return table; });
     if (first_table)
@@ -991,4 +1008,5 @@ NamesAndTypesList StorageMerge::getVirtuals() const
 
     return virtuals;
 }
+
 }

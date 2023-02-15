@@ -684,7 +684,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!query->storage)
             query->set(query->storage, std::make_shared<ASTStorage>());
         else if (query->storage->primary_key)
-            throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->primary_key = query->columns_list->primary_key;
     }
@@ -1299,14 +1299,13 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-
-    if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
+    if (is_materialized_view && ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
         ParserStringLiteral literal_p;
         if (!literal_p.parse(pos, to_inner_uuid, expected))
             return false;
     }
-    else if (ParserKeyword{"TO"}.ignore(pos, expected))
+    else if (is_materialized_view && ParserKeyword{"TO"}.ignore(pos, expected))
     {
         // TO [db.]table
         if (!table_name_p.parse(pos, to_table, expected))

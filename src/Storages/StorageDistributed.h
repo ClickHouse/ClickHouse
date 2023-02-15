@@ -133,7 +133,7 @@ public:
     /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    void startup() override;
+    void initializeFromDisk();
     void shutdown() override;
     void flush() override;
     void drop() override;
