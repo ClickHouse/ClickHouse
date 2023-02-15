@@ -29,7 +29,7 @@ private:
 };
 
 // class to get deltalake log json files and read json from them
-template <typename Configuration, typename MetaReadHelper>
+template <typename Configuration, typename MetadataReadHelper>
 class DeltaLakeMetadataParser
 {
 public:

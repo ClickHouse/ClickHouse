@@ -13,22 +13,12 @@
 #    include <Storages/StorageURL.h>
 #    include <Storages/checkAndGetLiteralArgument.h>
 
-#    include <aws/core/auth/AWSCredentials.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/ListObjectsV2Request.h>
-
 #    include <QueryPipeline/Pipe.h>
 
 #    include <Storages/IStorage.h>
 #    include <Storages/StorageS3.h>
 
-#    include <unordered_map>
 #    include <base/JSON.h>
-
-namespace Aws::S3
-{
-class S3Client;
-}
 
 namespace DB
 {

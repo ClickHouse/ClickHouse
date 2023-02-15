@@ -13,7 +13,7 @@ namespace DB
 {
 
 
-template <typename Configuration, typename MetaReadHelper>
+template <typename Configuration, typename MetadataReadHelper>
 class HudiMetadataParser
 {
 public:
