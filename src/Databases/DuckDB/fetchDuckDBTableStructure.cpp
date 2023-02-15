@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DUCKDB_ENGINE_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 static DataTypePtr convertDuckDBDataType(String type)
