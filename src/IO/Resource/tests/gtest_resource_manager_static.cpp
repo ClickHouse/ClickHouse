@@ -37,6 +37,7 @@ TEST(IOResourceStaticResourceManager, Smoke)
     for (int i = 0; i < 10; i++)
     {
         ResourceGuard ga(ca->get("res1"));
+        ga.unlock();
         ResourceGuard gb(cb->get("res1"));
     }
 }

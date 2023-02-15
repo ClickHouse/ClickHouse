@@ -82,9 +82,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
-#if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
-#endif
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -1369,9 +1367,8 @@ try
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
-#if USE_BORINGSSL
+            global_context->updateQueryCacheConfiguration(*config);
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-#endif
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
@@ -1555,13 +1552,7 @@ try
         global_context->setMMappedFileCache(mmap_cache_size);
 
     /// A cache for query results.
-    size_t query_cache_size = config().getUInt64("query_cache.size", 1_GiB);
-    if (query_cache_size)
-        global_context->setQueryCache(
-            query_cache_size,
-            config().getUInt64("query_cache.max_entries", 1024),
-            config().getUInt64("query_cache.max_entry_size", 1_MiB),
-            config().getUInt64("query_cache.max_entry_records", 30'000'000));
+    global_context->setQueryCache(config());
 
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
@@ -1585,10 +1576,8 @@ try
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
     }
-#if USE_BORINGSSL
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-#endif
 
     SCOPE_EXIT({
         async_metrics.stop();
