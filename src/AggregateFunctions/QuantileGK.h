@@ -46,16 +46,16 @@ public:
         double relative_error_,
         size_t compress_threshold_ = default_compress_threshold,
         size_t count_ = 0,
-        bool compressed_ = false,
-        const std::vector<Stats> & sampled_ = {})
+        bool compressed_ = false)
         : relative_error(relative_error_)
         , compress_threshold(compress_threshold_)
         , count(count_)
         , compressed(compressed_)
-        , sampled(sampled_)
     {
         sampled.reserve(compress_threshold);
         backup_sampled.reserve(compress_threshold);
+
+        head_sampled.reserve(default_head_size);
     }
 
     bool isCompressed() const { return compressed; }
@@ -133,9 +133,11 @@ public:
         {
             compress_threshold = other.compress_threshold;
             relative_error = other.relative_error;
-            sampled = std::move(other.sampled);
             count = other.count;
             compressed = other.compressed;
+
+            sampled.resize(other.sampled.size());
+            memcpy(sampled.data(), other.sampled.data(), sizeof(Stats) * other.sampled.size());
             return;
         }
         else
@@ -383,10 +385,10 @@ private:
     size_t count = 0;
     bool compressed;
 
-    std::vector<Stats> sampled;
-    std::vector<Stats> backup_sampled;
+    PaddedPODArray<Stats> sampled;
+    PaddedPODArray<Stats> backup_sampled;
 
-    std::vector<T> head_sampled;
+    PaddedPODArray<T> head_sampled;
 
     static constexpr size_t default_compress_threshold = 10000;
     static constexpr size_t default_head_size = 50000;
