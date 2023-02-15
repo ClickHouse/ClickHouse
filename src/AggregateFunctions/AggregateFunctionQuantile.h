@@ -29,6 +29,7 @@ namespace ErrorCodes
 }
 
 template <typename> class QuantileTiming;
+template <typename> class QuantileGK;
 
 
 /** Generic aggregate function for calculation of quantiles.
@@ -60,6 +61,7 @@ private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
+    static constexpr bool is_quantile_gk = std::is_same_v<Data, QuantileGK<Value>>;
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -67,21 +69,35 @@ private:
     /// Used when there are single level to get.
     Float64 level = 0.5;
 
+    /// Used when function name is "quantileGK" or "quantilesGK"
+    size_t accuracy = 10000;
+
     DataTypePtr & argument_type;
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
             argument_types_, params, createResultType(argument_types_))
-        , levels(params, returns_many)
+        , levels(is_quantile_gk ? Array(params.begin() + 1, params.end()) : params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter or less", getName());
+
+        if constexpr (is_quantile_gk)
+            accuracy = params[0].get<UInt64>();
     }
 
     String getName() const override { return Name::name; }
+
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
+    {
+        if constexpr (is_quantile_gk)
+            new (place) Data(accuracy);
+        else
+            new (place) Data;
+    }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_)
     {
