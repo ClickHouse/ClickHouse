@@ -53,6 +53,7 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void writeChunkStart() override;
     void writeChunkEnd() override;

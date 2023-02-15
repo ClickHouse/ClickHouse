@@ -2,7 +2,12 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/AlterConversions.h>
+<<<<<<< HEAD
 #include <Storages/MergeTree/MergeTreeData.h>
+=======
+#include <Storages/ColumnsDescription.h>
+#include <Core/NamesAndTypes.h>
+>>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
 namespace DB
 {
@@ -41,6 +46,10 @@ public:
     virtual DataPartStoragePtr getDataPartStorage() const = 0;
 
     virtual const NamesAndTypesList & getColumns() const = 0;
+
+    virtual const ColumnsDescription & getColumnsDescription() const = 0;
+
+    virtual const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const = 0;
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 

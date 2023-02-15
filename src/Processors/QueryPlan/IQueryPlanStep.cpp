@@ -13,7 +13,7 @@ namespace ErrorCodes
 const DataStream & IQueryPlanStep::getOutputStream() const
 {
     if (!hasOutputStream())
-        throw Exception("QueryPlanStep " + getName() + " does not have output stream.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlanStep {} does not have output stream.", getName());
 
     return *output_stream;
 }

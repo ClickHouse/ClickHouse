@@ -6,8 +6,6 @@ endif()
 
 option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
-# If USE_STATIC_LIBRARIES=0 was passed to CMake, we'll still build LLVM statically to keep complexity minimal.
-
 if (NOT ENABLE_EMBEDDED_COMPILER)
     message(STATUS "Not using LLVM")
     return()

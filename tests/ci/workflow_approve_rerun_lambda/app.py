@@ -64,6 +64,7 @@ NEED_RERUN_WORKFLOWS = {
     "DocsCheck",
     "DocsReleaseChecks",
     "MasterCI",
+    "NightlyBuilds",
     "PullRequestCI",
     "ReleaseBranchCI",
 }
@@ -366,6 +367,7 @@ def check_need_to_rerun(workflow_description, token):
     jobs = get_workflow_jobs(workflow_description, token)
     print("Got jobs", len(jobs))
     for job in jobs:
+        print(f"Job {job['name']} has a conclusion '{job['conclusion']}'")
         if job["conclusion"] not in ("success", "skipped"):
             print("Job", job["name"], "failed, checking steps")
             for step in job["steps"]:

@@ -20,49 +20,64 @@ slug: /zh/sql-reference/data-types/enum
 
 这个 `x` 列只能存储类型定义中列出的值：`'hello'`或`'world'`。如果您尝试保存任何其他值，ClickHouse 抛出异常。
 
-    :) INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
+```sql
+INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
+```
 
-    INSERT INTO t_enum VALUES
+```response
+Ok.
 
-    Ok.
+3 rows in set. Elapsed: 0.002 sec.
+```
 
-    3 rows in set. Elapsed: 0.002 sec.
+```sql
+INSERT INTO t_enum VALUES('a')
+```
 
-    :) insert into t_enum values('a')
-
-    INSERT INTO t_enum VALUES
-
-
-    Exception on client:
-    Code: 49. DB::Exception: Unknown element 'a' for type Enum8('hello' = 1, 'world' = 2)
+```response
+Exception on client:
+Code: 49. DB::Exception: Unknown element 'a' for type Enum8('hello' = 1, 'world' = 2)
+```
 
 当您从表中查询数据时，ClickHouse 从 `Enum` 中输出字符串值。
 
-    SELECT * FROM t_enum
+```sql
+SELECT * FROM t_enum
+```
 
-    ┌─x─────┐
-    │ hello │
-    │ world │
-    │ hello │
-    └───────┘
+```response
+┌─x─────┐
+│ hello │
+│ world │
+│ hello │
+└───────┘
+```
 
 如果需要看到对应行的数值，则必须将 `Enum` 值转换为整数类型。
 
-    SELECT CAST(x, 'Int8') FROM t_enum
+```sql
+SELECT CAST(x, 'Int8') FROM t_enum
+```
 
-    ┌─CAST(x, 'Int8')─┐
-    │               1 │
-    │               2 │
-    │               1 │
-    └─────────────────┘
+```response
+┌─CAST(x, 'Int8')─┐
+│               1 │
+│               2 │
+│               1 │
+└─────────────────┘
+```
 
 在查询中创建枚举值，您还需要使用 `CAST`。
 
-    SELECT toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))
+```sql
+SELECT toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))
+```
 
-    ┌─toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))─┐
-    │ Enum8('a' = 1, 'b' = 2)                              │
-    └──────────────────────────────────────────────────────┘
+```response
+┌─toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))─┐
+│ Enum8('a' = 1, 'b' = 2)                              │
+└──────────────────────────────────────────────────────┘
+```
 
 ## 规则及用法 {#gui-ze-ji-yong-fa}
 
@@ -72,15 +87,19 @@ slug: /zh/sql-reference/data-types/enum
 
 `Enum` 包含在 [可为空](nullable.md) 类型中。因此，如果您使用此查询创建一个表
 
-    CREATE TABLE t_enum_nullable
-    (
-        x Nullable( Enum8('hello' = 1, 'world' = 2) )
-    )
-    ENGINE = TinyLog
+```sql
+CREATE TABLE t_enum_nullable
+(
+    x Nullable( Enum8('hello' = 1, 'world' = 2) )
+)
+ENGINE = TinyLog
+```
 
 不仅可以存储 `'hello'` 和 `'world'` ，还可以存储 `NULL`。
 
-    INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
+```sql
+INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
+```
 
 在内存中，`Enum` 列的存储方式与相应数值的 `Int8` 或 `Int16` 相同。
 

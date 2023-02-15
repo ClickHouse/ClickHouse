@@ -109,8 +109,7 @@ public:
     template <typename... Args>
     [[nodiscard]] bool emplace(Args &&... args)
     {
-        emplaceImpl(std::nullopt /* timeout in milliseconds */, std::forward<Args...>(args...));
-        return true;
+        return emplaceImpl(std::nullopt /* timeout in milliseconds */, std::forward<Args...>(args...));
     }
 
     /// Returns false if queue is finished and empty

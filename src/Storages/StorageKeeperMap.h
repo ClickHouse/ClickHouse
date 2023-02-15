@@ -57,6 +57,9 @@ public:
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
+
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(
@@ -64,6 +67,7 @@ public:
     {
         return node->getColumnName() == primary_key;
     }
+    bool supportsDelete() const override { return true; }
 
     zkutil::ZooKeeperPtr getClient() const;
     const std::string & dataPath() const;
@@ -77,26 +81,26 @@ public:
         auto is_table_valid = isTableValid();
         if (!is_table_valid.has_value())
         {
-            static constexpr std::string_view error_msg = "Failed to activate table because of connection issues. It will be activated "
+            static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
                                                           "once a connection is established and metadata is verified";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
             {
-                LOG_ERROR(log, fmt::runtime(error_msg));
+                LOG_ERROR(log, error_msg);
                 return;
             }
         }
 
         if (!*is_table_valid)
         {
-            static constexpr std::string_view error_msg
+            static constexpr auto error_msg
                 = "Failed to activate table because of invalid metadata in ZooKeeper. Please DETACH table";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
             {
-                LOG_ERROR(log, fmt::runtime(error_msg));
+                LOG_ERROR(log, error_msg);
                 return;
             }
         }

@@ -13,7 +13,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
-#include <Storages/NamedCollections/NamedCollectionsHelpers.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include "registerTableFunctions.h"
 #include <filesystem>
@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
+void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
     {
@@ -38,9 +38,9 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
     else
     {
         if (args.empty() || args.size() > 6)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message);
+            throw Exception::createDeprecated(error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto * header_it = StorageURL::collectHeaders(args, s3_configuration, context);
+        auto * header_it = StorageURL::collectHeaders(args, s3_configuration.headers_from_ast, context);
         if (header_it != args.end())
             args.erase(header_it);
 
@@ -48,7 +48,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         /// Size -> argument indexes
-        static auto size_to_args = std::map<size_t, std::map<String, size_t>>
+        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_args
         {
             {1, {{}}},
             {2, {{"format", 1}}},
@@ -56,7 +56,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
         };
 
-        std::map<String, size_t> args_to_idx;
+        std::unordered_map<std::string_view, size_t> args_to_idx;
         /// For 4 arguments we support 2 possible variants:
         /// s3(source, format, structure, compression_method) and s3(source, access_key_id, access_key_id, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
@@ -87,7 +87,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         }
 
         /// This argument is always the first
-        s3_configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
+        s3_configuration.url = S3::URI(checkAndGetLiteralArgument<String>(args[0], "url"));
 
         if (args_to_idx.contains("format"))
             s3_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
@@ -106,7 +106,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
     }
 
     if (s3_configuration.format == "auto")
-        s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url, true);
+        s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
 }
 
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -127,7 +127,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         getName());
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
     auto & args = args_func.at(0)->children;
 

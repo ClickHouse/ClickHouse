@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <base/errnoToString.h>
+#include <base/defines.h>
 #include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -251,7 +252,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", session_id);
             }
         }
     }
@@ -264,10 +265,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(
-                    ErrorCodes::SYSTEM_ERROR,
-                    "Could not push response with session id {} into responses queue",
-                    response_for_session.session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
             }
 
         if (keeper_context->digest_enabled && request_for_session.digest)
@@ -474,13 +472,15 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        ::close(fd);
+        int err = ::close(fd);
+        chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
     return 0;
 }
 
@@ -524,8 +524,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
         true /*is_local*/);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
-            throw Exception(
-                ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
+            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
 }
 
 void KeeperStateMachine::shutdownStorage()

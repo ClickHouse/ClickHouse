@@ -6,6 +6,17 @@ sidebar_label: Data Replication
 
 # Data Replication
 
+:::note
+In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
+```
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+```
+with:
+```
+ENGINE = ReplicatedReplacingMergeTree
+```
+:::
+
 Replication is only supported for tables in the MergeTree family:
 
 -   ReplicatedMergeTree
@@ -85,15 +96,15 @@ Example of setting the addresses of the auxiliary ZooKeeper cluster:
 </auxiliary_zookeepers>
 ```
 
-To store table metadata in an auxiliary ZooKeeper cluster instead of default ZooKeeper cluster, we can use the SQL to create table with
-ReplicatedMergeTree engine as follow:
+To store table metadata in an auxiliary ZooKeeper cluster instead of the default ZooKeeper cluster, we can use SQL to create the table with
+ReplicatedMergeTree engine as follows:
 
 ```
 CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
-If ZooKeeper isn’t set in the config file, you can’t create replicated tables, and any existing replicated tables will be read-only.
+If ZooKeeper is not set in the config file, you can’t create replicated tables, and any existing replicated tables will be read-only.
 
 ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/docs/en/operations/settings/settings.md/#settings-max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/docs/en/operations/settings/settings.md/#settings-fallback_to_stale_replicas_for_distributed_queries).
 
@@ -119,7 +130,22 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 ## Creating Replicated Tables {#creating-replicated-tables}
 
+:::note
+In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
+```
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
+```
+with:
+```
+ENGINE = ReplicatedReplacingMergeTree
+```
+:::
+
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
+
+:::tip
+Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.  
+:::
 
 ### Replicated\*MergeTree parameters
 
@@ -144,7 +170,7 @@ CREATE TABLE table_name
     CounterID UInt32,
     UserID UInt32,
     ver UInt16
-) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
+) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID);
@@ -160,7 +186,7 @@ CREATE TABLE table_name
     EventDate DateTime,
     CounterID UInt32,
     UserID UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
 ```
 
 </details>
@@ -171,7 +197,6 @@ Example:
 
 ``` xml
 <macros>
-    <layer>05</layer>
     <shard>02</shard>
     <replica>example05-02-1</replica>
 </macros>
@@ -182,12 +207,12 @@ In this case, the path consists of the following parts:
 
 `/clickhouse/tables/` is the common prefix. We recommend using exactly this one.
 
-`{layer}-{shard}` is the shard identifier. In this example it consists of two parts, since the example cluster uses bi-level sharding. For most tasks, you can leave just the {shard} substitution, which will be expanded to the shard identifier.
+`{shard}` will be expanded to the shard identifier.
 
 `table_name` is the name of the node for the table in ClickHouse Keeper. It is a good idea to make it the same as the table name. It is defined explicitly, because in contrast to the table name, it does not change after a RENAME query.
 *HINT*: you could add a database name in front of `table_name` as well. E.g. `db_name.table_name`
 
-The two built-in substitutions `{database}` and `{table}` can be used, they expand into the table name and the database name respectively (unless these macros are defined in the `macros` section). So the zookeeper path can be specified as `'/clickhouse/tables/{layer}-{shard}/{database}/{table}'`.
+The two built-in substitutions `{database}` and `{table}` can be used, they expand into the table name and the database name respectively (unless these macros are defined in the `macros` section). So the zookeeper path can be specified as `'/clickhouse/tables/{shard}/{database}/{table}'`.
 Be careful with table renames when using these built-in substitutions. The path in ClickHouse Keeper cannot be changed, and when the table is renamed, the macros will expand into a different path, the table will refer to a path that does not exist in ClickHouse Keeper, and will go into read-only mode.
 
 The replica name identifies different replicas of the same table. You can use the server name for this, as in the example. The name only needs to be unique within each shard.
@@ -300,5 +325,3 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 -   [execute_merges_on_single_replica_time_threshold](/docs/en/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
 -   [max_replicated_fetches_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
 -   [max_replicated_sends_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

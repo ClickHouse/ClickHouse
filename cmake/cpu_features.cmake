@@ -102,6 +102,11 @@ elseif (ARCH_AMD64)
         SET(ENABLE_AVX512_FOR_SPEC_OP 0)
     endif()
 
+    # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/
+    # AVX. We only check that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
+    # Therefore, use check_cxx_source_compiles (= does the code compile+link?) instead of check_cxx_source_runs (= does the code
+    # compile+link+run).
+
     set (TEST_FLAG "-mssse3")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("

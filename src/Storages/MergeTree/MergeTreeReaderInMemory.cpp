@@ -42,7 +42,7 @@ MergeTreeReaderInMemory::MergeTreeReaderInMemory(
         {
             if (auto offsets_position = findColumnForOffsets(column_to_read))
             {
-                positions_for_offsets[column_to_read.name] = *offsets_position;
+                positions_for_offsets[column_to_read.name] = offsets_position->first;
                 partially_read_columns.insert(column_to_read.name);
             }
         }
@@ -57,16 +57,16 @@ size_t MergeTreeReaderInMemory::readRows(
 
     size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCount();
     if (from_mark >= total_marks)
-        throw Exception("Mark " + toString(from_mark) + " is out of bound. Max mark: "
-            + toString(total_marks), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Mark {} is out of bound. Max mark: {}",
+            toString(from_mark), toString(total_marks));
 
     size_t num_columns = res_columns.size();
     checkNumberOfColumns(num_columns);
 
     size_t part_rows = part_in_memory->block.rows();
     if (total_rows_read >= part_rows)
-        throw Exception("Cannot read data in MergeTreeReaderInMemory. Rows already read: "
-            + toString(total_rows_read) + ". Rows in part: " + toString(part_rows), ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data in MergeTreeReaderInMemory. "
+            "Rows already read: {}. Rows in part: {}", total_rows_read, part_rows);
 
     size_t rows_to_read = std::min(max_rows_to_read, part_rows - total_rows_read);
     for (size_t i = 0; i < num_columns; ++i)

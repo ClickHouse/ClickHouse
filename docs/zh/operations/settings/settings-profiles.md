@@ -76,5 +76,3 @@ SET profile = 'web'
 这个 `default` 配置有一个特殊用途：它必须始终存在并在启动服务时应用。换句话说， `default` 配置包含默认设置。
 
 `web` 配置是一个常规的配置，它可以通过 `SET` 查询进行设定，也可以通过在HTTP查询中使用URL参数进行设定。
-
-[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_profiles/) <!--hide-->

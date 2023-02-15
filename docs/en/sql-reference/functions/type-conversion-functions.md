@@ -8,7 +8,7 @@ sidebar_label: Type Conversion
 
 ## Common Issues of Numeric Conversions
 
-When you convert a value from one to another data type, you should remember that in common case, it is an unsafe operation that can lead to a data loss. A data loss can occur if you try to fit value from a larger data type to a smaller data type, or if you convert values between different data types.
+When you convert a value from one to another data type, you should remember that if you try to fit a value from a larger data type to a smaller one (for example Int64 to Int32), or convert from one data type to another (for example `String` to `Int`), you could have data loss.  Test beforehand.
 
 ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
@@ -45,7 +45,7 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8);
 
 Result:
 
-``` text
+```response
 ┌─────────toInt64(nan)─┬─toInt32(32)─┬─toInt16('16')─┬─toInt8(8.8)─┐
 │ -9223372036854775808 │          32 │            16 │           8 │
 └──────────────────────┴─────────────┴───────────────┴─────────────┘
@@ -65,7 +65,7 @@ SELECT toInt64OrZero('123123'), toInt8OrZero('123qwe123');
 
 Result:
 
-``` text
+```response
 ┌─toInt64OrZero('123123')─┬─toInt8OrZero('123qwe123')─┐
 │                  123123 │                         0 │
 └─────────────────────────┴───────────────────────────┘
@@ -85,7 +85,7 @@ SELECT toInt64OrNull('123123'), toInt8OrNull('123qwe123');
 
 Result:
 
-``` text
+```response
 ┌─toInt64OrNull('123123')─┬─toInt8OrNull('123qwe123')─┐
 │                  123123 │                      ᴺᵁᴸᴸ │
 └─────────────────────────┴───────────────────────────┘
@@ -105,7 +105,7 @@ SELECT toInt64OrDefault('123123', cast('-1' as Int64)), toInt8OrDefault('123qwe1
 
 Result:
 
-``` text
+```response
 ┌─toInt64OrDefault('123123', CAST('-1', 'Int64'))─┬─toInt8OrDefault('123qwe123', CAST('-1', 'Int8'))─┐
 │                                          123123 │                                               -1 │
 └─────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
@@ -144,7 +144,7 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
 
 Result:
 
-``` text
+```response
 ┌───────toUInt64(nan)─┬─toUInt32(-32)─┬─toUInt16('16')─┬─toUInt8(8.8)─┐
 │ 9223372036854775808 │    4294967264 │             16 │            8 │
 └─────────────────────┴───────────────┴────────────────┴──────────────┘
@@ -314,7 +314,7 @@ Type: [Date32](/docs/en/sql-reference/data-types/date32.md).
 SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 ```
 
-``` text
+```response
 ┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
 │ 1955-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
@@ -326,7 +326,7 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 ```
 
-``` text
+```response
 ┌──────value─┬─toTypeName(toDate32('1899-01-01'))─┐
 │ 1900-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
@@ -338,7 +338,7 @@ SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
 ```
 
-``` text
+```response
 ┌──────value─┬─toTypeName(toDate32(toDate('1899-01-01')))─┐
 │ 1970-01-01 │ Date32                                     │
 └────────────┴────────────────────────────────────────────┘
@@ -358,7 +358,7 @@ SELECT toDate32OrZero('1899-01-01'), toDate32OrZero('');
 
 Result:
 
-``` text
+```response
 ┌─toDate32OrZero('1899-01-01')─┬─toDate32OrZero('')─┐
 │                   1900-01-01 │         1900-01-01 │
 └──────────────────────────────┴────────────────────┘
@@ -378,7 +378,7 @@ SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
 
 Result:
 
-``` text
+```response
 ┌─toDate32OrNull('1955-01-01')─┬─toDate32OrNull('')─┐
 │                   1955-01-01 │               ᴺᵁᴸᴸ │
 └──────────────────────────────┴────────────────────┘
@@ -400,7 +400,7 @@ SELECT
 
 Result:
 
-``` text
+```response
 ┌─toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))─┬─toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))─┐
 │                                              1930-01-01 │                                                2020-01-01 │
 └─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
@@ -436,7 +436,7 @@ Type: [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
 SELECT toDateTime64('1955-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
-``` text
+```response
 ┌───────────────────value─┬─toTypeName(toDateTime64('1955-01-01 00:00:00.000', 3))─┐
 │ 1955-01-01 00:00:00.000 │ DateTime64(3)                                          │
 └─────────────────────────┴────────────────────────────────────────────────────────┘
@@ -448,7 +448,7 @@ SELECT toDateTime64('1955-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
 ```
 
-``` text
+```response
 ┌───────────────────value─┬─toTypeName(toDateTime64(1546300800., 3))─┐
 │ 2019-01-01 00:00:00.000 │ DateTime64(3)                            │
 └─────────────────────────┴──────────────────────────────────────────┘
@@ -460,7 +460,7 @@ Without the decimal point the value is still treated as Unix Timestamp in second
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
-``` text
+```response
 ┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
 │ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
 └─────────────────────────┴────────────────────────────────────────────┘
@@ -473,7 +473,7 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
-``` text
+```response
 ┌───────────────────value─┬─toTypeName(toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
 │ 2019-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
 └─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
@@ -522,7 +522,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val);
 
 Result:
 
-``` text
+```response
 ┌────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
 │ -1.111 │ Nullable(Decimal(9, 5))                            │
 └────────┴────────────────────────────────────────────────────┘
@@ -536,7 +536,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 
 Result:
 
-``` text
+```response
 ┌──val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 2))─┐
 │ ᴺᵁᴸᴸ │ Nullable(Decimal(9, 2))                            │
 └──────┴────────────────────────────────────────────────────┘
@@ -576,7 +576,7 @@ SELECT toDecimal32OrDefault(toString(-1.111), 5) AS val, toTypeName(val);
 
 Result:
 
-``` text
+```response
 ┌────val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 5))─┐
 │ -1.111 │ Decimal(9, 5)                                         │
 └────────┴───────────────────────────────────────────────────────┘
@@ -590,7 +590,7 @@ SELECT toDecimal32OrDefault(toString(-1.111), 2) AS val, toTypeName(val);
 
 Result:
 
-``` text
+```response
 ┌─val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 2))─┐
 │   0 │ Decimal(9, 2)                                         │
 └─────┴───────────────────────────────────────────────────────┘
@@ -629,7 +629,7 @@ SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val);
 
 Result:
 
-``` text
+```response
 ┌────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
 │ -1.111 │ Decimal(9, 5)                                      │
 └────────┴────────────────────────────────────────────────────┘
@@ -643,7 +643,7 @@ SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val);
 
 Result:
 
-``` text
+```response
 ┌──val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 2))─┐
 │ 0.00 │ Decimal(9, 2)                                      │
 └──────┴────────────────────────────────────────────────────┘
@@ -661,7 +661,7 @@ When converting dates with times to numbers or vice versa, the date with time co
 
 The date and date-with-time formats for the toDate/toDateTime functions are defined as follows:
 
-``` text
+```response
 YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
@@ -686,7 +686,7 @@ SELECT
 
 Result:
 
-``` text
+```response
 ┌───────────now_local─┬─now_yekat───────────┐
 │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
 └─────────────────────┴─────────────────────┘
@@ -713,7 +713,7 @@ SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut;
 
 Result:
 
-``` text
+```response
 ┌─s─────────────┬─s_cut─┐
 │ foo\0\0\0\0\0 │ foo   │
 └───────────────┴───────┘
@@ -727,7 +727,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 
 Result:
 
-``` text
+```response
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
@@ -754,6 +754,10 @@ This function accepts a number or date or date with time and returns a string co
 This function accepts a number or date or date with time and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
 ## reinterpretAsUUID
+
+:::note
+In addition to the UUID functions listed here, there is dedicated [UUID function documentation](/docs/en/sql-reference/functions/uuid-functions.md).
+:::
 
 Accepts 16 bytes string and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
 
@@ -783,7 +787,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')));
 
 Result:
 
-``` text
+```response
 ┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
 │                                  08090a0b-0c0d-0e0f-0001-020304050607 │
 └───────────────────────────────────────────────────────────────────────┘
@@ -803,7 +807,7 @@ SELECT uuid = uuid2;
 
 Result:
 
-``` text
+```response
 ┌─equals(uuid, uuid2)─┐
 │                   1 │
 └─────────────────────┘
@@ -904,7 +908,7 @@ SELECT
 
 Result:
 
-``` text
+```response
 ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
@@ -924,7 +928,7 @@ SELECT toTypeName(x) FROM t_null;
 
 Result:
 
-``` text
+```response
 ┌─toTypeName(x)─┐
 │ Int8          │
 │ Int8          │
@@ -939,7 +943,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 
 Result:
 
-``` text
+```response
 ┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
 │ Nullable(UInt16)                        │
 │ Nullable(UInt16)                        │
@@ -966,7 +970,7 @@ SELECT cast(-1, 'UInt8') as uint8;
 
 Result:
 
-``` text
+```response
 ┌─uint8─┐
 │   255 │
 └───────┘
@@ -980,7 +984,7 @@ SELECT accurateCast(-1, 'UInt8') as uint8;
 
 Result:
 
-``` text
+```response
 Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in column Int8 cannot be safely converted into type UInt8: While processing accurateCast(-1, 'UInt8') AS uint8.
 ```
 
@@ -1013,7 +1017,7 @@ SELECT toTypeName(accurateCastOrNull(5, 'UInt8'));
 
 Result:
 
-``` text
+```response
 ┌─toTypeName(accurateCastOrNull(5, 'UInt8'))─┐
 │ Nullable(UInt8)                            │
 └────────────────────────────────────────────┘
@@ -1030,7 +1034,7 @@ SELECT
 
 Result:
 
-``` text
+```response
 ┌─uint8─┬─int8─┬─fixed_string─┐
 │  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
 └───────┴──────┴──────────────┘
@@ -1067,7 +1071,7 @@ SELECT toTypeName(accurateCastOrDefault(5, 'UInt8'));
 
 Result:
 
-``` text
+```response
 ┌─toTypeName(accurateCastOrDefault(5, 'UInt8'))─┐
 │ UInt8                                         │
 └───────────────────────────────────────────────┘
@@ -1087,7 +1091,7 @@ SELECT
 
 Result:
 
-``` text
+```response
 ┌─uint8─┬─uint8_default─┬─int8─┬─int8_default─┬─fixed_string─┬─fixed_string_default─┐
 │     0 │             5 │    0 │            5 │              │ Te                   │
 └───────┴───────────────┴──────┴──────────────┴──────────────┴──────────────────────┘
@@ -1134,7 +1138,7 @@ SELECT
 
 Result:
 
-``` text
+```response
 ┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
 │                2019-01-08 │                   2019-01-08 │
 └───────────────────────────┴──────────────────────────────┘
@@ -1183,7 +1187,7 @@ AS parseDateTimeBestEffort;
 
 Result:
 
-``` text
+```response
 ┌─parseDateTimeBestEffort─┐
 │     2020-10-23 12:12:57 │
 └─────────────────────────┘
@@ -1198,7 +1202,7 @@ AS parseDateTimeBestEffort;
 
 Result:
 
-``` text
+```response
 ┌─parseDateTimeBestEffort─┐
 │     2018-08-18 10:22:16 │
 └─────────────────────────┘
@@ -1213,7 +1217,7 @@ AS parseDateTimeBestEffort;
 
 Result:
 
-``` text
+```response
 ┌─parseDateTimeBestEffort─┐
 │     2015-07-07 12:04:41 │
 └─────────────────────────┘
@@ -1228,7 +1232,7 @@ AS parseDateTimeBestEffort;
 
 Result:
 
-``` text
+```response
 ┌─parseDateTimeBestEffort─┐
 │     2018-10-23 10:12:12 │
 └─────────────────────────┘
@@ -1242,7 +1246,7 @@ SELECT parseDateTimeBestEffort('10 20:19');
 
 Result:
 
-``` text
+```response
 ┌─parseDateTimeBestEffort('10 20:19')─┐
 │                 2000-01-10 20:19:00 │
 └─────────────────────────────────────┘
@@ -1376,7 +1380,7 @@ SELECT toLowCardinality('1');
 
 Result:
 
-``` text
+```response
 ┌─toLowCardinality('1')─┐
 │ 1                     │
 └───────────────────────┘
@@ -1398,6 +1402,8 @@ The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
 
 ```sql
 toUnixTimestamp64Milli(value)
+toUnixTimestamp64Micro(value)
+toUnixTimestamp64Nano(value)
 ```
 
 **Arguments**
@@ -1419,7 +1425,7 @@ SELECT toUnixTimestamp64Milli(dt64);
 
 Result:
 
-``` text
+```response
 ┌─toUnixTimestamp64Milli(dt64)─┐
 │                1568650812345 │
 └──────────────────────────────┘
@@ -1434,7 +1440,7 @@ SELECT toUnixTimestamp64Nano(dt64);
 
 Result:
 
-``` text
+```response
 ┌─toUnixTimestamp64Nano(dt64)─┐
 │         1568650812345678000 │
 └─────────────────────────────┘
@@ -1451,7 +1457,9 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 **Syntax**
 
 ``` sql
-fromUnixTimestamp64Milli(value [, ti])
+fromUnixTimestamp64Milli(value [, timezone])
+fromUnixTimestamp64Micro(value [, timezone])
+fromUnixTimestamp64Nano(value [, timezone])
 ```
 
 **Arguments**
@@ -1474,7 +1482,7 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC');
 
 Result:
 
-``` text
+```response
 ┌─fromUnixTimestamp64Milli(i64, 'UTC')─┐
 │              2009-02-13 23:31:31.011 │
 └──────────────────────────────────────┘
@@ -1497,7 +1505,7 @@ formatRow(format, x, y, ...)
 
 **Returned value**
 
--   A formatted string (for text formats it's usually terminated with the new line character).
+-   A formatted string. (for text formats it's usually terminated with the new line character).
 
 **Example**
 
@@ -1510,7 +1518,7 @@ FROM numbers(3);
 
 Result:
 
-``` text
+```response
 ┌─formatRow('CSV', number, 'good')─┐
 │ 0,"good"
                          │
@@ -1521,9 +1529,39 @@ Result:
 └──────────────────────────────────┘
 ```
 
+**Note**: If format contains suffix/prefix, it will be written in each row.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatRow('CustomSeparated', number, 'good')
+FROM numbers(3)
+SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
+```
+
+Result:
+
+```response
+┌─formatRow('CustomSeparated', number, 'good')─┐
+│ <prefix>
+0	good
+<suffix>                   │
+│ <prefix>
+1	good
+<suffix>                   │
+│ <prefix>
+2	good
+<suffix>                   │
+└──────────────────────────────────────────────┘
+```
+
+Note: Only row-based formats are supported in this function.
+
 ## formatRowNoNewline
 
-Converts arbitrary expressions into a string via given format. The function trims the last `\n` if any.
+Converts arbitrary expressions into a string via given format. Differs from formatRow in that this function trims the last `\n` if any.
 
 **Syntax**
 
@@ -1551,7 +1589,7 @@ FROM numbers(3);
 
 Result:
 
-``` text
+```response
 ┌─formatRowNoNewline('CSV', number, 'good')─┐
 │ 0,"good"                                  │
 │ 1,"good"                                  │
@@ -1588,7 +1626,7 @@ SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
 
 Result:
 
-``` text
+```response
 
 ┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
 │                                              2021-08-15 10:57:56 │
@@ -1624,7 +1662,7 @@ SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
 
 Result:
 
-``` text
+```response
 
 ┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
 │                                            2021-08-15 10:58:19.841 │
@@ -1659,7 +1697,7 @@ WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToS
 
 Result:
 
-``` text
+```response
 ┌─dateTimeToSnowflake(dt)─┐
 │     1426860702823350272 │
 └─────────────────────────┘
@@ -1693,7 +1731,7 @@ WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT 
 
 Result:
 
-``` text
+```response
 ┌─dateTime64ToSnowflake(dt64)─┐
 │         1426860704886947840 │
 └─────────────────────────────┘

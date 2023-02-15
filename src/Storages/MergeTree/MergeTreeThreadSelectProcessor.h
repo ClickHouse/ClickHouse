@@ -5,9 +5,14 @@
 namespace DB
 {
 
+<<<<<<< HEAD
 class MergeTreeReadPool;
 
 class StorageUniqueMergeTree;
+=======
+class IMergeTreeReadPool;
+using IMergeTreeReadPoolPtr = std::shared_ptr<IMergeTreeReadPool>;
+>>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
@@ -17,9 +22,9 @@ class MergeTreeThreadSelectAlgorithm final : public IMergeTreeSelectAlgorithm
 public:
     MergeTreeThreadSelectAlgorithm(
         size_t thread_,
-        const std::shared_ptr<MergeTreeReadPool> & pool_,
-        size_t min_marks_to_read_,
-        UInt64 max_block_size_,
+        IMergeTreeReadPoolPtr pool_,
+        size_t min_marks_for_concurrent_read,
+        size_t max_block_size_,
         size_t preferred_block_size_bytes_,
         size_t preferred_max_column_in_block_size_bytes_,
         const MergeTreeData & storage_,
@@ -28,9 +33,13 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings_,
+<<<<<<< HEAD
         const Names & virt_column_names_,
         std::optional<ParallelReadingExtension> extension_,
         StorageUniqueMergeTree * unique_mergetree_ = nullptr);
+=======
+        const Names & virt_column_names_);
+>>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
     String getName() const override { return "MergeTreeThread"; }
 
@@ -44,18 +53,14 @@ protected:
 
     void finish() override;
 
-    bool canUseConsistentHashingForParallelReading() override { return true; }
-
 private:
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
     size_t thread;
 
-    std::shared_ptr<MergeTreeReadPool> pool;
+    IMergeTreeReadPoolPtr pool;
 
     /// Last part read in this thread
-    std::string last_readed_part_name;
-    /// Names from header. Used in order to order columns in read blocks.
-    Names ordered_names;
+    std::string last_read_part_name;
 };
 
 }
