@@ -157,7 +157,7 @@ std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::ge
     }
     throw Exception(
         ErrorCodes::ILLEGAL_COLUMN,
-        "The parsed column from Avro file for manifest_path should have data type String, but get {}",
+        "The parsed column from Avro file of `manifest_path` field should be String type, got {}",
         col->getFamilyName());
 }
 
@@ -200,7 +200,7 @@ std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::ge
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "The parsed column from Avro file for file_path should have data type String, got {}",
+                    "The parsed column from Avro file of `file_path` field should be String type, got {}",
                     col_str->getFamilyName());
             }
         }
@@ -208,7 +208,7 @@ std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::ge
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "The parsed column from Avro file for data_file field should have data type Tuple, got {}",
+                "The parsed column from Avro file of `data_file` field should be Tuple type, got {}",
                 col->getFamilyName());
         }
     }
