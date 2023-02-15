@@ -23,23 +23,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-static const std::unordered_set<std::string_view> required_configuration_keys = {
-    "url",
-};
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
-    "format",
-    "compression",
-    "compression_method",
-    "structure",
-    "access_key_id",
-    "secret_access_key",
-};
-
 template <typename Name, typename MetadataParser>
 class IStorageDataLake : public IStorage
 {
@@ -58,7 +41,6 @@ public:
         : IStorage(table_id_)
         , base_configuration{configuration_}
         , log(&Poco::Logger::get("Storage" + String(name) + "(" + table_id_.table_name + ")"))
-        , table_path(base_configuration.url.key)
     {
         StorageInMemoryMetadata storage_metadata;
         StorageS3::updateS3Configuration(context_, base_configuration);
@@ -113,6 +95,7 @@ public:
     {
         StorageS3::updateS3Configuration(ctx, configuration);
         auto new_configuration = getAdjustedS3Configuration(ctx, configuration, &Poco::Logger::get("Storage" + String(name)));
+
         return StorageS3::getTableStructureFromData(
             new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
     }
@@ -134,60 +117,10 @@ public:
         return new_configuration;
     }
 
-    static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
-    {
-        validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
-
-        configuration.url = S3::URI{collection.get<String>("url")};
-
-        configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
-        configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
-
-        configuration.format = collection.getOrDefault<String>("format", "Parquet");
-
-        configuration.compression_method
-            = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
-
-        configuration.structure = collection.getOrDefault<String>("structure", "auto");
-
-        configuration.request_settings = S3Settings::RequestSettings(collection);
-    }
 
     static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
     {
-        StorageS3::Configuration configuration;
-
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
-        {
-            processNamedCollectionResult(configuration, *named_collection);
-        }
-        else
-        {
-            /// Supported signatures:
-            ///
-            /// xx('url', 'aws_access_key_id', 'aws_secret_access_key')
-            /// xx('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
-
-            if (engine_args.empty() || engine_args.size() < 3)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Storage {} requires 3 or 4 arguments: url, access_key_id, secret_access_key, [format]",
-                    name);
-
-            auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers_from_ast, local_context);
-            if (header_it != engine_args.end())
-                engine_args.erase(header_it);
-
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-            configuration.url = S3::URI{checkAndGetLiteralArgument<String>(engine_args[0], "url")};
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
-
-            if (engine_args.size() == 4)
-                configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
-        }
+        auto configuration = StorageS3::getConfiguration(engine_args, local_context, false /* get_format_from_file */);
 
         if (configuration.format == "auto")
             configuration.format = "Parquet";
@@ -196,11 +129,9 @@ public:
     }
 
 private:
-
     StorageS3::Configuration base_configuration;
     std::shared_ptr<StorageS3> s3engine;
     Poco::Logger * log;
-    String table_path;
 };
 
 }
