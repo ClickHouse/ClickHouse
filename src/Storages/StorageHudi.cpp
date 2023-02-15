@@ -25,8 +25,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Configuration, typename MetaReadHelper>
-HudiMetadataParser<Configuration, MetaReadHelper>::HudiMetadataParser(const Configuration & configuration_, ContextPtr context_)
+template <typename Configuration, typename MetadataReadHelper>
+HudiMetadataParser<Configuration, MetadataReadHelper>::HudiMetadataParser(const Configuration & configuration_, ContextPtr context_)
     : configuration(configuration_), context(context_), log(&Poco::Logger::get("StorageHudi"))
 {
 }
@@ -36,8 +36,8 @@ HudiMetadataParser<Configuration, MetaReadHelper>::HudiMetadataParser(const Conf
 /// Every partition(directory) in Apache Hudi has different versions of part.
 /// To find needed parts we need to find out latest part file for every partition.
 /// Part format is usually parquet, but can differ.
-template <typename Configuration, typename MetaReadHelper>
-String HudiMetadataParser<Configuration, MetaReadHelper>::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
+template <typename Configuration, typename MetadataReadHelper>
+String HudiMetadataParser<Configuration, MetadataReadHelper>::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
 {
     /// For each partition path take only latest file.
     struct FileInfo
@@ -88,10 +88,10 @@ String HudiMetadataParser<Configuration, MetaReadHelper>::generateQueryFromKeys(
     return "{" + list_of_keys + "}";
 }
 
-template <typename Configuration, typename MetaReadHelper>
-std::vector<std::string> HudiMetadataParser<Configuration, MetaReadHelper>::getFiles() const
+template <typename Configuration, typename MetadataReadHelper>
+std::vector<std::string> HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles() const
 {
-    return MetaReadHelper::listFiles(configuration);
+    return MetadataReadHelper::listFiles(configuration);
 }
 
 template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser(

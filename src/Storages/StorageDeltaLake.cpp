@@ -51,22 +51,22 @@ std::vector<String> DeltaLakeMetadata::listCurrentFiles() &&
     return keys;
 }
 
-template <typename Configuration, typename MetaReadHelper>
-DeltaLakeMetadataParser<Configuration, MetaReadHelper>::DeltaLakeMetadataParser(const Configuration & configuration_, ContextPtr context)
+template <typename Configuration, typename MetadataReadHelper>
+DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::DeltaLakeMetadataParser(const Configuration & configuration_, ContextPtr context)
     : base_configuration(configuration_)
 {
     init(context);
 }
 
-template <typename Configuration, typename MetaReadHelper>
-void DeltaLakeMetadataParser<Configuration, MetaReadHelper>::init(ContextPtr context)
+template <typename Configuration, typename MetadataReadHelper>
+void DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::init(ContextPtr context)
 {
     auto keys = getJsonLogFiles();
 
     // read data from every json log file
     for (const String & key : keys)
     {
-        auto buf = MetaReadHelper::createReadBuffer(key, context, base_configuration);
+        auto buf = MetadataReadHelper::createReadBuffer(key, context, base_configuration);
 
         char c;
         while (!buf->eof())
@@ -90,19 +90,19 @@ void DeltaLakeMetadataParser<Configuration, MetaReadHelper>::init(ContextPtr con
     }
 }
 
-template <typename Configuration, typename MetaReadHelper>
-std::vector<String> DeltaLakeMetadataParser<Configuration, MetaReadHelper>::getJsonLogFiles() const
+template <typename Configuration, typename MetadataReadHelper>
+std::vector<String> DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::getJsonLogFiles() const
 {
 
     /// DeltaLake format stores all metadata json files in _delta_log directory
     static constexpr auto deltalake_metadata_directory = "_delta_log";
     static constexpr auto meta_file_suffix = ".json";
 
-    return MetaReadHelper::listFilesMatchSuffix(base_configuration, deltalake_metadata_directory, meta_file_suffix);
+    return MetadataReadHelper::listFilesMatchSuffix(base_configuration, deltalake_metadata_directory, meta_file_suffix);
 }
 
-template <typename Configuration, typename MetaReadHelper>
-void DeltaLakeMetadataParser<Configuration, MetaReadHelper>::handleJSON(const JSON & json)
+template <typename Configuration, typename MetadataReadHelper>
+void DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::handleJSON(const JSON & json)
 {
     if (json.has("add"))
     {
@@ -125,8 +125,8 @@ void DeltaLakeMetadataParser<Configuration, MetaReadHelper>::handleJSON(const JS
 // keys is vector of parts with latest version
 // generateQueryFromKeys constructs query from parts filenames for
 // underlying StorageS3 engine
-template <typename Configuration, typename MetaReadHelper>
-String DeltaLakeMetadataParser<Configuration, MetaReadHelper>::generateQueryFromKeys(const std::vector<String> & keys, const String &)
+template <typename Configuration, typename MetadataReadHelper>
+String DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::generateQueryFromKeys(const std::vector<String> & keys, const String &)
 {
     std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
     return new_query;
