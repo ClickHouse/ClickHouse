@@ -6,13 +6,6 @@
 
 #    include <Common/logger_useful.h>
 
-#    include <Interpreters/evaluateConstantExpression.h>
-#    include <Storages/NamedCollectionsHelpers.h>
-
-#    include <Storages/ExternalDataSourceConfiguration.h>
-#    include <Storages/StorageURL.h>
-#    include <Storages/checkAndGetLiteralArgument.h>
-
 #    include <QueryPipeline/Pipe.h>
 
 #    include <Storages/IStorage.h>
