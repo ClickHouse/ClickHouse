@@ -61,15 +61,15 @@ namespace
                     res.any_database = true;
                     res.any_table = true;
                     res.any_column = true;
-                    res.any_named_collection = true;
+                    res.any_global_with_parameter = true;
                     break;
                 }
                 case 1:
                 {
-                    if (access_flags.isNamedCollectionAccess())
+                    if (access_flags.isGlobalWithParameter())
                     {
-                        res.any_named_collection = false;
-                        res.named_collection = full_name[0];
+                        res.any_global_with_parameter = false;
+                        res.parameter = full_name[0];
                     }
                     else
                     {
@@ -792,8 +792,8 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
     assert(!element.is_partial_revoke);
     assert(!element.grant_option || with_grant_option);
-    if (!element.any_named_collection)
-        grantImpl<with_grant_option>(element.access_flags, element.named_collection);
+    if (!element.any_global_with_parameter)
+        grantImpl<with_grant_option>(element.access_flags, element.parameter);
     else if (element.any_database)
         grantImpl<with_grant_option>(element.access_flags);
     else if (element.any_table)
@@ -869,8 +869,8 @@ template <bool grant_option>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
     assert(!element.grant_option || grant_option);
-    if (!element.any_named_collection)
-        revokeImpl<grant_option>(element.access_flags, element.named_collection);
+    if (!element.any_global_with_parameter)
+        revokeImpl<grant_option>(element.access_flags, element.parameter);
     else if (element.any_database)
         revokeImpl<grant_option>(element.access_flags);
     else if (element.any_table)
@@ -961,8 +961,8 @@ template <bool grant_option>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (!element.any_named_collection)
-        return isGrantedImpl<grant_option>(element.access_flags, element.named_collection);
+    if (!element.any_global_with_parameter)
+        return isGrantedImpl<grant_option>(element.access_flags, element.parameter);
     else if (element.any_database)
         return isGrantedImpl<grant_option>(element.access_flags);
     else if (element.any_table)
