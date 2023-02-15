@@ -178,9 +178,9 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    /// Wait when replication queue size becomes less or equal than queue_size
+    /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForShrinkingQueueSize(size_t queue_size = 0, UInt64 max_wait_milliseconds = 0);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds = 0);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -323,6 +323,8 @@ public:
         const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
     bool canUseZeroCopyReplication() const;
+
+    bool isTableReadOnly () { return is_readonly; }
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -676,8 +678,7 @@ private:
         bool to_detached,
         size_t quorum,
         zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool try_fetch_shared = true,
-        String entry_znode = "");
+        bool try_fetch_shared = true);
 
     /** Download the specified part from the specified replica.
       * Used for replace local part on the same s3-shared part in hybrid storage.

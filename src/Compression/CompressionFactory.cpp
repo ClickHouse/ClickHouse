@@ -173,14 +173,12 @@ void registerCodecDeflateQpl(CompressionCodecFactory & factory);
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
 #ifndef KEEPER_STANDALONE_BUILD
-
 void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
-
 #endif
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -197,9 +195,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
-    #ifdef ENABLE_QPL_COMPRESSION
-        registerCodecDeflateQpl(*this);
-    #endif
+#ifdef ENABLE_QPL_COMPRESSION
+    registerCodecDeflateQpl(*this);
+#endif
 #endif
 
     default_codec = get("LZ4", {});

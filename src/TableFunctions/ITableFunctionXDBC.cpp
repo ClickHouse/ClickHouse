@@ -2,7 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -76,7 +76,14 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
     Poco::Net::HTTPBasicCredentials credentials{};
-    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context), credentials);
+    ReadWriteBufferFromHTTP buf(
+        columns_info_uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        {},
+        ConnectionTimeouts::getHTTPTimeouts(
+            context->getSettingsRef(),
+            {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+        credentials);
 
     std::string columns_info;
     readStringBinary(columns_info, buf);

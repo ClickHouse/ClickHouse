@@ -17,7 +17,7 @@
 
 #if defined(POCO_OS_FAMILY_WINDOWS)
 #if defined(_WIN32_WCE)
-#include "PipeImpl_DUMMY.cpp"
+/// #include "PipeImpl_DUMMY.cpp"
 #else
 #include "PipeImpl_WIN32.cpp"
 #endif
