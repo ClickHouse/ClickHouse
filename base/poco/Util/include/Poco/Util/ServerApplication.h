@@ -143,14 +143,6 @@ namespace Util
         /// Runs the application by performing additional initializations
         /// and calling the main() method.
 
-#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-        int run(int argc, wchar_t ** argv);
-        /// Runs the application by performing additional initializations
-        /// and calling the main() method.
-        ///
-        /// This Windows-specific version of init is used for passing
-        /// Unicode command line arguments from wmain().
-#endif
 
         static void terminate();
         /// Sends a friendly termination request to the application.
