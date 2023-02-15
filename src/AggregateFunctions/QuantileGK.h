@@ -25,7 +25,8 @@ public:
         Int64 g;      // the minimum rank jump from the previous value's minimum rank
         Int64 delta;  // the maximum span of the rank
 
-        Stats(T value_, Int64 g_, Int64 delta_) : value(value_), g(g_), delta(delta_) { }
+        Stats() = default;
+        Stats(T value_, Int64 g_, Int64 delta_) : value(value_), g(g_), delta(delta_) {}
     };
 
     struct QueryResult
@@ -37,19 +38,23 @@ public:
         QueryResult(size_t index_, Int64 rank_, T value_) : index(index_), rank(rank_), value(value_) { }
     };
 
-    GKSampler(
-        size_t compress_threshold_,
+    GKSampler() = default;
+
+    explicit GKSampler(
         double relative_error_,
+        size_t compress_threshold_ = default_compress_threshold,
         size_t count_ = 0,
         bool compressed_ = false,
         const std::vector<Stats> & sampled_ = {})
-        : compress_threshold(compress_threshold_)
-        , relative_error(relative_error_)
+        : relative_error(relative_error_)
+        , compress_threshold(compress_threshold_)
         , count(count_)
         , compressed(compressed_)
         , sampled(sampled_)
     {
     }
+
+    bool isCompressed() const { return compressed; }
 
     void insert(T x)
     {
@@ -59,9 +64,7 @@ public:
         {
             withHeadBufferInserted();
             if (sampled.size() >= compress_threshold)
-            {
                 compress();
-            }
         }
     }
 
@@ -73,7 +76,7 @@ public:
         if (sampled.empty())
         {
             for (size_t i = 0; i < size; ++i)
-                result[i] = 0;
+                result[i] = T();
             return;
         }
 
@@ -165,16 +168,16 @@ public:
             merged_sampled.reserve(sampled.size() + other.sampled.size());
             double merged_relative_error = std::max(relative_error, other.relative_error);
             size_t merged_count = count + other.count;
-            Int64 additional_self_delta = std::floor(2 * other.relative_error * other.count);
-            Int64 additional_other_delta = std::floor(2 * relative_error * count);
+            Int64 additional_self_delta = static_cast<Int64>(std::floor(2 * other.relative_error * other.count));
+            Int64 additional_other_delta = static_cast<Int64>(std::floor(2 * relative_error * count));
 
             // Do a merge of two sorted lists until one of the lists is fully consumed
             size_t self_idx = 0;
             size_t other_idx = 0;
             while (self_idx < sampled.size() && other_idx < other.sampled.size())
             {
-                Stats self_sample = sampled(self_idx);
-                Stats other_sample = other.sampled(other_idx);
+                const Stats & self_sample = sampled[self_idx];
+                const Stats & other_sample = other.sampled[other_idx];
 
                 // Detect next sample
                 Stats next_sample;
@@ -206,7 +209,7 @@ public:
             }
             while (other_idx < other.sampled.size())
             {
-                merged_sampled += other.sampled[other_idx];
+                merged_sampled.emplace_back(other.sampled[other_idx]);
                 ++other_idx;
             }
 
@@ -240,6 +243,9 @@ public:
         readFloatBinary<double>(relative_error, buf);
         readIntBinary<size_t>(count, buf);
 
+        /// Always compress before serialization
+        compressed = true;
+
         size_t sampled_len = 0;
         readIntBinary<size_t>(sampled_len, buf);
         sampled.resize(sampled_len);
@@ -257,7 +263,7 @@ private:
     QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile)
     {
         Stats curr_sample = sampled[index];
-        Int64 rank = std::ceil(percentile * count);
+        Int64 rank = static_cast<Int64>(std::ceil(percentile * count));
         size_t i = index;
         Int64 min_rank = min_rank_at_index;
         while (i < sampled.size() - 1)
@@ -292,7 +298,7 @@ private:
             T current_sample = head_sampled[ops_idx];
 
             // Add all the samples before the next observation.
-            while (sample_idx < sampled.size() && sampled[sample_idx] <= current_sample)
+            while (sample_idx < sampled.size() && sampled[sample_idx].value <= current_sample)
             {
                 new_samples.push_back(sampled[sample_idx]);
                 ++sample_idx;
@@ -304,7 +310,7 @@ private:
             if (new_samples.empty() || (sample_idx == sampled.size() && ops_idx == (head_sampled.size() - 1)))
                 delta = 0;
             else
-                delta = std::floor(2 * relative_error * current_count);
+                delta = static_cast<Int64>(std::floor(2 * relative_error * current_count));
 
             new_samples.emplace_back(current_sample, 1, delta);
         }
@@ -362,24 +368,29 @@ private:
         return res;
     }
 
-    size_t compress_threshold;
     double relative_error;
+    size_t compress_threshold;
     size_t count = 0;
     bool compressed;
 
     std::vector<Stats> sampled;
     std::vector<T> head_sampled;
 
+    static constexpr size_t default_compress_threshold = 10000;
     static constexpr size_t default_head_size = 50000;
 };
 
-
 template <typename Value>
-struct QuantileGK
+class QuantileGK
 {
-public:
+private:
     using Data = GKSampler<Value>;
-    Data data;
+    mutable Data data;
+
+public:
+    QuantileGK() = default;
+
+    explicit QuantileGK(size_t accuracy) : data(1.0 / static_cast<double>(accuracy)) { }
 
     void add(const Value & x)
     {
@@ -394,11 +405,17 @@ public:
 
     void merge(const QuantileGK & rhs)
     {
-        data.merge(rhs);
+        if (!data.isCompressed())
+            data.compress();
+
+        data.merge(rhs.data);
     }
 
     void serialize(WriteBuffer & buf) const
     {
+        if (!data.isCompressed())
+            data.compress();
+
         data.write(buf);
     }
 
@@ -410,32 +427,33 @@ public:
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
     {
+        if (!data.isCompressed())
+            data.compress();
+
         Value res;
         size_t indice = 0;
         data.query(&level, &indice, 1, &res);
         return res;
     }
 
-
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.
     /// indices - an array of index levels such that the corresponding elements will go in ascending order.
     void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
+        if (!data.isCompressed())
+            data.compress();
+
         data.query(levels, indices, size, result);
     }
 
-    Float64 getFloat64(Float64 level)
+    Float64 getFloat64(Float64 /*level*/)
     {
-        return static_cast<Float64>(get(level));
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not implemented for GKSampler");
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
+    void getManyFloat(const Float64 * /*levels*/, const size_t * /*indices*/, size_t /*size*/, Float64 * /*result*/)
     {
-        std::vector<Value> values;
-        getMany(levels, indices, size, values.data());
-
-        for (size_t i=0; i<size; ++i)
-            result[i] = static_cast<Float64>(values[i]);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getManyFloat is not implemented for GKSampler");
     }
 };
 
