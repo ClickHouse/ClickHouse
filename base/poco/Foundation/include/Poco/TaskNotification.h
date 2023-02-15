@@ -23,144 +23,138 @@
 #include "Poco/Task.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API TaskNotification: public Notification
-	/// Base class for TaskManager notifications.
+class Foundation_API TaskNotification : public Notification
+/// Base class for TaskManager notifications.
 {
 public:
-	TaskNotification(Task* pTask);
-		/// Creates the TaskNotification.
+    TaskNotification(Task * pTask);
+    /// Creates the TaskNotification.
 
-	Task* task() const;
-		/// Returns the subject of the notification.
+    Task * task() const;
+    /// Returns the subject of the notification.
 
 protected:
-	virtual ~TaskNotification();
-		/// Destroys the TaskNotification.
+    virtual ~TaskNotification();
+    /// Destroys the TaskNotification.
 
 private:
-	Task* _pTask;
+    Task * _pTask;
 };
 
 
-class Foundation_API TaskStartedNotification: public TaskNotification
-	/// This notification is posted by the TaskManager for
-	/// every task that has been started.
+class Foundation_API TaskStartedNotification : public TaskNotification
+/// This notification is posted by the TaskManager for
+/// every task that has been started.
 {
 public:
-	TaskStartedNotification(Task* pTask);
-	
+    TaskStartedNotification(Task * pTask);
+
 protected:
-	~TaskStartedNotification();
+    ~TaskStartedNotification();
 };
 
 
-class Foundation_API TaskCancelledNotification: public TaskNotification
-	/// This notification is posted by the TaskManager for
-	/// every task that has been cancelled.
+class Foundation_API TaskCancelledNotification : public TaskNotification
+/// This notification is posted by the TaskManager for
+/// every task that has been cancelled.
 {
 public:
-	TaskCancelledNotification(Task* pTask);
+    TaskCancelledNotification(Task * pTask);
 
 protected:
-	~TaskCancelledNotification();
+    ~TaskCancelledNotification();
 };
 
 
-class Foundation_API TaskFinishedNotification: public TaskNotification
-	/// This notification is posted by the TaskManager for
-	/// every task that has finished.
+class Foundation_API TaskFinishedNotification : public TaskNotification
+/// This notification is posted by the TaskManager for
+/// every task that has finished.
 {
 public:
-	TaskFinishedNotification(Task* pTask);
+    TaskFinishedNotification(Task * pTask);
 
 protected:
-	~TaskFinishedNotification();
+    ~TaskFinishedNotification();
 };
 
 
-class Foundation_API TaskFailedNotification: public TaskNotification
-	/// This notification is posted by the TaskManager for
-	/// every task that has failed with an exception.
+class Foundation_API TaskFailedNotification : public TaskNotification
+/// This notification is posted by the TaskManager for
+/// every task that has failed with an exception.
 {
 public:
-	TaskFailedNotification(Task* pTask, const Exception& exc);
+    TaskFailedNotification(Task * pTask, const Exception & exc);
 
-	const Exception& reason() const;
+    const Exception & reason() const;
 
 protected:
-	~TaskFailedNotification();
-	
+    ~TaskFailedNotification();
+
 private:
-	Exception* _pException;
+    Exception * _pException;
 };
 
 
-class Foundation_API TaskProgressNotification: public TaskNotification
-	/// This notification is posted by the TaskManager for
-	/// a task when its progress changes.
+class Foundation_API TaskProgressNotification : public TaskNotification
+/// This notification is posted by the TaskManager for
+/// a task when its progress changes.
 {
 public:
-	TaskProgressNotification(Task* pTask, float progress);
+    TaskProgressNotification(Task * pTask, float progress);
 
-	float progress() const;
+    float progress() const;
 
 protected:
-	~TaskProgressNotification();
-	
+    ~TaskProgressNotification();
+
 private:
-	float _progress;
+    float _progress;
 };
 
 
 template <class C>
-class TaskCustomNotification: public TaskNotification
-	/// This is a template for "custom" notification.
-	/// Unlike other notifications, this notification
-	/// is instantiated and posted by the task itself.
-	/// The purpose is to provide generic notification
-	/// mechanism between the task and its observer(s).
+class TaskCustomNotification : public TaskNotification
+/// This is a template for "custom" notification.
+/// Unlike other notifications, this notification
+/// is instantiated and posted by the task itself.
+/// The purpose is to provide generic notification
+/// mechanism between the task and its observer(s).
 {
 public:
-	TaskCustomNotification(Task* pTask, const C& custom):
-		TaskNotification(pTask),
-		_custom(custom)
-	{
-	}
+    TaskCustomNotification(Task * pTask, const C & custom) : TaskNotification(pTask), _custom(custom) { }
 
-	const C& custom() const
-	{
-		return _custom;
-	}
+    const C & custom() const { return _custom; }
 
 protected:
-	~TaskCustomNotification(){};
-	
+    ~TaskCustomNotification(){};
+
 private:
-	C _custom;
+    C _custom;
 };
 
 
 //
 // inlines
 //
-inline Task* TaskNotification::task() const
+inline Task * TaskNotification::task() const
 {
-	return _pTask;
+    return _pTask;
 }
 
 
-inline const Exception& TaskFailedNotification::reason() const
+inline const Exception & TaskFailedNotification::reason() const
 {
-	return *_pException;
+    return *_pException;
 }
 
 
 inline float TaskProgressNotification::progress() const
 {
-	return _progress;
+    return _progress;
 }
 
 
