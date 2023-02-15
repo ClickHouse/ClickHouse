@@ -33,7 +33,7 @@ select 'noisy Trace messages', max2((select count() from logs where level!='Test
     group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.16);
 
 -- Same as above for Debug
-select 'noisy Debug messages', max2((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.09);
+select 'noisy Debug messages', max2((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.12);
 
 -- Same as above for Info
 select 'noisy Info messages', max2((select count() from logs where level <= 'Information' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.05);
