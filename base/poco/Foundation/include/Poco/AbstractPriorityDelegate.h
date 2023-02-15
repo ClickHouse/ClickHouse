@@ -18,42 +18,31 @@
 #define Foundation_AbstractPriorityDelegate_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/AbstractDelegate.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-template <class TArgs> 
-class AbstractPriorityDelegate: public AbstractDelegate<TArgs>
-	/// Base class for PriorityDelegate and PriorityExpire.
-	///
-	/// Extends AbstractDelegate with a priority value.
+template <class TArgs>
+class AbstractPriorityDelegate : public AbstractDelegate<TArgs>
+/// Base class for PriorityDelegate and PriorityExpire.
+///
+/// Extends AbstractDelegate with a priority value.
 {
 public:
-	AbstractPriorityDelegate(int prio):
-		_priority(prio)
-	{
-	}
+    AbstractPriorityDelegate(int prio) : _priority(prio) { }
 
-	AbstractPriorityDelegate(const AbstractPriorityDelegate& del):
-		AbstractDelegate<TArgs>(del),
-		_priority(del._priority)
-	{
-	}
+    AbstractPriorityDelegate(const AbstractPriorityDelegate & del) : AbstractDelegate<TArgs>(del), _priority(del._priority) { }
 
-	virtual ~AbstractPriorityDelegate() 
-	{
-	}
+    virtual ~AbstractPriorityDelegate() { }
 
-	int priority() const
-	{
-		return _priority;
-	}
+    int priority() const { return _priority; }
 
 protected:
-	int _priority;
+    int _priority;
 };
 
 

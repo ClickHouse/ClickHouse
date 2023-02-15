@@ -76,7 +76,10 @@ def trim_for_log(s):
     if not s:
         return s
     lines = s.splitlines()
-    return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    if len(lines) > 100:
+        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    else:
+        return "\n".join(lines)
 
 
 class HTTPError(Exception):
@@ -939,7 +942,9 @@ class TestCase:
             description += "\n"
             description += trim_for_log(stderr)
             description += "\n"
-            description += f"\nstdout:\n{stdout}\n"
+            description += "\nstdout:\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
