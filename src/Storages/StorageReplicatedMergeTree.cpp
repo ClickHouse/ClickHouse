@@ -928,7 +928,11 @@ void StorageReplicatedMergeTree::drop()
     dropAllData();
 
     if (maybe_has_metadata_in_zookeeper)
+    {
+        /// Session could expire, get it again
+        zookeeper = getZooKeeperIfTableShutDown();
         dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings(), &has_metadata_in_zookeeper);
+    }
 }
 
 void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
