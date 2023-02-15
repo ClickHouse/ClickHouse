@@ -30,11 +30,6 @@ namespace ErrorCodes
 namespace
 {
 
-StorageS3::S3Configuration getBaseConfiguration(const StorageS3Configuration & configuration)
-{
-    return {configuration.url, configuration.auth_settings, configuration.request_settings, configuration.headers};
-}
-
 /// Apache Hudi store parts of data in different files.
 /// Every part file has timestamp in it.
 /// Every partition(directory) in Apache Hudi has different versions of part.
@@ -91,17 +86,17 @@ String generateQueryFromKeys(const std::vector<std::string> & keys, const String
     return "{" + list_of_keys + "}";
 }
 
-std::vector<std::string> getKeysFromS3(const StorageS3::S3Configuration & base_configuration, const std::string & table_path, Poco::Logger * log)
+std::vector<std::string> getKeysFromS3(const StorageS3::Configuration & configuration, Poco::Logger * log)
 {
+    const auto & client = configuration.client;
+    const auto & table_path = configuration.url.key;
+    const auto & bucket = configuration.url.bucket;
+
     std::vector<std::string> keys;
-
-    const auto & client = base_configuration.client;
-
     S3::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
     bool is_finished{false};
-    const auto bucket{base_configuration.uri.bucket};
 
     request.SetBucket(bucket);
     request.SetPrefix(table_path);
@@ -134,31 +129,22 @@ std::vector<std::string> getKeysFromS3(const StorageS3::S3Configuration & base_c
 }
 
 
-StorageS3Configuration getAdjustedS3Configuration(
-    StorageS3::S3Configuration & base_configuration,
-    const StorageS3Configuration & configuration,
-    const std::string & table_path,
-    Poco::Logger * log)
+StorageS3::Configuration getAdjustedS3Configuration(const StorageS3::Configuration & configuration, Poco::Logger * log)
 {
-    auto keys = getKeysFromS3(base_configuration, table_path, log);
-    auto new_uri = base_configuration.uri.uri.toString() + generateQueryFromKeys(keys, configuration.format);
+    const auto keys = getKeysFromS3(configuration, log);
+    const auto new_uri = configuration.url.uri.toString() + generateQueryFromKeys(keys, configuration.format);
 
-    LOG_DEBUG(log, "New uri: {}", new_uri);
-    LOG_DEBUG(log, "Table path: {}", table_path);
+    StorageS3::Configuration new_configuration(configuration);
+    new_configuration.url = S3::URI(new_uri);
 
-    StorageS3Configuration new_configuration;
-    new_configuration.url = new_uri;
-    new_configuration.auth_settings.access_key_id = configuration.auth_settings.access_key_id;
-    new_configuration.auth_settings.secret_access_key = configuration.auth_settings.secret_access_key;
-    new_configuration.format = configuration.format;
-
+    LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_uri);
     return new_configuration;
 }
 
 }
 
 StorageHudi::StorageHudi(
-    const StorageS3Configuration & configuration_,
+    const StorageS3::Configuration & configuration_,
     const StorageID & table_id_,
     ColumnsDescription columns_,
     const ConstraintsDescription & constraints_,
@@ -166,19 +152,18 @@ StorageHudi::StorageHudi(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_)
     : IStorage(table_id_)
-    , base_configuration{getBaseConfiguration(configuration_)}
+    , base_configuration{configuration_}
     , log(&Poco::Logger::get("StorageHudi (" + table_id_.table_name + ")"))
-    , table_path(base_configuration.uri.key)
 {
     StorageInMemoryMetadata storage_metadata;
     StorageS3::updateS3Configuration(context_, base_configuration);
 
-    auto new_configuration = getAdjustedS3Configuration(base_configuration, configuration_, table_path, log);
+    auto new_configuration = getAdjustedS3Configuration(base_configuration, log);
 
     if (columns_.empty())
     {
         columns_ = StorageS3::getTableStructureFromData(
-            new_configuration, /*distributed processing*/ false, format_settings_, context_, nullptr);
+            new_configuration, format_settings_, context_, nullptr);
         storage_metadata.setColumns(columns_);
     }
     else
@@ -214,14 +199,11 @@ Pipe StorageHudi::read(
 }
 
 ColumnsDescription StorageHudi::getTableStructureFromData(
-    const StorageS3Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
+    StorageS3::Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
 {
-    auto base_configuration = getBaseConfiguration(configuration);
-    StorageS3::updateS3Configuration(ctx, base_configuration);
-    auto new_configuration = getAdjustedS3Configuration(
-        base_configuration, configuration, base_configuration.uri.key, &Poco::Logger::get("StorageDeltaLake"));
-    return StorageS3::getTableStructureFromData(
-        new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
+    StorageS3::updateS3Configuration(ctx, configuration);
+    auto new_configuration = getAdjustedS3Configuration(configuration, &Poco::Logger::get("StorageDeltaLake"));
+    return StorageS3::getTableStructureFromData(new_configuration, format_settings, ctx, /*object_infos*/ nullptr);
 }
 
 void registerStorageHudi(StorageFactory & factory)
@@ -236,9 +218,9 @@ void registerStorageHudi(StorageFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Storage Hudi requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
 
-            StorageS3Configuration configuration;
+            StorageS3::Configuration configuration;
 
-            configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+            configuration.url = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"));
             configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
 
