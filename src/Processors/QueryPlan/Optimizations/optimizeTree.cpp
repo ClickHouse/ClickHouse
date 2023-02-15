@@ -104,7 +104,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    bool applied_projection = false;
+    size_t num_applied_projection = 0;
     bool has_reading_from_mt = false;
 
     Stack stack;
@@ -122,7 +122,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.optimize_projection)
-                applied_projection |= optimizeUseAggProjections(*frame.node, nodes);
+                num_applied_projection += optimizeUseAggProjections(*frame.node, nodes);
 
             if (optimization_settings.aggregation_in_order)
                 optimizeAggregationInOrder(*frame.node, nodes);
@@ -140,11 +140,13 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             continue;
         }
 
-        if (optimization_settings.optimize_projection)
+        if (num_applied_projection < 5 && optimization_settings.optimize_projection)
         {
             bool applied = optimizeUseNormalProjections(stack, nodes);
-            applied_projection |= applied;
-            if (applied && stack.back().next_child == 0)
+            /// This is actually some internal knowledge
+            bool stack_was_updated = !stack.back().node->children.empty();
+            num_applied_projection += applied;
+            if (applied && stack_was_updated)
                 continue;
         }
 
@@ -154,7 +156,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         stack.pop_back();
     }
 
-    if (optimization_settings.force_use_projection && has_reading_from_mt && !applied_projection)
+    if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
         throw Exception(
             "No projection is used when allow_experimental_projection_optimization = 1 and force_optimize_projection = 1",
             ErrorCodes::PROJECTION_NOT_USED);

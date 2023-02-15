@@ -6072,6 +6072,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
 
+    if (settings.query_plan_optimize_projection)
+        return std::nullopt;
+
     /// TODO: Analyzer syntax analyzer result
     if (!query_info.syntax_analyzer_result)
         return std::nullopt;
@@ -6157,9 +6160,6 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
     /// we cannot use aggregate projection.
     if (analysis_result.join != nullptr || analysis_result.array_join != nullptr)
-        can_use_aggregate_projection = false;
-
-    if (settings.query_plan_optimize_projection)
         can_use_aggregate_projection = false;
 
     /// Check if all needed columns can be provided by some aggregate projection. Here we also try

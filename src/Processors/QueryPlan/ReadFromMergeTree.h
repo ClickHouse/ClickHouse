@@ -85,6 +85,8 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
+
+        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
     ReadFromMergeTree(
@@ -157,6 +159,7 @@ public:
 
     void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
+    bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
     void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
     void resetParts(MergeTreeData::DataPartsVector parts) { prepared_parts = std::move(parts); }
 
