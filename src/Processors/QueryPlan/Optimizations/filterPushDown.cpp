@@ -333,8 +333,19 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (auto * sorting = typeid_cast<SortingStep *>(child.get()))
+    {
+        const auto & sort_description = sorting->getSortDescription();
+        auto sort_description_it = std::find_if(sort_description.begin(), sort_description.end(), [&](auto & sort_column_description)
+        {
+            return sort_column_description.column_name == filter->getFilterColumnName();
+        });
+        bool can_remove_filter = sort_description_it == sort_description.end();
+
+        Names allowed_inputs = child->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+            return updated_steps;
+    }
 
     if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
         return updated_steps;
