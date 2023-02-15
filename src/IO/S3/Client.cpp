@@ -9,9 +9,13 @@
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/core/client/AWSErrorMarshaller.h>
 #include <aws/core/endpoint/EndpointParameter.h>
+#include <aws/core/utils/HashingUtils.h>
 
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/PocoHTTPClientFactory.h>
+#include <IO/S3/AWSLogger.h>
+#include <IO/S3/Credentials.h>
 
 #include <Common/assert_cast.h>
 
@@ -391,6 +395,93 @@ void ClientCacheRegistry::clearCacheForAll()
         }
     }
 
+}
+
+ClientFactory::ClientFactory()
+{
+    aws_options = Aws::SDKOptions{};
+    Aws::InitAPI(aws_options);
+    Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>(false));
+    Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
+}
+
+ClientFactory::~ClientFactory()
+{
+    Aws::Utils::Logging::ShutdownAWSLogging();
+    Aws::ShutdownAPI(aws_options);
+}
+
+ClientFactory & ClientFactory::instance()
+{
+    static ClientFactory ret;
+    return ret;
+}
+
+std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
+    const PocoHTTPClientConfiguration & cfg_,
+    bool is_virtual_hosted_style,
+    const String & access_key_id,
+    const String & secret_access_key,
+    const String & server_side_encryption_customer_key_base64,
+    HTTPHeaderEntries headers,
+    bool use_environment_credentials,
+    bool use_insecure_imds_request)
+{
+    PocoHTTPClientConfiguration client_configuration = cfg_;
+    client_configuration.updateSchemeAndRegion();
+
+    if (!server_side_encryption_customer_key_base64.empty())
+    {
+        /// See Client::GeneratePresignedUrlWithSSEC().
+
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
+            Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
+
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
+            server_side_encryption_customer_key_base64});
+
+        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
+        String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
+        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
+            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+    }
+
+    client_configuration.extra_headers = std::move(headers);
+
+    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+    auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+            client_configuration,
+            std::move(credentials),
+            use_environment_credentials,
+            use_insecure_imds_request);
+
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
+    return Client::create(
+        client_configuration.s3_max_redirects,
+        std::move(credentials_provider),
+        std::move(client_configuration), // Client configuration.
+        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.
+    );
+}
+
+PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
+    const String & force_region,
+    const RemoteHostFilter & remote_host_filter,
+    unsigned int s3_max_redirects,
+    bool enable_s3_requests_logging,
+    bool for_disk_s3,
+    const ThrottlerPtr & get_request_throttler,
+    const ThrottlerPtr & put_request_throttler)
+{
+    return PocoHTTPClientConfiguration(
+        force_region,
+        remote_host_filter,
+        s3_max_redirects,
+        enable_s3_requests_logging,
+        for_disk_s3,
+        get_request_throttler,
+        put_request_throttler);
 }
 
 }
