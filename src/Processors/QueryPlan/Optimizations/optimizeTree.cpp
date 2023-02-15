@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int OK;
     extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
 }
 
@@ -21,6 +22,15 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 {
     if (!settings.optimize_plan)
         return;
+
+    try
+    {
+        throw Exception(ErrorCodes::OK, "Debug stack");
+    }
+    catch(...)
+    {
+        tryLogCurrentException(&Poco::Logger::get(__PRETTY_FUNCTION__), "debug stack");
+    }
 
     const auto & optimizations = getOptimizations();
 
@@ -80,6 +90,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
                 throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
                                 "Too many optimizations applied to query plan. Current limit {}",
                                 max_optimizations_to_apply);
+
+            LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "Parent step: {}", frame.node->step->getName());
 
             /// Try to apply optimization.
             auto update_depth = optimization.apply(frame.node, nodes);

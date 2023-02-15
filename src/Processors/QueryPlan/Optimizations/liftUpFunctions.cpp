@@ -40,6 +40,14 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     auto * sorting_step = typeid_cast<SortingStep *>(parent_step.get());
     auto * expression_step = typeid_cast<ExpressionStep *>(child_step.get());
 
+    LOG_DEBUG(
+        &Poco::Logger::get(__FUNCTION__),
+        "\nParent step: {}/{}\nChild step: {}/{}",
+        parent_step->getName(),
+        reinterpret_cast<void*>(parent_step.get()),
+        child_step->getName(),
+        reinterpret_cast<void*>(child_step.get()));
+
     if (!sorting_step || !expression_step)
         return 0;
 
@@ -51,7 +59,11 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     NameSet sort_columns;
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
-    auto [needed_for_sorting, unneeded_for_sorting] = expression_step->getExpression()->splitActionsBySortingDescription(sort_columns);
+
+    LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "Sort description:\n{}", dumpSortDescription(sorting_step->getSortDescription()));
+    LOG_DEBUG(&Poco::Logger::get(__FUNCTION__), "ActionsDAG: address={}\n{}", static_cast<void*>(expression_step->getExpression().get()), expression_step->getExpression()->dumpDAG());
+    auto expr_clone = expression_step->getExpression()->clone();
+    auto [needed_for_sorting, unneeded_for_sorting] = expr_clone->splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.
     if (unneeded_for_sorting->trivial())

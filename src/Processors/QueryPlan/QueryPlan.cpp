@@ -303,6 +303,7 @@ static void explainStep(
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
+    settings.out << " (0x" << getHexUIntLowercase(reinterpret_cast<const UInt64>(&step)) << ')';
 
     const auto & description = step.getStepDescription();
     if (options.description && !description.empty())
@@ -459,6 +460,10 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     /// so "mergeExpressions" optimization handles them afterwards
     if (optimization_settings.remove_redundant_sorting)
         QueryPlanOptimizations::tryRemoveRedundantSorting(root);
+
+    WriteBufferFromOwnString ss;
+    explainPlan(ss, ExplainPlanOptions{.header = true, .actions = true});
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "\n{}", ss.str());
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
