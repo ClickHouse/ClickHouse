@@ -5,6 +5,7 @@
 #include <Core/Defines.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
+#include <IO/ResourceLink.h>
 
 namespace DB
 {
@@ -30,6 +31,13 @@ enum class LocalFSReadMethod
      * Can use prefetch by asking OS to perform readahead.
      */
     mmap,
+
+    /**
+     * Use the io_uring Linux subsystem for asynchronous reads.
+     * Can use direct IO after specified size.
+     * Can do prefetch with double buffering.
+     */
+    io_uring,
 
     /**
      * Checks if data is in page cache with 'preadv2' on modern Linux kernels.
@@ -81,6 +89,8 @@ struct ReadSettings
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
+    bool enable_filesystem_read_prefetches_log = false;
+
     bool enable_filesystem_cache = true;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
@@ -99,6 +109,9 @@ struct ReadSettings
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
+
+    // Resource to be used during reading
+    ResourceLink resource_link;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;
