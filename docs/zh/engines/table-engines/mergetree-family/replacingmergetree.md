@@ -60,5 +60,3 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `ver` - 版本列。可选参数，有关说明，请参阅上文。
 
 </details>
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

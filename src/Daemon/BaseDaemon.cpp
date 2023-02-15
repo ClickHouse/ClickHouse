@@ -4,7 +4,9 @@
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
+#include <Parsers/toOneLineQuery.h>
 #include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -178,12 +180,9 @@ __attribute__((__weak__)) void collectCrashLog(
 class SignalListener : public Poco::Runnable
 {
 public:
-    enum Signals : int
-    {
-        StdTerminate = -1,
-        StopThread = -2,
-        SanitizerTrap = -3,
-    };
+    static constexpr int StdTerminate = -1;
+    static constexpr int StopThread = -2;
+    static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon & daemon_)
         : log(&Poco::Logger::get("BaseDaemon"))
@@ -208,7 +207,7 @@ public:
             // Don't use strsignal here, because it's not thread-safe.
             LOG_TRACE(log, "Received signal {}", sig);
 
-            if (sig == Signals::StopThread)
+            if (sig == StopThread)
             {
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
@@ -219,7 +218,7 @@ public:
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
                 LOG_INFO(log, "Opened new log file after received signal.");
             }
-            else if (sig == Signals::StdTerminate)
+            else if (sig == StdTerminate)
             {
                 UInt32 thread_num;
                 std::string message;
@@ -280,7 +279,7 @@ private:
             if (next_pos != std::string_view::npos)
                 size = next_pos - pos;
 
-            LOG_FATAL(log, "{}", message.substr(pos, size));
+            LOG_FATAL(log, fmt::runtime(message.substr(pos, size)));
             pos = next_pos;
         }
     }
@@ -306,7 +305,7 @@ private:
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
-                query = thread_group->one_line_query;
+                query = DB::toOneLineQuery(thread_group->query);
             }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
@@ -570,6 +569,7 @@ std::string BaseDaemon::getDefaultConfigFileName() const
 
 void BaseDaemon::closeFDs()
 {
+    /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
     fs::path proc_path{"/dev/fd"};
 #else
@@ -586,7 +586,13 @@ void BaseDaemon::closeFDs()
         for (const auto & fd : fds)
         {
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                /// NOTE: it is OK to ignore error here since at least one fd
+                /// is already closed (for proc_path), and there can be some
+                /// tricky cases, likely.
+                (void)err;
+            }
         }
     }
     else
@@ -599,39 +605,19 @@ void BaseDaemon::closeFDs()
 #endif
             max_fd = 256; /// bad fallback
         for (int fd = 3; fd < max_fd; ++fd)
+        {
             if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                /// NOTE: it is OK to get EBADF here, since it is simply
+                /// iterator over all possible fds, without any checks does
+                /// this process has this fd or not.
+                (void)err;
+            }
+        }
     }
 }
 
-namespace
-{
-/// In debug version on Linux, increase oom score so that clickhouse is killed
-/// first, instead of some service. Use a carefully chosen random score of 555:
-/// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
-/// whatever errors that occur, because it's just a debugging aid and we don't
-/// care if it breaks.
-#if defined(OS_LINUX) && !defined(NDEBUG)
-void debugIncreaseOOMScore()
-{
-    const std::string new_score = "555";
-    try
-    {
-        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
-        buf.write(new_score.c_str(), new_score.size());
-        buf.close();
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_WARNING(&Poco::Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
-        return;
-    }
-    LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
-}
-#else
-void debugIncreaseOOMScore() {}
-#endif
-}
 
 void BaseDaemon::initialize(Application & self)
 {
@@ -731,7 +717,10 @@ void BaseDaemon::initialize(Application & self)
             if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
-                ::close(fd);
+            {
+                int err = ::close(fd);
+                chassert(!err || errno == EINTR);
+            }
         }
 
         if (!freopen(stderr_path.c_str(), "a+", stderr))
@@ -798,7 +787,6 @@ void BaseDaemon::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
     logRevision();
-    debugIncreaseOOMScore();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
     {
@@ -958,14 +946,13 @@ void BaseDaemon::handleSignal(int signal_id)
         std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
-            sigint_signals_counter += signal_id == SIGINT;
             signal_event.notify_all();
         }
 
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+        throw DB::Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)
@@ -973,9 +960,9 @@ void BaseDaemon::onInterruptSignals(int signal_id)
     is_cancelled = true;
     LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
-    if (sigint_signals_counter >= 2)
+    if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);
@@ -1006,6 +993,11 @@ void BaseDaemon::setupWatchdog()
     std::string original_process_name;
     if (argv0)
         original_process_name = argv0;
+
+    bool restart = false;
+    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
+    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
+        restart = true;
 
     while (true)
     {
@@ -1154,14 +1146,14 @@ void BaseDaemon::setupWatchdog()
             logger().fatal("Child process was not exited normally by unknown reason.");
         }
 
-        /// Automatic restart is not enabled but you can play with it.
-#if 1
-        _exit(WEXITSTATUS(status));
-#else
-        logger().information("Will restart.");
-        if (argv0)
-            memcpy(argv0, original_process_name.c_str(), original_process_name.size());
-#endif
+        if (restart)
+        {
+            logger().information("Will restart.");
+            if (argv0)
+                memcpy(argv0, original_process_name.c_str(), original_process_name.size());
+        }
+        else
+            _exit(WEXITSTATUS(status));
     }
 }
 

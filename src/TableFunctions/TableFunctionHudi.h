@@ -34,9 +34,9 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & configuration);
+    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & configuration);
 
-    StorageS3Configuration configuration;
+    mutable StorageS3::Configuration configuration;
 };
 
 }

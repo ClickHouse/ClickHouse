@@ -70,7 +70,7 @@ public:
             {
                 Int64 result_value = source_data[i];
                 if (common::mulOverflow(result_value, scale_multiplier, result_value))
-                    throw Exception("Decimal overflow in " + getName(), ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal overflow in {}", getName());
 
                 result_data[i] = result_value;
             }
@@ -83,6 +83,13 @@ public:
         }
 
         return res_column;
+    }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
+    {
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 

@@ -14,4 +14,3 @@ pagination_next: 'en/operations/utilities/clickhouse-copier'
 -   [ClickHouse obfuscator](../../operations/utilities/clickhouse-obfuscator.md) — Obfuscates data.
 -   [ClickHouse compressor](../../operations/utilities/clickhouse-compressor.md) — Compresses and decompresses data.
 -   [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) — A proxy server for ODBC driver.
-

@@ -16,6 +16,11 @@ Tests are located in `queries` directory. There are two subdirectories: `statele
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
 
+:::note
+A common mistake when testing data types `DateTime` and `DateTime64` is assuming that the server uses a specific time zone (e.g. "UTC"). This is not the case, time zones in CI test runs
+are deliberately randomized. The easiest workaround is to specify the time zone for test values explicitly, e.g. `toDateTime64(val, 3, 'Europe/Amsterdam')`.
+:::
+
 ### Running a Test Locally {#functional-test-locally}
 
 Start the ClickHouse server locally, listening on the default port (9000). To
@@ -202,7 +207,7 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
-We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/en/2021/fuzzing-clickhouse/).
+We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/fuzzing-click-house).
 
 ## Stress test
 
@@ -281,10 +286,6 @@ We also track test coverage but only for functional tests and only for clickhous
 
 There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
 
-## Testflows
-
-[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to test a subset of ClickHouse.
-
 ## Test Automation {#test-automation}
 
 We run tests with [GitHub Actions](https://github.com/features/actions).
@@ -293,5 +294,3 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 
 We do not use Travis CI due to the limit on time and computational power.
 We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
-
-[Original article](https://clickhouse.com/docs/en/development/tests/) <!--hide-->

@@ -21,9 +21,9 @@ namespace ErrorCodes
 
 [[noreturn]] static void throwUnexpectedEof(size_t row_num)
 {
-    throw ParsingException("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
+    throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF while parsing row {}. "
                            "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
-                           ErrorCodes::CANNOT_READ_ALL_DATA);
+                           std::to_string(row_num));
 }
 
 static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_rule, FormatSettings & settings, const ParsedTemplateFormatString & row_format, char default_csv_delimiter, size_t file_column)
@@ -293,8 +293,7 @@ void TemplateRowInputFormat::resetParser()
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(*buf);
+    buf->setSubBuffer(in_);
 }
 
 TemplateFormatReader::TemplateFormatReader(
@@ -545,8 +544,7 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
             {
                 if (partName == "data")
                     return 0;
-                throw Exception("Unknown input part " + partName,
-                                ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown input part {}", partName);
             });
     }
     return resultset_format;

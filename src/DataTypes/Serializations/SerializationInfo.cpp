@@ -108,7 +108,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     readBinary(kind_num, in);
     auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind_num);
     if (!maybe_kind)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind " + std::to_string(kind_num));
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind {}", std::to_string(kind_num));
 
     kind = *maybe_kind;
 }

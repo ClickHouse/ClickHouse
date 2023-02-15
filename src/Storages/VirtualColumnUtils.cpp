@@ -51,7 +51,7 @@ bool isValidFunction(const ASTPtr & expression, const std::function<bool(const A
 }
 
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, std::vector<ASTPtr> & result)
+bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, ASTs & result)
 {
     const auto * function = expression->as<ASTFunction>();
     if (function && (function->name == "and" || function->name == "indexHint"))
@@ -132,7 +132,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
 {
     if (block.rows() == 0)
-        throw Exception("Cannot prepare filter with empty block", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot prepare filter with empty block");
 
     /// Take the first row of the input block to build a constant block
     auto columns = block.getColumns();
@@ -175,7 +175,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     };
 
     /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
-    std::vector<ASTPtr> functions;
+    ASTs functions;
     if (select.where())
         unmodified &= extractFunctions(select.where(), is_constant, functions);
     if (select.prewhere())

@@ -70,7 +70,7 @@ SortingStep::SortingStep(
     , optimize_sorting_by_input_stream_properties(optimize_sorting_by_input_stream_properties_)
 {
     if (sort_settings.max_bytes_before_external_sort && sort_settings.tmp_data == nullptr)
-        throw Exception("Temporary data storage for external sorting is not provided", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");
 
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
@@ -282,7 +282,16 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     {
         /// skip sorting if stream is already sorted
         if (input_sort_mode == DataStream::SortScope::Global && input_sort_desc.hasPrefix(result_description))
+        {
+            if (pipeline.getNumStreams() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "If input stream is globally sorted then there should be only 1 input stream at this stage. Number of input streams: "
+                    "{}",
+                    pipeline.getNumStreams());
+
             return;
+        }
 
         /// merge sorted
         if (input_sort_mode == DataStream::SortScope::Stream && input_sort_desc.hasPrefix(result_description))

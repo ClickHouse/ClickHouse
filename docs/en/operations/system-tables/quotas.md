@@ -26,6 +26,3 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/quotas) <!--hide-->
-

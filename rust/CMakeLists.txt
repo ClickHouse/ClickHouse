@@ -39,5 +39,33 @@ function(clickhouse_import_crate)
     corrosion_import_crate(NO_STD ${ARGN})
 endfunction()
 
-add_subdirectory (BLAKE3)
-add_subdirectory (skim)
+# Add crate from the build directory.
+#
+# Our crates has configuration files:
+# - config for cargo (see config.toml.in)
+# - and possibly config for build (build.rs.in)
+#
+# And to avoid overlaps different builds for one source directory, crate will
+# be copied from source directory to the binary directory.
+file(COPY ".cargo" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+function(add_rust_subdirectory src)
+    set(dst "${CMAKE_CURRENT_BINARY_DIR}/${src}")
+    message(STATUS "Copy ${src} to ${dst}")
+    file(COPY "${src}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+        PATTERN target EXCLUDE)
+    add_subdirectory("${dst}" "${dst}")
+
+    # cmake -E copy* do now know how to exclude files
+    # but we need to exclude "target" folder from copying, if someone or semantic
+    # completion created it.
+    add_custom_target(${src}-update ALL
+        COMMAND ${CMAKE_COMMAND}
+            -DFROM=${src}
+            -DTO=${CMAKE_CURRENT_BINARY_DIR}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/copy_exclude.cmake"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        VERBATIM)
+endfunction()
+
+add_rust_subdirectory (BLAKE3)
+add_rust_subdirectory (skim)

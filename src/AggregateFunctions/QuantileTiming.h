@@ -670,7 +670,7 @@ public:
                     large->insert(elem);
             }
             else
-                throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
 
             /// For determinism, we should always convert to `large` when size condition is reached
             ///  - regardless of merge order.
