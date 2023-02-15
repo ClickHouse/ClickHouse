@@ -2,12 +2,9 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/AlterConversions.h>
-<<<<<<< HEAD
 #include <Storages/MergeTree/MergeTreeData.h>
-=======
 #include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
 namespace DB
 {

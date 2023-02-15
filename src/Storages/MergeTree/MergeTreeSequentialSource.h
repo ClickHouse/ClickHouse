@@ -20,11 +20,8 @@ Pipe createMergeTreeSequentialSource(
     bool read_with_direct_io,
     bool take_column_types_from_storage,
     bool quiet,
-<<<<<<< HEAD
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     DeleteBitmapPtr delete_bitmap = nullptr);
-=======
-    std::shared_ptr<std::atomic<size_t>> filtered_rows_count);
 
 class QueryPlan;
 
@@ -39,5 +36,4 @@ void createMergeTreeSequentialSource(
     ContextPtr context,
     Poco::Logger * log);
 
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 }

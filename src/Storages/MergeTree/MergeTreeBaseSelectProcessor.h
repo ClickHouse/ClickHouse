@@ -52,13 +52,8 @@ public:
         UInt64 preferred_max_column_in_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
-<<<<<<< HEAD
         const Names & virt_column_names_ = {},
-        std::optional<ParallelReadingExtension> extension = {},
         StorageUniqueMergeTree * unique_mergetree_ = nullptr);
-=======
-        const Names & virt_column_names_ = {});
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
     virtual ~IMergeTreeSelectAlgorithm();
 

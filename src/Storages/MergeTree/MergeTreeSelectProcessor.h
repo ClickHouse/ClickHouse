@@ -34,13 +34,8 @@ public:
         MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
-<<<<<<< HEAD
         bool has_limit_below_one_block_ = false,
-        std::optional<ParallelReadingExtension> extension_ = {},
         StorageUniqueMergeTree * unique_mergetree_ = nullptr);
-=======
-        bool has_limit_below_one_block_ = false);
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
     ~MergeTreeSelectAlgorithm() override;
 

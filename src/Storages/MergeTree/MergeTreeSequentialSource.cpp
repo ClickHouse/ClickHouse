@@ -283,11 +283,16 @@ Pipe createMergeTreeSequentialSource(
     bool apply_deleted_mask = false;
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-<<<<<<< HEAD
-        storage, storage_snapshot, data_part, columns, read_with_direct_io, take_column_types_from_storage, quiet, bitmap);
-=======
-        storage, storage_snapshot, data_part, columns, std::optional<MarkRanges>{}, apply_deleted_mask, read_with_direct_io, take_column_types_from_storage, quiet);
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
+        storage,
+        storage_snapshot,
+        data_part,
+        columns,
+        std::optional<MarkRanges>{},
+        apply_deleted_mask,
+        read_with_direct_io,
+        take_column_types_from_storage,
+        quiet,
+        bitmap);
 
     Pipe pipe(std::move(column_part_source));
 

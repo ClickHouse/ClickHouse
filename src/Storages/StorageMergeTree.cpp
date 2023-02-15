@@ -358,9 +358,7 @@ void StorageMergeTree::alter(
     }
 }
 
-<<<<<<< HEAD
-=======
-
+#if 0
 /// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.
 CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     FutureMergedMutatedPartPtr future_part_,
@@ -435,8 +433,8 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 
     storage.currently_processing_in_background_condition.notify_all();
 }
+#endif
 
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
     /// Choose any disk, because when we load mutations we search them at each disk

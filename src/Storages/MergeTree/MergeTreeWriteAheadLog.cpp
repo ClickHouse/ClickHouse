@@ -14,12 +14,8 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-<<<<<<< HEAD
-#include <Poco/JSON/Stringifier.h>
-=======
 #include "Storages/MergeTree/DataPartStorageOnDiskFull.h"
 #include <sys/time.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
 namespace DB
 {

@@ -12,12 +12,9 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-<<<<<<< HEAD
 
 #include <Storages/StorageUniqueMergeTree.h>
 
-=======
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <city.h>
 
 namespace ProfileEvents
@@ -59,13 +56,8 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     UInt64 preferred_max_column_in_block_size_bytes_,
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
-<<<<<<< HEAD
     const Names & virt_column_names_,
-    std::optional<ParallelReadingExtension> extension_,
     StorageUniqueMergeTree * unique_mergetree_)
-=======
-    const Names & virt_column_names_)
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -77,13 +69,8 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
-<<<<<<< HEAD
-    , extension(extension_)
-    , unique_mergetree(unique_mergetree_)
-=======
     , owned_uncompressed_cache(use_uncompressed_cache ? storage.getContext()->getUncompressedCache() : nullptr)
-    , owned_mark_cache(storage.getContext()->getMarkCache())
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
+    , owned_mark_cache(storage.getContext()->getMarkCache(), unique_mergetree(unique_mergetree_))
 {
     header_without_const_virtual_columns = applyPrewhereActions(std::move(header), prewhere_info);
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();

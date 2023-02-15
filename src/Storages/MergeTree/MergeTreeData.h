@@ -1,7 +1,5 @@
 #pragma once
 
-<<<<<<< HEAD
-=======
 #include <base/defines.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
@@ -10,7 +8,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/StoragePolicy.h>
@@ -20,11 +17,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-<<<<<<< HEAD
-#include <Storages/MergeTree/MergeList.h>
-=======
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
@@ -1069,7 +1062,6 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
-<<<<<<< HEAD
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
     mutable std::mutex currently_processing_in_background_mutex;
@@ -1080,10 +1072,9 @@ public:
     DataParts currently_merging_mutating_parts;
 
     DeleteBuffer delete_buffer;
-=======
+
     void waitForOutdatedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1537,22 +1528,11 @@ private:
     std::vector<LoadPartResult> loadDataPartsFromDisk(
         ThreadPool & pool,
         size_t num_parts,
-<<<<<<< HEAD
-        std::queue<std::vector<std::pair<String, DiskPtr>>> & parts_queue,
-        bool skip_sanity_checks,
+        std::queue<PartLoadingTreeNodes> & parts_queue,
         const MergeTreeSettingsPtr & settings,
         const std::shared_ptr<const TableVersion> & table_version);
 
-    void loadDataPartsFromWAL(
-        MutableDataPartsVector & duplicate_parts_to_remove,
-        MutableDataPartsVector & parts_from_wal,
-        const std::shared_ptr<const TableVersion> & table_version);
-=======
-        std::queue<PartLoadingTreeNodes> & parts_queue,
-        const MergeTreeSettingsPtr & settings);
-
-    void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal);
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
+    void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal, const std::shared_ptr<const TableVersion> & table_version);
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.

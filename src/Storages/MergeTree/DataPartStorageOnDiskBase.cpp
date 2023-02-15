@@ -49,58 +49,7 @@ std::string DataPartStorageOnDiskBase::getFullPath() const
 
 std::string DataPartStorageOnDiskBase::getRelativePath() const
 {
-<<<<<<< HEAD:src/Storages/MergeTree/DataPartStorageOnDisk.cpp
-    auto disk = volume->getDisk();
-
-    /// It does not make sense to try fast path for incomplete temporary parts, because some files are probably absent.
-    /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
-    /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
-    bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
-    bool incomplete_temporary_part = is_temporary_part && (!disk->exists(fs::path(dir) / "checksums.txt") || !disk->exists(fs::path(dir) / "columns.txt"));
-    if (checksums.empty() || incomplete_temporary_part)
-    {
-        /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
-        return;
-    }
-
-    try
-    {
-        /// Remove each expected file in directory, then remove directory itself.
-        RemoveBatchRequest request;
-
-        for (const auto & [file, _] : checksums.files)
-        {
-            if (skip_directories.find(file) == skip_directories.end())
-                request.emplace_back(fs::path(dir) / file);
-        }
-
-        for (const auto & file : {"checksums.txt", "columns.txt"})
-            request.emplace_back(fs::path(dir) / file);
-
-        request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
-        request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
-
-        if (!is_projection)
-            request.emplace_back(fs::path(dir) / "txn_version.txt", true);
-
-        disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
-
-        /// Remove deletes bitmap for UniqueMergeTree Data Part
-        if (disk->exists(fs::path(dir) / "deletes"))
-            disk->removeSharedRecursive(fs::path(dir) / "deletes", false, {});
-        disk->removeDirectory(dir);
-    }
-    catch (...)
-    {
-        /// Recursive directory removal does many excessive "stat" syscalls under the hood.
-
-        LOG_ERROR(log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, dir), getCurrentExceptionMessage(false));
-        disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
-    }
-=======
     return fs::path(root_path) / part_dir / "";
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10:src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp
 }
 
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached, bool broken) const

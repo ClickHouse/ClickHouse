@@ -7,9 +7,6 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-<<<<<<< HEAD
-#include <Columns/ColumnObject.h>
-=======
 #include <Common/escapeForFileName.h>
 #include <Common/Increment.h>
 #include <Common/noexcept_scope.h>
@@ -19,17 +16,10 @@
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-<<<<<<< HEAD
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeUUID.h>
-=======
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/hasNullable.h>
@@ -38,35 +28,21 @@
 #include <Disks/createVolume.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/TemporaryFileOnDisk.h>
-<<<<<<< HEAD
-#include <Functions/FunctionFactory.h>
-=======
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
-<<<<<<< HEAD
-#include <Interpreters/ExpressionAnalyzer.h>
-=======
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/inplaceBlockConversions.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
-<<<<<<< HEAD
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/inplaceBlockConversions.h>
-=======
 #include <IO/S3Common.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -80,36 +56,17 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Freeze.h>
-<<<<<<< HEAD
-#include <Storages/MergeTree/DataPartStorageOnDisk.h>
-=======
 #include <Storages/MergeTree/checkDataPart.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-<<<<<<< HEAD
-#include <Storages/MergeTree/checkDataPart.h>
-=======
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageUniqueMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
-<<<<<<< HEAD
-#include <Common/Increment.h>
-#include <Common/SimpleIncrement.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/escapeForFileName.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-=======
 
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
@@ -797,17 +754,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
                         "Sign column for MergeTree cannot be specified "
                         "in modes except Collapsing or VersionedCollapsing.");
 
-<<<<<<< HEAD
     if (!version_column.empty() && mode != MergingParams::Replacing && mode != MergingParams::VersionedCollapsing
         && mode != MergingParams::Unique)
-        throw Exception("Version column for MergeTree cannot be specified in modes except Replacing or VersionedCollapsing.",
-                        ErrorCodes::LOGICAL_ERROR);
-=======
-    if (!version_column.empty() && mode != MergingParams::Replacing && mode != MergingParams::VersionedCollapsing)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Version column for MergeTree cannot be specified "
                         "in modes except Replacing or VersionedCollapsing.");
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
     if (!columns_to_sum.empty() && mode != MergingParams::Summing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
@@ -1360,15 +1311,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     ThreadPool & pool,
     size_t num_parts,
-<<<<<<< HEAD
-    std::queue<std::vector<std::pair<String, DiskPtr>>> & parts_queue,
-    bool skip_sanity_checks,
+    std::queue<PartLoadingTreeNodes> & parts_queue,
     const MergeTreeSettingsPtr & settings,
     const std::shared_ptr<const TableVersion> & table_version)
-=======
-    std::queue<PartLoadingTreeNodes> & parts_queue,
-    const MergeTreeSettingsPtr & settings)
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 {
     /// Parallel loading of data parts.
     pool.setMaxThreads(std::min(static_cast<size_t>(settings->max_part_loading_threads), num_parts));
@@ -1433,20 +1378,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
     std::mutex part_select_mutex;
     std::mutex part_loading_mutex;
 
-<<<<<<< HEAD
-        if (table_version && !table_version->part_versions.contains(part_info))
-        {
-            modifyPartState(it, DataPartState::Outdated);
-            (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
-            return;
-        }
-
-        addPartContributionToDataVolume(part);
-        LOG_TRACE(log, "Finished part {} load on disk {}", part_name, part_disk_ptr->getName());
-    };
-=======
     std::vector<LoadPartResult> loaded_parts;
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
     try
     {
@@ -1525,14 +1457,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 }
 
 
-<<<<<<< HEAD
-void MergeTreeData::loadDataPartsFromWAL(
-    MutableDataPartsVector & duplicate_parts_to_remove,
-    MutableDataPartsVector & parts_from_wal,
-    const std::shared_ptr<const TableVersion> & table_version)
-=======
-void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal)
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
+void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal, const std::shared_ptr<const TableVersion> & table_version)
 {
     std::sort(parts_from_wal.begin(), parts_from_wal.end(), [](const auto & lhs, const auto & rhs)
     {
@@ -1694,18 +1619,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr
     MutableDataPartsVector broken_parts_to_detach;
     MutableDataPartsVector duplicate_parts_to_remove;
 
-<<<<<<< HEAD
-    if (num_parts > 0)
-        loadDataPartsFromDisk(
-            broken_parts_to_detach, duplicate_parts_to_remove, pool, num_parts, parts_queue, skip_sanity_checks, settings, table_version);
-=======
     size_t suspicious_broken_parts = 0;
     size_t suspicious_broken_parts_bytes = 0;
     bool have_adaptive_parts = false;
     bool have_non_adaptive_parts = false;
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
     bool is_static_storage = isStaticStorage();
 
@@ -1784,16 +1703,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr
         pool.wait();
 
         MutableDataPartsVector parts_from_wal;
-<<<<<<< HEAD
-        for (auto & [_, disk_wal_parts] : disk_wal_part_map)
-            parts_from_wal.insert(
-                parts_from_wal.end(), std::make_move_iterator(disk_wal_parts.begin()), std::make_move_iterator(disk_wal_parts.end()));
-
-        loadDataPartsFromWAL(duplicate_parts_to_remove, parts_from_wal, table_version);
-=======
         for (auto & disk_wal_parts : disks_wal_parts)
             std::move(disk_wal_parts.begin(), disk_wal_parts.end(), std::back_inserter(parts_from_wal));
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
         loadDataPartsFromWAL(parts_from_wal);
         num_parts += parts_from_wal.size();
@@ -1856,18 +1767,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr
             outdated_unloaded_data_parts = std::move(unloaded_parts);
         }
 
-<<<<<<< HEAD
-    /// All parts are in "Active" state after loading
-    if (!table_version)
-    {
-        assert(
-            std::find_if(
-                data_parts_by_state_and_info.begin(),
-                data_parts_by_state_and_info.end(),
-                [](const auto & part) { return part->getState() != DataPartState::Active; })
-            == data_parts_by_state_and_info.end());
-    }
-=======
         outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
             "MergeTreeData::loadOutdatedDataParts",
             [this] { loadOutdatedDataParts(/*is_async=*/ true); });
@@ -1884,7 +1783,6 @@ try
         std::lock_guard lock(outdated_data_parts_mutex);
         if (outdated_unloaded_data_parts.empty())
             return;
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
         LOG_DEBUG(log, "Loading {} outdated data parts {}",
             outdated_unloaded_data_parts.size(),

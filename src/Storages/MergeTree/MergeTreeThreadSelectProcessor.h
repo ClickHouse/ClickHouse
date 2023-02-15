@@ -5,14 +5,10 @@
 namespace DB
 {
 
-<<<<<<< HEAD
-class MergeTreeReadPool;
-
 class StorageUniqueMergeTree;
-=======
+
 class IMergeTreeReadPool;
 using IMergeTreeReadPoolPtr = std::shared_ptr<IMergeTreeReadPool>;
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
@@ -33,13 +29,8 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings_,
-<<<<<<< HEAD
         const Names & virt_column_names_,
-        std::optional<ParallelReadingExtension> extension_,
         StorageUniqueMergeTree * unique_mergetree_ = nullptr);
-=======
-        const Names & virt_column_names_);
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 
     String getName() const override { return "MergeTreeThread"; }
 
