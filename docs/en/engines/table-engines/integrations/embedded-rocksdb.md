@@ -115,7 +115,7 @@ TRUNCATE TABLE test;
 
 ### Updates
 
-Values can be updated using `ALTER TABLE` query. Primary key cannot be updated.
+Values can be updated using the `ALTER TABLE` query. The primary key cannot be updated.
 
 ```sql
 ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
