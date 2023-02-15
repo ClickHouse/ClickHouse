@@ -54,6 +54,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
+#include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
 
 #include "config_version.h"
@@ -65,6 +66,19 @@ using namespace DB;
 namespace CurrentMetrics
 {
     extern const Metric QueryThread;
+    extern const Metric ReadTaskRequestsSent;
+    extern const Metric MergeTreeReadTaskRequestsSent;
+    extern const Metric MergeTreeAllRangesAnnouncementsSent;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ReadTaskRequestsSent;
+    extern const Event MergeTreeReadTaskRequestsSent;
+    extern const Event MergeTreeAllRangesAnnouncementsSent;
+    extern const Event ReadTaskRequestsSentElapsedMicroseconds;
+    extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
+    extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
 }
 
 namespace
@@ -354,24 +368,49 @@ void TCPHandler::runImpl()
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
             query_context->setReadTaskCallback([this]() -> String
             {
+                Stopwatch watch;
+                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
+
                 std::lock_guard lock(task_callback_mutex);
 
                 if (state.is_cancelled)
                     return {};
 
                 sendReadTaskRequestAssumeLocked();
-                return receiveReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
+                auto res = receiveReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                return res;
             });
 
-            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            query_context->setMergeTreeAllRangesCallback([this](InitialAllRangesAnnouncement announcement)
             {
+                Stopwatch watch;
+                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return;
+
+                sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
+                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
+                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+            });
+
+            query_context->setMergeTreeReadTaskCallback([this](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
+            {
+                Stopwatch watch;
+                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
                 std::lock_guard lock(task_callback_mutex);
 
                 if (state.is_cancelled)
                     return std::nullopt;
 
                 sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
-                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
+                auto res = receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                return res;
             });
 
             /// Processing Query
@@ -920,7 +959,15 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request)
+void TCPHandler::sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement)
+{
+    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnounecement, *out);
+    announcement.serialize(*out);
+    out->next();
+}
+
+
+void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);
@@ -1348,7 +1395,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
-std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1371,7 +1418,7 @@ std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTa
                     Protocol::Client::toString(packet_type));
         }
     }
-    PartitionReadResponse response;
+    ParallelReadResponse response;
     response.deserialize(*in);
     return response;
 }
