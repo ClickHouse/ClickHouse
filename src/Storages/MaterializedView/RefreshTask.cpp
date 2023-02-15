@@ -4,6 +4,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Processors/Executors/ManualPipelineExecutor.h>
 
@@ -168,12 +169,14 @@ void RefreshTask::refresh()
             storeLastState(LastTaskState::Finished);
             break;
         case ExecutionResult::Cancelled:
+            cancelRefresh(view);
             storeLastState(LastTaskState::Canceled);
             break;
     }
 
     refresh_executor.reset();
     refresh_block.reset();
+    refresh_query.reset();
 
     storeLastRefresh(std::chrono::system_clock::now());
     scheduleRefresh(last_refresh);
@@ -193,9 +196,12 @@ RefreshTask::ExecutionResult RefreshTask::executeRefresh()
 
 }
 
-void RefreshTask::initializeRefresh(std::shared_ptr<StorageMaterializedView> view)
+void RefreshTask::initializeRefresh(std::shared_ptr<const StorageMaterializedView> view)
 {
+    auto fresh_table = view->createFreshTable();
     refresh_query = view->prepareRefreshQuery();
+    refresh_query->setTable(fresh_table.table_name);
+    refresh_query->setDatabase(fresh_table.database_name);
     auto refresh_context = Context::createCopy(view->getContext());
     refresh_block = InterpreterInsertQuery(refresh_query, refresh_context).execute();
     refresh_block->pipeline.setProgressCallback([this](const Progress & progress){ progressCallback(progress); });
@@ -208,8 +214,17 @@ void RefreshTask::initializeRefresh(std::shared_ptr<StorageMaterializedView> vie
 
 void RefreshTask::completeRefresh(std::shared_ptr<StorageMaterializedView> view)
 {
-    view->updateInnerTableAfterRefresh(refresh_query);
+    auto stale_table = view->exchangeTargetTable(refresh_query->table_id);
     dependencies.notifyAll(view->getStorageID());
+
+    auto drop_context = Context::createCopy(view->getContext());
+    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, drop_context, drop_context, stale_table, /*sync=*/true);
+}
+
+void RefreshTask::cancelRefresh(std::shared_ptr<const StorageMaterializedView> view)
+{
+    auto drop_context = Context::createCopy(view->getContext());
+    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, drop_context, drop_context, refresh_query->table_id, /*sync=*/true);
 }
 
 void RefreshTask::scheduleRefresh(std::chrono::system_clock::time_point now)
