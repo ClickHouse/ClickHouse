@@ -25,7 +25,7 @@ namespace DB::QueryPlanOptimizations
 
 namespace
 {
-    constexpr bool debug_logging_enabled = true;
+    constexpr bool debug_logging_enabled = false;
 
     template <typename T>
     void logDebug(String key, const T & value, const char * separator = " : ")
