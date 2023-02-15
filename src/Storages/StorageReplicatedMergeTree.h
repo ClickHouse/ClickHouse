@@ -323,6 +323,8 @@ public:
         const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
     bool canUseZeroCopyReplication() const;
+
+    bool isTableReadOnly () { return is_readonly; }
 private:
     std::atomic_bool are_restoring_replica {false};
 
