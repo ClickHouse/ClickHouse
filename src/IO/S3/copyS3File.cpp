@@ -66,7 +66,17 @@ namespace
         {
         }
 
-        virtual ~UploadHelper() = default;
+        virtual ~UploadHelper()
+        {
+            try
+            {
+                waitForAllBackGroundTasks();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
 
     protected:
         std::shared_ptr<const S3::Client> client_ptr;

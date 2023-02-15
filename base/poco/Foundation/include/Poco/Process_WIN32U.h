@@ -18,62 +18,63 @@
 #define Foundation_Process_WIN32U_INCLUDED
 
 
+#include <map>
+#include <vector>
 #include "Poco/Foundation.h"
 #include "Poco/RefCountedObject.h"
-#include <vector>
-#include <map>
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Pipe;
 
 
-class Foundation_API ProcessHandleImpl: public RefCountedObject
+class Foundation_API ProcessHandleImpl : public RefCountedObject
 {
 public:
-	ProcessHandleImpl(HANDLE _hProcess, UInt32 pid);
-	~ProcessHandleImpl();
-	
-	UInt32 id() const;
-	HANDLE process() const;
-	int wait() const;
-	void closeHandle();
+    ProcessHandleImpl(HANDLE _hProcess, UInt32 pid);
+    ~ProcessHandleImpl();
+
+    UInt32 id() const;
+    HANDLE process() const;
+    int wait() const;
+    void closeHandle();
 
 private:
-	HANDLE _hProcess;
-	UInt32 _pid;
+    HANDLE _hProcess;
+    UInt32 _pid;
 
-	ProcessHandleImpl(const ProcessHandleImpl&);
-	ProcessHandleImpl& operator = (const ProcessHandleImpl&);
+    ProcessHandleImpl(const ProcessHandleImpl &);
+    ProcessHandleImpl & operator=(const ProcessHandleImpl &);
 };
 
 
 class Foundation_API ProcessImpl
 {
 public:
-	typedef UInt32 PIDImpl;
-	typedef std::vector<std::string> ArgsImpl;
-	typedef std::map<std::string, std::string> EnvImpl;
-	
-	static PIDImpl idImpl();
-	static void timesImpl(long& userTime, long& kernelTime);
-	static ProcessHandleImpl* launchImpl(
-		const std::string& command, 
-		const ArgsImpl& args, 
-		const std::string& initialDirectory,
-		Pipe* inPipe, 
-		Pipe* outPipe, 
-		Pipe* errPipe,
-		const EnvImpl& env);
-	static void killImpl(ProcessHandleImpl& handle);
-	static void killImpl(PIDImpl pid);
-	static bool isRunningImpl(const ProcessHandleImpl& handle);
-	static bool isRunningImpl(PIDImpl pid);
-	static void requestTerminationImpl(PIDImpl pid);
-	static std::string terminationEventName(PIDImpl pid);
+    typedef UInt32 PIDImpl;
+    typedef std::vector<std::string> ArgsImpl;
+    typedef std::map<std::string, std::string> EnvImpl;
+
+    static PIDImpl idImpl();
+    static void timesImpl(long & userTime, long & kernelTime);
+    static ProcessHandleImpl * launchImpl(
+        const std::string & command,
+        const ArgsImpl & args,
+        const std::string & initialDirectory,
+        Pipe * inPipe,
+        Pipe * outPipe,
+        Pipe * errPipe,
+        const EnvImpl & env);
+    static void killImpl(ProcessHandleImpl & handle);
+    static void killImpl(PIDImpl pid);
+    static bool isRunningImpl(const ProcessHandleImpl & handle);
+    static bool isRunningImpl(PIDImpl pid);
+    static void requestTerminationImpl(PIDImpl pid);
+    static std::string terminationEventName(PIDImpl pid);
 };
 
 
