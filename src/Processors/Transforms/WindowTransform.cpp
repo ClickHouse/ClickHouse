@@ -1997,7 +1997,7 @@ struct WindowFunctionNtile final : public WindowFunction
             checkWindowFrameType(transform);
             const auto & current_block = transform->blockAt(transform->current_row);
             const auto & workspace = transform->workspaces[function_index];
-            auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
+            const auto & arg_col = *current_block.original_input_columns[workspace.argument_column_indices[0]];
             if (!isColumnConst(arg_col))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's argument must be a constant");
             auto type_id = argument_types[0]->getTypeId();
@@ -2087,7 +2087,7 @@ private:
     UInt64 current_partition_rows = 0;
     UInt64 current_partition_inserted_row = 0;
 
-    void checkWindowFrameType(const WindowTransform * transform)
+    static void checkWindowFrameType(const WindowTransform * transform)
     {
         if (transform->order_by_indices.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ntile's window frame must have order by clause");
