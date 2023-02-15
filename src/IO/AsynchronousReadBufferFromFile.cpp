@@ -3,6 +3,7 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <base/defines.h>
 #include <cerrno>
 
 
@@ -81,7 +82,8 @@ AsynchronousReadBufferFromFile::~AsynchronousReadBufferFromFile()
     if (fd < 0)
         return;
 
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
 }
 
 
@@ -91,7 +93,7 @@ void AsynchronousReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
-        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 
     fd = -1;
 }

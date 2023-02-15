@@ -313,7 +313,8 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(sort_description_for_merging),
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
-        settings.enable_memory_bound_merging_of_aggregation_results);
+        settings.enable_memory_bound_merging_of_aggregation_results,
+        settings.force_aggregation_in_order);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -1377,8 +1378,7 @@ void Planner::buildPlanForQueryNode()
           */
         if (query_node.hasLimit() && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
-
-        if (apply_offset && query_node.hasOffset())
+        else if (!limit_applied && apply_offset && query_node.hasOffset())
             addOffsetStep(query_plan, query_analysis_result);
 
         const auto & projection_analysis_result = expression_analysis_result.getProjection();

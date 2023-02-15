@@ -87,7 +87,7 @@ struct NodeBase
         UInt64 size;
         readVarUInt(size, buf);
         if unlikely (size > max_node_size_deserialize)
-            throw Exception("Too large node state size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;

@@ -3,17 +3,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Parsers/toOneLineQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 #include <chrono>
 
@@ -78,7 +74,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
     const Settings & settings = query_context->getSettingsRef();
 
     if (client_info.current_query_id.empty())
-        throw Exception("Query id cannot be empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast);
 
@@ -92,7 +88,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             if (queue_max_wait_ms)
                 LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
-                throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries. Maximum: {}", max_size);
         }
 
         if (!is_unlimited_query)
@@ -130,10 +126,8 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
 
             if (!is_unlimited_query && settings.max_concurrent_queries_for_all_users
                 && processes.size() >= settings.max_concurrent_queries_for_all_users)
-                throw Exception(
-                    "Too many simultaneous queries for all users. Current: " + toString(processes.size())
-                    + ", maximum: " + settings.max_concurrent_queries_for_all_users.toString(),
-                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for all users. "
+                    "Current: {}, maximum: {}", processes.size(), settings.max_concurrent_queries_for_all_users.toString());
         }
 
         /** Why we use current user?
@@ -153,10 +147,11 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
             {
                 if (!is_unlimited_query && settings.max_concurrent_queries_for_user
                     && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
-                    throw Exception("Too many simultaneous queries for user " + client_info.current_user
-                        + ". Current: " + toString(user_process_list->second.queries.size())
-                        + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
-                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous queries for user {}. "
+                                    "Current: {}, maximum: {}",
+                                    client_info.current_user, user_process_list->second.queries.size(),
+                                    settings.max_concurrent_queries_for_user.toString());
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
 
@@ -527,6 +522,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     QueryStatusInfo res{};
 
     res.query             = query;
+    res.query_kind        = query_kind;
     res.client_info       = client_info;
     res.elapsed_microseconds = watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
@@ -638,7 +634,7 @@ void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind)
     if (found == query_kind_amounts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease before increase on '{}'", query_kind);
     else if (found->second == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}'", query_kind, found->second);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}', {}", query_kind, found->second);
     else
         found->second -= 1;
 }
