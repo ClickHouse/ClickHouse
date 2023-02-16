@@ -11,7 +11,7 @@
 #    include <Storages/IStorage.h>
 #    include <Storages/StorageS3.h>
 
-#    include <base/JSON.h>
+#    include <fmt/format.h>
 
 namespace DB
 {
@@ -33,7 +33,7 @@ public:
         std::optional<FormatSettings> format_settings_)
         : IStorage(table_id_)
         , base_configuration{configuration_}
-        , log(&Poco::Logger::get("Storage" + String(name) + "(" + table_id_.table_name + ")"))
+        , log(&Poco::Logger::get(fmt::format("Storage{}({})", name, table_id_.table_name)))
     {
         StorageInMemoryMetadata storage_metadata;
         StorageS3::updateS3Configuration(context_, base_configuration);

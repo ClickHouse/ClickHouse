@@ -153,7 +153,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
                 configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), format_settings);
         },
         {
-            .supports_settings = true,
+            .supports_settings = false,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
         });

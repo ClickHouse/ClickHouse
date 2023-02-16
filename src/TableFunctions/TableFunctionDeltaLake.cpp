@@ -5,6 +5,7 @@
 #    include <Storages/StorageDeltaLake.h>
 #    include <TableFunctions/ITableFunctionDataLake.h>
 #    include <TableFunctions/TableFunctionFactory.h>
+#    include <TableFunctions/TableFunctionS3.h>
 #    include "registerTableFunctions.h"
 
 namespace DB
@@ -15,7 +16,8 @@ struct TableFunctionDeltaLakeName
     static constexpr auto name = "deltaLake";
 };
 
-using TableFunctionDeltaLake = ITableFunctionDataLake<TableFunctionDeltaLakeName, StorageDeltaLake, StorageS3::Configuration>;
+using TableFunctionDeltaLake
+    = ITableFunctionDataLake<TableFunctionDeltaLakeName, StorageDeltaLake, TableFunctionS3, StorageS3::Configuration>;
 
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {

@@ -9,7 +9,6 @@
 #    include <Formats/FormatFactory.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/parseColumnsListForTableFunction.h>
-#    include <TableFunctions/TableFunctionS3.h>
 
 namespace DB
 {
@@ -18,7 +17,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Name, typename Storage, typename Configuration>
+template <typename Name, typename Storage, typename TableFunction, typename Configuration>
 class ITableFunctionDataLake : public ITableFunction
 {
 public:
@@ -63,24 +62,15 @@ protected:
         /// Parse args
         ASTs & args_func = ast_function->children;
 
-        const auto message = fmt::format(
-            "The signature of table function {} could be the following:\n"
-            " - url\n"
-            " - url, format\n"
-            " - url, format, structure\n"
-            " - url, access_key_id, secret_access_key\n"
-            " - url, format, structure, compression_method\n"
-            " - url, access_key_id, secret_access_key, format\n"
-            " - url, access_key_id, secret_access_key, format, structure\n"
-            " - url, access_key_id, secret_access_key, format, structure, compression_method",
-            getName());
+        const auto message
+            = fmt::format("The signature of table function '{}' could be the following:\n{}", getName(), TableFunction::signature);
 
         if (args_func.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments", getName());
 
         auto & args = args_func.at(0)->children;
 
-        TableFunctionS3::parseArgumentsImpl(message, args, context, configuration, false);
+        TableFunction::parseArgumentsImpl(message, args, context, configuration, false);
 
         if (configuration.format == "auto")
             configuration.format = "Parquet";

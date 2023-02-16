@@ -34,23 +34,6 @@ class PullingPipelineExecutor;
 class StorageS3SequentialSource;
 class NamedCollection;
 
-template <typename Name, typename MetadataParser>
-class IStorageDataLake;
-
-struct S3DataLakeMetadataReadHelper;
-
-struct StorageIcebergName;
-template <typename Configuration, typename MetadataReadHelper>
-class IcebergMetadataParser;
-
-struct StorageDeltaLakeName;
-template <typename Configuration, typename MetadataReadHelper>
-class DeltaLakeMetadataParser;
-
-struct StorageHudiName;
-template <typename Configuration, typename MetadataReadHelper>
-class HudiMetadataParser;
-
 class StorageS3Source : public ISource, WithContext
 {
 public:
@@ -315,12 +298,11 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
+    static void updateS3Configuration(ContextPtr, Configuration &);
+
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
-    friend class IStorageDataLake<StorageHudiName, HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
-    friend class IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
-    friend class IStorageDataLake<StorageIcebergName, IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 
     Configuration s3_configuration;
     std::vector<String> keys;
@@ -336,8 +318,6 @@ private:
     bool is_key_with_globs = false;
 
     ObjectInfos object_infos;
-
-    static void updateS3Configuration(ContextPtr, Configuration &);
 
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const Configuration & s3_configuration,

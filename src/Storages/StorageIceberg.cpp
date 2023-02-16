@@ -39,8 +39,8 @@ IcebergMetadataParser<Configuration, MetadataReadHelper>::IcebergMetadataParser(
 template <typename Configuration, typename MetadataReadHelper>
 std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::getFiles() const
 {
-    auto metadata = getNewestMetaFile();
-    auto manifest_list = getManiFestList(metadata);
+    auto metadata = fetchMetadataFile();
+    auto manifest_list = getManifestList(metadata);
 
     /// When table first created and does not have any data
     if (manifest_list.empty())
@@ -53,10 +53,10 @@ std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::ge
 }
 
 template <typename Configuration, typename MetadataReadHelper>
-String IcebergMetadataParser<Configuration, MetadataReadHelper>::getNewestMetaFile() const
+String IcebergMetadataParser<Configuration, MetadataReadHelper>::fetchMetadataFile() const
 {
     /// Iceberg stores all the metadata.json in metadata directory, and the
-    /// newest version has the max version name, so we should list all of them
+    /// newest version has the max version name, so we should list all of them,
     /// then find the newest metadata.
     static constexpr auto meta_file_suffix = ".json";
     auto metadata_files = MetadataReadHelper::listFilesMatchSuffix(base_configuration, metadata_directory, meta_file_suffix);
@@ -65,12 +65,13 @@ String IcebergMetadataParser<Configuration, MetadataReadHelper>::getNewestMetaFi
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", base_configuration.url.key);
 
+    /// See comment above
     auto it = std::max_element(metadata_files.begin(), metadata_files.end());
     return *it;
 }
 
 template <typename Configuration, typename MetadataReadHelper>
-String IcebergMetadataParser<Configuration, MetadataReadHelper>::getManiFestList(const String & metadata_name) const
+String IcebergMetadataParser<Configuration, MetadataReadHelper>::getManifestList(const String & metadata_name) const
 {
     auto buffer = MetadataReadHelper::createReadBuffer(metadata_name, context, base_configuration);
     String json_str;
@@ -225,9 +226,9 @@ template std::vector<String> IcebergMetadataParser<StorageS3::Configuration, S3D
 template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::generateQueryFromKeys(
     const std::vector<String> & keys, const String & format);
 
-template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getNewestMetaFile() const;
+template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::fetchMetadataFile() const;
 
-template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getManiFestList(const String & metadata_name) const;
+template String IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getManifestList(const String & metadata_name) const;
 
 template std::vector<String>
 IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getManifestFiles(const String & manifest_list) const;
@@ -250,7 +251,7 @@ void registerStorageIceberg(StorageFactory & factory)
                 configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), format_settings);
         },
         {
-            .supports_settings = true,
+            .supports_settings = false,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
         });
