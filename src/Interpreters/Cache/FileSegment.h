@@ -347,15 +347,13 @@ private:
     bool is_detached = false;
     std::atomic<bool> is_completed = false;
 
-    bool is_downloaded = false;
-
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    FileSegmentKind segment_kind;
+    const FileSegmentKind segment_kind;
 
     /// Size of the segment is not known until it is downloaded and can be bigger than max_file_segment_size.
-    bool is_unbound = false;
+    const bool is_unbound = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };

@@ -65,7 +65,6 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
-            is_downloaded = true;
             is_completed = true;
             chassert(std::filesystem::file_size(file_path) == size_);
             break;
@@ -155,7 +154,7 @@ void FileSegment::setDownloadedSizeUnlocked(size_t delta, const FileSegmentGuard
 bool FileSegment::isDownloaded() const
 {
     auto lock = segment_guard.lock();
-    return is_downloaded;
+    return download_state == State::DOWNLOADED;
 }
 
 String FileSegment::getCallerId()
@@ -465,6 +464,8 @@ bool FileSegment::reserve(size_t size_to_reserve)
     {
         size_to_reserve = size_to_reserve - already_reserved_size;
 
+        /// This (resizable file segments) is allowed only for single threaded use of file segment.
+        /// Currently it is used only for temporary files through cache.
         if (is_unbound && is_file_segment_size_exceeded)
             segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
@@ -482,8 +483,10 @@ bool FileSegment::reserve(size_t size_to_reserve)
 
 void FileSegment::setDownloadedUnlocked([[maybe_unused]] const FileSegmentGuard::Lock & lock)
 {
-    if (is_downloaded)
+    if (download_state == State::DOWNLOADED)
         return;
+
+    download_state = State::DOWNLOADED;
 
     if (cache_writer)
     {
@@ -491,9 +494,6 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] const FileSegmentGuard:
         cache_writer.reset();
         remote_file_reader.reset();
     }
-
-    download_state = State::DOWNLOADED;
-    is_downloaded = true;
 
     assert(getDownloadedSizeUnlocked(lock) > 0);
     assert(std::filesystem::file_size(file_path) > 0);
@@ -604,7 +604,7 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
         {
             chassert(getDownloadedSizeUnlocked(segment_lock) == range().size());
             chassert(getDownloadedSizeUnlocked(segment_lock) == std::filesystem::file_size(file_path));
-            chassert(is_downloaded);
+            chassert(download_state == State::DOWNLOADED);
             chassert(!cache_writer);
 
             is_completed = true;
@@ -770,12 +770,11 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
         nullptr,
         file_segment->cache,
         State::EMPTY,
-        CreateFileSegmentSettings{});
+        CreateFileSegmentSettings(file_segment->getKind()));
 
     snapshot->hits_count = file_segment->getHitsCount();
     snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(lock);
     snapshot->download_state = file_segment->download_state;
-    snapshot->segment_kind = file_segment->getKind();
 
     snapshot->ref_count = file_segment.use_count();
     snapshot->is_detached = true;
