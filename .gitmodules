@@ -44,7 +44,7 @@
 	url = https://github.com/ClickHouse/boost
 [submodule "contrib/base64"]
 	path = contrib/base64
-	url = https://github.com/ClickHouse/Turbo-Base64
+	url = https://github.com/ClibMouse/Turbo-Base64
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/ClickHouse/arrow
@@ -54,7 +54,7 @@
 	url = https://github.com/apache/thrift
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
-	url = https://github.com/ClickHouse/libhdfs3
+	url = https://github.com/ClibMouse/libhdfs3
 [submodule "contrib/libxml2"]
 	path = contrib/libxml2
 	url = https://github.com/GNOME/libxml2
@@ -75,7 +75,7 @@
 	url = https://github.com/ClickHouse/h3
 [submodule "contrib/libunwind"]
 	path = contrib/libunwind
-	url = https://github.com/ClickHouse/libunwind
+	url = https://github.com/ClibMouse/libunwind
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
 	url = https://github.com/simdjson/simdjson
@@ -154,7 +154,7 @@
 	url = https://github.com/ClickHouse/sentry-native
 [submodule "contrib/krb5"]
 	path = contrib/krb5
-	url = https://github.com/ClickHouse/krb5
+	url = https://github.com/ClibMouse/krb5
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
 	url = https://github.com/ClickHouse/cyrus-sasl
