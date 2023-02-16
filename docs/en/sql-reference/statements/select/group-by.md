@@ -117,7 +117,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 **See also**
 
-- [group_by_use_nulls](../../../operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## CUBE Modifier
 
@@ -212,7 +212,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 **See also**
 
-- [group_by_use_nulls](../../../operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## WITH TOTALS Modifier
 
@@ -333,7 +333,7 @@ Aggregation is performed separately for each grouping set, and after that, all r
 If a column is not presented in a grouping set, it's filled with a default value.
 
 In other words, modifiers described above can be represented via `GROUPING SETS`.
-Despite the fact that queries with `ROLLUP`, `CUBE` and `GROUPING SETS` modifiers are syntactically equal, they may have different performances.
+Despite the fact that queries with `ROLLUP`, `CUBE` and `GROUPING SETS` modifiers are syntactically equal, they may perform differently.
 When `GROUPING SETS` try to execute everything in parallel, `ROLLUP` and `CUBE` are executing the final merging of the aggregates in a single thread.
 
 In the situation when source columns contain default values, it might be hard to distinguish if a row is a part of the aggregation which uses those columns as keys or not.
@@ -360,7 +360,7 @@ GROUPING SETS
 
 **See also**
 
-- [group_by_use_nulls](../../../operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## Implementation Details
 
