@@ -46,6 +46,9 @@ SELECT 0 as nelems, [NULL,9,4,8,10,5,2,3,7,1,6] AS arr, arrayPartialSort(nelems,
 SELECT 10 as nelems, [NULL,9,4,8,10,5,2,3,7,1,6] AS arr, arrayPartialSort(nelems, arr), arrayPartialReverseSort(nelems, arr), arrayPartialSort((x) -> -x, nelems, arr);
 
 
+SELECT arrayPartialSort([1,2,3]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT arrayPartialSort(2, [1,2,3], [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayPartialSort(2, [1,2,3], 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayPartialSort(arraySort([1,2,3]), [1,2,3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayMap(x -> range(x), [4, 1, 2, 3]) AS arr, 100 AS lim, arrayResize(arrayPartialSort(arrayPartialSort(lim, arr), arr), lim), arrayResize(arrayPartialReverseSort(lim, arr), lim), arrayResize(arrayPartialSort(x -> (-length(x)), lim, arr), lim); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayPartialReverseSort(arraySort((x, y) -> y, [NULL, NULL], [NULL, NULL]), arr), arrayMap(x -> toString(x), [257, -9223372036854775807, 2, -2147483648, 2147483648, NULL, 65536, -2147483648, 2, 65535]) AS arr, NULL, 100 AS lim, 65536, arrayResize(arrayPartialSort(x -> reverse(x), lim, arr), lim) GROUP BY [NULL, 1023, -2, NULL, 255, '0', NULL, 9223372036854775806] WITH ROLLUP; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
