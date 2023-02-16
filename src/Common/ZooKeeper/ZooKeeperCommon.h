@@ -93,7 +93,7 @@ struct ZooKeeperHeartbeatRequest final : ZooKeeperRequest
     void writeImpl(WriteBuffer &) const override {}
     void readImpl(ReadBuffer &) override {}
     ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return false; }
+    bool isReadRequest() const override { return true; }
 };
 
 struct ZooKeeperSyncRequest final : ZooKeeperRequest
