@@ -553,6 +553,17 @@ void ValuesBlockInputFormat::readSuffix()
 
 void ValuesBlockInputFormat::resetParser()
 {
+    if (got_exception)
+    {
+        /// In case of exception always reset the templates and parser type,
+        /// because they may be in the invalid state.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            templates[i].reset();
+            parser_type_for_column[i] = ParserType::Streaming;
+        }
+    }
+
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
