@@ -26,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename> class QuantileTiming;
@@ -70,7 +71,7 @@ private:
     Float64 level = 0.5;
 
     /// Used when function name is "quantileGK" or "quantilesGK"
-    size_t accuracy = 10000;
+    ssize_t accuracy = 10000;
 
     DataTypePtr & argument_type;
 
@@ -83,10 +84,27 @@ public:
         , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter or less", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one level parameter or less", getName());
 
         if constexpr (is_quantile_gk)
-            accuracy = params[0].get<UInt64>();
+        {
+            const auto & accuracy_field = params[0];
+            if (!isInt64OrUInt64FieldType(accuracy_field.getType()))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Aggregate function {} require accuracy parameter with integer type", getName());
+
+            if (accuracy_field.getType() == Field::Types::Int64)
+                accuracy = accuracy_field.get<Int64>();
+            else
+                accuracy = accuracy_field.get<UInt64>();
+
+            if (accuracy <= 0)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Aggregate function {} require accuracy parameter with positive value but is {}",
+                    getName(),
+                    accuracy);
+        }
     }
 
     String getName() const override { return Name::name; }
