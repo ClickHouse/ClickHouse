@@ -132,10 +132,6 @@ size_t FileSegment::getDownloadedSize() const
 
 size_t FileSegment::getDownloadedSizeUnlocked(const FileSegmentGuard::Lock &) const
 {
-    if (download_state == State::DOWNLOADED)
-        return downloaded_size;
-
-    std::unique_lock download_lock(download_mutex);
     return downloaded_size;
 }
 
@@ -356,8 +352,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     try
     {
         cache_writer->write(from, size);
-
-        std::unique_lock download_lock(download_mutex);
 
         cache_writer->next();
 
