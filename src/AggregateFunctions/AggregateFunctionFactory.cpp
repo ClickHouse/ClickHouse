@@ -106,7 +106,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         // nullability themselves. Another special case is functions from Nothing
         // that are rewritten to AggregateFunctionNothing, in this case
         // nested_function is nullptr.
-        if (!nested_function || !nested_function->isOnlyWindowFunction())
+        if (!nested_function->getResultType()->isNullable() && (!nested_function || !nested_function->isOnlyWindowFunction()))
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
