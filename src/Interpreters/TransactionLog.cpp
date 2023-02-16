@@ -603,7 +603,7 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std
 
     /// At this point of execution tail is lesser that tid.start_csn
     /// This mean that transaction is either outdated or just has been committed concurrently and the tail moved forward.
-    /// If the second case takes palece transaction's commit csn has to be set.
+    /// If the second case takes place transaction's commit csn has to be set.
     /// We should load CSN again to distinguish the second case.
     if (failback_with_strict_load_csn)
         if (CSN maybe_csn = failback_with_strict_load_csn->load())
