@@ -227,6 +227,8 @@ namespace
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+                // Multipart upload failed because it wasn't possible to schedule all the tasks.
+                // To avoid execution of already scheduled tasks we abort MultipartUpload.
                 abortMultipartUpload();
                 waitForAllBackGroundTasks();
                 throw;
