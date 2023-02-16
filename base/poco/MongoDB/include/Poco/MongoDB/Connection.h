@@ -163,9 +163,9 @@ namespace MongoDB
         return _address;
     }
     inline std::string Connection::uri() const
-{
+    {
     	return _uri;
-}
+    }
 
 
 }
