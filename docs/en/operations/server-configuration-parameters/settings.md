@@ -978,7 +978,7 @@ Default value: `10000`.
 
 ## background_pool_size {#background_pool_size}
 
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied  at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines. This setting is also could be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
 
 Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
 
@@ -996,8 +996,8 @@ Default value: 16.
 
 ## background_merges_mutations_concurrency_ratio {#background_merges_mutations_concurrency_ratio}
 
-Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example if the ratio equals to 2 and
-`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operation could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. For example, if the ratio equals to 2 and
+`background_pool_size` is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority. You can only increase this ratio at runtime. To lower it you have to restart the server.
 The same as for `background_pool_size` setting `background_merges_mutations_concurrency_ratio` could be applied from the `default` profile for backward compatibility.
 
 Possible values:
@@ -1014,9 +1014,9 @@ Default value: 2.
 
 ## merges_mutations_memory_usage_soft_limit {#merges_mutations_memory_usage_soft_limit}
 
-Sets the limit how much RAM is allowed to use for performing merge and mutation operations.
+Sets the limit on how much RAM is allowed to use for performing merge and mutation operations.
 Zero means unlimited.
-If ClickHouse reaches this limit, it won't schedule any new background merge or mutation operations, but will continue to execute already scheduled tasks.
+If ClickHouse reaches this limit, it won't schedule any new background merge or mutation operations but will continue to execute already scheduled tasks.
 
 Possible values:
 
@@ -1038,6 +1038,24 @@ Default value: `0.5`.
 
 -   [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
 -   [merges_mutations_memory_usage_soft_limit](#merges_mutations_memory_usage_soft_limit)
+
+## background_merges_mutations_scheduling_policy {#background_merges_mutations_scheduling_policy}
+
+Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
+Could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   "round_robin" — Every concurrent merge and mutation is executed in round-robin order to ensure starvation-free operation. Smaller merges are completed faster than bigger ones just because they have fewer blocks to merge.
+-   "shortest_task_first" — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by INSERTs.
+
+Default value: "round_robin".
+
+**Example**
+
+```xml
+<background_merges_mutations_scheduling_policy>shortest_task_first</background_merges_mutations_scheduling_policy>
+```
 
 ## background_move_pool_size {#background_move_pool_size}
 
