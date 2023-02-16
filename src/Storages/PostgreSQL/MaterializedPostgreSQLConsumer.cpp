@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
