@@ -1,6 +1,6 @@
 #pragma once
 #include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/CacheMetadata.h>
+#include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Common/ConcurrentBoundedQueue.h>
 

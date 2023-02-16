@@ -126,16 +126,16 @@ FileSegments FileCache::getImpl(
         return {};
 
     FileSegments result;
-    auto add_to_result = [&](const FileSegmentMetadata & cell)
+    auto add_to_result = [&](const FileSegmentMetadata & file_segment_metadata)
     {
-        if (cell.file_segment->isDownloaded())
+        if (file_segment_metadata.file_segment->isDownloaded())
         {
-            if (cell.file_segment->getDownloadedSize() == 0)
+            if (file_segment_metadata.file_segment->getDownloadedSize() == 0)
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot have zero size downloaded file segments. {}",
-                    cell.file_segment->getInfoForLog());
+                    file_segment_metadata.file_segment->getInfoForLog());
             }
 
     #ifndef NDEBUG
@@ -145,13 +145,13 @@ FileSegments FileCache::getImpl(
             * expensive compared to overall query execution time.
             */
 
-            fs::path path = cell.file_segment->getPathInLocalCache();
+            fs::path path = file_segment_metadata.file_segment->getPathInLocalCache();
             if (!fs::exists(path))
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "File path does not exist, but file has DOWNLOADED state. {}",
-                    cell.file_segment->getInfoForLog());
+                    file_segment_metadata.file_segment->getInfoForLog());
             }
 
             if (fs::file_size(path) == 0)
@@ -159,15 +159,15 @@ FileSegments FileCache::getImpl(
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot have zero size downloaded file segments. {}",
-                    cell.file_segment->getInfoForLog());
+                    file_segment_metadata.file_segment->getInfoForLog());
             }
     #endif
         }
-        auto state = cell.file_segment->state();
+        auto state = file_segment_metadata.file_segment->state();
         if (state == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
             std::terminate();
 
-        result.push_back(cell.file_segment);
+        result.push_back(file_segment_metadata.file_segment);
     };
 
     auto segment_it = file_segments.lower_bound(range.left);
@@ -180,27 +180,27 @@ FileSegments FileCache::getImpl(
         ///     ^                                        ^
         ///     range.left                               range.left
 
-        const auto & cell = file_segments.rbegin()->second;
-        if (cell.file_segment->range().right < range.left)
+        const auto & file_segment_metadata = file_segments.rbegin()->second;
+        if (file_segment_metadata.file_segment->range().right < range.left)
             return {};
 
-        add_to_result(cell);
+        add_to_result(file_segment_metadata);
     }
     else /// segment_it <-- segmment{k}
     {
         if (segment_it != file_segments.begin())
         {
-            const auto & prev_cell = std::prev(segment_it)->second;
-            const auto & prev_cell_range = prev_cell.file_segment->range();
+            const auto & prev_file_segment_metadata = std::prev(segment_it)->second;
+            const auto & prev_range = prev_file_segment_metadata.file_segment->range();
 
-            if (range.left <= prev_cell_range.right)
+            if (range.left <= prev_range.right)
             {
                 ///   segment{k-1}  segment{k}
                 ///   [________]   [_____
                 ///       [___________
                 ///       ^
                 ///       range.left
-                add_to_result(prev_cell);
+                add_to_result(prev_file_segment_metadata);
             }
         }
 
@@ -212,11 +212,11 @@ FileSegments FileCache::getImpl(
 
         while (segment_it != file_segments.end())
         {
-            const auto & cell = segment_it->second;
-            if (range.right < cell.file_segment->range().left)
+            const auto & file_segment_metadata = segment_it->second;
+            if (range.right < file_segment_metadata.file_segment->range().left)
                 break;
 
-            add_to_result(cell);
+            add_to_result(file_segment_metadata);
             ++segment_it;
         }
     }
@@ -224,7 +224,7 @@ FileSegments FileCache::getImpl(
     return result;
 }
 
-FileSegments FileCache::splitRangeIntoCells(
+FileSegments FileCache::splitRangeInfoFileSegments(
     const Key & key,
     size_t offset,
     size_t size,
@@ -237,19 +237,19 @@ FileSegments FileCache::splitRangeIntoCells(
     auto current_pos = offset;
     auto end_pos_non_included = offset + size;
 
-    size_t current_cell_size;
+    size_t current_file_segment_size;
     size_t remaining_size = size;
 
     FileSegments file_segments;
     while (current_pos < end_pos_non_included)
     {
-        current_cell_size = std::min(remaining_size, max_file_segment_size);
-        remaining_size -= current_cell_size;
+        current_file_segment_size = std::min(remaining_size, max_file_segment_size);
+        remaining_size -= current_file_segment_size;
 
-        auto cell_it = addCell(key, current_pos, current_cell_size, state, settings, locked_key, nullptr);
-        file_segments.push_back(cell_it->second.file_segment);
+        auto file_segment_metadata_it = addFileSegment(key, current_pos, current_file_segment_size, state, settings, locked_key, nullptr);
+        file_segments.push_back(file_segment_metadata_it->second.file_segment);
 
-        current_pos += current_cell_size;
+        current_pos += current_file_segment_size;
     }
 
     assert(file_segments.empty() || offset + size - 1 == file_segments.back()->range().right);
@@ -272,7 +272,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     /// [____________________]         -- requested range
     ///     [____]  [_]   [_________]  -- intersecting cache [segment1, ..., segmentN]
     ///
-    /// For each such hole create a cell with file segment state EMPTY.
+    /// For each such hole create a file_segment_metadata with file segment state EMPTY.
 
     assert(!file_segments.empty());
 
@@ -320,7 +320,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         else
         {
             file_segments.splice(
-                it, splitRangeIntoCells(
+                it, splitRangeInfoFileSegments(
                     key, current_pos, hole_size, FileSegment::State::EMPTY, settings, locked_key));
         }
 
@@ -350,7 +350,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         {
             file_segments.splice(
                 file_segments.end(),
-                splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, settings, locked_key));
+                splitRangeInfoFileSegments(key, current_pos, hole_size, FileSegment::State::EMPTY, settings, locked_key));
         }
     }
 }
@@ -368,12 +368,12 @@ FileSegmentsHolderPtr FileCache::set(const Key & key, size_t offset, size_t size
 
     if (settings.unbounded)
     {
-        /// If the file is unbounded, we can create a single cell for it.
-        auto cell_it = addCell(key, offset, size, FileSegment::State::EMPTY, settings, *locked_key, nullptr);
-        file_segments = {cell_it->second.file_segment};
+        /// If the file is unbounded, we can create a single file_segment_metadata for it.
+        auto file_segment_metadata_it = addFileSegment(key, offset, size, FileSegment::State::EMPTY, settings, *locked_key, nullptr);
+        file_segments = {file_segment_metadata_it->second.file_segment};
     }
     else
-        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, *locked_key);
+        file_segments = splitRangeInfoFileSegments(key, offset, size, FileSegment::State::EMPTY, settings, *locked_key);
 
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
@@ -394,7 +394,7 @@ FileSegmentsHolderPtr FileCache::getOrSet(
     auto file_segments = getImpl(key, range, *locked_key);
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoCells(
+        file_segments = splitRangeInfoFileSegments(
             key, offset, size, FileSegment::State::EMPTY, settings, *locked_key);
     }
     else
@@ -435,7 +435,7 @@ FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size
     return std::make_unique<FileSegmentsHolder>(FileSegments{file_segment});
 }
 
-KeyMetadata::iterator FileCache::addCell(
+KeyMetadata::iterator FileCache::addFileSegment(
     const Key & key,
     size_t offset,
     size_t size,
@@ -444,16 +444,16 @@ KeyMetadata::iterator FileCache::addCell(
     LockedKey & locked_key,
     const CacheGuard::Lock * lock)
 {
-    /// Create a file segment cell and put it in `files` map by [key][offset].
+    /// Create a file_segment_metadata and put it in `files` map by [key][offset].
 
-    chassert(size > 0); /// Empty cells are not allowed.
+    chassert(size > 0); /// Empty file segments in cache are not allowed.
 
     auto it = locked_key.getKeyMetadata().find(offset);
     if (it != locked_key.getKeyMetadata().end())
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cache cell already exists for key: `{}`, offset: {}, size: {}.",
+            "Cache entry already exists for key: `{}`, offset: {}, size: {}.",
             key.toString(), offset, size);
     }
 
@@ -498,12 +498,12 @@ KeyMetadata::iterator FileCache::addCell(
 
     std::optional<LockedCachePriority> locked_queue(lock ? LockedCachePriority(*lock, *main_priority) : std::optional<LockedCachePriority>{});
 
-    FileSegmentMetadata cell(std::move(file_segment), locked_key, locked_queue ? &*locked_queue : nullptr);
+    FileSegmentMetadata file_segment_metadata(std::move(file_segment), locked_key, locked_queue ? &*locked_queue : nullptr);
 
-    auto [cell_it, inserted] = locked_key.getKeyMetadata().emplace(offset, std::move(cell));
+    auto [file_segment_metadata_it, inserted] = locked_key.getKeyMetadata().emplace(offset, std::move(file_segment_metadata));
     assert(inserted);
 
-    return cell_it;
+    return file_segment_metadata_it;
 }
 
 bool FileCache::tryReserve(const Key & key, size_t offset, size_t size)
@@ -577,14 +577,14 @@ bool FileCache::tryReserveImpl(
     FileCacheQueryLimit::LockedQueryContext * query_context,
     const CacheGuard::Lock & priority_lock)
 {
-    /// Iterate cells in the priority of `priority_queue`.
+    /// Iterate cache entries in the priority of `priority_queue`.
     /// If some entry is in `priority_queue` it must be guaranteed to have a
-    /// corresponding cache cell in locked_key->offsets() and in
+    /// corresponding cache entry in locked_key->offsets() and in
     /// query_context->records (if query_context != nullptr).
     /// When we evict some entry, then it must be removed from both:
     /// main_priority and query_context::priority (if query_context != nullptr).
     /// If we successfulkly reserved space, entry must be added to both:
-    /// cells and query_context::records (if query_context != nullptr);
+    /// cache entries and query_context::records (if query_context != nullptr);
 
     LOG_TEST(log, "Reserving space {} for {}:{}", size, key.toString(), offset);
 
@@ -594,9 +594,9 @@ bool FileCache::tryReserveImpl(
     size_t queue_size = locked_priority_queue.getElementsCount();
     chassert(queue_size <= locked_priority_queue.getElementsLimit());
 
-    /// A cell acquires a LRUQueue iterator on first successful space reservation attempt.
-    auto * cell_for_reserve = locked_key->getKeyMetadata().tryGetByOffset(offset);
-    if (!cell_for_reserve || !cell_for_reserve->queue_iterator)
+    /// A file_segment_metadata acquires a LRUQueue iterator on first successful space reservation attempt.
+    auto * file_segment_for_reserve = locked_key->getKeyMetadata().tryGetByOffset(offset);
+    if (!file_segment_for_reserve || !file_segment_for_reserve->queue_iterator)
         queue_size += 1;
 
     size_t removed_size = 0;
@@ -622,21 +622,21 @@ bool FileCache::tryReserveImpl(
         if (!is_overflow())
             return { IterationResult::BREAK, false };
 
-        auto * cell = current_locked_key.getKeyMetadata().getByOffset(entry.offset);
+        auto * file_segment_metadata = current_locked_key.getKeyMetadata().getByOffset(entry.offset);
 
-        chassert(cell->queue_iterator);
-        chassert(entry.size == cell->size());
+        chassert(file_segment_metadata->queue_iterator);
+        chassert(entry.size == file_segment_metadata->size());
 
-        const size_t cell_size = cell->size();
+        const size_t file_segment_size = file_segment_metadata->size();
         bool remove_current_it = false;
 
-        /// It is guaranteed that cell is not removed from cache as long as
+        /// It is guaranteed that file_segment_metadata is not removed from cache as long as
         /// pointer to corresponding file segment is hold by any other thread.
 
         bool save_locked_key = false;
-        if (cell->releasable())
+        if (file_segment_metadata->releasable())
         {
-            auto file_segment = cell->file_segment;
+            auto file_segment = file_segment_metadata->file_segment;
 
             chassert(entry.offset == file_segment->offset());
             if (file_segment->isPersistent() && allow_persistent_files)
@@ -648,7 +648,7 @@ bool FileCache::tryReserveImpl(
             {
                 case FileSegment::State::DOWNLOADED:
                 {
-                    /// Cell will actually be removed only if we managed to reserve enough space.
+                    /// file_segment_metadata will actually be removed only if we managed to reserve enough space.
 
                     current_locked_key.delete_offsets.push_back(file_segment->offset());
                     save_locked_key = true;
@@ -657,13 +657,13 @@ bool FileCache::tryReserveImpl(
                 default:
                 {
                     remove_current_it = true;
-                    cell->queue_iterator = {};
+                    file_segment_metadata->queue_iterator = {};
                     current_locked_key.remove(file_segment, priority_lock);
                     break;
                 }
             }
 
-            removed_size += cell_size;
+            removed_size += file_segment_size;
             --queue_size;
         }
 
@@ -676,29 +676,29 @@ bool FileCache::tryReserveImpl(
     if (is_overflow())
         return false;
 
-    for (auto & [_, transaction] : locked)
+    for (auto & [_, current_locked_key] : locked)
     {
-        for (const auto & offset_to_delete : transaction->delete_offsets)
+        for (const auto & offset_to_delete : current_locked_key->delete_offsets)
         {
-            auto * cell = transaction->getKeyMetadata().getByOffset(offset_to_delete);
-            transaction->remove(cell->file_segment, priority_lock);
+            auto * file_segment_metadata = current_locked_key->getKeyMetadata().getByOffset(offset_to_delete);
+            current_locked_key->remove(file_segment_metadata->file_segment, priority_lock);
             if (query_context)
                 query_context->remove(key, offset);
         }
     }
 
-    if (cell_for_reserve)
+    if (file_segment_for_reserve)
     {
-        /// queue_iteratir is std::nullopt here if no space has been reserved yet, a cache cell
+        /// queue_iteratir is std::nullopt here if no space has been reserved yet, a file_segment_metadata
         /// acquires queue iterator on first successful space reservation attempt.
         /// If queue iterator already exists, we need to update the size after each space reservation.
-        if (cell_for_reserve->queue_iterator)
-            LockedCachePriorityIterator(priority_lock, cell_for_reserve->queue_iterator).incrementSize(size);
+        if (file_segment_for_reserve->queue_iterator)
+            LockedCachePriorityIterator(priority_lock, file_segment_for_reserve->queue_iterator).incrementSize(size);
         else
         {
-            /// Space reservation is incremental, so cache cell is created first (with state empty),
+            /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
             /// and queue_iterator is assigned on first space reservation attempt.
-            cell_for_reserve->queue_iterator = locked_main_priority.add(key, offset, size, locked_key->getCreator());
+            file_segment_for_reserve->queue_iterator = locked_main_priority.add(key, offset, size, locked_key->getCreator());
         }
     }
 
@@ -729,21 +729,21 @@ void FileCache::removeKeyIfExists(const Key & key)
     auto & offsets = locked_key->getKeyMetadata();
     if (!offsets.empty())
     {
-        std::vector<FileSegmentMetadata *> remove_cells;
-        remove_cells.reserve(offsets.size());
-        for (auto & [offset, cell] : offsets)
-            remove_cells.push_back(&cell);
+        std::vector<FileSegmentMetadata *> remove_file_segment_metadatas;
+        remove_file_segment_metadatas.reserve(offsets.size());
+        for (auto & [offset, file_segment_metadata] : offsets)
+            remove_file_segment_metadatas.push_back(&file_segment_metadata);
 
-        for (auto & cell : remove_cells)
+        for (auto & file_segment_metadata : remove_file_segment_metadatas)
         {
             /// In ordinary case we remove data from cache when it's not used by anyone.
             /// But if we have multiple replicated zero-copy tables on the same server
             /// it became possible to start removing something from cache when it is used
             /// by other "zero-copy" tables. That is why it's not an error.
-            if (!cell->releasable())
+            if (!file_segment_metadata->releasable())
                 continue;
 
-            locked_key->remove(cell->file_segment, lock);
+            locked_key->remove(file_segment_metadata->file_segment, lock);
         }
     }
 }
@@ -764,12 +764,12 @@ void FileCache::removeAllReleasable()
     LockedCachePriority(lock, *main_priority).iterate([&](const QueueEntry & entry) -> IterationResult
     {
         auto locked_key = entry.createLockedKey();
-        auto * cell = locked_key->getKeyMetadata().getByOffset(entry.offset);
+        auto * file_segment_metadata = locked_key->getKeyMetadata().getByOffset(entry.offset);
 
-        if (cell->releasable())
+        if (file_segment_metadata->releasable())
         {
-            cell->queue_iterator = {};
-            locked_key->remove(cell->file_segment, lock);
+            file_segment_metadata->queue_iterator = {};
+            locked_key->remove(file_segment_metadata->file_segment, lock);
             return IterationResult::REMOVE_AND_CONTINUE;
         }
         return IterationResult::CONTINUE;
@@ -870,11 +870,12 @@ void FileCache::loadMetadata()
 
                 if (tryReserveUnlocked(key, offset, size, locked_key, lock))
                 {
-                    auto cell_it = addCell(
+                    auto file_segment_metadata_it = addFileSegment(
                         key, offset, size, FileSegment::State::DOWNLOADED,
                         CreateFileSegmentSettings(segment_kind), *locked_key, &lock);
 
-                    queue_entries.emplace_back(cell_it->second.queue_iterator, cell_it->second.file_segment);
+                    queue_entries.emplace_back(
+                        file_segment_metadata_it->second.queue_iterator, file_segment_metadata_it->second.file_segment);
                 }
                 else
                 {
@@ -890,14 +891,14 @@ void FileCache::loadMetadata()
         }
     }
 
-    /// Shuffle cells to have random order in LRUQueue as at startup all cells have the same priority.
+    /// Shuffle file_segment_metadatas to have random order in LRUQueue as at startup all file_segment_metadatas have the same priority.
     pcg64 generator(randomSeed());
     std::shuffle(queue_entries.begin(), queue_entries.end(), generator);
     for (auto & [it, file_segment] : queue_entries)
     {
-        /// Cell cache size changed and, for example, 1st file segment fits into cache
+        /// Cache size changed and, for example, 1st file segment fits into cache
         /// and 2nd file segment will fit only if first was evicted, then first will be removed and
-        /// cell is nullptr here.
+        /// file_segment_metadata is nullptr here.
         if (file_segment.expired())
             continue;
 
@@ -1005,8 +1006,8 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
     FileSegments file_segments;
     for (const auto & [key, key_metadata] : metadata)
     {
-        for (const auto & [_, cell] : *key_metadata)
-            file_segments.push_back(FileSegment::getSnapshot(cell.file_segment));
+        for (const auto & [_, file_segment_metadata] : *key_metadata)
+            file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata.file_segment));
     }
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
@@ -1015,8 +1016,8 @@ FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
     auto locked_key = createLockedKey(key, KeyNotFoundPolicy::THROW);
-    for (const auto & [_, cell] : locked_key->getKeyMetadata())
-        file_segments.push_back(FileSegment::getSnapshot(cell.file_segment));
+    for (const auto & [_, file_segment_metadata] : locked_key->getKeyMetadata())
+        file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata.file_segment));
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
@@ -1030,8 +1031,8 @@ FileSegmentsHolderPtr FileCache::dumpQueue()
     LockedCachePriority(cache_guard.lock(), *main_priority).iterate([&](const QueueEntry & entry)
     {
         auto tx = entry.createLockedKey();
-        auto * cell = tx->getKeyMetadata().getByOffset(entry.offset);
-        file_segments.push_back(FileSegment::getSnapshot(cell->file_segment));
+        auto * file_segment_metadata = tx->getKeyMetadata().getByOffset(entry.offset);
+        file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata->file_segment));
         return IterationResult::CONTINUE;
     });
 
@@ -1048,10 +1049,10 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
 
     std::vector<String> cache_paths;
 
-    for (const auto & [offset, cell] : locked_key->getKeyMetadata())
+    for (const auto & [offset, file_segment_metadata] : locked_key->getKeyMetadata())
     {
-        if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->getKind()));
+        if (file_segment_metadata.file_segment->state() == FileSegment::State::DOWNLOADED)
+            cache_paths.push_back(getPathInLocalCache(key, offset, file_segment_metadata.file_segment->getKind()));
     }
     return cache_paths;
 }
@@ -1070,14 +1071,14 @@ void FileCache::assertCacheCorrectness()
 {
     for (const auto & [key, key_metadata] : metadata)
     {
-        for (const auto & [_, cell] : *key_metadata)
+        for (const auto & [_, file_segment_metadata] : *key_metadata)
         {
-            const auto & file_segment = cell.file_segment;
+            const auto & file_segment = file_segment_metadata.file_segment;
             file_segment->assertCorrectness();
 
             if (file_segment->reserved_size != 0)
             {
-                assert(cell.queue_iterator);
+                assert(file_segment_metadata.queue_iterator);
                 // assert(main_priority->contains(file_segment->key(), file_segment->offset()));
             }
         }
@@ -1093,14 +1094,13 @@ void FileCache::assertCacheCorrectness()
     queue.iterate([&](const QueueEntry & entry) -> IterationResult
     {
         auto locked_key = entry.createLockedKey();
-        auto * cell = locked_key->getKeyMetadata().getByOffset(entry.offset);
+        auto * file_segment_metadata = locked_key->getKeyMetadata().getByOffset(entry.offset);
 
-        if (cell->size() != entry.size)
+        if (file_segment_metadata->size() != entry.size)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected {} == {} size ({})",
-                cell->size(), entry.size, cell->file_segment->getInfoForLog());
+                ErrorCodes::LOGICAL_ERROR, "Expected {} == {} size ({})",
+                file_segment_metadata->size(), entry.size, file_segment_metadata->file_segment->getInfoForLog());
         }
 
         total_size += entry.size;
