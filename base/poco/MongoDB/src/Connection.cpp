@@ -297,7 +297,6 @@ void Connection::connect(const std::string& uri, SocketFactory& socketFactory)
 }
 
 
-
 void Connection::disconnect()
 {
 	_socket.close();
