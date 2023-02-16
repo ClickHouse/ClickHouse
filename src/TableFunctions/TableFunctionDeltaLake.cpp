@@ -16,8 +16,7 @@ struct TableFunctionDeltaLakeName
     static constexpr auto name = "deltaLake";
 };
 
-using TableFunctionDeltaLake
-    = ITableFunctionDataLake<TableFunctionDeltaLakeName, StorageDeltaLake, TableFunctionS3, StorageS3::Configuration>;
+using TableFunctionDeltaLake = ITableFunctionDataLake<TableFunctionDeltaLakeName, StorageDeltaLake, TableFunctionS3>;
 
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {

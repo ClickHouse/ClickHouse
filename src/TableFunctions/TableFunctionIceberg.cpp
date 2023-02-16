@@ -17,7 +17,7 @@ struct TableFunctionIcebergName
     static constexpr auto name = "iceberg";
 };
 
-using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3, StorageS3::Configuration>;
+using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3>;
 
 void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {

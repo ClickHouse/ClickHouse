@@ -15,7 +15,7 @@ struct TableFunctionHudiName
 {
     static constexpr auto name = "hudi";
 };
-using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudi, TableFunctionS3, StorageS3::Configuration>;
+using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudi, TableFunctionS3>;
 
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {

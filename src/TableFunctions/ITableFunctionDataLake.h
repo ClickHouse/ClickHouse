@@ -4,11 +4,12 @@
 
 #if USE_AWS_S3
 
-#    include <TableFunctions/ITableFunction.h>
 #    include <Access/Common/AccessFlags.h>
 #    include <Formats/FormatFactory.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/parseColumnsListForTableFunction.h>
+#    include <Storages/IStorage.h>
+#    include <TableFunctions/ITableFunction.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Name, typename Storage, typename TableFunction, typename Configuration>
+template <typename Name, typename Storage, typename TableFunction>
 class ITableFunctionDataLake : public ITableFunction
 {
 public:
@@ -76,7 +77,7 @@ protected:
             configuration.format = "Parquet";
     }
 
-    mutable Configuration configuration;
+    mutable typename Storage::Configuration configuration;
 };
 }
 
