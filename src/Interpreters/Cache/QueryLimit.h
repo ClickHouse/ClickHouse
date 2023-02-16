@@ -43,6 +43,7 @@ public:
         const bool recache_on_query_limit_exceeded;
     };
 
+    /// CacheGuard::Lock protects all priority queues.
     class LockedQueryContext
     {
     public:
