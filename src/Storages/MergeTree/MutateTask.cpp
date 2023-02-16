@@ -497,7 +497,15 @@ static NameSet collectFilesToSkip(
     auto source_updated_stream_counts = getStreamCounts(source_part, updated_header.getNames());
     auto new_updated_stream_counts = getStreamCounts(new_part, updated_header.getNames());
 
-    /// Skip updated files
+    /// Skip all modified files in new part.
+    for (const auto & [stream_name, _] : new_updated_stream_counts)
+    {
+        files_to_skip.insert(stream_name + ".bin");
+        files_to_skip.insert(stream_name + mrk_extension);
+    }
+
+    /// Skip files that we read from source part and do not write in new part.
+    /// E.g. ALTER MODIFY from LowCardinality(String) to String.
     for (const auto & [stream_name, _] : source_updated_stream_counts)
     {
         /// If we read shared stream and do not write it
@@ -885,6 +893,7 @@ public:
                 ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
+                false, // no cleanup
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 /* need_prefix */ true,

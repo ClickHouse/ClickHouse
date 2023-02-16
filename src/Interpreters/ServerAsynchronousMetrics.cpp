@@ -218,7 +218,11 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 
         size_t max_part_count_for_partition = 0;
 
-        size_t number_of_databases = databases.size();
+        size_t number_of_databases = 0;
+        for (auto [db_name, _] : databases)
+            if (db_name != DatabaseCatalog::TEMPORARY_DATABASE)
+                ++number_of_databases; /// filter out the internal database for temporary tables, system table "system.databases" behaves the same way
+
         size_t total_number_of_tables = 0;
 
         size_t total_number_of_bytes = 0;
