@@ -82,7 +82,7 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
     context->checkAccess(getSourceAccessType());
 
     if (configuration.structure == "auto")
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+        return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
 
     return parseColumnsListFromString(configuration.structure, context);
 }

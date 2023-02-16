@@ -18,26 +18,27 @@
 #define Foundation_Event_WIN32_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API EventImpl
 {
 protected:
-	EventImpl(bool autoReset);		
-	~EventImpl();
-	void setImpl();
-	void waitImpl();
-	bool waitImpl(long milliseconds);
-	void resetImpl();
-	
+    EventImpl(bool autoReset);
+    ~EventImpl();
+    void setImpl();
+    void waitImpl();
+    bool waitImpl(long milliseconds);
+    void resetImpl();
+
 private:
-	HANDLE _event;
+    HANDLE _event;
 };
 
 
@@ -46,19 +47,19 @@ private:
 //
 inline void EventImpl::setImpl()
 {
-	if (!SetEvent(_event))
-	{
-		throw SystemException("cannot signal event");
-	}
+    if (!SetEvent(_event))
+    {
+        throw SystemException("cannot signal event");
+    }
 }
 
 
 inline void EventImpl::resetImpl()
 {
-	if (!ResetEvent(_event))
-	{
-		throw SystemException("cannot reset event");
-	}
+    if (!ResetEvent(_event))
+    {
+        throw SystemException("cannot reset event");
+    }
 }
 
 
