@@ -301,7 +301,7 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = false);
+    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
 
     using ObjectInfos = StorageS3Source::ObjectInfos;
 
