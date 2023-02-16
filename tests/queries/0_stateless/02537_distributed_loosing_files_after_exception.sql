@@ -1,23 +1,82 @@
-CREATE DATABASE IF NOT EXISTS shard_0;
-CREATE DATABASE IF NOT EXISTS shard_1;
+/*
+Testing that distributed table doesn't loose file after inserts which contain errors
+*/
 
-DROP TABLE IF EXISTS dist_02537;
-DROP TABLE IF EXISTS shard_0.test_02537;
-DROP TABLE IF EXISTS shard_1.test_02537;
+-- with monitor_batch_insert=1
+DROP TABLE IF EXISTS dist;
+DROP TABLE IF EXISTS underlying;
 
-CREATE TABLE shard_0.test_02537 (n UInt64) ENGINE=MergeTree() ORDER BY tuple();
-CREATE TABLE dist_02537 (n UInt64) ENGINE=Distributed('test_cluster_two_shards_different_databases', /* default_database= */ '', test_02537, rand());
+CREATE TABLE dist (key Int) ENGINE=Distributed(test_shard_localhost, currentDatabase(), underlying) SETTINGS monitor_batch_inserts=1;
+SYSTEM STOP DISTRIBUTED SENDS dist;
+INSERT INTO dist SETTINGS prefer_localhost_replica=0, max_threads=1 VALUES (1);
+INSERT INTO dist SETTINGS prefer_localhost_replica=0, max_threads=2 VALUES (1);
+SYSTEM FLUSH DISTRIBUTED dist; -- { serverError UNKNOWN_TABLE }
+-- check the second since after using queue it may got lost from it
+SYSTEM FLUSH DISTRIBUTED dist; -- { serverError UNKNOWN_TABLE }
 
-SYSTEM STOP DISTRIBUTED SENDS dist_02537;
-INSERT INTO dist_02537 SELECT number FROM numbers(5) SETTINGS prefer_localhost_replica=0;
+SELECT is_blocked, data_files FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'dist';
 
-SYSTEM START DISTRIBUTED SENDS dist_02537;
+CREATE TABLE underlying (key Int) ENGINE=Memory();
+SYSTEM FLUSH DISTRIBUTED dist;
 
--- should be only one file record for this table
-SELECT throwIf(sum(error_count) < 1), throwIf(sum(data_files) != 1) FROM system.distribution_queue WHERE database = 'default' AND table = 'dist_02537' AND is_blocked = 0;
+-- all data should be flushed
+SELECT is_blocked, data_files FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'dist';
 
-CREATE TABLE shard_1.test_02537 (n UInt64) ENGINE=MergeTree() ORDER BY tuple();
+-- 2 2
+SELECT sum(key), count(key) FROM dist;
+SELECT sum(key), count(key) FROM underlying;
 
-SYSTEM FLUSH DISTRIBUTED dist_02537;
+/*
+Testing that we do not loose files with monitor_batch_insert=0
+*/
+DROP TABLE IF EXISTS dist;
+DROP TABLE IF EXISTS underlying;
 
-SELECT count(n), sum(n) FROM dist_02537; -- 5 10
+CREATE TABLE dist (key Int) ENGINE=Distributed(test_shard_localhost, currentDatabase(), underlying) SETTINGS monitor_batch_inserts=0;
+SYSTEM STOP DISTRIBUTED SENDS dist;
+INSERT INTO dist SETTINGS prefer_localhost_replica=0, max_threads=1 VALUES (1);
+INSERT INTO dist SETTINGS prefer_localhost_replica=0, max_threads=2 VALUES (1);
+SYSTEM FLUSH DISTRIBUTED dist; -- { serverError UNKNOWN_TABLE }
+-- check the second since after using queue it may got lost from it
+SYSTEM FLUSH DISTRIBUTED dist; -- { serverError UNKNOWN_TABLE }
+
+SELECT is_blocked, data_files FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'dist';
+
+CREATE TABLE underlying (key Int) ENGINE=Memory();
+SYSTEM FLUSH DISTRIBUTED dist;
+
+-- distribution_queue should be empty
+SELECT is_blocked, data_files FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'dist';
+
+-- 2 2
+SELECT sum(key), count(key) FROM dist;
+SELECT sum(key), count(key) FROM underlying;
+
+/*
+Testing that start up with current_batch.txt works
+*/
+DROP TABLE IF EXISTS dist;
+DROP TABLE IF EXISTS underlying;
+CREATE TABLE dist (key Int) ENGINE=Distributed(test_shard_localhost, currentDatabase(), underlying) SETTINGS monitor_batch_inserts=1;
+SYSTEM STOP DISTRIBUTED SENDS dist;
+INSERT INTO dist SETTINGS prefer_localhost_replica=0, max_threads=1 VALUES (1); 
+INSERT INTO dist SETTINGS prefer_localhost_replica=0, max_threads=2 VALUES (1);
+SYSTEM FLUSH DISTRIBUTED dist; -- { serverError UNKNOWN_TABLE }
+-- check the second since after using queue it may got lost from it
+SYSTEM FLUSH DISTRIBUTED dist; -- { serverError UNKNOWN_TABLE }
+
+-- 2 inserts should be blocked
+SELECT is_blocked, data_files FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'dist';
+
+DETACH TABLE dist;
+CREATE TABLE underlying (key Int) ENGINE=Memory();
+ATTACH TABLE dist;
+
+SYSTEM FLUSH DISTRIBUTED dist;
+
+-- distribution queue should be empty
+SELECT is_blocked, data_files FROM system.distribution_queue WHERE database = currentDatabase() AND table = 'dist';
+
+-- 2 2
+SELECT sum(key), count(key) FROM dist;
+SELECT sum(key), count(key) FROM underlying;
