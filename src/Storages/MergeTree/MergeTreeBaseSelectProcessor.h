@@ -70,7 +70,7 @@ public:
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
     virtual std::string getName() const = 0;
-    
+
     static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps);
 
 protected:
