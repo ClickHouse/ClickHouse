@@ -6427,9 +6427,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     // Projections don't support grouping sets yet.
     if (original_select_query->group_by_with_grouping_sets
-        || select_query->group_by_with_totals
-        || select_query->group_by_with_rollup
-        || select_query->group_by_with_cube)
+        || original_select_query->group_by_with_totals
+        || original_select_query->group_by_with_rollup
+        || original_select_query->group_by_with_cube)
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
@@ -6439,7 +6439,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         ).ignoreProjections().ignoreAlias();
 
     InterpreterSelectQuery select(
-        query_ptr,
+        original_query_ptr,
         query_context,
         query_options,
         query_info.prepared_sets);
