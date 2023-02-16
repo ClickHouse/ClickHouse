@@ -1,4 +1,4 @@
-#include <Interpreters/Cache/CacheMetadata.h>
+#include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/LockedKey.h>
 #include <Interpreters/Cache/LockedFileCachePriority.h>

@@ -542,7 +542,7 @@ void FileSegment::setBroken()
 
 void FileSegment::complete()
 {
-    auto cache_lock = cache->createCacheTransaction();
+    auto cache_lock = cache->cacheLock();
     auto locked_key = createLockedKey();
     return completeUnlocked(*locked_key, cache_lock);
 }
@@ -823,7 +823,7 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
         return file_segments.erase(file_segments.begin());
     }
 
-    auto cache_lock = file_segment.cache->createCacheTransaction();
+    auto cache_lock = file_segment.cache->cacheLock();
 
     /// File segment pointer must be reset right after calling complete() and
     /// under the same mutex, because complete() checks for segment pointers.

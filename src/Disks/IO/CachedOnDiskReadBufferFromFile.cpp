@@ -1,7 +1,7 @@
 #include "CachedOnDiskReadBufferFromFile.h"
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/CachedObjectStorage.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>

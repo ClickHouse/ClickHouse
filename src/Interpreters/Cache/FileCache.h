@@ -16,7 +16,7 @@
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/CacheMetadata.h>
+#include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/LockedKey.h>
 #include <Interpreters/Cache/QueryLimit.h>
 #include <filesystem>
@@ -112,7 +112,7 @@ public:
 
     void assertCacheCorrectness();
 
-    CacheGuard::Lock createCacheTransaction() { return cache_guard.lock(); }
+    CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
@@ -192,7 +192,7 @@ private:
         const FileSegment::Range & range,
         const LockedKey & locked_key);
 
-    FileSegments splitRangeIntoCells(
+    FileSegments splitRangeInfoFileSegments(
         const Key & key,
         size_t offset,
         size_t size,
@@ -208,7 +208,7 @@ private:
         const CreateFileSegmentSettings & settings,
         LockedKey & locked_key);
 
-    KeyMetadata::iterator addCell(
+    KeyMetadata::iterator addFileSegment(
         const Key & key,
         size_t offset,
         size_t size,
