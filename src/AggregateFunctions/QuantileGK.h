@@ -59,6 +59,7 @@ public:
     }
 
     bool isCompressed() const { return compressed; }
+    void setCompressed() { compressed = true; }
 
     void insert(T x)
     {
@@ -115,6 +116,9 @@ public:
 
     void compress()
     {
+        if (compressed)
+            return;
+
         withHeadBufferInserted();
 
         doCompress(2 * relative_error * count);
@@ -124,9 +128,6 @@ public:
 
     void merge(const GKSampler & other)
     {
-        if (!head_sampled.empty() || !other.head_sampled.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Current buffer needs to be compressed before merge");
-
         if (other.count == 0)
             return;
         else if (count == 0)
@@ -169,6 +170,8 @@ public:
             // `max(g_ab + delta_ab) <= floor(2 * eps_ab * (n_a + n_b))` since
             // `max(g_ab + delta_ab) <= floor(2 * eps_a * n_a) + floor(2 * eps_b * n_b)`
             // Finally, one can see how the `insert(x)` operation can be expressed as `merge([(x, 1, 0])`
+            compress();
+
             backup_sampled.clear();
             backup_sampled.reserve(sampled.size() + other.sampled.size());
             double merged_relative_error = std::max(relative_error, other.relative_error);
@@ -248,9 +251,6 @@ public:
         readIntBinary<size_t>(compress_threshold, buf);
         readFloatBinary<double>(relative_error, buf);
         readIntBinary<size_t>(count, buf);
-
-        /// Always compress before serialization
-        compressed = true;
 
         size_t sampled_len = 0;
         readIntBinary<size_t>(sampled_len, buf);
@@ -427,6 +427,7 @@ public:
 
     void serialize(WriteBuffer & buf) const
     {
+        /// Always compress before serialization
         if (!data.isCompressed())
             data.compress();
 
@@ -436,6 +437,8 @@ public:
     void deserialize(ReadBuffer & buf)
     {
         data.read(buf);
+
+        data.setCompressed();
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
