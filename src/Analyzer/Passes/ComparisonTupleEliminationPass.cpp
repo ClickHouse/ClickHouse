@@ -23,6 +23,11 @@ public:
         : context(std::move(context_))
     {}
 
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    {
+        return child->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION;
+    }
+
     void visitImpl(QueryTreeNodePtr & node) const
     {
         auto * function_node = node->as<FunctionNode>();

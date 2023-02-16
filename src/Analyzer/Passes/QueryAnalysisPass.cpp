@@ -1072,6 +1072,12 @@ public:
 
                 break;
             }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                QueryExpressionsAliasVisitor expressions_alias_visitor(scope);
+                resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
+                break;
+            }
             default:
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -5902,7 +5908,27 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             }
         }
 
-        resolveExpressionNode(table_function_argument, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        /** Table functions arguments can contain expressions with invalid identifiers.
+          * We cannot skip analysis for such arguments, because some table functions cannot provide
+          * information if analysis for argument should be skipped until other arguments will be resolved.
+          *
+          * Example: SELECT key from remote('127.0.0.{1,2}', view(select number AS key from numbers(2)), key);
+          * Example: SELECT id from remote('127.0.0.{1,2}', 'default', 'test_table', id);
+          */
+        try
+        {
+            resolveExpressionNode(table_function_argument, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        }
+        catch (const Exception & exception)
+        {
+            if (exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
+            {
+                result_table_function_arguments.push_back(table_function_argument);
+                continue;
+            }
+
+            throw;
+        }
 
         if (auto * expression_list = table_function_argument->as<ListNode>())
         {

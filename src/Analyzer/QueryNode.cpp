@@ -336,6 +336,7 @@ ASTPtr QueryNode::toASTImpl() const
     {
         auto settings_query = std::make_shared<ASTSetQuery>();
         settings_query->changes = settings_changes;
+        settings_query->is_standalone = false;
         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     }
 

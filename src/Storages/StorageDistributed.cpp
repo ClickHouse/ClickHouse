@@ -678,13 +678,8 @@ QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const Sele
         table_function_node->getArgumentsNode() = remote_table_function_node.getArgumentsNode();
 
         QueryAnalysisPass query_analysis_pass;
-        query_analysis_pass.run(table_function_node->getArgumentsNode(), query_context);
+        query_analysis_pass.run(table_function_node, query_context);
 
-        auto remote_table_function_to_resolve = table_function_node->toAST();
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(remote_table_function_to_resolve, query_context);
-        auto table_function_storage = table_function_ptr->execute(remote_table_function_to_resolve, query_context, table_function_ptr->getName());
-
-        table_function_node->resolve(std::move(table_function_ptr), std::move(table_function_storage), query_context);
         replacement_table_expression = std::move(table_function_node);
     }
     else
