@@ -92,10 +92,7 @@ def test_add_new_table_to_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )  # Check without ip
-    assert (
-        result[-59:]
-        == "\\'postgres_database\\', \\'postgres\\', \\'mysecretpassword\\')\n"
-    )
+    assert result[-51:] == "\\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\n"
 
     result = instance.query_and_get_error(
         "ALTER DATABASE test_database MODIFY SETTING materialized_postgresql_tables_list='tabl1'"
@@ -201,10 +198,7 @@ def test_remove_table_from_replication(started_cluster):
         result[:63]
         == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL("
     )
-    assert (
-        result[-59:]
-        == "\\'postgres_database\\', \\'postgres\\', \\'mysecretpassword\\')\n"
-    )
+    assert result[-51:] == "\\'postgres_database\\', \\'postgres\\', \\'[HIDDEN]\\')\n"
 
     table_name = "postgresql_replica_4"
     instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
@@ -363,8 +357,12 @@ def test_database_with_single_non_default_schema(started_cluster):
         f"INSERT INTO {clickhouse_postgres_db}.postgresql_replica_{altered_table} SELECT number, number, number from numbers(5000, 1000)"
     )
 
-    assert instance.wait_for_log_line(f"Table postgresql_replica_{altered_table} is skipped from replication stream")
-    instance.query(f"DETACH TABLE test_database.postgresql_replica_{altered_table} PERMANENTLY")
+    assert instance.wait_for_log_line(
+        f"Table postgresql_replica_{altered_table} is skipped from replication stream"
+    )
+    instance.query(
+        f"DETACH TABLE test_database.postgresql_replica_{altered_table} PERMANENTLY"
+    )
     assert not instance.contains_in_log(
         "from publication, because table does not exist in PostgreSQL"
     )
@@ -464,8 +462,12 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
         f"INSERT INTO {clickhouse_postgres_db}.postgresql_replica_{altered_table} SELECT number, number, number from numbers(5000, 1000)"
     )
 
-    assert instance.wait_for_log_line(f"Table test_schema.postgresql_replica_{altered_table} is skipped from replication stream")
-    altered_materialized_table = f"{materialized_db}.`test_schema.postgresql_replica_{altered_table}`"
+    assert instance.wait_for_log_line(
+        f"Table test_schema.postgresql_replica_{altered_table} is skipped from replication stream"
+    )
+    altered_materialized_table = (
+        f"{materialized_db}.`test_schema.postgresql_replica_{altered_table}`"
+    )
     instance.query(f"DETACH TABLE {altered_materialized_table} PERMANENTLY")
     assert not instance.contains_in_log(
         "from publication, because table does not exist in PostgreSQL"
@@ -572,9 +574,13 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
         f"INSERT INTO clickhouse_postgres_db{altered_schema}.postgresql_replica_{altered_table} SELECT number, number, number from numbers(1000 * {insert_counter}, 1000)"
     )
 
-    assert instance.wait_for_log_line(f"Table schema{altered_schema}.postgresql_replica_{altered_table} is skipped from replication stream")
+    assert instance.wait_for_log_line(
+        f"Table schema{altered_schema}.postgresql_replica_{altered_table} is skipped from replication stream"
+    )
 
-    altered_materialized_table = f"{materialized_db}.`schema{altered_schema}.postgresql_replica_{altered_table}`"
+    altered_materialized_table = (
+        f"{materialized_db}.`schema{altered_schema}.postgresql_replica_{altered_table}`"
+    )
     instance.query(f"DETACH TABLE {altered_materialized_table} PERMANENTLY")
     assert not instance.contains_in_log(
         "from publication, because table does not exist in PostgreSQL"
