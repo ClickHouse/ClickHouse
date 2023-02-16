@@ -5,6 +5,7 @@
 #    include <Storages/StorageHudi.h>
 #    include <TableFunctions/ITableFunctionDataLake.h>
 #    include <TableFunctions/TableFunctionFactory.h>
+#    include <TableFunctions/TableFunctionS3.h>
 #    include "registerTableFunctions.h"
 
 namespace DB
@@ -14,7 +15,7 @@ struct TableFunctionHudiName
 {
     static constexpr auto name = "hudi";
 };
-using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudi, StorageS3::Configuration>;
+using TableFunctionHudi = ITableFunctionDataLake<TableFunctionHudiName, StorageHudi, TableFunctionS3, StorageS3::Configuration>;
 
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {

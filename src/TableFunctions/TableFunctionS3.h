@@ -19,6 +19,14 @@ class TableFunctionS3 : public ITableFunction
 {
 public:
     static constexpr auto name = "s3";
+    static constexpr auto signature = " - url\n"
+                                      " - url, format\n"
+                                      " - url, format, structure\n"
+                                      " - url, access_key_id, secret_access_key\n"
+                                      " - url, format, structure, compression_method\n"
+                                      " - url, access_key_id, secret_access_key, format\n"
+                                      " - url, access_key_id, secret_access_key, format, structure\n"
+                                      " - url, access_key_id, secret_access_key, format, structure, compression_method";
     std::string getName() const override
     {
         return name;

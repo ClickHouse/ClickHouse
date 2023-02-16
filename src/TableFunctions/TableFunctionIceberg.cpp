@@ -5,6 +5,7 @@
 #    include <Storages/StorageIceberg.h>
 #    include <TableFunctions/ITableFunctionDataLake.h>
 #    include <TableFunctions/TableFunctionFactory.h>
+#    include <TableFunctions/TableFunctionS3.h>
 #    include "registerTableFunctions.h"
 
 
@@ -16,7 +17,7 @@ struct TableFunctionIcebergName
     static constexpr auto name = "iceberg";
 };
 
-using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, StorageS3::Configuration>;
+using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3, StorageS3::Configuration>;
 
 void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {

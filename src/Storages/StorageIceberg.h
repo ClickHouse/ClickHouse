@@ -31,12 +31,10 @@ private:
     Configuration base_configuration;
     ContextPtr context;
 
-    String getNewestMetaFile() const;
-    String getManiFestList(const String & metadata_name) const;
+    String fetchMetadataFile() const;
+    String getManifestList(const String & metadata_name) const;
     std::vector<String> getManifestFiles(const String & manifest_list) const;
     std::vector<String> getFilesForRead(const std::vector<String> & manifest_files) const;
-
-    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key) const;
 };
 
 struct StorageIcebergName
