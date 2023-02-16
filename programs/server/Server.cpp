@@ -1282,6 +1282,8 @@ try
                 auto new_pool_size = config->getUInt64("background_pool_size", 16);
                 auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+                auto new_scheduling_policy = config->getString("background_merges_mutations_scheduling_policy", "round_robin");
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_scheduling_policy);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))

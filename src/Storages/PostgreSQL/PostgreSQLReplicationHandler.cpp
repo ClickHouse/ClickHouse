@@ -4,7 +4,7 @@
 
 #include <Common/setThreadName.h>
 #include <Parsers/ASTTableOverrides.h>
-#include <Processors/Transforms/PostgreSQLSource.h>
+#include <Processors/Sources/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
