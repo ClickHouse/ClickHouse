@@ -153,7 +153,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
     if (which.idx == TypeIndex::String)
         return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataString>(res_type, val_type);
 
-    return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataGeneric<false>>(res_type, val_type);
+    return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataGeneric<>>(res_type, val_type);
 }
 
 }
