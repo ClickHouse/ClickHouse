@@ -66,8 +66,8 @@ StorageS3Cluster::StorageS3Cluster(
         /// `distributed_processing` is set to false, because this code is executed on the initiator, so there is no callback set
         /// for asking for the next tasks.
         /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
-        auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
-            /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
+        auto columns = StorageS3::getTableStructureFromDataImpl(
+            format_name, s3_configuration, compression_method, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
     }
     else
