@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-random-merge-tree-settings
+-- Tags: zookeeper
 
 DROP TABLE IF EXISTS versioned_collapsing_table;
 

@@ -27,9 +27,6 @@ set (CLICKHOUSE_SERVER_LINK
 if (TARGET ch_contrib::jemalloc)
     list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::jemalloc)
 endif()
-if (TARGET ch_contrib::azure_sdk)
-    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::azure_sdk)
-endif()
 
 clickhouse_program_add(server)
 
@@ -37,6 +34,6 @@ install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse
 
 clickhouse_embed_binaries(
     TARGET clickhouse_server_configs
-    RESOURCES config.xml users.xml embedded.xml play.html dashboard.html js/uplot.js
+    RESOURCES config.xml users.xml embedded.xml play.html
 )
 add_dependencies(clickhouse-server-lib clickhouse_server_configs)

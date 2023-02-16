@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/third-party/gui
 sidebar_position: 28
 sidebar_label: "Визуальные интерфейсы от сторонних разработчиков"
 ---
@@ -259,3 +258,6 @@ SeekTable [бесплатен](https://www.seektable.com/help/cloud-pricing) д�
 
 Протестировать TABLUM.IO без разворачивания на собственном сервере можно [здесь](https://tablum.io/try).
 Подробно о продукте смотрите на [TABLUM.IO](https://tablum.io/)
+
+
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->

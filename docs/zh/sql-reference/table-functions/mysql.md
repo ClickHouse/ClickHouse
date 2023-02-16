@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/table-functions/mysql
----
 # mysql {#mysql}
 
 允许对存储在远程MySQL服务器上的数据执行`SELECT`和`INSERT`查询。
@@ -108,3 +105,5 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 
 -   [该 ‘MySQL’ 表引擎](../../engines/table-engines/integrations/mysql.md)
 -   [使用MySQL作为外部字典的来源](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
+
+[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/mysql/) <!--hide-->

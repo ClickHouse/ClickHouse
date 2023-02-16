@@ -27,9 +27,7 @@
     M(ZooKeeperLogElement) \
     M(ProcessorProfileLogElement) \
     M(TextLogElement) \
-    M(FilesystemCacheLogElement) \
-    M(FilesystemReadPrefetchesLogElement) \
-    M(AsynchronousInsertLogElement)
+    M(FilesystemCacheLogElement)
 
 namespace Poco
 {

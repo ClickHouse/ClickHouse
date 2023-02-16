@@ -211,8 +211,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    sync_source_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_source_log_entry_str, sync_source_log_entry_stat,
-                                                                                storage.format_version);
+                    sync_source_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_source_log_entry_str, sync_source_log_entry_stat);
                 }
                 else
                 {
@@ -268,9 +267,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    sync_destination_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_destination_log_entry_str,
-                                                                                     sync_destination_log_entry_stat,
-                                                                                     storage.format_version);
+                    sync_destination_log_entry = *ReplicatedMergeTreeLogEntry::parse(sync_destination_log_entry_str, sync_destination_log_entry_stat);
                 }
                 else
                 {
@@ -333,8 +330,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    fetch_log_entry = *ReplicatedMergeTreeLogEntry::parse(fetch_log_entry_str, fetch_log_entry_stat,
-                                                                          storage.format_version);
+                    fetch_log_entry = *ReplicatedMergeTreeLogEntry::parse(fetch_log_entry_str, fetch_log_entry_stat);
                 }
                 else
                 {
@@ -401,14 +397,11 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     {
                         LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                        attach_rollback_log_entry = *ReplicatedMergeTreeLogEntry::parse(attach_rollback_log_entry_str,
-                                                                                        attach_rollback_log_entry_stat,
-                                                                                        storage.format_version);
+                        attach_rollback_log_entry = *ReplicatedMergeTreeLogEntry::parse(attach_rollback_log_entry_str, attach_rollback_log_entry_stat);
                     }
                     else
                     {
-                        const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat,
-                                                                                         storage.format_version);
+                        const auto attach_log_entry = ReplicatedMergeTreeLogEntry::parse(attach_log_entry_str, attach_log_entry_stat);
 
                         Coordination::Requests ops;
                         ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
@@ -480,7 +473,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     log_entry.log_entry_id = attach_log_entry_barrier_path;
                     log_entry.part_checksum = part->checksums.getTotalChecksumHex();
                     log_entry.create_time = std::time(nullptr);
-                    log_entry.new_part_name = part_info.getPartNameAndCheckFormat(storage.format_version);
+                    log_entry.new_part_name = part_info.getPartName();
 
                     ops.emplace_back(zkutil::makeCreateRequest(attach_log_entry_barrier_path, log_entry.toString(), -1));
                     ops.emplace_back(zkutil::makeSetRequest(entry.to_shard + "/log", "", -1));
@@ -502,7 +495,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
 
                     Coordination::Stat stat;
                     String log_entry_str = zk->get(attach_log_entry_barrier_path, &stat);
-                    log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat, storage.format_version);
+                    log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat);
                 }
 
                 Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, 1);
@@ -549,8 +542,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 {
                     LOG_DEBUG(log, "Log entry was already created will check the existing one.");
 
-                    source_drop_log_entry = *ReplicatedMergeTreeLogEntry::parse(source_drop_log_entry_str, source_drop_log_entry_stat,
-                                                                                storage.format_version);
+                    source_drop_log_entry = *ReplicatedMergeTreeLogEntry::parse(source_drop_log_entry_str, source_drop_log_entry_stat);
                 }
                 else
                 {
@@ -617,7 +609,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
         }
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void PartMovesBetweenShardsOrchestrator::removePins(const Entry & entry, zkutil::ZooKeeperPtr zk)
@@ -710,7 +702,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::ge
             return entry;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", task_uuid);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task with id {} not found", toString(task_uuid));
 }
 
 String PartMovesBetweenShardsOrchestrator::Entry::toString() const

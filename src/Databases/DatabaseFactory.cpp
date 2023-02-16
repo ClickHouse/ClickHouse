@@ -14,13 +14,11 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
@@ -119,7 +117,7 @@ template <typename ValueType>
 static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
 {
     if (!ast || !ast->as<ASTLiteral>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
+        throw Exception("Database engine " + engine_name + " requested literal argument.", ErrorCodes::BAD_ARGUMENTS);
 
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
@@ -252,11 +250,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             {
                 auto print_create_ast = create.clone();
                 print_create_ast->as<ASTCreateQuery>()->attach = false;
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                throw Exception(
+                    fmt::format(
                         "The MaterializedMySQL database engine no longer supports Ordinary databases. To re-create the database, delete "
                         "the old one by executing \"rm -rf {}{{,.sql}}\", then re-create the database with the following query: {}",
                         metadata_path,
-                        queryToString(print_create_ast));
+                        queryToString(print_create_ast)),
+                    ErrorCodes::NOT_IMPLEMENTED);
             }
 
             return std::make_shared<DatabaseMaterializedMySQL>(
@@ -266,7 +266,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         catch (...)
         {
             const auto & exception_message = getCurrentExceptionMessage(true);
-            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
+            throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
         }
     }
 #endif
@@ -276,7 +276,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
+            throw Exception("Lazy database require cache_expiration_time_seconds argument", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & arguments = engine->arguments->children;
 
@@ -289,7 +289,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 3)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires 3 arguments: zookeeper path, shard name and replica name");
+            throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
 
         auto & arguments = engine->arguments->children;
         for (auto & engine_arg : arguments)
@@ -322,24 +322,25 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         ASTs & engine_args = engine->arguments->children;
         auto use_table_cache = false;
-        StoragePostgreSQL::Configuration configuration;
+        StoragePostgreSQLConfiguration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema", "on_conflict", "use_table_cache"});
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
-            configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
-            use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
+
+            for (const auto & [arg_name, arg_value] : storage_specific_args)
+            {
+                if (arg_name == "use_table_cache")
+                    use_table_cache = true;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Unexpected key-value argument."
+                            "Got: {}, but expected one of:"
+                            "host, port, username, password, database, schema, use_table_cache.", arg_name);
+            }
         }
         else
         {
@@ -397,22 +398,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
-        StoragePostgreSQL::Configuration configuration;
+        StoragePostgreSQLConfiguration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema"});
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
+            configuration.set(common_configuration);
 
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
+            if (!storage_specific_args.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
         }
         else
         {
@@ -454,7 +449,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQLite database requires 1 argument: database path");
+            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & arguments = engine->arguments->children;
 
@@ -464,7 +459,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     }
 #endif
 
-    throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
+    throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }
 
 }

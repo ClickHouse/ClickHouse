@@ -54,9 +54,9 @@ void RegionsHierarchy::reload()
         if (region_entry.id > max_region_id)
         {
             if (region_entry.id > max_size)
-                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
-                    "Region id is too large: {}, should be not more than {}",
-                    DB::toString(region_entry.id), DB::toString(max_size));
+                throw DB::Exception(
+                    "Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size),
+                    DB::ErrorCodes::INCORRECT_DATA);
 
             max_region_id = region_entry.id;
 

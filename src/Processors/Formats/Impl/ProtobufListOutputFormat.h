@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
@@ -26,6 +26,7 @@ public:
     ProtobufListOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
+        const RowOutputFormatParams & params_,
         const FormatSchemaInfo & schema_info_,
         bool defaults_for_nullable_google_wrappers_);
 
@@ -38,7 +39,6 @@ private:
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
 
     void finalizeImpl() override;
-    void resetFormatterImpl() override;
 
     std::unique_ptr<ProtobufWriter> writer;
     std::unique_ptr<ProtobufSerializer> serializer;

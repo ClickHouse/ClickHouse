@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/alter
 sidebar_position: 36
 sidebar_label: ALTER
 ---
@@ -150,7 +149,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 不支持对primary key或者sampling key中的列（在 `ENGINE` 表达式中用到的列）进行删除操作。改变包含在primary key中的列的类型时，如果操作不会导致数据的变化（例如，往Enum中添加一个值，或者将`DateTime` 类型改成 `UInt32`），那么这种操作是可行的。
 
-如果 `ALTER` 操作不足以完成你想要的表变动操作，你可以创建一张新的表，通过 [INSERT SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select)将数据拷贝进去，然后通过  [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename)将新的表改成和原有表一样的名称，并删除原有的表。你可以使用 [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) 代替 `INSERT SELECT`。
+如果 `ALTER` 操作不足以完成你想要的表变动操作，你可以创建一张新的表，通过 [INSERT SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select)将数据拷贝进去，然后通过  [RENAME](../../sql-reference/statements/misc.md#misc_operations-rename)将新的表改成和原有表一样的名称，并删除原有的表。你可以使用 [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) 代替 `INSERT SELECT`。
 
  `ALTER` 操作会阻塞对表的所有读写操作。换句话说，当一个大的 `SELECT` 语句和 `ALTER`同时执行时，`ALTER`会等待，直到 `SELECT` 执行结束。与此同时，当 `ALTER` 运行时，新的 sql 语句将会等待。
 
@@ -453,7 +452,7 @@ ALTER TABLE table-name MODIFY TTL ttl-expression
 
 对于不可复制的表，所有 `ALTER`操作都是同步执行的。对于可复制的表，ALTER操作会将指令添加到ZooKeeper中，然后会尽快的执行它们。然而，该操作可以等待其它所有副本将指令执行完毕。
 
-对于 `ALTER ... ATTACH|DETACH|DROP`操作，可以通过设置 `alter_sync` 来启用等待。可用参数值： `0` – 不需要等待; `1` – 仅等待自己执行(默认); `2` – 等待所有节点
+对于 `ALTER ... ATTACH|DETACH|DROP`操作，可以通过设置 `replication_alter_partitions_sync` 来启用等待。可用参数值： `0` – 不需要等待; `1` – 仅等待自己执行(默认); `2` – 等待所有节点
 
 ### Mutations {#alter-mutations}
 
@@ -500,7 +499,7 @@ ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
     [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
 ### 说明 {#alter-user-dscr}
@@ -540,7 +539,7 @@ ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ``` sql
 ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
 ## 修改row policy {#alter-row-policy-statement}
@@ -584,5 +583,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
 ``` sql
 ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
+
+[Original article](https://clickhouse.com/docs/en/query_language/alter/) <!--hide-->

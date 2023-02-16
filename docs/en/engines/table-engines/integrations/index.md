@@ -1,12 +1,11 @@
 ---
-slug: /en/engines/table-engines/integrations/
 sidebar_position: 40
 sidebar_label:  Integrations
 ---
 
 # Table Engines for Integrations
 
-ClickHouse provides various means for integrating with external systems, including table engines. Like with all other table engines, the configuration is done using `CREATE TABLE` or `ALTER TABLE` queries. Then from a user perspective, the configured integration looks like a normal table, but queries to it are proxied to the external system. This transparent querying is one of the key advantages of this approach over alternative integration methods, like dictionaries or table functions, which require to use custom query methods on each use.
+ClickHouse provides various means for integrating with external systems, including table engines. Like with all other table engines, the configuration is done using `CREATE TABLE` or `ALTER TABLE` queries. Then from a user perspective, the configured integration looks like a normal table, but queries to it are proxied to the external system. This transparent querying is one of the key advantages of this approach over alternative integration methods, like external dictionaries or table functions, which require to use custom query methods on each use.
 
 List of supported integrations:
 
@@ -22,8 +21,3 @@ List of supported integrations:
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
 -   [SQLite](../../../engines/table-engines/integrations/sqlite.md)
 -   [Hive](../../../engines/table-engines/integrations/hive.md)
--   [ExternalDistributed](../../../engines/table-engines/integrations/ExternalDistributed.md)
--   [MaterializedPostgreSQL](../../../engines/table-engines/integrations/materialized-postgresql.md)
--   [NATS](../../../engines/table-engines/integrations/nats.md)
--   [DeltaLake](../../../engines/table-engines/integrations/deltalake.md)
--   [Hudi](../../../engines/table-engines/integrations/hudi.md)
