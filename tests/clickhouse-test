@@ -449,7 +449,6 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
-    STRESS = "stress"
     BUILD = "not running for current build"
     BACKWARD_INCOMPATIBLE = "test is backward incompatible"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
@@ -860,9 +859,6 @@ class TestCase:
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
-
-        elif tags and ("no-stress" in tags) and args.stress:
-            return FailureReason.STRESS
 
         elif tags:
             for build_flag in args.build_flags:
@@ -2406,12 +2402,6 @@ def parse_args():
         action="store_true",
         default=False,
         help="Run tests over s3 storage",
-    )
-    parser.add_argument(
-        "--stress",
-        action="store_true",
-        default=False,
-        help="Run stress tests",
     )
     parser.add_argument(
         "--no-random-settings",
