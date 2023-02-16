@@ -128,7 +128,13 @@ You can replace `stable` with `lts` to use different [release kinds](/docs/en/fa
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
-#### Install ClickHouse Keeper
+#### Install standalone ClickHouse Keeper
+
+:::tip
+If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
+do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+:::
+
 ```bash
 sudo apt-get install -y clickhouse-keeper
 ```
