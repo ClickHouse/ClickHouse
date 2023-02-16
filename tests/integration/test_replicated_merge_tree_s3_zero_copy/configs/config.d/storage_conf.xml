@@ -55,11 +55,4 @@
 
     <database_atomic_delay_before_drop_table_sec>3</database_atomic_delay_before_drop_table_sec>
     <database_atomic_drop_error_cooldown_sec>0</database_atomic_drop_error_cooldown_sec>
-
-    <zookeeper_log>
-        <database>system</database>
-        <table>zookeeper_log</table>
-        <flush_interval_milliseconds>5000</flush_interval_milliseconds>
-        <collect_interval_milliseconds>5000</collect_interval_milliseconds>
-    </zookeeper_log>
 </clickhouse>
