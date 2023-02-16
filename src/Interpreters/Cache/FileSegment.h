@@ -317,7 +317,7 @@ private:
     LocalCacheWriterPtr cache_writer;
 
     /// downloaded_size should always be less or equal to reserved_size
-    size_t downloaded_size = 0;
+    std::atomic<size_t> downloaded_size = 0;
     size_t reserved_size = 0;
 
     /// global locking order rule:
@@ -327,14 +327,6 @@ private:
     mutable FileSegmentGuard segment_guard;
     LockedKeyCreatorPtr locked_key_creator;
     std::condition_variable cv;
-
-    /// Protects downloaded_size access with actual write into fs.
-    /// downloaded_size is not protected by download_mutex in methods which
-    /// can never be run in parallel to FileSegment::write() method
-    /// as downloaded_size is updated only in FileSegment::write() method.
-    /// Such methods are identified by isDownloader() check at their start,
-    /// e.g. they are executed strictly by the same thread, sequentially.
-    mutable std::mutex download_mutex;
 
     Key file_key;
     const std::string file_path;
