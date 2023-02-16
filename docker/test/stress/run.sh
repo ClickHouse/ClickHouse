@@ -645,7 +645,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "} <Error> TCPHandler: Code:" \
                    -e "} <Error> executeQuery: Code:" \
                    -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
-                   -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
+                   -e "[Queue = DB::DynamicRuntimeQueue]: Code: 235. DB::Exception: Part" \
                    -e "The set of parts restored in place of" \
                    -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
                    -e "Code: 269. DB::Exception: Destination table is myself" \
