@@ -78,18 +78,17 @@ namespace
             const ColumnPtr column_index = arguments.size() > 2 ? arguments[2].column : nullptr;
 
             /// Check if the second argument is const column
-            const ColumnConst * col_pattern = typeid_cast<const ColumnConst *>(&*column_pattern);
+            const ColumnConst * col_pattern = typeid_cast<const ColumnConst *>(column_pattern.get());
             if (!col_pattern)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be constant string", getName());
 
-
             /// Check if the first argument is string column(const or not)
-            const ColumnConst * col_const = typeid_cast<const ColumnConst *>(&*column);
+            const ColumnConst * col_const = typeid_cast<const ColumnConst *>(column.get());
             const ColumnString * col = nullptr;
             if (col_const)
                 col = typeid_cast<const ColumnString *>(&col_const->getDataColumn());
             else
-                col = typeid_cast<const ColumnString *>(&*column);
+                col = typeid_cast<const ColumnString *>(column.get());
             if (!col)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
@@ -102,7 +101,7 @@ namespace
                 constantVector(col_const->getValue<String>(), col_pattern->getValue<String>(), column_index, vec_res, offsets_res);
             else if (!column_index || isColumnConst(*column_index))
             {
-                const auto * col_const_index = typeid_cast<const ColumnConst *>(&*column_index);
+                const auto * col_const_index = typeid_cast<const ColumnConst *>(column_index.get());
                 ssize_t index = !col_const_index ? 1 : col_const_index->getInt(0);
                 vectorConstant(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), index, vec_res, offsets_res);
             }
