@@ -144,4 +144,74 @@
         format Null
     </query>
 
+    <query>
+        select a, sum(b) over (partition by a) 
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a order by b)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a rows between unbounded preceding and current row)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a order by b rows between unbounded preceding and current row)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a rows between unbounded preceding and unbounded following)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a order by b rows between unbounded preceding and unbounded following)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a rows between unbounded preceding and 4 following)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a order by b rows between unbounded preceding and 4 following)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a rows between 4 preceding and 4 following)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
+    <query>
+        select a, sum(b) over (partition by a order by b rows between 4 preceding and 4 following)
+        from
+            (select intDiv(number, 16) as a, number % 16 as b from numbers(10000000)) t
+        format Null
+    </query>
+
 </test>
