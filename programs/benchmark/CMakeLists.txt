@@ -10,4 +10,6 @@ set (CLICKHOUSE_BENCHMARK_LINK
 
 clickhouse_program_add(benchmark)
 
-target_link_libraries (clickhouse-benchmark-lib PRIVATE clickhouse-client-lib)
+if(NOT CLICKHOUSE_ONE_SHARED)
+    target_link_libraries (clickhouse-benchmark-lib PRIVATE clickhouse-client-lib)
+endif()

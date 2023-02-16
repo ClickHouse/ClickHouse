@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/noexcept_scope.h>
 
 #include <cassert>
 #include <iostream>
@@ -157,9 +156,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, ssize_t priority, std::
                      propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread());
 
         ++scheduled_jobs;
+        new_job_or_shutdown.notify_one();
     }
-
-    new_job_or_shutdown.notify_one();
 
     return static_cast<ReturnType>(true);
 }
@@ -210,7 +208,6 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
     /// and the destruction order of global variables is unspecified.
 
     finalize();
-    onDestroy();
 }
 
 template <typename Thread>
@@ -227,24 +224,6 @@ void ThreadPoolImpl<Thread>::finalize()
         thread.join();
 
     threads.clear();
-}
-
-template <typename Thread>
-void ThreadPoolImpl<Thread>::addOnDestroyCallback(OnDestroyCallback && callback)
-{
-    std::lock_guard lock(mutex);
-    on_destroy_callbacks.push(std::move(callback));
-}
-
-template <typename Thread>
-void ThreadPoolImpl<Thread>::onDestroy()
-{
-    while (!on_destroy_callbacks.empty())
-    {
-        auto callback = std::move(on_destroy_callbacks.top());
-        on_destroy_callbacks.pop();
-        NOEXCEPT_SCOPE({ callback(); });
-    }
 }
 
 template <typename Thread>

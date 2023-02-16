@@ -1,4 +1,3 @@
--- Tags: no-s3-storage
 -- Test 00576_nested_and_prewhere, but with in-memory parts.
 DROP TABLE IF EXISTS nested;
 
@@ -9,8 +8,8 @@ INSERT INTO nested SELECT number, number % 2, range(number % 10) FROM system.num
 
 ALTER TABLE nested ADD COLUMN n.b Array(UInt64);
 SELECT DISTINCT n.b FROM nested PREWHERE filter;
+SELECT DISTINCT n.b FROM nested PREWHERE filter SETTINGS max_block_size = 10;
 SELECT DISTINCT n.b FROM nested PREWHERE filter SETTINGS max_block_size = 123;
-SELECT DISTINCT n.b FROM nested PREWHERE filter SETTINGS max_block_size = 1234;
 
 ALTER TABLE nested ADD COLUMN n.c Array(UInt64) DEFAULT arrayMap(x -> x * 2, n.a);
 SELECT DISTINCT n.c FROM nested PREWHERE filter;

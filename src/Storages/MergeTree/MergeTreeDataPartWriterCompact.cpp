@@ -9,13 +9,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static CompressionCodecPtr getMarksCompressionCodec(const String & marks_compression_codec)
-{
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    return CompressionCodecFactory::instance().get(ast, nullptr);
-}
-
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeMutableDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
@@ -45,7 +38,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     {
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
-            getMarksCompressionCodec(settings_.marks_compression_codec),
+            settings_.getMarksCompressionCodec(),
             settings_.marks_compress_block_size);
 
         marks_source_hashing = std::make_unique<HashingWriteBuffer>(*marks_compressor);
@@ -94,9 +87,7 @@ namespace
 Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, bool last_block)
 {
     if (current_mark >= index_granularity.getMarksCount())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Request to get granules from mark {} but index granularity size is {}",
-                        current_mark, index_granularity.getMarksCount());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request to get granules from mark {} but index granularity size is {}", current_mark, index_granularity.getMarksCount());
 
     Granules result;
     size_t current_row = 0;
@@ -108,9 +99,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
         {
             /// Invariant: we always have equal amount of rows for block in compact parts because we accumulate them in buffer.
             /// The only exclusion is the last block, when we cannot accumulate more rows.
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Required to write {} rows, but only {} rows was written for the non last granule",
-                            expected_rows_in_mark, rows_left_in_block);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required to write {} rows, but only {} rows was written for the non last granule", expected_rows_in_mark, rows_left_in_block);
         }
 
         result.emplace_back(Granule{
@@ -121,7 +110,7 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
             .is_complete = (rows_left_in_block >= expected_rows_in_mark)
         });
         current_row += result.back().rows_to_write;
-        ++current_mark;
+        current_mark++;
     }
 
     return result;
@@ -157,7 +146,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::P
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(block);
-        assert(index_granularity_for_block >= 1);
         fillIndexGranularity(index_granularity_for_block, block.rows());
     }
 

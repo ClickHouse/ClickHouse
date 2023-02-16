@@ -94,20 +94,19 @@ void DistinctTransform::transform(Chunk & chunk)
     }
 
     /// Just go to the next chunk if there isn't any new record in the current one.
-    size_t new_set_size = data.getTotalRowCount();
-    if (new_set_size == old_set_size)
+    if (data.getTotalRowCount() == old_set_size)
         return;
 
-    if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         return;
 
     for (auto & column : columns)
         column = column->filter(filter, -1);
 
-    chunk.setColumns(std::move(columns), new_set_size - old_set_size);
+    chunk.setColumns(std::move(columns), data.getTotalRowCount() - old_set_size);
 
     /// Stop reading if we already reach the limit
-    if (limit_hint && new_set_size >= limit_hint)
+    if (limit_hint && data.getTotalRowCount() >= limit_hint)
     {
         stopReading();
         return;

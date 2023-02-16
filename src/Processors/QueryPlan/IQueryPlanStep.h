@@ -31,13 +31,13 @@ public:
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
-    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
+    /// Sorting scope
     enum class SortScope
     {
-        None   = 0,
-        Chunk  = 1, /// Separate chunks are sorted
-        Stream = 2, /// Each data steam is sorted
-        Global = 3, /// Data is globally sorted
+        None,
+        Chunk, /// Separate chunks are sorted
+        Stream, /// Each data steam is sorted
+        Global, /// Data is globally sorted
     };
 
     /// It is not guaranteed that header has columns from sort_description.
@@ -110,19 +110,12 @@ public:
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
-    /// Append extra processors for this step.
-    void appendExtraProcessors(const Processors & extra_processors);
-
 protected:
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
 
     /// Text description about what current step does.
     std::string step_description;
-
-    /// This field is used to store added processors from this step.
-    /// It is used only for introspection (EXPLAIN PIPELINE).
-    Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };

@@ -19,7 +19,7 @@ ENGINE = GenerateRandom([random_seed] [,max_string_length] [,max_array_length])
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
-array or map columns and strings correspondingly in generated data.
+array columns and strings correspondingly in generated data.
 
 Generate table engine supports only `SELECT` queries.
 
@@ -55,3 +55,5 @@ SELECT * FROM generate_engine_table LIMIT 3
     -   `INSERT`
     -   Indices
     -   Replication
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/generate/) <!--hide-->

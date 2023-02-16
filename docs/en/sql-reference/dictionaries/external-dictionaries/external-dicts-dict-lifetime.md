@@ -136,7 +136,3 @@ or
 SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
 ```
-
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

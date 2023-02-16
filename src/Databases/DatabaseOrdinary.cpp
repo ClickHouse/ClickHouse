@@ -5,7 +5,6 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -206,9 +205,21 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 }
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
+                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
+                if (loading_dependencies.empty())
+                {
+                    metadata.independent_database_objects.emplace_back(std::move(qualified_name));
+                }
+                else
+                {
+                    for (const auto & dependency : loading_dependencies)
+                        metadata.dependencies_info[dependency].dependent_database_objects.insert(qualified_name);
+                    assert(metadata.dependencies_info[qualified_name].dependencies.empty());
+                    metadata.dependencies_info[qualified_name].dependencies = std::move(loading_dependencies);
+                }
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
         }
@@ -257,9 +268,6 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, LoadingStrictness
 
     auto startup_one_table = [&](const StoragePtr & table)
     {
-        /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
-        /// until startup finished.
-        auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
         table->startup();
         logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
@@ -313,10 +321,8 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
-    /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }

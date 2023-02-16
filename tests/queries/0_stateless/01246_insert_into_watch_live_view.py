@@ -53,15 +53,15 @@ with client(name="client1>", log=log) as client1, client(
     client1.send("INSERT INTO test.sums WATCH test.lv")
     client1.expect(r"INSERT INTO")
 
-    client3.expect("0,1.*\n")
+    client3.expect("0,1.*\r\n")
 
     client2.send("INSERT INTO test.mt VALUES (1),(2),(3)")
     client2.expect(prompt)
-    client3.expect("6,2.*\n")
+    client3.expect("6,2.*\r\n")
 
     client2.send("INSERT INTO test.mt VALUES (4),(5),(6)")
     client2.expect(prompt)
-    client3.expect("21,3.*\n")
+    client3.expect("21,3.*\r\n")
 
     # send Ctrl-C
     client3.send("\x03", eol="")

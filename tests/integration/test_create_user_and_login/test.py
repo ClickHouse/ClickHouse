@@ -80,11 +80,7 @@ EOF""",
             ["bash", "-c", "rm /etc/clickhouse-server/users.d/user_c.xml"]
         )
 
-        expected_errors = [
-            "no user with such name",
-            "not found in user directories",
-            "User has been dropped",
-        ]
+        expected_errors = ["no user with such name", "not found in user directories"]
         while True:
             out, err = instance.query_and_get_answer_with_error("SELECT 1", user="C")
             found_error = [

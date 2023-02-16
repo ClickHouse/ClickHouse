@@ -1,16 +1,13 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <Processors/Sources/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
 #include <Common/parseRemoteDescription.h>
-#include <Common/logger_useful.h>
-#include <Common/NamedCollections/NamedCollections.h>
-
 #include <Core/Settings.h>
-#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -41,7 +38,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -50,6 +46,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -388,42 +385,33 @@ SinkToStoragePtr StoragePostgreSQL::write(
 }
 
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    StoragePostgreSQLConfiguration configuration;
+    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        validateNamedCollection(
-            *named_collection,
-            {"user", "password", "database", "table"},
-            {"schema", "on_conflict", "addresses_expr", "host", "port"});
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
-        configuration.addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
-        if (configuration.addresses_expr.empty())
+        configuration.set(common_configuration);
+        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+
+        for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+            if (arg_name == "on_conflict")
+                configuration.on_conflict = checkAndGetLiteralArgument<String>(arg_value, "on_conflict");
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unexpected key-value argument."
+                        "Got: {}, but expected one of:"
+                        "host, port, username, password, database, table, schema, on_conflict.", arg_name);
         }
-
-        configuration.username = named_collection->get<String>("user");
-        configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->get<String>("database");
-        configuration.table = named_collection->get<String>("table");
-        configuration.schema = named_collection->getOrDefault<String>("schema", "");
-        configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
     }
     else
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
-        {
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Storage PostgreSQL requires from 5 to 7 parameters: "
-                "PostgreSQL('host:port', 'database', 'table', 'username', 'password' "
-                "[, 'schema', 'ON CONFLICT ...']. Got: {}",
-                engine_args.size());
-        }
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage PostgreSQL requires from 5 to 7 parameters: "
+                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema', 'ON CONFLICT ...']. Got: {}",
+                            engine_args.size());
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
@@ -437,9 +425,9 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             configuration.host = configuration.addresses[0].first;
             configuration.port = configuration.addresses[0].second;
         }
-        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "host:port");
         configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "user");
+        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
 
         if (engine_args.size() >= 6)

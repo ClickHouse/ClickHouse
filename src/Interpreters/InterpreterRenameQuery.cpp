@@ -124,17 +124,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
         else
         {
-            StorageID from_table_id{elem.from_database_name, elem.from_table_name};
-            StorageID to_table_id{elem.to_database_name, elem.to_table_name};
-            std::vector<StorageID> ref_dependencies;
-            std::vector<StorageID> loading_dependencies;
-
+            TableNamesSet dependencies;
             if (!exchange_tables)
-            {
-                bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
-                std::tie(ref_dependencies, loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
-            }
+                dependencies = database_catalog.tryRemoveLoadingDependencies(StorageID(elem.from_database_name, elem.from_table_name),
+                                                                             getContext()->getSettingsRef().check_table_dependencies);
 
             database->renameTable(
                 getContext(),
@@ -144,7 +137,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 exchange_tables,
                 rename.dictionary);
 
-            DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
+            if (!dependencies.empty())
+                DatabaseCatalog::instance().addLoadingDependencies(QualifiedTableName{elem.to_database_name, elem.to_table_name}, std::move(dependencies));
         }
     }
 
@@ -203,6 +197,7 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
 
 void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
+    elem.query_kind = "Rename";
     const auto & rename = ast->as<const ASTRenameQuery &>();
     for (const auto & element : rename.elements)
     {

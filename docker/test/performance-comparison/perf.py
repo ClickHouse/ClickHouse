@@ -26,22 +26,6 @@ logging.basicConfig(
 total_start_seconds = time.perf_counter()
 stage_start_seconds = total_start_seconds
 
-# Thread executor that does not hides exception that happens during function
-# execution, and rethrows it after join()
-class SafeThread(Thread):
-    run_exception = None
-
-    def run(self):
-        try:
-            super().run()
-        except:
-            self.run_exception = sys.exc_info()
-
-    def join(self):
-        super().join()
-        if self.run_exception:
-            raise self.run_exception[1]
-
 
 def reportStageEnd(stage):
     global stage_start_seconds, total_start_seconds
@@ -299,7 +283,7 @@ if not args.use_existing_tables:
             print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
 
     threads = [
-        SafeThread(target=do_create, args=(connection, index, create_queries))
+        Thread(target=do_create, args=(connection, index, create_queries))
         for index, connection in enumerate(all_connections)
     ]
 
@@ -310,10 +294,6 @@ if not args.use_existing_tables:
         t.join()
 
     reportStageEnd("create")
-
-# Let's sync the data to avoid writeback affects performance
-os.system("sync")
-reportStageEnd("sync")
 
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))

@@ -118,7 +118,10 @@ void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
     }
     else
     {
-        CreateFileSegmentSettings create_settings(is_persistent ? FileSegmentKind::Persistent : FileSegmentKind::Regular);
+        CreateFileSegmentSettings create_settings{
+            .is_persistent = is_persistent
+        };
+
         file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
     }
 
@@ -948,7 +951,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             }
             else
             {
-                LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
+                LOG_TRACE(log, "No space left in cache, will continue without cache download");
                 file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
 
@@ -1045,7 +1048,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected SEEK_SET or SEEK_CUR as whence");
+            throw Exception("Expected SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
         if (whence == SEEK_CUR)
@@ -1172,7 +1175,7 @@ void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
     if (FileCache::isReadOnly()
         && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed (query_id: {})", query_id);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed");
 }
 
 String CachedOnDiskReadBufferFromFile::getInfoForLog()

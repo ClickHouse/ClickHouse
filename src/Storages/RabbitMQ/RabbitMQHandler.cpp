@@ -46,12 +46,11 @@ void RabbitMQHandler::startLoop()
     loop_running.store(false);
 }
 
-int RabbitMQHandler::iterateLoop()
+void RabbitMQHandler::iterateLoop()
 {
     std::unique_lock lock(startup_mutex, std::defer_lock);
     if (lock.try_lock())
-        return uv_run(loop, UV_RUN_NOWAIT);
-    return 1; /// We cannot know how actual value.
+        uv_run(loop, UV_RUN_NOWAIT);
 }
 
 /// Do not need synchronization as in iterateLoop(), because this method is used only for

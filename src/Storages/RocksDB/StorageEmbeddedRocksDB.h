@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Common/SharedMutex.h>
+#include <shared_mutex>
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
@@ -86,7 +86,7 @@ private:
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
-    mutable SharedMutex rocksdb_ptr_mx;
+    mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;
     bool read_only;

@@ -209,13 +209,9 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
     {
-        static_assert(sizeof(FieldType) <= sizeof(Key));
         const auto * key_holder = reinterpret_cast<const char *>(&key);
         auto * column = static_cast<ColumnVectorHelper *>(key_columns[0]);
-        if constexpr (sizeof(FieldType) < sizeof(Key) && std::endian::native == std::endian::big)
-            column->insertRawData<sizeof(FieldType)>(key_holder + (sizeof(Key) - sizeof(FieldType)));
-        else
-            column->insertRawData<sizeof(FieldType)>(key_holder);
+        column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
 
@@ -867,7 +863,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             #undef M
 
             default:
-                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
     }
 };

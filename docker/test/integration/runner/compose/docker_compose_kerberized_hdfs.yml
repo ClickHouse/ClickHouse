@@ -15,8 +15,8 @@ services:
         source: ${KERBERIZED_HDFS_LOGS:-}
         target: /var/log/hadoop-hdfs
     expose:
-      - ${KERBERIZED_HDFS_NAME_PORT:-50070}
-      - ${KERBERIZED_HDFS_DATA_PORT:-1006}
+      - ${KERBERIZED_HDFS_NAME_PORT}
+      - ${KERBERIZED_HDFS_DATA_PORT}
     depends_on:
       - hdfskerberos
     entrypoint: /etc/bootstrap.sh -d

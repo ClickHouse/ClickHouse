@@ -1,12 +1,11 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
-#include <Common/TraceSender.h>
+#include <Interpreters/TraceCollector.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
-#include <base/defines.h>
 #include <base/phdr_cache.h>
 #include <base/errnoToString.h>
 
@@ -51,11 +50,11 @@ namespace
                 /// But pass with some frequency to avoid drop of all traces.
                 if (overrun_count > 0 && write_trace_iteration % (overrun_count + 1) == 0)
                 {
-                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
                 }
                 else
                 {
-                    ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, std::max(0, overrun_count) + 1);
                     return;
                 }
             }
@@ -67,8 +66,8 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        TraceSender::send(trace_type, stack_trace, {});
-        ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerRuns);
+        TraceCollector::collect(trace_type, stack_trace, 0);
+        ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
     }
@@ -96,18 +95,18 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+    throw Exception("QueryProfiler disabled because they cannot work under sanitizers", ErrorCodes::NOT_IMPLEMENTED);
 #elif !USE_UNWIND
     UNUSED(thread_id);
     UNUSED(clock_type);
     UNUSED(period);
     UNUSED(pause_signal);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot work with stock libunwind");
+    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #else
     /// Sanity check.
     if (!hasPHDRCache())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
+        throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
 
     /// Too high frequency can introduce infinite busy loop of signal handlers. We will limit maximum frequency (with 1000 signals per second).
     if (period < 1000000)
@@ -145,8 +144,8 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
             /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
             if (errno == 0)
-                throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer. The function "
-                                "'timer_create' returned non-zero but didn't set errno. This is bug in your OS.");
+                throw Exception("Failed to create thread timer. The function 'timer_create' returned non-zero but didn't set errno. This is bug in your OS.",
+                    ErrorCodes::CANNOT_CREATE_TIMER);
 
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
@@ -187,10 +186,8 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 #if USE_UNWIND
     if (timer_id.has_value())
     {
-        int err = timer_delete(*timer_id);
-        if (err)
+        if (timer_delete(*timer_id))
             LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
-        chassert(!err && "Failed to delete query profiler timer");
         timer_id.reset();
     }
 

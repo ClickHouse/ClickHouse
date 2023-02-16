@@ -17,7 +17,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -134,13 +133,8 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
-        /// The client for an object storage may do retries internally
-        /// and there could be a situation when a query succeeded, but the response is lost
-        /// due to network error or similar. And when it will retry an operation it may receive
-        /// a 404 HTTP code. We don't want to threat this code as a real error for deletion process
-        /// (e.g. throwing some exceptions) and thus we just use method `removeObjectsIfExists`
         if (!delete_metadata_only && !objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
 
@@ -219,10 +213,8 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
 
     void finalize() override
     {
-        /// Read comment inside RemoveObjectStorageOperation class
-        /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
 
@@ -276,15 +268,8 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                 if (e.code() == ErrorCodes::UNKNOWN_FORMAT
                     || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
                     || e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
-                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE
-                    || e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+                    || e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                 {
-                    LOG_DEBUG(
-                        &Poco::Logger::get("RemoveRecursiveObjectStorageOperation"),
-                        "Can't read metadata because of an exception. Just remove it from the filesystem. Path: {}, exception: {}",
-                        metadata_storage.getPath() + path_to_remove,
-                        e.message());
-
                     tx->unlinkFile(path_to_remove);
                 }
                 else
@@ -302,9 +287,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void execute(MetadataTransactionPtr tx) override
     {
-        /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
-        if (metadata_storage.exists(path))
-            removeMetadataRecursive(tx, path);
+        removeMetadataRecursive(tx, path);
     }
 
     void undo() override
@@ -324,9 +307,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                     remove_from_remote.insert(remove_from_remote.end(), remote_paths.begin(), remote_paths.end());
                 }
             }
-            /// Read comment inside RemoveObjectStorageOperation class
-            /// TL;DR Don't pay any attention to 404 status code
-            object_storage.removeObjectsIfExist(remove_from_remote);
+            object_storage.removeObjects(remove_from_remote);
         }
     }
 };
@@ -371,10 +352,8 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     void finalize() override
     {
-        /// Read comment inside RemoveObjectStorageOperation class
-        /// TL;DR Don't pay any attention to 404 status code
         if (!objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(objects_to_remove);
+            object_storage.removeObjects(objects_to_remove);
     }
 };
 
@@ -508,7 +487,7 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [from_path, to_path, this](MetadataTransactionPtr tx)
         {
             if (metadata_storage.exists(to_path))
-                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File already exists: {}", to_path);
+                throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
 
             if (!metadata_storage.exists(from_path))
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist, cannot move", from_path);
@@ -768,12 +747,6 @@ void DiskObjectStorageTransaction::commit()
 
     for (const auto & operation : operations_to_execute)
         operation->finalize();
-}
-
-void DiskObjectStorageTransaction::undo()
-{
-    for (const auto & operation : operations_to_execute | std::views::reverse)
-        operation->undo();
 }
 
 }

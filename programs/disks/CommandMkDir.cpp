@@ -1,7 +1,7 @@
-#include "ICommand.h"
+#pragma once
 
+#include "ICommand.h"
 #include <Interpreters/Context.h>
-#include <Common/TerminalSize.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandMkDir final : public ICommand
+class CommandMkDir : public ICommand
 {
 public:
     CommandMkDir()
@@ -41,22 +41,22 @@ public:
         if (command_arguments.size() != 1)
         {
             printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
+            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         String disk_name = config.getString("disk", "default");
 
-        const String & path = command_arguments[0];
+        String path = command_arguments[0];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String relative_path = validatePathAndGetAsRelative(path);
+        String full_path = fullPathWithValidate(disk, path);
         bool recursive = config.getBool("recursive", false);
 
         if (recursive)
-            disk->createDirectories(relative_path);
+            disk->createDirectories(full_path);
         else
-            disk->createDirectory(relative_path);
+            disk->createDirectory(full_path);
     }
 };
 }

@@ -1,4 +1,4 @@
--- Tags: long, zookeeper, no-replicated-database, no-polymorphic-parts, no-random-merge-tree-settings
+-- Tags: long, zookeeper, no-replicated-database, no-polymorphic-parts
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries

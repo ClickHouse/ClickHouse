@@ -50,7 +50,7 @@ Action required for every item -- these are errors that must be fixed.
 
 A query is supposed to run longer than 0.1 second. If your query runs faster, increase the amount of processed data to bring the run time above this threshold. You can use a bigger table (e.g. `hits_100m` instead of `hits_10m`), increase a `LIMIT`, make a query single-threaded, and so on. Queries that are too fast suffer from poor stability and precision.
 
-#### Backward-incompatible Queries
+#### Partial Queries
 Action required for the cells marked in red.
 
 Shows the queries we are unable to run on an old server -- probably because they contain a new function. You should see this table when you add a new function and a performance test for it. Check that the run time and variance are acceptable (run time between 0.1 and 1 seconds, variance below 10%). If not, they will be highlighted in red.

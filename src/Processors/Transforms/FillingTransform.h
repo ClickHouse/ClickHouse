@@ -1,10 +1,8 @@
 #pragma once
-
 #include <Processors/ISimpleTransform.h>
 #include <Core/SortDescription.h>
 #include <Core/InterpolateDescription.h>
 #include <Interpreters/FillingRow.h>
-
 
 namespace DB
 {

@@ -1,5 +1,4 @@
 #include <Coordination/KeeperDispatcher.h>
-#include <libnuraft/async.hxx>
 
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -84,40 +83,30 @@ void KeeperDispatcher::requestThread()
                 {
                     current_batch.emplace_back(request);
 
-                    const auto try_get_request = [&]
+                    /// Waiting until previous append will be successful, or batch is big enough
+                    /// has_result == false && get_result_code == OK means that our request still not processed.
+                    /// Sometimes NuRaft set errorcode without setting result, so we check both here.
+                    while (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK) && current_batch.size() <= max_batch_size)
                     {
                         /// Trying to get batch requests as fast as possible
-                        if (requests_queue->tryPop(request))
+                        if (requests_queue->tryPop(request, 1))
                         {
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
+                            {
                                 has_read_request = true;
+                                break;
+                            }
                             else
-                                current_batch.emplace_back(request);
+                            {
 
-                            return true;
+                                current_batch.emplace_back(request);
+                            }
                         }
 
-                        return false;
-                    };
-
-                    /// If we have enough requests in queue, we will try to batch at least max_quick_batch_size of them.
-                    size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
-                    while (!shutdown_called && !has_read_request && current_batch.size() < max_quick_batch_size && try_get_request())
-                        ;
-
-                    const auto prev_result_done = [&]
-                    {
-                        /// has_result == false && get_result_code == OK means that our request still not processed.
-                        /// Sometimes NuRaft set errorcode without setting result, so we check both here.
-                        return !prev_result || prev_result->has_result() || prev_result->get_result_code() != nuraft::cmd_result_code::OK;
-                    };
-
-                    /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_read_request && !prev_result_done() && current_batch.size() <= max_batch_size)
-                    {
-                        try_get_request();
+                        if (shutdown_called)
+                            break;
                     }
                 }
                 else
@@ -245,7 +234,11 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
+        {
+            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected",
+                response->xid, response->xid == Coordination::WATCH_XID ? "Watch" : toString(response->getOpNum()), session_id);
             return;
+        }
 
         session_response_callback->second(response);
 
@@ -282,28 +275,28 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
         if (!requests_queue->push(std::move(request_info)))
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
+            throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
     else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
+        throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
     return true;
 }
 
-void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros)
+void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_request_queue_size);
+    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    snapshot_s3.startup(config, macros);
+    snapshot_s3.startup(config);
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3);
 
@@ -606,12 +599,12 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     {
         std::lock_guard lock(push_request_mutex);
         if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push session id request to queue within session timeout");
+            throw Exception("Cannot push session id request to queue within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
         CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequets);
     }
 
     if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot receive session id within session timeout");
+        throw Exception("Cannot receive session id within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
 
     /// Forcefully wait for request execution because we cannot process any other
     /// requests for this client until it get new session id.
@@ -683,7 +676,7 @@ bool KeeperDispatcher::isServerActive() const
     return checkInit() && hasLeader() && !server->isRecovering();
 }
 
-void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
+void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     auto diff = server->getConfigurationDiff(config);
     if (diff.empty())
@@ -700,7 +693,7 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
     }
 
-    snapshot_s3.updateS3Configuration(config, macros);
+    snapshot_s3.updateS3Configuration(config);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
