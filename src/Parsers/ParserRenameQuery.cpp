@@ -61,8 +61,8 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->elements.front().if_exists = if_exists;
         query->elements.front().from.database = from_db;
         query->elements.front().to.database = to_db;
-        query->children.push_back(from_db);
-        query->children.push_back(to_db);
+        query->children.push_back(std::move(from_db));
+        query->children.push_back(std::move(to_db));
         query->cluster = cluster_str;
         node = query;
         return true;

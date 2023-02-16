@@ -591,9 +591,9 @@ ASTs InterpreterRenameImpl::getRewrittenQueries(
         {
             elements.push_back(ASTRenameQuery::Element());
             elements.back().from.database = std::make_shared<ASTIdentifier>(mapped_to_database);
-            elements.back().from.table = rename_element.from.table;
+            elements.back().from.table = rename_element.from.table->clone();
             elements.back().to.database = std::make_shared<ASTIdentifier>(mapped_to_database);
-            elements.back().to.table = rename_element.to.table;
+            elements.back().to.table = rename_element.to.table->clone();
         }
     }
 
