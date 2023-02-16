@@ -32,8 +32,7 @@ struct MultiSearchImpl
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
-        size_t /*max_hyperscan_regexp_total_length*/,
-        bool /*reject_expensive_hyperscan_regexps*/)
+        size_t /*max_hyperscan_regexp_total_length*/)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
@@ -78,8 +77,7 @@ struct MultiSearchImpl
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
-        size_t /*max_hyperscan_regexp_total_length*/,
-        bool /*reject_expensive_hyperscan_regexps*/)
+        size_t /*max_hyperscan_regexp_total_length*/)
     {
         const size_t haystack_size = haystack_offsets.size();
         res.resize(haystack_size);

@@ -163,7 +163,7 @@ void ODBCSource::insertValue(
             break;
         }
         default:
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported value type");
+            throw Exception("Unsupported value type", ErrorCodes::UNKNOWN_TYPE);
     }
 }
 

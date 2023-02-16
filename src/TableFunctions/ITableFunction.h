@@ -64,17 +64,11 @@ public:
     /// This hint could be used not to repeat schema in function arguments.
     virtual void setStructureHint(const ColumnsDescription &) {}
 
-    /// Used for table functions that can use structure hint during INSERT INTO ... SELECT ... FROM table_function(...)
-    /// It returns possible virtual column names of corresponding storage. If select query contains
-    /// one of these columns, the structure from insertion table won't be used as a structure hint,
-    /// because we cannot determine which column from table correspond to this virtual column.
-    virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
-
     virtual bool supportsReadingSubsetOfColumns() { return true; }
 
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false) const;
 
     virtual ~ITableFunction() = default;
 

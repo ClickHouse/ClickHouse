@@ -10,6 +10,11 @@
 #include <boost/algorithm/string/replace.hpp>
 
 
+namespace ProfileEvents
+{
+    extern const Event ReplicaPartialShutdown;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric ReadonlyReplica;
@@ -144,10 +149,10 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
     storage.cleanup_thread.start();
-    storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
     LOG_DEBUG(log, "Table started successfully");
+
     return true;
 }
 
@@ -330,11 +335,34 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shutdown)
 {
     setReadonly(part_of_full_shutdown);
-    storage.partialShutdown();
+    ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
+
+    storage.partial_shutdown_called = true;
+    storage.partial_shutdown_event.set();
+    storage.replica_is_active_node = nullptr;
+
+    LOG_TRACE(log, "Waiting for threads to finish");
+    storage.merge_selecting_task->deactivate();
+    storage.queue_updating_task->deactivate();
+    storage.mutations_updating_task->deactivate();
+    storage.mutations_finalizing_task->deactivate();
+
+    storage.cleanup_thread.stop();
+    storage.part_check_thread.stop();
+
+    /// Stop queue processing
+    {
+        auto fetch_lock = storage.fetcher.blocker.cancel();
+        auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
+        auto move_lock = storage.parts_mover.moves_blocker.cancel();
+        storage.background_operations_assignee.finish();
+    }
+
+    LOG_TRACE(log, "Threads finished");
 }
 
 
-void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
+void ReplicatedMergeTreeRestartingThread::shutdown()
 {
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
     need_stop = true;
@@ -342,7 +370,7 @@ void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
     LOG_TRACE(log, "Restarting thread finished");
 
     /// Stop other tasks.
-    partialShutdown(part_of_full_shutdown);
+    partialShutdown(/* part_of_full_shutdown */ true);
 }
 
 void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)

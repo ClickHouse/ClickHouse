@@ -75,7 +75,8 @@ void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration 
             #if USE_KRB5
             if (isUser)
             {
-                throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "hadoop.security.kerberos.ticket.cache.path cannot be set per user");
+                throw Exception("hadoop.security.kerberos.ticket.cache.path cannot be set per user",
+                    ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
             }
 
             hadoop_security_kerberos_ticket_cache_path = config.getString(key_path);
@@ -102,7 +103,7 @@ void HDFSBuilderWrapper::runKinit()
     }
     catch (const DB::Exception & e)
     {
-        throw Exception(ErrorCodes::KERBEROS_ERROR, "KerberosInit failure: {}", getExceptionMessage(e, false));
+        throw Exception("KerberosInit failure: "+ getExceptionMessage(e, false), ErrorCodes::KERBEROS_ERROR);
     }
     LOG_DEBUG(&Poco::Logger::get("HDFSClient"), "Finished KerberosInit");
 }
@@ -115,12 +116,13 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     auto port = uri.getPort();
     const String path = "//";
     if (host.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal HDFS URI: {}", uri.toString());
+        throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to create builder to connect to HDFS: {} {}",
-            uri.toString(), String(hdfsGetLastError()));
+        throw Exception("Unable to create builder to connect to HDFS: " +
+            uri.toString() + " " + String(hdfsGetLastError()),
+            ErrorCodes::NETWORK_ERROR);
 
     hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
     hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
@@ -173,7 +175,8 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {
     HDFSFSPtr fs(hdfsBuilderConnect(builder));
     if (fs == nullptr)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to connect to HDFS: {}", String(hdfsGetLastError()));
+        throw Exception("Unable to connect to HDFS: " + String(hdfsGetLastError()),
+            ErrorCodes::NETWORK_ERROR);
 
     return fs;
 }

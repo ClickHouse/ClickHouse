@@ -11,10 +11,10 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NATS/NATSSink.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
-#include <Storages/NATS/NATSProducer.h>
-#include <Storages/MessageQueueSink.h>
+#include <Storages/NATS/WriteBufferToNATSProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <QueryPipeline/Pipe.h>
@@ -23,6 +23,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
+#include <Common/parseAddress.h>
 #include <Common/setThreadName.h>
 
 #include <openssl/ssl.h>
@@ -55,9 +56,9 @@ StorageNATS::StorageNATS(
     , nats_settings(std::move(nats_settings_))
     , subjects(parseList(getContext()->getMacros()->expand(nats_settings->nats_subjects), ','))
     , format_name(getContext()->getMacros()->expand(nats_settings->nats_format))
+    , row_delimiter(nats_settings->nats_row_delimiter.value)
     , schema_name(getContext()->getMacros()->expand(nats_settings->nats_schema))
     , num_consumers(nats_settings->nats_num_consumers.value)
-    , max_rows_per_message(nats_settings->nats_max_rows_per_message)
     , log(&Poco::Logger::get("StorageNATS (" + table_id_.table_name + ")"))
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
@@ -237,11 +238,11 @@ void StorageNATS::connectionFunc()
 bool StorageNATS::initBuffers()
 {
     size_t num_initialized = 0;
-    for (auto & consumer : consumers)
+    for (auto & buffer : buffers)
     {
         try
         {
-            consumer->subscribe();
+            buffer->subscribe();
             ++num_initialized;
         }
         catch (...)
@@ -252,10 +253,10 @@ bool StorageNATS::initBuffers()
     }
 
     startLoop();
-    const bool are_consumers_initialized = num_initialized == num_created_consumers;
-    if (are_consumers_initialized)
+    const bool are_buffers_initialized = num_initialized == num_created_consumers;
+    if (are_buffers_initialized)
         consumers_ready.store(true);
-    return are_consumers_initialized;
+    return are_buffers_initialized;
 }
 
 
@@ -291,7 +292,7 @@ void StorageNATS::read(
         size_t /* num_streams */)
 {
     if (!consumers_ready)
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be lost");
+        throw Exception("NATS consumers setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_NATS);
 
     if (num_created_consumers == 0)
         return;
@@ -364,9 +365,8 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
         if (subjects.size() > 1)
         {
             throw Exception(
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "This NATS engine reads from multiple subjects. "
-                            "You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to");
         }
         else
         {
@@ -381,24 +381,18 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto producer = std::make_unique<NATSProducer>(configuration, subject, shutdown_called, log);
-    size_t max_rows = max_rows_per_message;
-    /// Need for backward compatibility.
-    if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
-        max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
-    return std::make_shared<MessageQueueSink>(
-        metadata_snapshot->getSampleBlockNonMaterialized(), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
+    return std::make_shared<NATSSink>(*this, metadata_snapshot, local_context, createWriteBuffer(subject));
+}
 
 
 void StorageNATS::startup()
 {
-    (void) is_attach;
     for (size_t i = 0; i < num_consumers; ++i)
     {
         try
         {
-            auto consumer = createConsumer();
-            pushConsumer(std::move(consumer));
+            auto buffer = createReadBuffer();
+            pushReadBuffer(std::move(buffer));
             ++num_created_consumers;
         }
         catch (...)
@@ -431,14 +425,14 @@ void StorageNATS::shutdown()
     {
         if (drop_table)
         {
-            for (auto & consumer : consumers)
-                consumer->unsubscribe();
+            for (auto & buffer : buffers)
+                buffer->unsubscribe();
         }
 
         connection->disconnect();
 
         for (size_t i = 0; i < num_created_consumers; ++i)
-            popConsumer();
+            popReadBuffer();
     }
     catch (...)
     {
@@ -446,23 +440,23 @@ void StorageNATS::shutdown()
     }
 }
 
-void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
+void StorageNATS::pushReadBuffer(ConsumerBufferPtr buffer)
 {
-    std::lock_guard lock(consumers_mutex);
-    consumers.push_back(consumer);
+    std::lock_guard lock(buffers_mutex);
+    buffers.push_back(buffer);
     semaphore.set();
 }
 
 
-NATSConsumerPtr StorageNATS::popConsumer()
+ConsumerBufferPtr StorageNATS::popReadBuffer()
 {
-    return popConsumer(std::chrono::milliseconds::zero());
+    return popReadBuffer(std::chrono::milliseconds::zero());
 }
 
 
-NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
+ConsumerBufferPtr StorageNATS::popReadBuffer(std::chrono::milliseconds timeout)
 {
-    // Wait for the first free consumer
+    // Wait for the first free buffer
     if (timeout == std::chrono::milliseconds::zero())
         semaphore.wait();
     else
@@ -471,21 +465,29 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
             return nullptr;
     }
 
-    // Take the first available consumer from the list
-    std::lock_guard lock(consumers_mutex);
-    auto consumer = consumers.back();
-    consumers.pop_back();
+    // Take the first available buffer from the list
+    std::lock_guard lock(buffers_mutex);
+    auto buffer = buffers.back();
+    buffers.pop_back();
 
-    return consumer;
+    return buffer;
 }
 
 
-NATSConsumerPtr StorageNATS::createConsumer()
+ConsumerBufferPtr StorageNATS::createReadBuffer()
 {
-    return std::make_shared<NATSConsumer>(
+    return std::make_shared<ReadBufferFromNATSConsumer>(
         connection, *this, subjects,
         nats_settings->nats_queue_group.changed ? nats_settings->nats_queue_group.value : getStorageID().getFullTableName(),
-        log, queue_size, shutdown_called);
+        log, row_delimiter, queue_size, shutdown_called);
+}
+
+
+ProducerBufferPtr StorageNATS::createWriteBuffer(const std::string & subject)
+{
+    return std::make_shared<WriteBufferToNATSProducer>(
+        configuration, getContext(), subject, shutdown_called, log,
+        row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
@@ -617,7 +619,7 @@ bool StorageNATS::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
+        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -641,7 +643,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        LOG_DEBUG(log, "Current queue size: {}", consumers[0]->queueSize());
+        LOG_DEBUG(log, "Current queue size: {}", buffers[0]->queueSize());
         auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -718,13 +720,14 @@ void registerStorageNATS(StorageFactory & factory)
         nats_settings->loadFromQuery(*args.storage_def);
 
         if (!nats_settings->nats_url.changed && !nats_settings->nats_server_list.changed)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify either `nats_url` or `nats_server_list` settings");
+            throw Exception(
+                "You must specify either `nats_url` or `nats_server_list` settings", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!nats_settings->nats_format.changed)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_format` setting");
+            throw Exception("You must specify `nats_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!nats_settings->nats_subjects.changed)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
+            throw Exception("You must specify `nats_subjects` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, std::move(nats_settings), args.attach);
     };

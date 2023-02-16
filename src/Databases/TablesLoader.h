@@ -69,7 +69,6 @@ private:
     ParsedTablesMetadata metadata;
     TablesDependencyGraph referential_dependencies;
     TablesDependencyGraph loading_dependencies;
-    TablesDependencyGraph all_loading_dependencies;
     Poco::Logger * log;
     std::atomic<size_t> tables_processed{0};
     AtomicStopwatch stopwatch;

@@ -49,8 +49,8 @@ public:
         {
             const auto * message_descriptor = file_descriptor->FindMessageTypeByName(message_name);
             if (!message_descriptor)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
-                    message_name, schema_path);
+                throw Exception(
+                    "Could not find a message named '" + message_name + "' in the schema file '" + schema_path + "'", ErrorCodes::BAD_ARGUMENTS);
 
             return message_descriptor;
         }
@@ -58,13 +58,13 @@ public:
         {
             const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
             if (!envelope_descriptor)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named 'Envelope' in the schema file '{}'",
-                    schema_path);
+                throw Exception(
+                    "Could not find a message named 'Envelope' in the schema file '" + schema_path + "'", ErrorCodes::BAD_ARGUMENTS);
 
             const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(message_name); // silly protobuf API disallows a restricting the field type to messages
             if (!message_descriptor)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
-                    message_name, schema_path);
+                throw Exception(
+                    "Could not find a message named '" + message_name + "' in the schema file '" + schema_path + "'", ErrorCodes::BAD_ARGUMENTS);
 
             return message_descriptor;
         }
@@ -74,9 +74,10 @@ private:
     // Overrides google::protobuf::compiler::MultiFileErrorCollector:
     void AddError(const String & filename, int line, int column, const String & message) override
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA,
-                        "Cannot parse '{}' file, found an error at line {}, column {}, {}",
-                        filename, std::to_string(line), std::to_string(column), message);
+        throw Exception(
+            "Cannot parse '" + filename + "' file, found an error at line " + std::to_string(line) + ", column " + std::to_string(column)
+                + ", " + message,
+            ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA);
     }
 
     google::protobuf::compiler::DiskSourceTree disk_source_tree;

@@ -9,7 +9,6 @@
 #include <list>
 #include <optional>
 #include <atomic>
-#include <stack>
 
 #include <boost/heap/priority_queue.hpp>
 
@@ -81,16 +80,6 @@ public:
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
 
-    /// Adds a callback which is called in destructor after
-    /// joining of all threads. The order of calling callbacks
-    /// is reversed to the order of their addition.
-    /// It may be useful for static thread pools to call
-    /// function after joining of threads because order
-    /// of destructors of global static objects and callbacks
-    /// added by atexit is undefined for different translation units.
-    using OnDestroyCallback = std::function<void()>;
-    void addOnDestroyCallback(OnDestroyCallback && callback);
-
 private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
@@ -122,7 +111,6 @@ private:
     boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
-    std::stack<OnDestroyCallback> on_destroy_callbacks;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
@@ -130,7 +118,6 @@ private:
     void worker(typename std::list<Thread>::iterator thread_it);
 
     void finalize();
-    void onDestroy();
 };
 
 
@@ -159,8 +146,7 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
             size_t queue_size_, const bool shutdown_on_exception_)
         : FreeThreadPool(max_threads_, max_free_threads_, queue_size_,
             shutdown_on_exception_)
-    {
-    }
+    {}
 
 public:
     static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);

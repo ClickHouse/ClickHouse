@@ -28,8 +28,7 @@ IAggregateFunction * createWithUIntegerOrTimeType(const std::string & name, cons
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt128) return new AggregateFunctionTemplate<UInt128, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt256) return new AggregateFunctionTemplate<UInt256, Data>(std::forward<TArgs>(args)...);
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first argument type must be UInt or Date or DateTime for aggregate function {}", name);
+    throw Exception("The first argument type must be UInt or Date or DateTime for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 template <typename ... TArgs>
@@ -41,7 +40,7 @@ AggregateFunctionPtr createAggregateFunctionSparkbarImpl(const std::string & nam
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument type must be numeric for aggregate function {}", name);
+    throw Exception("The second argument type must be numeric for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 
@@ -50,20 +49,18 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
     assertBinary(name, arguments);
 
     if (params.size() != 1 && params.size() != 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "The number of params does not match for aggregate function '{}', expected 1 or 3, got {}", name, params.size());
+        throw Exception("The number of params does not match for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (params.size() == 3)
     {
-        if (params.at(1).getType() != arguments[0]->getDefault().getType() ||
-            params.at(2).getType() != arguments[0]->getDefault().getType())
+        if (params.at(1).getType() != arguments[0]->getDefault().getType() || params.at(2).getType() != arguments[0]->getDefault().getType())
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "The second and third parameters are not the same type as the first arguments for aggregate function {}", name);
+            throw Exception("The second and third parameters are not the same type as the first arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
     return createAggregateFunctionSparkbarImpl(name, *arguments[0], *arguments[1], arguments, params);
 }
+
 
 }
 

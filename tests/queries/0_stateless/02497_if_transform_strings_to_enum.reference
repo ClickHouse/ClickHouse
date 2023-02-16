@@ -19,7 +19,7 @@ QUERY id: 0
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 4
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
@@ -59,7 +59,7 @@ QUERY id: 0
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 3
                   FUNCTION id: 6, function_name: greater, function_type: ordinary, result_type: UInt8
@@ -105,7 +105,7 @@ QUERY id: 0
             FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 1
-                  FUNCTION id: 6, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+                  FUNCTION id: 6, function_name: transform, function_type: ordinary, result_type: String
                     ARGUMENTS
                       LIST id: 7, nodes: 4
                         COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
@@ -149,7 +149,7 @@ QUERY id: 0
             FUNCTION id: 4, function_name: toString, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 1
-                  FUNCTION id: 6, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+                  FUNCTION id: 6, function_name: if, function_type: ordinary, result_type: String
                     ARGUMENTS
                       LIST id: 7, nodes: 3
                         FUNCTION id: 8, function_name: greater, function_type: ordinary, result_type: UInt8
@@ -204,7 +204,7 @@ QUERY id: 0
           FUNCTION id: 5, function_name: toString, function_type: ordinary, result_type: String
             ARGUMENTS
               LIST id: 6, nodes: 1
-                FUNCTION id: 7, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+                FUNCTION id: 7, function_name: if, function_type: ordinary, result_type: String
                   ARGUMENTS
                     LIST id: 8, nodes: 3
                       FUNCTION id: 9, function_name: greater, function_type: ordinary, result_type: UInt8
@@ -258,7 +258,7 @@ QUERY id: 0
           FUNCTION id: 5, function_name: toString, function_type: ordinary, result_type: String
             ARGUMENTS
               LIST id: 6, nodes: 1
-                FUNCTION id: 7, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+                FUNCTION id: 7, function_name: transform, function_type: ordinary, result_type: String
                   ARGUMENTS
                     LIST id: 8, nodes: 4
                       COLUMN id: 9, column_name: number, result_type: UInt64, source_id: 10
@@ -301,7 +301,7 @@ QUERY id: 0
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 3
                   FUNCTION id: 6, function_name: greater, function_type: ordinary, result_type: UInt8
@@ -322,7 +322,7 @@ QUERY id: 0
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2)
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 3
                   FUNCTION id: 6, function_name: greater, function_type: ordinary, result_type: UInt8
@@ -368,7 +368,7 @@ QUERY id: 0
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 4
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
@@ -386,7 +386,7 @@ QUERY id: 0
       FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
         ARGUMENTS
           LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: Enum8(\'censor.net\' = 1, \'google\' = 2, \'other\' = 3, \'yahoo\' = 4)
+            FUNCTION id: 4, function_name: transform, function_type: ordinary, result_type: String
               ARGUMENTS
                 LIST id: 5, nodes: 4
                   COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7

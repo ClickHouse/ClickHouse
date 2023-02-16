@@ -121,16 +121,6 @@ def test_backup_to_s3_named_collection():
     check_backup_and_restore(storage_policy, backup_destination)
 
 
-def test_backup_to_s3_multipart():
-    storage_policy = "default"
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
-    check_backup_and_restore(storage_policy, backup_destination, size=1000000)
-    assert node.contains_in_log(
-        f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
-    )
-
-
 def test_backup_to_s3_native_copy():
     storage_policy = "policy_s3"
     backup_name = new_backup_name()
@@ -139,9 +129,7 @@ def test_backup_to_s3_native_copy():
     )
     check_backup_and_restore(storage_policy, backup_destination)
     assert node.contains_in_log("using native copy")
-    assert node.contains_in_log(
-        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
-    )
+    assert node.contains_in_log("single-operation copy")
 
 
 def test_backup_to_s3_native_copy_other_bucket():
@@ -152,17 +140,13 @@ def test_backup_to_s3_native_copy_other_bucket():
     )
     check_backup_and_restore(storage_policy, backup_destination)
     assert node.contains_in_log("using native copy")
-    assert node.contains_in_log(
-        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
-    )
+    assert node.contains_in_log("single-operation copy")
 
 
-def test_backup_to_s3_native_copy_multipart():
+def test_backup_to_s3_native_copy_multipart_upload():
     storage_policy = "policy_s3"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart_upload_copy/{backup_name}', 'minio', 'minio123')"
     check_backup_and_restore(storage_policy, backup_destination, size=1000000)
     assert node.contains_in_log("using native copy")
-    assert node.contains_in_log(
-        f"copyS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
-    )
+    assert node.contains_in_log("multipart upload copy")

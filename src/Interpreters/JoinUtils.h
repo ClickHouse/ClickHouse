@@ -14,34 +14,30 @@ class TableJoin;
 class IColumn;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
-using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
 {
 
-/// Helper interface to work with mask from JOIN ON section
+/// Store boolean column handling constant value without materializing
+/// Behaves similar to std::variant<bool, ColumnPtr>, but provides more convenient specialized interface
 class JoinMask
 {
 public:
-    explicit JoinMask()
+    explicit JoinMask(bool value)
         : column(nullptr)
-    {}
-
-    explicit JoinMask(bool value, size_t size)
-        : column(ColumnUInt8::create(size, value))
+        , const_value(value)
     {}
 
     explicit JoinMask(ColumnPtr col)
         : column(col)
+        , const_value(false)
     {}
 
-    bool hasData()
-    {
-        return column != nullptr;
-    }
+    bool isConstant() { return !column; }
 
+    /// Return data if mask is not constant
     UInt8ColumnDataPtr getData()
     {
         if (column)
@@ -51,11 +47,15 @@ public:
 
     inline bool isRowFiltered(size_t row) const
     {
-        return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
+        if (column)
+            return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
+        return !const_value;
     }
 
 private:
     ColumnPtr column;
+    /// Used if column is null
+    bool const_value;
 };
 
 
@@ -71,7 +71,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names);
+ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void convertToFullColumnsInplace(Block & block);
 void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type = true);

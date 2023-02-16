@@ -55,3 +55,5 @@ SELECT groupArray(y) FROM t_null_big
 ```
 
 在 `groupArray` 生成的数组中不包括 `NULL`。
+
+[原始文章](https://clickhouse.com/docs/en/query_language/agg_functions/) <!--hide-->

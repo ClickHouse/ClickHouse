@@ -61,8 +61,14 @@ namespace
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, Poco::Logger * log)
     {
         auto address = makeSocketAddress(host, port, log);
+#if POCO_VERSION < 0x01080000
+        socket.bind(address, /* reuseAddress = */ true);
+#else
         socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ false);
+#endif
+
         socket.listen(/* backlog = */ 64);
+
         return address;
     }
 }
@@ -160,7 +166,7 @@ void IBridge::initialize(Application & self)
     hostname = config().getString("listen-host", "127.0.0.1");
     port = config().getUInt("http-port");
     if (port > 0xFFFF)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range 'http-port': {}", port);
+        throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);

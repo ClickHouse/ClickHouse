@@ -36,7 +36,7 @@ std::string ZooKeeperRequest::toString() const
         "OpNum = {}\n"
         "Additional info:\n{}",
         xid,
-        Coordination::toString(getOpNum()),
+        getOpNum(),
         toStringImpl());
 }
 

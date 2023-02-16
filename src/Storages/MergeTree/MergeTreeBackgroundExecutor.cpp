@@ -41,7 +41,7 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
         return;
     }
 
-    if (new_max_tasks_count < max_tasks_count.load(std::memory_order_relaxed))
+    if (new_max_tasks_count < max_tasks_count)
     {
         LOG_WARNING(log, "Loaded new max tasks count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_max_tasks_count, max_tasks_count);
         return;
@@ -59,14 +59,15 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     for (size_t number = threads_count; number < new_threads_count; ++number)
         pool.scheduleOrThrowOnError([this] { threadFunction(); });
 
-    max_tasks_count.store(new_max_tasks_count, std::memory_order_relaxed);
+    max_tasks_count = new_max_tasks_count;
     threads_count = new_threads_count;
 }
 
 template <class Queue>
 size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 {
-    return max_tasks_count.load(std::memory_order_relaxed);
+    std::lock_guard lock(mutex);
+    return max_tasks_count;
 }
 
 template <class Queue>
@@ -140,7 +141,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
             if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
             else
                 tryLogCurrentException(__PRETTY_FUNCTION__);
         });
@@ -200,7 +201,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             NOEXCEPT_SCOPE({
                 ALLOW_ALLOCATIONS_IN_SCOPE;
                 if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-                    LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                    LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
                 else
                     tryLogCurrentException(__PRETTY_FUNCTION__);
             });
@@ -268,8 +269,7 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 }
 
 
-template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
-template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
-template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
 
 }

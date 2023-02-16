@@ -77,3 +77,4 @@ SELECT * FROM url_engine_table
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
     -   индексы;
     -   репликация.
+
