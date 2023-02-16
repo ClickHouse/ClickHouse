@@ -152,7 +152,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
 
-void DatabaseCatalog::loadDatabases()
+void DatabaseCatalog::startupBackgroundCleanup()
 {
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
