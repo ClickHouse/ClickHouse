@@ -14,10 +14,10 @@ DistinctSortedTransform
 DistinctSortedChunkTransform
 -- distinct with primary key prefix and order by the same columns -> pre-distinct and final distinct optimization
 DistinctSortedStreamTransform
-DistinctSortedChunkTransform
+DistinctSortedStreamTransform
 -- distinct with primary key prefix and order by columns are prefix of distinct columns -> pre-distinct and final distinct optimization
 DistinctSortedTransform
-DistinctSortedChunkTransform
+DistinctSortedStreamTransform
 -- distinct with primary key prefix and order by column in distinct but non-primary key prefix -> pre-distinct and final distinct optimization
 DistinctSortedTransform
 DistinctSortedChunkTransform
@@ -55,9 +55,10 @@ MergeTreeThread
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
 Sorting (Stream): a ASC, b ASC
-Sorting (Stream): a ASC, b ASC
 -- check that reading in order optimization for ORDER BY and DISTINCT applied correctly in the same query
 -- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns
+Sorting (Stream): a ASC
+Sorting (Stream): a ASC
 Sorting (Stream): a ASC
 -- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause
 Sorting (Stream): a ASC, b ASC
@@ -69,7 +70,11 @@ Sorting (Stream): a DESC, b DESC
 Sorting (Stream): a DESC, b DESC
 -- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (1), - it contains columns from ORDER BY clause
 Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
+Sorting (Stream): a ASC, b ASC
 -- enabled, check that ReadFromMergeTree sorting description is NOT overwritten by DISTINCT optimization (2), - direction used from ORDER BY clause
+Sorting (Stream): a DESC, b DESC
+Sorting (Stream): a DESC, b DESC
 Sorting (Stream): a DESC, b DESC
 -- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization
 Sorting (Stream): a ASC, b ASC

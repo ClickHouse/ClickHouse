@@ -58,13 +58,20 @@ public:
             if (!isInt64OrUInt64FieldType(constant_value_literal.getType()))
                 return;
 
-            if (constant_value_literal.get<UInt64>() != 1 || getSettings().aggregate_functions_null_for_empty)
+            if (getSettings().aggregate_functions_null_for_empty)
                 return;
 
+            /// Rewrite `sumIf(1, cond)` into `countIf(cond)`
+            auto multiplier_node = function_node_arguments_nodes[0];
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
             function_node_arguments_nodes.resize(1);
-
             resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
+
+            if (constant_value_literal.get<UInt64>() != 1)
+            {
+                /// Rewrite `sumIf(123, cond)` into `123 * countIf(cond)`
+                node = getMultiplyFunction(std::move(multiplier_node), node);
+            }
             return;
         }
 
@@ -79,7 +86,7 @@ public:
         if (!nested_function || nested_function->getFunctionName() != "if")
             return;
 
-        const auto & nested_if_function_arguments_nodes = nested_function->getArguments().getNodes();
+        const auto nested_if_function_arguments_nodes = nested_function->getArguments().getNodes();
         if (nested_if_function_arguments_nodes.size() != 3)
             return;
 
@@ -100,19 +107,25 @@ public:
         auto if_true_condition_value = if_true_condition_constant_value_literal.get<UInt64>();
         auto if_false_condition_value = if_false_condition_constant_value_literal.get<UInt64>();
 
-        /// Rewrite `sum(if(cond, 1, 0))` into `countIf(cond)`.
-        if (if_true_condition_value == 1 && if_false_condition_value == 0)
+        if (if_false_condition_value == 0)
         {
+            /// Rewrite `sum(if(cond, 1, 0))` into `countIf(cond)`.
             function_node_arguments_nodes[0] = nested_if_function_arguments_nodes[0];
             function_node_arguments_nodes.resize(1);
 
             resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
+
+            if (if_true_condition_value != 1)
+            {
+                /// Rewrite `sum(if(cond, 123, 0))` into `123 * countIf(cond)`.
+                node = getMultiplyFunction(nested_if_function_arguments_nodes[1], node);
+            }
             return;
         }
 
-        /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
-        if (if_true_condition_value == 0 && if_false_condition_value == 1 && !cond_argument->getResultType()->isNullable())
+        if (if_true_condition_value == 0 && !cond_argument->getResultType()->isNullable())
         {
+            /// Rewrite `sum(if(cond, 0, 1))` into `countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
             DataTypePtr not_function_result_type = std::make_shared<DataTypeUInt8>();
 
             const auto & condition_result_type = nested_if_function_arguments_nodes[0]->getResultType();
@@ -130,6 +143,12 @@ public:
             function_node_arguments_nodes.resize(1);
 
             resolveAsCountIfAggregateFunction(*function_node, function_node_arguments_nodes[0]->getResultType());
+
+            if (if_false_condition_value != 1)
+            {
+                /// Rewrite `sum(if(cond, 0, 123))` into `123 * countIf(not(cond))` if condition is not Nullable (otherwise the result can be different).
+                node = getMultiplyFunction(nested_if_function_arguments_nodes[2], node);
+            }
             return;
         }
     }
@@ -144,6 +163,18 @@ private:
             properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+    }
+
+    inline QueryTreeNodePtr getMultiplyFunction(QueryTreeNodePtr left, QueryTreeNodePtr right)
+    {
+        auto multiply_function_node = std::make_shared<FunctionNode>("multiply");
+        auto & multiply_arguments_nodes = multiply_function_node->getArguments().getNodes();
+        multiply_arguments_nodes.push_back(std::move(left));
+        multiply_arguments_nodes.push_back(std::move(right));
+
+        auto multiply_function_base = FunctionFactory::instance().get("multiply", getContext())->build(multiply_function_node->getArgumentColumns());
+        multiply_function_node->resolveAsFunction(std::move(multiply_function_base));
+        return std::move(multiply_function_node);
     }
 };
 

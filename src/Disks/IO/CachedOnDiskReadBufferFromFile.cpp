@@ -1,6 +1,7 @@
 #include "CachedOnDiskReadBufferFromFile.h"
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/ObjectStorages/CachedObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
@@ -1135,6 +1136,13 @@ void CachedOnDiskReadBufferFromFile::setReadUntilEnd()
 off_t CachedOnDiskReadBufferFromFile::getPosition()
 {
     return file_offset_of_buffer_end - available();
+}
+
+void CachedOnDiskReadBufferFromFile::assertCorrectness() const
+{
+    if (!CachedObjectStorage::canUseReadThroughCache()
+        && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed (query_id: {})", query_id);
 }
 
 String CachedOnDiskReadBufferFromFile::getInfoForLog()

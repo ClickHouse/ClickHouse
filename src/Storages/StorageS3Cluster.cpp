@@ -8,7 +8,7 @@
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
 #include <DataTypes/DataTypeString.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -41,33 +41,33 @@ namespace DB
 {
 
 StorageS3Cluster::StorageS3Cluster(
-    const StorageS3ClusterConfiguration & configuration_,
+    const Configuration & configuration_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_,
     bool structure_argument_was_provided_)
     : IStorageCluster(table_id_)
-    , s3_configuration{configuration_.url, configuration_.auth_settings, configuration_.request_settings, configuration_.headers}
-    , filename(configuration_.url)
+    , s3_configuration{configuration_}
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
     , compression_method(configuration_.compression_method)
     , structure_argument_was_provided(structure_argument_was_provided_)
 {
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI{filename});
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
     StorageInMemoryMetadata storage_metadata;
     StorageS3::updateS3Configuration(context_, s3_configuration);
 
     if (columns_.empty())
     {
+        const auto & filename = configuration_.url.uri.getPath();
         const bool is_key_with_globs = filename.find_first_of("*?{") != std::string::npos;
 
         /// `distributed_processing` is set to false, because this code is executed on the initiator, so there is no callback set
         /// for asking for the next tasks.
         /// `format_settings` is set to std::nullopt, because StorageS3Cluster is used only as table function
-        auto columns = StorageS3::getTableStructureFromDataImpl(format_name, s3_configuration, compression_method,
-            /*distributed_processing_*/false, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
+        auto columns = StorageS3::getTableStructureFromDataImpl(
+            format_name, s3_configuration, compression_method, is_key_with_globs, /*format_settings=*/std::nullopt, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -173,7 +173,7 @@ ClusterPtr StorageS3Cluster::getCluster(ContextPtr context) const
 RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ASTPtr query, ContextPtr context) const
 {
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-        *s3_configuration.client, s3_configuration.uri, query, virtual_block, context);
+        *s3_configuration.client, s3_configuration.url, query, virtual_block, context);
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String { return iterator->next().key; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
