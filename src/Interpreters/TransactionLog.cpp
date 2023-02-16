@@ -582,7 +582,7 @@ CSN TransactionLog::getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> 
 
     assertTIDIsNotOutdated(tid, &failback_with_strict_load_csn);
 
-   /// If transaction is not an outdated then it mayght be already committed
+   /// If transaction is not outdated then it might be already committed
    /// We should load CSN again to distinguish it
    /// Otherwise the transactiuon hasn't been committed yet
     if (CSN maybe_csn = failback_with_strict_load_csn.load())
