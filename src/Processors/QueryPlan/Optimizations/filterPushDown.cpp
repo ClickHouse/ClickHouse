@@ -53,7 +53,7 @@ static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
                         child_num, child->getInputStreams().size(), node->children.size());
 }
 
-static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & grouping_sets_params, const Names & identifiers_in_predicate)
+static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & grouping_sets_params, const NameSet & identifiers_in_predicate)
 {
     for (const auto & grouping_set : grouping_sets_params)
     {
@@ -66,14 +66,14 @@ static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & gro
     return true;
 }
 
-static Names findIdentifiersOfNode(const ActionsDAG::Node * node)
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
 {
-    Names res;
+    NameSet res;
 
     /// We treat all INPUT as identifier
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
-        res.emplace_back(node->result_name);
+        res.emplace(node->result_name);
         return res;
     }
 
@@ -87,7 +87,7 @@ static Names findIdentifiersOfNode(const ActionsDAG::Node * node)
         {
             if (child->type == ActionsDAG::ActionType::INPUT)
             {
-                res.emplace_back(child->result_name);
+                res.emplace(child->result_name);
             }
             else
             {
