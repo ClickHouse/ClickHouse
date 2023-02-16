@@ -38,12 +38,12 @@ namespace Stage = BackupCoordinationStage;
 
 namespace
 {
-    std::shared_ptr<IBackupCoordination> makeBackupCoordination(const String & coordination_zk_path, const ContextPtr & context, bool is_internal_backup)
+    std::shared_ptr<IBackupCoordination> makeBackupCoordination(const String & root_zk_path, const String & backup_uuid, const ContextPtr & context, bool is_internal_backup)
     {
-        if (!coordination_zk_path.empty())
+        if (!root_zk_path.empty())
         {
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-            return std::make_shared<BackupCoordinationRemote>(coordination_zk_path, get_zookeeper, is_internal_backup);
+            return std::make_shared<BackupCoordinationRemote>(root_zk_path, backup_uuid, get_zookeeper, is_internal_backup);
         }
         else
         {
@@ -51,12 +51,12 @@ namespace
         }
     }
 
-    std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(const String & coordination_zk_path, const ContextPtr & context, bool is_internal_backup)
+    std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(const String & root_zk_path, const String & restore_uuid, const ContextPtr & context, bool is_internal_backup)
     {
-        if (!coordination_zk_path.empty())
+        if (!root_zk_path.empty())
         {
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-            return std::make_shared<RestoreCoordinationRemote>(coordination_zk_path, get_zookeeper, is_internal_backup);
+            return std::make_shared<RestoreCoordinationRemote>(root_zk_path, restore_uuid, get_zookeeper, is_internal_backup);
         }
         else
         {
@@ -160,13 +160,16 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     else
         backup_id = toString(*backup_settings.backup_uuid);
 
+    String root_zk_path;
+
     std::shared_ptr<IBackupCoordination> backup_coordination;
     if (backup_settings.internal)
     {
         /// The following call of makeBackupCoordination() is not essential because doBackup() will later create a backup coordination
         /// if it's not created here. However to handle errors better it's better to make a coordination here because this way
         /// if an exception will be thrown in startMakingBackup() other hosts will know about that.
-        backup_coordination = makeBackupCoordination(backup_settings.coordination_zk_path, context, backup_settings.internal);
+        root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
+        backup_coordination = makeBackupCoordination(root_zk_path, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
     }
 
     auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
@@ -270,17 +273,13 @@ void BackupsWorker::doBackup(
             backup_query->cluster = context->getMacros()->expand(backup_query->cluster);
             cluster = context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
-            if (backup_settings.coordination_zk_path.empty())
-            {
-                backup_settings.coordination_zk_path = root_zk_path + "/backup-" + toString(*backup_settings.backup_uuid);
-            }
         }
 
         /// Make a backup coordination.
         if (!backup_coordination)
-            backup_coordination = makeBackupCoordination(backup_settings.coordination_zk_path, context, backup_settings.internal);
+            backup_coordination = makeBackupCoordination(root_zk_path, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
 
-        if (!allow_concurrent_backups && backup_coordination->hasConcurrentBackups(backup_id, root_zk_path, std::ref(num_active_backups)))
+        if (!allow_concurrent_backups && backup_coordination->hasConcurrentBackups(std::ref(num_active_backups)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
 
         /// Opens a backup for writing.
@@ -383,6 +382,9 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     auto restore_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
 
+    if (!restore_settings.restore_uuid)
+        restore_settings.restore_uuid = UUIDHelpers::generateV4();
+
     /// `restore_id` will be used as a key to the `infos` map, so it should be unique.
     OperationID restore_id;
     if (restore_settings.internal)
@@ -390,7 +392,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     else if (!restore_settings.id.empty())
         restore_id = restore_settings.id;
     else
-        restore_id = toString(UUIDHelpers::generateV4());
+        restore_id = toString(*restore_settings.restore_uuid);
 
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     if (restore_settings.internal)
@@ -398,7 +400,8 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         /// The following call of makeRestoreCoordination() is not essential because doRestore() will later create a restore coordination
         /// if it's not created here. However to handle errors better it's better to make a coordination here because this way
         /// if an exception will be thrown in startRestoring() other hosts will know about that.
-        restore_coordination = makeRestoreCoordination(restore_settings.coordination_zk_path, context, restore_settings.internal);
+        auto root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
+        restore_coordination = makeRestoreCoordination(root_zk_path, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
     }
 
     try
@@ -518,15 +521,10 @@ void BackupsWorker::doRestore(
         }
 
         /// Make a restore coordination.
-        if (on_cluster && restore_settings.coordination_zk_path.empty())
-        {
-            restore_settings.coordination_zk_path = root_zk_path + "/restore-" + toString(restore_id);
-        }
-
         if (!restore_coordination)
-            restore_coordination = makeRestoreCoordination(restore_settings.coordination_zk_path, context, restore_settings.internal);
+            restore_coordination = makeRestoreCoordination(root_zk_path, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
 
-        if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(restore_id, root_zk_path, std::ref(num_active_restores)))
+        if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
 
         /// Do RESTORE.

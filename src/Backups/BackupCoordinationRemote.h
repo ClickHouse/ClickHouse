@@ -16,7 +16,7 @@ constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
+    BackupCoordinationRemote(const String & root_zookeeper_path_, const String & backup_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
     ~BackupCoordinationRemote() override;
 
     void setStage(const String & current_host, const String & new_stage, const String & message) override;
@@ -58,7 +58,7 @@ public:
     String getNextArchiveSuffix() override;
     Strings getAllArchiveSuffixes() const override;
 
-    bool hasConcurrentBackups(const String & backup_id, const String & common_backups_path, const std::atomic<size_t> & num_active_backups) const override;
+    bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
@@ -68,7 +68,9 @@ private:
     void prepareReplicatedTables() const;
     void prepareReplicatedAccess() const;
 
+    const String root_zookeeper_path;
     const String zookeeper_path;
+    const String backup_uuid;
     const zkutil::GetZooKeeper get_zookeeper;
     const bool is_internal;
 
