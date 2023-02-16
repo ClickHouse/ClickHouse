@@ -5,12 +5,14 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <IO/Operators.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
@@ -18,7 +20,6 @@
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -101,7 +102,8 @@ AggregatingStep::AggregatingStep(
     SortDescription sort_description_for_merging_,
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_,
-    bool memory_bound_merging_of_aggregation_results_enabled_)
+    bool memory_bound_merging_of_aggregation_results_enabled_,
+    bool explicit_sorting_required_for_aggregation_in_order_)
     : ITransformingStep(
         input_stream_,
         appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
@@ -120,11 +122,13 @@ AggregatingStep::AggregatingStep(
     , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
+    , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
     if (memoryBoundMergingWillBeUsed())
     {
         output_stream->sort_description = group_by_sort_description;
         output_stream->sort_scope = DataStream::SortScope::Global;
+        output_stream->has_single_port = true;
     }
 }
 
@@ -139,6 +143,8 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
         output_stream->sort_scope = DataStream::SortScope::Global;
         output_stream->has_single_port = true;
     }
+
+    explicit_sorting_required_for_aggregation_in_order = false;
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -333,6 +339,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     if (!sort_description_for_merging.empty())
     {
+        /// We don't rely here on input_stream.sort_description because it is not correctly propagated for now in all cases
+        /// see https://github.com/ClickHouse/ClickHouse/pull/45892#discussion_r1094503048
+        if (explicit_sorting_required_for_aggregation_in_order)
+        {
+            /// We don't really care about optimality of this sorting, because it's required only in fairly marginal cases.
+            SortingStep::fullSortStreams(
+                pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
+        }
+
         if (pipeline.getNumStreams() > 1)
         {
             /** The pipeline is the following:

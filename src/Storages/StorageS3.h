@@ -291,7 +291,6 @@ public:
 
     static ColumnsDescription getTableStructureFromData(
         StorageS3::Configuration & configuration,
-        bool distributed_processing,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
@@ -338,7 +337,6 @@ private:
         const String & format,
         const Configuration & s3_configuration,
         const String & compression_method,
-        bool distributed_processing,
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,

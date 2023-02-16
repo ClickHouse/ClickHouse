@@ -220,17 +220,19 @@ public:
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies);
-    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & dependencies);
-    void addDependencies(const TablesDependencyGraph & extra_graph);
-    std::vector<StorageID> removeDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
+    /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
+    /// Now we support this mode (see `check_table_referential_dependencies` in Setting.h) for compatibility.
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies);
+    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
+    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies);
+    std::pair<std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false);
+    std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
+    std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
+    std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
+    std::vector<StorageID> getLoadingDependents(const StorageID & table_id) const;
+    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
 
-    std::vector<StorageID> getDependencies(const StorageID & table_id) const;
-    std::vector<StorageID> getDependents(const StorageID & table_id) const;
-
-    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_dependencies);
-
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool is_drop_database = false) const;
+    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -244,7 +246,7 @@ private:
 
     void shutdownImpl();
 
-    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
+    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
     struct UUIDToStorageMapPart
     {
@@ -286,6 +288,9 @@ private:
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if the table "B" is referenced in the definition of the table "A".
     TablesDependencyGraph referential_dependencies TSA_GUARDED_BY(databases_mutex);
+
+    /// Loading dependencies were used to check whether a table can be removed before we had referential dependencies.
+    TablesDependencyGraph loading_dependencies TSA_GUARDED_BY(databases_mutex);
 
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
