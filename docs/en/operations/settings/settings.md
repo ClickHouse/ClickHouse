@@ -488,6 +488,23 @@ Possible values:
 
 Default value: 0.
 
+## group_by_use_nulls {#group_by_use_nulls}
+
+Changes the way [GROUP BY clause](../../sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+When `ROLLUP`, `CUBE` or `GROUPING SETS` are used, some aggregation keys may not be used to produce some result raws.
+Columns for these keys are filled with either default value or `NULL` in corresponding raws depending on this setting.
+
+Possible values:
+
+-   0 — The default value for the aggregation key type is used to produce missing values.
+-   1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](../../sql-reference/syntax.md) for raws that didn't use it.
+
+Default value: 0.
+
+See also:
+
+-   [GROUP BY clause](../../sql-reference/statements/select/group-by.md)
+
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
