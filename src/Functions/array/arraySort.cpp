@@ -141,7 +141,7 @@ are sorted in ascending order. Remaining elements `(limit..N]` shall contain ele
 [example:simple_int]
 [example:simple_string]
 
-If one wishes to retain only the sorted elements it can be achieved with:
+To retain only the sorted elements use `arrayResize`:
 [example:retain_sorted]
 
 If the `func` function is specified, sorting order is determined by the result of the `func`
@@ -168,7 +168,7 @@ are sorted in descending order. Remaining elements `(limit..N]` shall contain el
 [example:simple_int]
 [example:simple_string]
 
-If one wishes to retain only the sorted elements it can be achieved with:
+To retain only the sorted elements use `arrayResize`:
 [example:retain_sorted]
 
 If the `func` function is specified, sorting order is determined by the result of the `func`
