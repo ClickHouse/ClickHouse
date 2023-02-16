@@ -576,7 +576,7 @@ CSN TransactionLog::getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> 
 CSN TransactionLog::getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> & failback_with_strict_load_csn)
 {
     /// failback_with_strict_load_csn is not provided to getCSN
-    /// Becaose it would be checked after assertTIDIsNotOutdated
+    /// Because it would be checked after assertTIDIsNotOutdated
     if (CSN maybe_csn = getCSN(tid))
         return maybe_csn;
 
