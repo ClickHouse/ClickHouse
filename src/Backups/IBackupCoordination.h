@@ -117,7 +117,7 @@ public:
 
     /// This function is used to check if concurrent backups are running
     /// other than the backup passed to the function
-    virtual bool hasConcurrentBackups(const String & backup_id, const String & common_backups_path, const std::atomic<size_t> & num_active_backups) const = 0;
+    virtual bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const = 0;
 };
 
 }

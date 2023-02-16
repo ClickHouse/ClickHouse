@@ -52,7 +52,7 @@ public:
     String getNextArchiveSuffix() override;
     Strings getAllArchiveSuffixes() const override;
 
-    bool hasConcurrentBackups(const String & backup_id, const String & common_backups_path, const std::atomic<size_t> & num_active_backups) const override;
+    bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
     mutable std::mutex mutex;

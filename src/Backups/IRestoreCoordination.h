@@ -37,7 +37,7 @@ public:
 
     /// This function is used to check if concurrent restores are running
     /// other than the restore passed to the function
-    virtual bool hasConcurrentRestores(const String & restore_id, const String & common_restores_path, const std::atomic<size_t> & num_active_restores) const = 0;
+    virtual bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const = 0;
 };
 
 }
