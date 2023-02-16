@@ -100,6 +100,7 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
+
 def is_release_build(build_type, package_type, sanitizer, shared_libraries):
     return (
         build_type == ""
@@ -202,6 +203,12 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
+        # Reduce linking and building time by avoid *install/all dependencies
+        cmake_flags.append("-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON")
+        # Add bridges to the build target
+        build_target = (
+            f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
+        )
         if is_release_build(build_type, package_type, sanitizer, shared_libraries):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
@@ -299,7 +306,7 @@ def parse_env_variables(
         cmake_flags.append("-DCLICKHOUSE_OFFICIAL_BUILD=1")
 
     result.append('CMAKE_FLAGS="' + " ".join(cmake_flags) + '"')
-    result.append(f"BUILD_TARGET={build_target}")
+    result.append(f"BUILD_TARGET='{build_target}'")
 
     return result
 
