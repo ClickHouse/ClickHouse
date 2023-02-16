@@ -469,7 +469,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
             /// No lock is required because reserved size is always
             /// mananaged (read/modified) by the downloader only
             /// or in isLastHolder() case.
-            /// Therefore, atomic must not be used, it will only hide possible races.
+            /// It is made atomic because of getInfoForLog.
             reserved_size += size_to_reserve;
         }
     }

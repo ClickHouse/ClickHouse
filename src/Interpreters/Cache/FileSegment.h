@@ -318,7 +318,7 @@ private:
 
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
-    size_t reserved_size = 0;
+    std::atomic<size_t> reserved_size = 0;
 
     /// global locking order rule:
     /// 1. cache lock
