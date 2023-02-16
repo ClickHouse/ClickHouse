@@ -283,7 +283,6 @@ Pipe ReadFromMergeTree::readFromPool(
         total_rows = query_info.limit;
 
     const auto & settings = context->getSettingsRef();
-    MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
@@ -295,18 +294,54 @@ Pipe ReadFromMergeTree::readFromPool(
             / max_block_size * max_block_size / fixed_index_granularity;
     }
 
-    auto pool = std::make_shared<MergeTreeReadPool>(
-        max_streams,
-        sum_marks,
-        min_marks_for_concurrent_read,
-        std::move(parts_with_range),
-        storage_snapshot,
-        prewhere_info,
-        required_columns,
-        virt_column_names,
-        backoff_settings,
-        settings.preferred_block_size_bytes,
-        false);
+     bool all_parts_are_remote = true;
+     bool all_parts_are_local = true;
+     for (const auto & part : parts_with_range)
+     {
+         const bool is_remote = part.data_part->isStoredOnRemoteDisk();
+         all_parts_are_local &= !is_remote;
+         all_parts_are_remote &= is_remote;
+     }
+
+     MergeTreeReadPoolPtr pool;
+
+     if ((all_parts_are_remote
+          && settings.allow_prefetched_read_pool_for_remote_filesystem
+          && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method))
+         || (!all_parts_are_local
+             && settings.allow_prefetched_read_pool_for_local_filesystem
+             && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method)))
+     {
+         pool = std::make_shared<MergeTreePrefetchedReadPool>(
+             max_streams,
+             sum_marks,
+             min_marks_for_concurrent_read,
+             std::move(parts_with_range),
+             storage_snapshot,
+             prewhere_info,
+             required_columns,
+             virt_column_names,
+             settings.preferred_block_size_bytes,
+             reader_settings,
+             context,
+             use_uncompressed_cache,
+             all_parts_are_remote,
+             *data.getSettings());
+     }
+     else
+     {
+         pool = std::make_shared<MergeTreeReadPool>(
+             max_streams,
+             sum_marks,
+             min_marks_for_concurrent_read,
+             std::move(parts_with_range),
+             storage_snapshot,
+             prewhere_info,
+             required_columns,
+             virt_column_names,
+             context,
+             false);
+     }
 
     auto * logger = &Poco::Logger::get(data.getLogName() + " (SelectExecutor)");
     LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, max_streams);
