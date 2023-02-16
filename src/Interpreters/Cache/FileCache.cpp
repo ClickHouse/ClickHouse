@@ -676,8 +676,9 @@ bool FileCache::tryReserveImpl(
     if (is_overflow())
         return false;
 
-    for (auto & [_, current_locked_key] : locked)
+    for (auto it = locked.begin(); it != locked.end();)
     {
+        auto & current_locked_key = it->second;
         for (const auto & offset_to_delete : current_locked_key->delete_offsets)
         {
             auto * file_segment_metadata = current_locked_key->getKeyMetadata().getByOffset(offset_to_delete);
@@ -685,6 +686,9 @@ bool FileCache::tryReserveImpl(
             if (query_context)
                 query_context->remove(key, offset);
         }
+
+        /// Do not hold the key lock longer than required.
+        it = locked.erase(it);
     }
 
     if (file_segment_for_reserve)
