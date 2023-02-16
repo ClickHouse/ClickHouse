@@ -286,7 +286,7 @@ void MessageHeader::decodeRFC2047(const std::string& ins, std::string& outs, con
 				continue;
 			}
 
-			// FIXME: check that we have enought chars-
+			// FIXME: check that we have enough chars-
 			if (c == '=') 
 			{
 				// The next two chars are hex representation of the complete byte.
@@ -322,13 +322,13 @@ void MessageHeader::decodeRFC2047(const std::string& ins, std::string& outs, con
 		}
 		catch (...) 
 		{
-			// FIXME: Unsuported encoding...
+			// FIXME: Unsupported encoding...
 			outs = tempout;
 		}
 	}
 	else 
 	{
-		// Not conversion necesary.
+		// Not conversion necessary.
 		outs = tempout;
 	}
 }
@@ -339,7 +339,7 @@ std::string MessageHeader::decodeWord(const std::string& text, const std::string
 	std::string outs, tmp = text;
 	do {
 		std::string tmp2;
-		// find the begining of the next rfc2047 chunk 
+		// find the beginning of the next rfc2047 chunk 
 		size_t pos = tmp.find("=?");
 		if (pos == std::string::npos) {
 			// No more found, return
@@ -347,7 +347,7 @@ std::string MessageHeader::decodeWord(const std::string& text, const std::string
 			break;
 		}
 
-		// check if there are standar text before the rfc2047 chunk, and if so, copy it.
+		// check if there are standard text before the rfc2047 chunk, and if so, copy it.
 		if (pos > 0) {
 			outs += tmp.substr(0, pos);
 		}

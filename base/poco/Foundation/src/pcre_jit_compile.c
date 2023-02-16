@@ -101,7 +101,7 @@ vertical (sub-expression) (See struct backtrack_common for more details).
 The condition checkers are boolean (true/false) checkers. Machine code is generated
 for the checker itself and for the actions depending on the result of the checker.
 The 'true' case is called as the matching path (expected path), and the other is called as
-the 'backtrack' path. Branch instructions are expesive for all CPUs, so we avoid taken
+the 'backtrack' path. Branch instructions are expensive for all CPUs, so we avoid taken
 branches on the matching path.
 
  Greedy star operator (*) :
@@ -112,7 +112,7 @@ branches on the matching path.
    Backtrack path: match is required.
 
 The following example shows how the code generated for a capturing bracket
-with two alternatives. Let A, B, C, D are arbirary regular expressions, and
+with two alternatives. Let A, B, C, D are arbitrary regular expressions, and
 we have the following regular expression:
 
    A(B|C)D
@@ -147,7 +147,7 @@ Saved stack frames:
 
 Atomic blocks and asserts require reloading the values of private data
 when the backtrack mechanism performed. Because of OP_RECURSE, the data
-are not necessarly known in compile time, thus we need a dynamic restore
+are not necessarily known in compile time, thus we need a dynamic restore
 mechanism.
 
 The stack frames are stored in a chain list, and have the following format:
@@ -242,7 +242,7 @@ typedef struct assert_backtrack {
 
 typedef struct bracket_backtrack {
   backtrack_common common;
-  /* Where to coninue if an alternative is successfully matched. */
+  /* Where to continue if an alternative is successfully matched. */
   struct sljit_label *alternative_matchingpath;
   /* For rmin and rmax iterators. */
   struct sljit_label *recursive_matchingpath;
@@ -6607,7 +6607,7 @@ switch(type)
   if (common->mode == JIT_PARTIAL_HARD_COMPILE)
     {
     jump[0] = CMP(SLJIT_LESS, STR_PTR, 0, STR_END, 0);
-    /* Since we successfully read a char above, partial matching must occure. */
+    /* Since we successfully read a char above, partial matching must occur. */
     check_partial(common, TRUE);
     JUMPHERE(jump[0]);
     }
@@ -7358,7 +7358,7 @@ OP1(SLJIT_MOV, TMP1, 0, ARGUMENTS, 0);
 OP1(SLJIT_MOV_S32, SLJIT_MEM1(STACK_TOP), CALLOUT_ARG_OFFSET(callout_number), SLJIT_IMM, cc[1]);
 OP1(SLJIT_MOV_S32, SLJIT_MEM1(STACK_TOP), CALLOUT_ARG_OFFSET(capture_last), TMP2, 0);
 
-/* These pointer sized fields temporarly stores internal variables. */
+/* These pointer sized fields temporarily stores internal variables. */
 OP1(SLJIT_MOV, TMP2, 0, SLJIT_MEM1(SLJIT_SP), OVECTOR(0));
 OP1(SLJIT_MOV, SLJIT_MEM1(STACK_TOP), CALLOUT_ARG_OFFSET(offset_vector), STR_PTR, 0);
 OP1(SLJIT_MOV, SLJIT_MEM1(STACK_TOP), CALLOUT_ARG_OFFSET(subject), TMP2, 0);
@@ -7923,8 +7923,8 @@ return stacksize;
     M - Any values pushed by the current alternative. Can be empty, or anything.
     C - Push the previous OVECTOR(i), OVECTOR(i+1) and OVECTOR_PRIV(i) to the stack.
     L - Push the previous local (pointed by localptr) to the stack
-   () - opional values stored on the stack
-  ()* - optonal, can be stored multiple times
+   () - optional values stored on the stack
+  ()* - optional, can be stored multiple times
 
   The following list shows the regular expression templates, their PCRE byte codes
   and stack layout supported by pcre-sljit.
