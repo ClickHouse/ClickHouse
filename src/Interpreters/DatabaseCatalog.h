@@ -136,7 +136,7 @@ public:
     static void shutdown();
 
     void initializeAndLoadTemporaryDatabase();
-    void loadDatabases();
+    void startupBackgroundCleanup();
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
