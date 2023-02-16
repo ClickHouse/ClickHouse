@@ -622,7 +622,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         Settings settings_push = task_cluster->settings_push;
         ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_NODE;
 
-        if (settings_push.replication_alter_partitions_sync == 1)
+        if (settings_push.alter_sync == 1)
             execution_mode = ClusterExecutionMode::ON_EACH_SHARD;
 
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
@@ -640,7 +640,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                 task_cluster->settings_push,
                 execution_mode);
 
-            if (settings_push.replication_alter_partitions_sync == 1)
+            if (settings_push.alter_sync == 1)
             {
                 LOG_INFO(
                     log,
@@ -863,7 +863,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         Settings settings_push = task_cluster->settings_push;
 
         /// It is important, DROP PARTITION must be done synchronously
-        settings_push.replication_alter_partitions_sync = 2;
+        settings_push.alter_sync = 2;
 
         LOG_INFO(log, "Execute distributed DROP PARTITION: {}", query);
         /// We have to drop partition_piece on each replica
@@ -1225,8 +1225,8 @@ TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTim
             std::this_thread::sleep_for(retry_delay_ms);
         }
 
-        was_active_pieces = (res == TaskStatus::Active);
-        was_failed_pieces = (res == TaskStatus::Error);
+        was_active_pieces |= (res == TaskStatus::Active);
+        was_failed_pieces |= (res == TaskStatus::Error);
     }
 
     if (was_failed_pieces)

@@ -18,25 +18,26 @@
 #define Foundation_Semaphore_WIN32_INCLUDED
 
 
-#include "Poco/Foundation.h"
 #include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API SemaphoreImpl
 {
 protected:
-	SemaphoreImpl(int n, int max);		
-	~SemaphoreImpl();
-	void setImpl();
-	void waitImpl();
-	bool waitImpl(long milliseconds);
-	
+    SemaphoreImpl(int n, int max);
+    ~SemaphoreImpl();
+    void setImpl();
+    void waitImpl();
+    bool waitImpl(long milliseconds);
+
 private:
-	HANDLE _sema;
+    HANDLE _sema;
 };
 
 
@@ -45,10 +46,10 @@ private:
 //
 inline void SemaphoreImpl::setImpl()
 {
-	if (!ReleaseSemaphore(_sema, 1, NULL))
-	{
-		throw SystemException("cannot signal semaphore");
-	}
+    if (!ReleaseSemaphore(_sema, 1, NULL))
+    {
+        throw SystemException("cannot signal semaphore");
+    }
 }
 
 
