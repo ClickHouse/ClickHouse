@@ -766,19 +766,24 @@ static_assert(
 
 
 /// For any other value types.
+template <bool IS_NULLABLE = false, bool IS_NULL_GREATER = false>
 struct SingleValueDataGeneric
 {
 private:
     using Self = SingleValueDataGeneric;
 
     Field value;
+    bool has_value = false;
 
 public:
-    static constexpr bool is_nullable = false;
+    static constexpr bool is_nullable = IS_NULLABLE;
     static constexpr bool is_any = false;
+    static constexpr bool is_null_greater = IS_NULL_GREATER;
 
     bool has() const
     {
+        if constexpr (is_nullable)
+            return has_value;
         return !value.isNull();
     }
 
@@ -813,11 +818,15 @@ public:
     void change(const IColumn & column, size_t row_num, Arena *)
     {
         column.get(row_num, value);
+        if constexpr (is_nullable)
+            has_value = true;
     }
 
     void change(const Self & to, Arena *)
     {
         value = to.value;
+        if constexpr (is_nullable)
+            has_value = true;
     }
 
     bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
@@ -833,7 +842,7 @@ public:
 
     bool changeFirstTime(const Self & to, Arena * arena)
     {
-        if (!has() && to.has())
+        if (!has() && (is_nullable || to.has()))
         {
             change(to, arena);
             return true;
@@ -868,27 +877,86 @@ public:
         }
         else
         {
-            Field new_value;
-            column.get(row_num, new_value);
-            if (new_value < value)
+            if constexpr (is_nullable)
             {
-                value = new_value;
-                return true;
+                Field new_value;
+                column.get(row_num, new_value);
+                if constexpr (!is_null_greater)
+                {
+                    if (!value.isNull() && (new_value.isNull() || new_value < value))
+                    {
+                        value = new_value;
+                        return true;
+                    }
+                    else
+                        return false;
+                }
+                else
+                {
+                    if ((value.isNull() && !new_value.isNull()) || (!new_value.isNull() && new_value < value))
+                    {
+                        value = new_value;
+                        return true;
+                    }
+
+                    return false;
+                }
             }
             else
-                return false;
+            {
+                Field new_value;
+                column.get(row_num, new_value);
+                if (new_value < value)
+                {
+                    value = new_value;
+                    return true;
+                }
+                else
+                    return false;
+            }
         }
     }
 
     bool changeIfLess(const Self & to, Arena * arena)
     {
-        if (to.has() && (!has() || to.value < value))
+        if (!to.has())
+            return false;
+        if constexpr (is_nullable)
         {
-            change(to, arena);
-            return true;
+            if (!has())
+            {
+                change(to, arena);
+                return true;
+            }
+            if constexpr (!is_null_greater)
+            {
+                if (to.value.isNull() || (!value.isNull() && to.value < value))
+                {
+                    value = to.value;
+                    return true;
+                }
+                return false;
+            }
+            else
+            {
+                if ((value.isNull() && !to.value.isNull()) || (!to.value.isNull() || to.value < value))
+                {
+                    value = to.value;
+                    return true;
+                }
+                return false;
+            }
         }
         else
-            return false;
+        {
+            if (!has() || to.value < value)
+            {
+                change(to, arena);
+                return true;
+            }
+            else
+                return false;
+        }
     }
 
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
@@ -900,27 +968,80 @@ public:
         }
         else
         {
-            Field new_value;
-            column.get(row_num, new_value);
-            if (new_value > value)
+            if constexpr (is_nullable)
             {
-                value = new_value;
-                return true;
+                Field new_value;
+                column.get(row_num, new_value);
+                if constexpr (is_null_greater)
+                {
+                    if (!value.isNull() && (new_value.isNull() || value < new_value))
+                    {
+                        value = new_value;
+                        return true;
+                    }
+                    return false;
+                }
+                else
+                {
+                    if ((value.isNull() && !new_value.isNull()) || (!new_value.isNull() && value < new_value))
+                    {
+                        value = new_value;
+                        return true;
+                    }
+                    return false;
+                }
             }
             else
-                return false;
+            {
+                Field new_value;
+                column.get(row_num, new_value);
+                if (new_value > value)
+                {
+                    value = new_value;
+                    return true;
+                }
+                else
+                    return false;
+            }
         }
     }
 
     bool changeIfGreater(const Self & to, Arena * arena)
     {
-        if (to.has() && (!has() || to.value > value))
+        if (!to.has())
+            return false;
+        if constexpr (is_nullable)
         {
-            change(to, arena);
-            return true;
+            if constexpr (is_null_greater)
+            {
+                if (!value.isNull() && (to.value.isNull() || value < to.value))
+                {
+                    value = to.value;
+                    return true;
+                }
+                return false;
+            }
+            else
+            {
+                if ((value.isNull() && !to.value.isNull()) || (!to.value.isNull() && value < to.value))
+                {
+                    value = to.value;
+                    return true;
+                }
+                return false;
+
+            }
         }
         else
-            return false;
+        {
+            if (!has() || to.value > value)
+            {
+                change(to, arena);
+                return true;
+            }
+            else
+                return false;
+        }
     }
 
     bool isEqualTo(const IColumn & column, size_t row_num) const

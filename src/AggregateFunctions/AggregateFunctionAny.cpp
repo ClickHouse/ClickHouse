@@ -14,9 +14,19 @@ AggregateFunctionPtr createAggregateFunctionAny(const std::string & name, const 
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types, parameters, settings));
 }
 
+AggregateFunctionPtr createAggregateFunctionNullableAny(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+{
+    return AggregateFunctionPtr(createAggregateFunctionSingleNullableValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types, parameters, settings));
+}
+
 AggregateFunctionPtr createAggregateFunctionAnyLast(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types, parameters, settings));
+}
+
+AggregateFunctionPtr createAggregateFunctionNullableAnyLast(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+{
+    return AggregateFunctionPtr(createAggregateFunctionSingleNullableValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types, parameters, settings));
 }
 
 AggregateFunctionPtr createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
@@ -36,10 +46,10 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
 
     // Synonyms for use as window functions.
     factory.registerFunction("first_value",
-        { createAggregateFunctionAny, properties },
+        { createAggregateFunctionNullableAny, properties },
         AggregateFunctionFactory::CaseInsensitive);
     factory.registerFunction("last_value",
-        { createAggregateFunctionAnyLast, properties },
+        { createAggregateFunctionNullableAnyLast, properties },
         AggregateFunctionFactory::CaseInsensitive);
 }
 
