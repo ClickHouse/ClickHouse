@@ -94,8 +94,7 @@ public:
     static constexpr bool is_argument_type_array = std::is_same_v<typename Impl::data_type, DataTypeArray>;
     static constexpr auto argument_type_name = is_argument_type_map ? "Map" : "Array";
 
-    static constexpr bool has_num_fixed_params = requires(const Impl &) { Impl::num_fixed_params; };
-    static constexpr size_t num_fixed_params = []{ if constexpr (has_num_fixed_params) return Impl::num_fixed_params; else return 0; }();
+    static constexpr size_t num_fixed_params = []{ if constexpr (requires { Impl::num_fixed_params; }) return Impl::num_fixed_params; else return 0; }();
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
@@ -170,7 +169,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t min_args = (num_fixed_params + Impl::needExpression()) ? 2 : 1;
+        size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
         if (arguments.size() < min_args)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
