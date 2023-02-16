@@ -56,7 +56,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-
 void registerAggregateFunctionsQuantileGK(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -68,7 +67,5 @@ void registerAggregateFunctionsQuantileGK(AggregateFunctionFactory & factory)
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianGK", NameQuantileGK::name);
 }
-
-
 
 }
