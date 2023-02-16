@@ -466,8 +466,10 @@ bool FileSegment::reserve(size_t size_to_reserve)
         reserved = cache->tryReserve(key(), offset(), size_to_reserve);
         if (reserved)
         {
-            /// FIXME: this mutex must be taken under key lock because othersize there is a race.
-            auto lock = segment_guard.lock();
+            /// No lock is required because reserved size is always
+            /// mananaged (read/modified) by the downloader only
+            /// or in isLastHolder() case.
+            /// Therefore, atomic must not be used, it will only hide possible races.
             reserved_size += size_to_reserve;
         }
     }
