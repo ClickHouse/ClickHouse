@@ -22,21 +22,22 @@
 #include "Poco/UnWindows.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API NamedMutexImpl
 {
 protected:
-	NamedMutexImpl(const std::string& name);
-	~NamedMutexImpl();
-	void lockImpl();
-	bool tryLockImpl();
-	void unlockImpl();
-	
+    NamedMutexImpl(const std::string & name);
+    ~NamedMutexImpl();
+    void lockImpl();
+    bool tryLockImpl();
+    void unlockImpl();
+
 private:
-	std::string _name;
-	HANDLE      _mutex;
+    std::string _name;
+    HANDLE _mutex;
 };
 
 

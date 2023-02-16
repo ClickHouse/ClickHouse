@@ -42,8 +42,7 @@ public:
 
         if (columns_.empty())
         {
-            columns_ = StorageS3::getTableStructureFromData(
-                new_configuration, /*distributed processing*/ false, format_settings_, context_, nullptr);
+            columns_ = StorageS3::getTableStructureFromData(new_configuration, format_settings_, context_, nullptr);
             storage_metadata.setColumns(columns_);
         }
         else
@@ -89,8 +88,7 @@ public:
         StorageS3::updateS3Configuration(ctx, configuration);
         auto new_configuration = getAdjustedS3Configuration(ctx, configuration, &Poco::Logger::get("Storage" + String(name)));
 
-        return StorageS3::getTableStructureFromData(
-            new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
+        return StorageS3::getTableStructureFromData(new_configuration, format_settings, ctx, /*object_infos*/ nullptr);
     }
 
     static StorageS3::Configuration

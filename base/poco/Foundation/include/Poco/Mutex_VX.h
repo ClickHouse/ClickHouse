@@ -18,36 +18,37 @@
 #define Foundation_Mutex_VX_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/Exception.h"
-#include <semLib.h>
 #include <errno.h>
+#include <semLib.h>
+#include "Poco/Exception.h"
+#include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API MutexImpl
 {
 protected:
-	MutexImpl();
-	MutexImpl(bool fast);
-	~MutexImpl();
-	void lockImpl();
-	bool tryLockImpl();
-	bool tryLockImpl(long milliseconds);
-	void unlockImpl();
-	
+    MutexImpl();
+    MutexImpl(bool fast);
+    ~MutexImpl();
+    void lockImpl();
+    bool tryLockImpl();
+    bool tryLockImpl(long milliseconds);
+    void unlockImpl();
+
 private:
-	SEM_ID _sem;
+    SEM_ID _sem;
 };
 
 
-class Foundation_API FastMutexImpl: public MutexImpl
+class Foundation_API FastMutexImpl : public MutexImpl
 {
 protected:
-	FastMutexImpl();
-	~FastMutexImpl();
+    FastMutexImpl();
+    ~FastMutexImpl();
 };
 
 
@@ -56,21 +57,21 @@ protected:
 //
 inline void MutexImpl::lockImpl()
 {
-	if (semTake(_sem, WAIT_FOREVER) != OK)
-		throw SystemException("cannot lock mutex");
+    if (semTake(_sem, WAIT_FOREVER) != OK)
+        throw SystemException("cannot lock mutex");
 }
 
 
 inline bool MutexImpl::tryLockImpl()
 {
-	return semTake(_sem, NO_WAIT) == OK;
+    return semTake(_sem, NO_WAIT) == OK;
 }
 
 
 inline void MutexImpl::unlockImpl()
 {
-	if (semGive(_sem) != OK)
-		throw SystemException("cannot unlock mutex");
+    if (semGive(_sem) != OK)
+        throw SystemException("cannot unlock mutex");
 }
 
 
