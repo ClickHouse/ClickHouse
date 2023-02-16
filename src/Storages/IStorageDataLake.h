@@ -20,6 +20,7 @@ template <typename Name, typename MetadataParser>
 class IStorageDataLake : public IStorage
 {
 public:
+    using Configuration = StorageS3::Configuration;
     // 1. Parses internal file structure of table
     // 2. Finds out parts with latest version
     // 3. Creates url for underlying StorageS3 enigne to handle reads
