@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS inmemory_insert_test ON CLUSTER test_shard_localhost 
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/inmemory_insert_test', 'r1')
 PARTITION BY (toYYYYMMDD(toDateTime(report_time/1000)))
 ORDER BY (report_time, id)
-SETTINGS min_rows_for_compact_part = 10;
+SETTINGS min_rows_for_compact_part = 10, index_granularity = 8192;
 
 TRUNCATE TABLE inmemory_insert_test;
 
