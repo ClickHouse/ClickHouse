@@ -148,7 +148,9 @@ public:
 
     const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
 
-    void requestReadingInOrder(InputOrderInfoPtr order_info_) { order_info = order_info_; }
+    /// Returns `false` if requested reading cannot be performed.
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
+    static bool isFinal(const SelectQueryInfo & query_info);
 
 private:
     const size_t required_max_block_size;

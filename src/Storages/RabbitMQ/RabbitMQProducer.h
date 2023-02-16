@@ -43,7 +43,7 @@ private:
     void stopProducingTask() override;
     void finishImpl() override;
 
-    void iterateEventLoop();
+    int iterateEventLoop();
     void startProducingTaskLoop() override;
     void setupChannel();
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);

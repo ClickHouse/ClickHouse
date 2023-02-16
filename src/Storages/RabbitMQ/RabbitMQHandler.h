@@ -34,7 +34,7 @@ public:
 
     /// Loop to wait for small tasks in a non-blocking mode.
     /// Adds synchronization with main background loop.
-    void iterateLoop();
+    int iterateLoop();
 
     /// Loop to wait for small tasks in a blocking mode.
     /// No synchronization is done with the main loop thread.
