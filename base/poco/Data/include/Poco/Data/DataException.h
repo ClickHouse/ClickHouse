@@ -22,29 +22,32 @@
 #include "Poco/Exception.h"
 
 
-namespace Poco {
-namespace Data {
+namespace Poco
+{
+namespace Data
+{
 
 
-POCO_DECLARE_EXCEPTION(Data_API, DataException, Poco::IOException)
-POCO_DECLARE_EXCEPTION(Data_API, RowDataMissingException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, UnknownDataBaseException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, UnknownTypeException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, ExecutionException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, BindingException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, ExtractException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, LimitException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, NotSupportedException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, SessionUnavailableException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, SessionPoolExhaustedException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, SessionPoolExistsException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, NoDataException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, LengthExceededException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, ConnectionFailedException, DataException)
-POCO_DECLARE_EXCEPTION(Data_API, NotConnectedException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, DataException, Poco::IOException)
+    POCO_DECLARE_EXCEPTION(Data_API, RowDataMissingException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, UnknownDataBaseException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, UnknownTypeException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, ExecutionException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, BindingException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, ExtractException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, LimitException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, NotSupportedException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, SessionUnavailableException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, SessionPoolExhaustedException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, SessionPoolExistsException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, NoDataException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, LengthExceededException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, ConnectionFailedException, DataException)
+    POCO_DECLARE_EXCEPTION(Data_API, NotConnectedException, DataException)
 
 
-} } // namespace Poco::Data
+}
+} // namespace Poco::Data
 
 
 #endif // Data_DataException_INCLUDED

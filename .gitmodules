@@ -296,6 +296,9 @@
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
 	url = https://github.com/ridiculousfish/libdivide
+[submodule "contrib/ulid-c"]
+	path = contrib/ulid-c
+	url = https://github.com/ClickHouse/ulid-c.git
 [submodule "contrib/aws-crt-cpp"]
 	path = contrib/aws-crt-cpp
 	url = https://github.com/ClickHouse/aws-crt-cpp
