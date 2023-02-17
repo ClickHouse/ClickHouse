@@ -366,6 +366,7 @@ for query_index in queries_to_run:
                     settings={
                         "max_execution_time": args.prewarm_max_query_seconds,
                         "query_profiler_real_time_period_ns": 10000000,
+                        "query_profiler_cpu_time_period_ns": 10000000,
                         "memory_profiler_step": "4Mi",
                     },
                 )
@@ -497,7 +498,10 @@ for query_index in queries_to_run:
                 res = c.execute(
                     q,
                     query_id=run_id,
-                    settings={"query_profiler_real_time_period_ns": 10000000},
+                    settings={
+                        "query_profiler_real_time_period_ns": 10000000,
+                        "query_profiler_cpu_time_period_ns": 10000000,
+                    },
                 )
                 print(
                     f"profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}"
