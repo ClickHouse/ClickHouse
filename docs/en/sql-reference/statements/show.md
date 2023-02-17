@@ -6,6 +6,11 @@ sidebar_label: SHOW
 
 # SHOW Statements
 
+N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
+[`display_secrets_in_show_select_query`](../../operations/settings/formats#display_secrets_in_show_select_query)
+is turned on and user has
+[`displaySecretsInShowSelect`](grant.md#grant-display-secrets) privilege.
+
 ## SHOW CREATE TABLE
 
 ``` sql
@@ -242,8 +247,6 @@ If user is not specified, the query returns privileges for the current user.
 ## SHOW CREATE USER
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
-
-`SHOW CREATE USER` does not output user passwords.
 
 ### Syntax
 
