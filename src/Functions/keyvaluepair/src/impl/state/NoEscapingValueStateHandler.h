@@ -108,7 +108,7 @@ private:
 
     bool isValidCharacter(char character) const
     {
-        return std::isalnum(character) || character == '_' || character == '.' || special_character_allowlist.contains(character);
+        return std::isalnum(character) || character == '_' || special_character_allowlist.contains(character);
     }
 };
 

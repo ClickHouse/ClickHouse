@@ -25,6 +25,8 @@ public:
 
     KeyValuePairExtractorBuilder & withEnclosingCharacter(std::optional<char> enclosing_character_);
 
+    KeyValuePairExtractorBuilder & withValueSpecialCharacterAllowlist(std::unordered_set<char> special_character_allow_list);
+
     std::shared_ptr<KeyValuePairExtractor> build();
 
 private:

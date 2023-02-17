@@ -23,7 +23,8 @@ auto ExtractKeyValuePairs::getExtractor(
     CharArgument escape_character,
     CharArgument key_value_pair_delimiter,
     CharArgument item_delimiter,
-    CharArgument enclosing_character)
+    CharArgument enclosing_character,
+    std::unordered_set<char> value_special_characters_allow_list)
 {
     auto builder = KeyValuePairExtractorBuilder();
 
@@ -46,6 +47,8 @@ auto ExtractKeyValuePairs::getExtractor(
     {
         builder.withEnclosingCharacter(enclosing_character.value());
     }
+
+    builder.withValueSpecialCharacterAllowlist(value_special_characters_allow_list);
 
     return builder.build();
 }
@@ -91,7 +94,7 @@ ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & argum
     auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter,
           enclosing_character, value_special_characters_allow_list] = parseArguments(arguments);
 
-    auto extractor_without_escaping = getExtractor(escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character);
+    auto extractor_without_escaping = getExtractor(escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
 
     return extract(data_column, extractor_without_escaping);
 }

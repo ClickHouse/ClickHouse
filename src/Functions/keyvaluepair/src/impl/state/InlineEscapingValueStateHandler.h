@@ -125,7 +125,7 @@ private:
         {
             return true;
         }
-        return special_character_allowlist.contains(character) || std::isalnum(character) || character == '_' || character == '.';
+        return special_character_allowlist.contains(character) || std::isalnum(character) || character == '_';
     }
 };
 
