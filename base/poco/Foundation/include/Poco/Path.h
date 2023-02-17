@@ -470,8 +470,6 @@ inline char Path::separator()
 {
 #if defined(POCO_OS_FAMILY_VMS)
     return '.';
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-    return '\\';
 #else
     return '/';
 #endif
@@ -482,8 +480,6 @@ inline char Path::pathSeparator()
 {
 #if defined(POCO_OS_FAMILY_VMS)
     return ',';
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-    return ';';
 #else
     return ':';
 #endif

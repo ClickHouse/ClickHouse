@@ -22,16 +22,8 @@
 #include "Poco/Foundation.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#    if defined(_WIN32_WCE)
-#        include "Poco/RWLock_WINCE.h"
-#    else
-#        include "Poco/RWLock_WIN32.h"
-#    endif
-#elif POCO_OS == POCO_OS_ANDROID
+#if   POCO_OS == POCO_OS_ANDROID
 #    include "Poco/RWLock_Android.h"
-#elif defined(POCO_VXWORKS)
-#    include "Poco/RWLock_VX.h"
 #else
 #    include "Poco/RWLock_POSIX.h"
 #endif

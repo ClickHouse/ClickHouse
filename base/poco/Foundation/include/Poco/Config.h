@@ -159,9 +159,6 @@
 
 
 // Windows CE has no locale support
-#if defined(_WIN32_WCE)
-#    define POCO_NO_LOCALE
-#endif
 
 
 // Enable the poco_debug_* and poco_trace_* macros

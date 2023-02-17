@@ -22,9 +22,6 @@
 #include "Poco/Buffer.h"
 #include "Poco/Exception.h"
 #include "Poco/UnicodeConverter.h"
-#ifdef POCO_OS_FAMILY_WINDOWS
-#    include <windows.h>
-#endif
 #ifndef SQL_NOUNICODEMAP
 #    define SQL_NOUNICODEMAP
 #endif
@@ -33,10 +30,7 @@
 #include <sqlucode.h>
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS) && defined(POCO_WIN32_UTF8)
-#    define POCO_ODBC_UNICODE
-#    define POCO_ODBC_UNICODE_WINDOWS
-#elif defined(POCO_OS_FAMILY_UNIX) && defined(UNICODE)
+#if   defined(POCO_OS_FAMILY_UNIX) && defined(UNICODE)
 #    define POCO_ODBC_UNICODE
 #    ifdef POCO_UNIXODBC
 #        define POCO_ODBC_UNICODE_UNIXODBC
