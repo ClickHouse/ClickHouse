@@ -163,7 +163,7 @@ StorageHudi::StorageHudi(
     if (columns_.empty())
     {
         columns_ = StorageS3::getTableStructureFromData(
-            new_configuration, /*distributed processing*/ false, format_settings_, context_, nullptr);
+            new_configuration, format_settings_, context_, nullptr);
         storage_metadata.setColumns(columns_);
     }
     else
@@ -203,7 +203,7 @@ ColumnsDescription StorageHudi::getTableStructureFromData(
 {
     StorageS3::updateS3Configuration(ctx, configuration);
     auto new_configuration = getAdjustedS3Configuration(configuration, &Poco::Logger::get("StorageDeltaLake"));
-    return StorageS3::getTableStructureFromData(new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
+    return StorageS3::getTableStructureFromData(new_configuration, format_settings, ctx, /*object_infos*/ nullptr);
 }
 
 void registerStorageHudi(StorageFactory & factory)
