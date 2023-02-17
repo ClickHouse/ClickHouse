@@ -112,6 +112,31 @@ namespace
         }
 
     private:
+        template <class InputString>
+        static void saveMatch(
+            const OptimizedRegularExpression::MatchVec& matches,
+            size_t match_index,
+            const InputString & data,
+            size_t data_offset,
+            ColumnString::Chars & res_data,
+            ColumnString::Offsets & res_offsets,
+            size_t & res_offset)
+        {
+            if (match_index < matches.size() && matches[match_index].offset != std::string::npos)
+            {
+                const auto & match = matches[match_index];
+                res_data.resize(res_offset + match.length + 1);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[data_offset + match.offset], match.length);
+                res_offset += match.length;
+            }
+            else
+                res_data.resize(res_offset + 1);
+
+            res_data[res_offset] = 0;
+            ++res_offset;
+            res_offsets.push_back(res_offset);
+        }
+
         static void vectorConstant(
             const ColumnString::Chars & data,
             const ColumnString::Offsets & offsets,
@@ -133,32 +158,18 @@ namespace
             matches.reserve(index + 1);
 
             res_data.reserve(data.size() / 5);
-            res_offsets.resize(offsets.size());
+            res_offsets.reserve(offsets.size());
             size_t prev_offset = 0;
             size_t res_offset = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
+            for (size_t cur_offset : offsets)
             {
-                size_t cur_offset = offsets[i];
-                unsigned count = regexp.match(
+                regexp.match(
                     reinterpret_cast<const char *>(&data[prev_offset]),
                     cur_offset - prev_offset - 1,
                     matches,
                     static_cast<unsigned>(index + 1));
 
-                if (count == index + 1 && matches[index].offset != std::string::npos)
-                {
-                    const auto & match = matches[index];
-                    res_data.resize(res_offset + match.length + 1);
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
-                    res_offset += match.length;
-                }
-                else
-                    res_data.resize(res_offset + 1);
-
-                res_data[res_offset] = 0;
-                ++res_offset;
-                res_offsets[i] = res_offset;
-
+                saveMatch(matches, index, data, prev_offset, res_data, res_offsets, res_offset);
                 prev_offset = cur_offset;
             }
         }
@@ -172,7 +183,7 @@ namespace
             ColumnString::Offsets & res_offsets)
         {
             res_data.reserve(data.size() / 5);
-            res_offsets.resize(offsets.size());
+            res_offsets.reserve(offsets.size());
 
             const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
             unsigned capture = regexp.getNumberOfSubpatterns();
@@ -193,26 +204,13 @@ namespace
                         index,
                         capture + 1);
 
-                unsigned count = regexp.match(
+                regexp.match(
                     reinterpret_cast<const char *>(&data[prev_offset]),
                     cur_offset - prev_offset - 1,
                     matches,
                     static_cast<unsigned>(index + 1));
 
-                if (count == index + 1 && matches[index].offset != std::string::npos)
-                {
-                    const auto & match = matches[index];
-                    res_data.resize(res_offset + match.length + 1);
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
-                    res_offset += match.length;
-                }
-                else
-                    res_data.resize(res_offset + 1);
-
-                res_data[res_offset] = 0;
-                ++res_offset;
-                res_offsets[i] = res_offset;
-
+                saveMatch(matches, index, data, prev_offset, res_data, res_offsets, res_offset);
                 prev_offset = cur_offset;
             }
         }
@@ -226,14 +224,13 @@ namespace
         {
             size_t rows = column_index->size();
             res_data.reserve(str.size() / 5);
-            res_offsets.resize(rows);
+            res_offsets.reserve(rows);
 
             const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
             unsigned capture = regexp.getNumberOfSubpatterns();
             OptimizedRegularExpression::MatchVec matches;
             matches.reserve(capture + 1);
-            unsigned count = regexp.match(str.data(), str.size(), matches, static_cast<unsigned>(capture + 1));
-            bool found = count == capture + 1;
+            regexp.match(str.data(), str.size(), matches, static_cast<unsigned>(capture + 1));
 
             size_t res_offset = 0;
             for (size_t i = 0; i < rows; ++i)
@@ -246,19 +243,7 @@ namespace
                         index,
                         capture + 1);
 
-                if (found && matches[index].offset != std::string::npos)
-                {
-                    const auto & match = matches[index];
-                    res_data.resize(res_offset + match.length + 1);
-                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], str.data() + match.offset, match.length);
-                    res_offset += match.length;
-                }
-                else
-                    res_data.resize(res_offset + 1);
-
-                res_data[res_offset] = 0;
-                ++res_offset;
-                res_offsets[i] = res_offset;
+                saveMatch(matches, index, str, 0, res_data, res_offsets, res_offset);
             }
         }
     };
