@@ -15,6 +15,7 @@ namespace DB
 
 static const auto BATCH = 1000;
 static const auto RETURNED_LIMIT = 50000;
+static const auto FINISH_PRODUCER_NUM_TRIES = 50;
 
 namespace ErrorCodes
 {
@@ -254,13 +255,20 @@ void RabbitMQProducer::startProducingTaskLoop()
         }
     }
 
+    int res = 0;
+    size_t try_num = 0;
+    while (++try_num <= FINISH_PRODUCER_NUM_TRIES && (res = iterateEventLoop()))
+    {
+        LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
+    }
+
     LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
 }
 
 
-void RabbitMQProducer::iterateEventLoop()
+int RabbitMQProducer::iterateEventLoop()
 {
-    connection.getHandler().iterateLoop();
+    return connection.getHandler().iterateLoop();
 }
 
 }
