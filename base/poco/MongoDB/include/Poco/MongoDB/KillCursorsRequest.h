@@ -22,41 +22,44 @@
 #include "Poco/MongoDB/RequestMessage.h"
 
 
-namespace Poco {
-namespace MongoDB {
-
-
-class MongoDB_API KillCursorsRequest: public RequestMessage
-	/// Class for creating an OP_KILL_CURSORS client request. This
-	/// request is used to kill cursors, which are still open, 
-	/// returned by query requests.
+namespace Poco
 {
-public:
-	KillCursorsRequest();
-		/// Creates a KillCursorsRequest.
-
-	virtual ~KillCursorsRequest();
-		/// Destroys the KillCursorsRequest.
-		
-	std::vector<Int64>& cursors();
-		/// The internal list of cursors.
-		
-protected:
-	void buildRequest(BinaryWriter& writer);
-	std::vector<Int64> _cursors;
-};
-
-
-//
-// inlines
-//
-inline std::vector<Int64>& KillCursorsRequest::cursors()
+namespace MongoDB
 {
-	return _cursors;
-} 
 
 
-} } // namespace Poco::MongoDB
+    class MongoDB_API KillCursorsRequest : public RequestMessage
+    /// Class for creating an OP_KILL_CURSORS client request. This
+    /// request is used to kill cursors, which are still open,
+    /// returned by query requests.
+    {
+    public:
+        KillCursorsRequest();
+        /// Creates a KillCursorsRequest.
+
+        virtual ~KillCursorsRequest();
+        /// Destroys the KillCursorsRequest.
+
+        std::vector<Int64> & cursors();
+        /// The internal list of cursors.
+
+    protected:
+        void buildRequest(BinaryWriter & writer);
+        std::vector<Int64> _cursors;
+    };
+
+
+    //
+    // inlines
+    //
+    inline std::vector<Int64> & KillCursorsRequest::cursors()
+    {
+        return _cursors;
+    }
+
+
+}
+} // namespace Poco::MongoDB
 
 
 #endif // MongoDB_KillCursorsRequest_INCLUDED

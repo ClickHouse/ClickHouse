@@ -283,7 +283,6 @@ Pipe ReadFromMergeTree::readFromPool(
         total_rows = query_info.limit;
 
     const auto & settings = context->getSettingsRef();
-    MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     /// If granularity is adaptive it doesn't make sense
@@ -295,18 +294,54 @@ Pipe ReadFromMergeTree::readFromPool(
             / max_block_size * max_block_size / fixed_index_granularity;
     }
 
-    auto pool = std::make_shared<MergeTreeReadPool>(
-        max_streams,
-        sum_marks,
-        min_marks_for_concurrent_read,
-        std::move(parts_with_range),
-        storage_snapshot,
-        prewhere_info,
-        required_columns,
-        virt_column_names,
-        backoff_settings,
-        settings.preferred_block_size_bytes,
-        false);
+     bool all_parts_are_remote = true;
+     bool all_parts_are_local = true;
+     for (const auto & part : parts_with_range)
+     {
+         const bool is_remote = part.data_part->isStoredOnRemoteDisk();
+         all_parts_are_local &= !is_remote;
+         all_parts_are_remote &= is_remote;
+     }
+
+     MergeTreeReadPoolPtr pool;
+
+     if ((all_parts_are_remote
+          && settings.allow_prefetched_read_pool_for_remote_filesystem
+          && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method))
+         || (!all_parts_are_local
+             && settings.allow_prefetched_read_pool_for_local_filesystem
+             && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method)))
+     {
+         pool = std::make_shared<MergeTreePrefetchedReadPool>(
+             max_streams,
+             sum_marks,
+             min_marks_for_concurrent_read,
+             std::move(parts_with_range),
+             storage_snapshot,
+             prewhere_info,
+             required_columns,
+             virt_column_names,
+             settings.preferred_block_size_bytes,
+             reader_settings,
+             context,
+             use_uncompressed_cache,
+             all_parts_are_remote,
+             *data.getSettings());
+     }
+     else
+     {
+         pool = std::make_shared<MergeTreeReadPool>(
+             max_streams,
+             sum_marks,
+             min_marks_for_concurrent_read,
+             std::move(parts_with_range),
+             storage_snapshot,
+             prewhere_info,
+             required_columns,
+             virt_column_names,
+             context,
+             false);
+     }
 
     auto * logger = &Poco::Logger::get(data.getLogName() + " (SelectExecutor)");
     LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, max_streams);
@@ -810,7 +845,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.version_column, max_block_size);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty());
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1176,8 +1211,6 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     if (key_condition->alwaysFalse())
         return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-
     size_t total_marks_pk = 0;
     size_t parts_before_pk = 0;
     try
@@ -1214,11 +1247,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
         auto reader_settings = getMergeTreeReaderSettings(context, query_info);
 
         bool use_skip_indexes = settings.use_skip_indexes;
-        bool final = false;
-        if (query_info.table_expression_modifiers)
-            final = query_info.table_expression_modifiers->hasFinal();
-        else
-            final = select.final();
+        bool final = isFinal(query_info);
 
         if (final && !settings.use_skip_indexes_if_final)
             use_skip_indexes = false;
@@ -1273,11 +1302,16 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 }
 
-void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t limit)
 {
     /// if dirction is not set, use current one
     if (!direction)
         direction = getSortDirection();
+
+    /// Disable read-in-order optimization for reverse order with final.
+    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
+    if (direction != 1 && isFinal(query_info))
+        return false;
 
     auto order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
     if (query_info.projection)
@@ -1312,6 +1346,8 @@ void ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         output_stream->sort_description = std::move(sort_description);
         output_stream->sort_scope = DataStream::SortScope::Stream;
     }
+
+    return true;
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
@@ -1358,12 +1394,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     ActionsDAGPtr result_projection;
 
     Names column_names_to_read = std::move(result.column_names_to_read);
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    bool final = false;
-    if (query_info.table_expression_modifiers)
-        final = query_info.table_expression_modifiers->hasFinal();
-    else
-        final = select.final();
+    bool final = isFinal(query_info);
 
     if (!final && result.sampling.use_sampling)
     {
@@ -1397,6 +1428,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
+        if (!data.merging_params.is_deleted_column.empty())
+            column_names_to_read.push_back(data.merging_params.is_deleted_column);
         if (!data.merging_params.sign_column.empty())
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty())
@@ -1670,6 +1703,15 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 
         map.add("Indexes", std::move(indexes_array));
     }
+}
+
+bool ReadFromMergeTree::isFinal(const SelectQueryInfo & query_info)
+{
+    if (query_info.table_expression_modifiers)
+        return query_info.table_expression_modifiers->hasFinal();
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    return select.final();
 }
 
 bool MergeTreeDataSelectAnalysisResult::error() const
