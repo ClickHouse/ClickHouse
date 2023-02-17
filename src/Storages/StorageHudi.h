@@ -35,7 +35,8 @@ struct StorageHudiName
     static constexpr auto data_directory_prefix = "";
 };
 
-using StorageHudi = IStorageDataLake<StorageHudiName, HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
+using StorageHudi
+    = IStorageDataLake<StorageS3, StorageHudiName, HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 }
 
 #endif

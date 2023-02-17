@@ -1217,6 +1217,18 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 }
 
 
+StorageS3::Configuration StorageS3::updateConfiguration(ContextPtr local_context, const StorageS3::Configuration & configuration)
+{
+    StorageS3::Configuration new_configuration(configuration);
+    updateS3Configuration(local_context, new_configuration);
+    return new_configuration;
+}
+
+void StorageS3::updateConfiguration(ContextPtr local_context, StorageS3::Configuration & configuration)
+{
+    updateS3Configuration(local_context, configuration);
+}
+
 void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.url.uri.toString());
