@@ -32,6 +32,12 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withEnclosingCharac
     return *this;
 }
 
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withValueSpecialCharacterAllowlist(std::unordered_set<char> special_character_allow_list_)
+{
+    value_special_character_allowlist = special_character_allow_list_;
+    return *this;
+}
+
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build()
 {
     if (escape_character)
