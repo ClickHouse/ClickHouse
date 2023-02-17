@@ -1699,7 +1699,6 @@ def test_ast_auth_headers(started_cluster):
 
 
 def test_environment_credentials(started_cluster):
-    filename = "test.csv"
     bucket = started_cluster.minio_restricted_bucket
 
     instance = started_cluster.instances["s3_with_environment_credentials"]
@@ -1712,6 +1711,15 @@ def test_environment_credentials(started_cluster):
             f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
         ).strip()
     )
+
+    # manually defined access key should override from env
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', 'aws', 'aws123')"
+        )
+
+        assert ei.value.returncode == 243
+        assert "HTTP response code: 403" in ei.value.stderr
 
 
 def test_s3_list_objects_failure(started_cluster):

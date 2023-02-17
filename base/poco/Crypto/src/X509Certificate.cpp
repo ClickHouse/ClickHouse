@@ -20,10 +20,6 @@
 #include "Poco/Format.h"
 #include <sstream>
 #include <openssl/pem.h>
-#ifdef _WIN32
-// fix for WIN32 header conflict
-#undef X509_NAME 
-#endif
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -142,7 +138,7 @@ void X509Certificate::load(const std::string& path)
 	_pCert = PEM_read_bio_X509(pBIO, 0, 0, 0);
 	BIO_free(pBIO);
 
-	if (!_pCert) throw Poco::ReadFileException("Faild to load certificate from", path);
+	if (!_pCert) throw Poco::ReadFileException("Failed to load certificate from", path);
 
 	init();
 }

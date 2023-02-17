@@ -5,6 +5,7 @@
 #include <memory>
 #include <future>
 #include <boost/noncopyable.hpp>
+#include <Common/Stopwatch.h>
 
 
 namespace DB
@@ -61,6 +62,8 @@ public:
         /// offset
         /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
+
+        std::unique_ptr<Stopwatch> execution_watch;
 
         operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
     };
