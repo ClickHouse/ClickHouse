@@ -91,6 +91,8 @@ select regexpExtract(number::String || '-' || (2*number)::String, '(\\d+)-(\\d+)
 4
 3-6
 4
+select regexpExtract('100-200100-200', '(\\d+)-(\\d+)(\\d+)-(\\d+)', materialize(3));
+0
 select regexpExtract('100-200'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select regexpExtract('100-200', '(\\d+)-(\\d+)', 1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select regexpExtract(cast('100-200' as FixedString(10)), '(\\d+)-(\\d+)', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
