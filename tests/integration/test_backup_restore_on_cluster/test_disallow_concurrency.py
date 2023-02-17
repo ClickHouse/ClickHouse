@@ -229,3 +229,9 @@ def test_concurrent_restores_on_different_node():
     assert "Concurrent restores not supported" in nodes[1].query_and_get_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
     )
+
+    assert_eq_with_retry(
+        nodes[0],
+        f"SELECT status FROM system.backups WHERE status == 'RESTORED'",
+        "RESTORED",
+    )
