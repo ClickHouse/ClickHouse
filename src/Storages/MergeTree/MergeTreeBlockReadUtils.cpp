@@ -158,6 +158,17 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
 }
 
+MergeTreeReadTask::~MergeTreeReadTask()
+{
+    if (reader.valid())
+        reader.wait();
+
+    for (const auto & pre_reader : pre_reader_for_step)
+    {
+        if (pre_reader.valid())
+            pre_reader.wait();
+    }
+}
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)

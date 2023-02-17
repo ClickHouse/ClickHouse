@@ -135,7 +135,6 @@ struct AlignedCharArrayImpl;
 
 
 // MSVC requires special handling here.
-#    ifndef _MSC_VER
 
 #        ifdef POCO_COMPILER_CLANG
 
@@ -179,58 +178,6 @@ POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(8192);
 #            undef POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT
 #        endif // POCO_HAVE_ALIGNMENT
 
-#    else // _MSC_VER
-
-// We provide special variations of this template for the most common
-// alignments because __declspec(align(...)) doesn't actually work when it is
-// a member of a by-value function argument in MSVC, even if the alignment
-// request is something reasonably like 8-byte or 16-byte.
-template <>
-struct AlignedCharArrayImpl<1>
-{
-    char aligned;
-};
-template <>
-struct AlignedCharArrayImpl<2>
-{
-    short aligned;
-};
-template <>
-struct AlignedCharArrayImpl<4>
-{
-    int aligned;
-};
-template <>
-struct AlignedCharArrayImpl<8>
-{
-    double aligned;
-};
-
-#        define POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(x) \
-            template <> \
-            struct AlignedCharArrayImpl<x> \
-            { \
-                __declspec(align(x)) char aligned; \
-            }
-
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(16);
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(32);
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(64);
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(128);
-
-#        if (_MSC_VER > 1600) // MSVC 2010 complains on alignment  larger than 128
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(512);
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(1024);
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(2048);
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(4096);
-POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(8192);
-#        endif // _MSC_VER > 1600
-
-// Any larger and MSVC complains.
-#        undef POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT
-
-#        define POCO_HAVE_ALIGNMENT
-#    endif // _MSC_VER
 
 // POCO_HAVE_ALIGNMENT will be defined on the pre-C++11 platforms/compilers where
 // it can be reliably determined and used. Uncomment the line below to explicitly

@@ -24,6 +24,10 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
 }
 
+/// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
+/// and all shared_ptr's that pointed to the original object will now point to the new replaced value.
+/// However, with ASTQueryParameter, we are only assigning a new value to the passed shared_ptr, while
+/// all other shared_ptr's still point to the old ASTQueryParameter.
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {

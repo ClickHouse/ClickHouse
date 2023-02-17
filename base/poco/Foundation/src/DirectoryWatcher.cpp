@@ -179,13 +179,7 @@ public:
 			filter |= FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;
 		
 		std::string path(owner().directory().path());
-#if defined(POCO_WIN32_UTF8)
-		std::wstring upath;
-		FileImpl::convertPath(path.c_str(), upath);
-		HANDLE hChange = FindFirstChangeNotificationW(upath.c_str(), FALSE, filter);
-#else
 		HANDLE hChange = FindFirstChangeNotificationA(path.c_str(), FALSE, filter);
-#endif
 
 		if (hChange == INVALID_HANDLE_VALUE)
 		{
