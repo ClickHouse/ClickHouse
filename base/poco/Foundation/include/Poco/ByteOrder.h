@@ -18,9 +18,6 @@
 
 #include "Poco/Foundation.h"
 #include "Poco/Types.h"
-#if defined(_MSC_VER)
-#    include <stdlib.h> // builtins
-#endif
 
 
 namespace Poco
@@ -99,11 +96,7 @@ public:
 
 
 #if !defined(POCO_NO_BYTESWAP_BUILTINS)
-#    if defined(_MSC_VER)
-#        if (POCO_MSVC_VERSION > 71)
-#            define POCO_HAVE_MSC_BYTESWAP 1
-#        endif
-#    elif defined(__clang__)
+#    if   defined(__clang__)
 #        if __has_builtin(__builtin_bswap32)
 #            define POCO_HAVE_GCC_BYTESWAP 1
 #        endif

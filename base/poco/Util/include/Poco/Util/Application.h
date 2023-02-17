@@ -27,9 +27,6 @@
 #include "Poco/Util/OptionSet.h"
 #include "Poco/Util/Subsystem.h"
 #include "Poco/Util/Util.h"
-#if defined(POCO_VXWORKS)
-#    include <cstdarg>
-#endif
 #include <typeinfo>
 #include <vector>
 
@@ -141,18 +138,6 @@ namespace Util
         /// Note that as of release 1.3.7, init() no longer
         /// calls initialize(). This is now called from run().
 
-#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-        void init(int argc, wchar_t * argv[]);
-        /// Processes the application's command line arguments
-        /// and sets the application's properties (e.g.,
-        /// "application.path", "application.name", etc.).
-        ///
-        /// Note that as of release 1.3.7, init() no longer
-        /// calls initialize(). This is now called from run().
-        ///
-        /// This Windows-specific version of init is used for passing
-        /// Unicode command line arguments from wmain().
-#endif
 
         void init(const ArgVec & args);
         /// Processes the application's command line arguments
@@ -485,50 +470,6 @@ namespace Util
 //
 // Macro to implement main()
 //
-#if defined(_WIN32) && defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-#    define POCO_APP_MAIN(App) \
-        int wmain(int argc, wchar_t ** argv) \
-        { \
-            Poco::AutoPtr<App> pApp = new App; \
-            try \
-            { \
-                pApp->init(argc, argv); \
-            } \
-            catch (Poco::Exception & exc) \
-            { \
-                pApp->logger().log(exc); \
-                return Poco::Util::Application::EXIT_CONFIG; \
-            } \
-            return pApp->run(); \
-        }
-#elif defined(POCO_VXWORKS)
-#    define POCO_APP_MAIN(App) \
-        int pocoAppMain(const char * appName, ...) \
-        { \
-            std::vector<std::string> args; \
-            args.push_back(std::string(appName)); \
-            va_list vargs; \
-            va_start(vargs, appName); \
-            const char * arg = va_arg(vargs, const char *); \
-            while (arg) \
-            { \
-                args.push_back(std::string(arg)); \
-                arg = va_arg(vargs, const char *); \
-            } \
-            va_end(vargs); \
-            Poco::AutoPtr<App> pApp = new App; \
-            try \
-            { \
-                pApp->init(args); \
-            } \
-            catch (Poco::Exception & exc) \
-            { \
-                pApp->logger().log(exc); \
-                return Poco::Util::Application::EXIT_CONFIG; \
-            } \
-            return pApp->run(); \
-        }
-#else
 #    define POCO_APP_MAIN(App) \
         int main(int argc, char ** argv) \
         { \
@@ -544,7 +485,6 @@ namespace Util
             } \
             return pApp->run(); \
         }
-#endif
 
 
 #endif // Util_Application_INCLUDED

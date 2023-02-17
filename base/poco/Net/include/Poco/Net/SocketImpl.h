@@ -485,11 +485,7 @@ namespace Net
 
     inline int SocketImpl::lastError()
     {
-#if defined(_WIN32)
-        return WSAGetLastError();
-#else
         return errno;
-#endif
     }
 
 

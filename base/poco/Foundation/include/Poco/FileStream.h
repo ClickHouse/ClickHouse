@@ -19,11 +19,7 @@
 
 
 #include "Poco/Foundation.h"
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#    include "Poco/FileStream_WIN32.h"
-#else
 #    include "Poco/FileStream_POSIX.h"
-#endif
 #include <istream>
 #include <ostream>
 

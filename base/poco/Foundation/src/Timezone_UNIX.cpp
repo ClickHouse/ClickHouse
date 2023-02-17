@@ -39,9 +39,6 @@ public:
 		gmtime_r(&now, &t);
 		std::time_t utc = std::mktime(&t);
 		return now - utc;
-	#elif defined(__CYGWIN__)
-		tzset();
-		return -_timezone;
 	#else
 		tzset();
 		return -timezone;

@@ -21,9 +21,6 @@
 #include "Poco/Event.h"
 #include "Poco/Util/Application.h"
 #include "Poco/Util/Util.h"
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#    include "Poco/NamedEvent.h"
-#endif
 
 
 namespace Poco
@@ -146,14 +143,6 @@ namespace Util
         /// Runs the application by performing additional initializations
         /// and calling the main() method.
 
-#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-        int run(int argc, wchar_t ** argv);
-        /// Runs the application by performing additional initializations
-        /// and calling the main() method.
-        ///
-        /// This Windows-specific version of init is used for passing
-        /// Unicode command line arguments from wmain().
-#endif
 
         static void terminate();
         /// Sends a friendly termination request to the application.
@@ -164,14 +153,10 @@ namespace Util
     protected:
         int run();
         virtual void waitForTerminationRequest();
-#if !defined(_WIN32_WCE)
         void defineOptions(OptionSet & options);
-#endif
 
     private:
-#if defined(POCO_VXWORKS)
-        static Poco::Event _terminate;
-#elif defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_UNIX)
         void handleDaemon(const std::string & name, const std::string & value);
         void handleUMask(const std::string & name, const std::string & value);
         void handlePidFile(const std::string & name, const std::string & value);
@@ -180,43 +165,6 @@ namespace Util
 #    if POCO_OS == POCO_OS_ANDROID
         static Poco::Event _terminate;
 #    endif
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#    if !defined(_WIN32_WCE)
-        enum Action
-        {
-            SRV_RUN,
-            SRV_REGISTER,
-            SRV_UNREGISTER
-        };
-        static BOOL __stdcall ConsoleCtrlHandler(DWORD ctrlType);
-        static void __stdcall ServiceControlHandler(DWORD control);
-#        if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-        static void __stdcall ServiceMain(DWORD argc, LPWSTR * argv);
-#        else
-        static void __stdcall ServiceMain(DWORD argc, LPTSTR * argv);
-#        endif
-
-        bool hasConsole();
-        bool isService();
-        void beService();
-        void registerService();
-        void unregisterService();
-        void handleRegisterService(const std::string & name, const std::string & value);
-        void handleUnregisterService(const std::string & name, const std::string & value);
-        void handleDisplayName(const std::string & name, const std::string & value);
-        void handleDescription(const std::string & name, const std::string & value);
-        void handleStartup(const std::string & name, const std::string & value);
-
-        Action _action;
-        std::string _displayName;
-        std::string _description;
-        std::string _startup;
-
-        static Poco::Event _terminated;
-        static SERVICE_STATUS _serviceStatus;
-        static SERVICE_STATUS_HANDLE _serviceStatusHandle;
-#    endif // _WIN32_WCE
-        static Poco::NamedEvent _terminate;
 #endif
     };
 
@@ -228,48 +176,6 @@ namespace Util
 //
 // Macro to implement main()
 //
-#if defined(_WIN32) && defined(POCO_WIN32_UTF8)
-#    define POCO_SERVER_MAIN(App) \
-        int wmain(int argc, wchar_t ** argv) \
-        { \
-            try \
-            { \
-                App app; \
-                return app.run(argc, argv); \
-            } \
-            catch (Poco::Exception & exc) \
-            { \
-                std::cerr << exc.displayText() << std::endl; \
-                return Poco::Util::Application::EXIT_SOFTWARE; \
-            } \
-        }
-#elif defined(POCO_VXWORKS)
-#    define POCO_SERVER_MAIN(App) \
-        int pocoSrvMain(const char * appName, ...) \
-        { \
-            std::vector<std::string> args; \
-            args.push_back(std::string(appName)); \
-            va_list vargs; \
-            va_start(vargs, appName); \
-            const char * arg = va_arg(vargs, const char *); \
-            while (arg) \
-            { \
-                args.push_back(std::string(arg)); \
-                arg = va_arg(vargs, const char *); \
-            } \
-            va_end(vargs); \
-            try \
-            { \
-                App app; \
-                return app.run(args); \
-            } \
-            catch (Poco::Exception & exc) \
-            { \
-                std::cerr << exc.displayText() << std::endl; \
-                return Poco::Util::Application::EXIT_SOFTWARE; \
-            } \
-        }
-#else
 #    define POCO_SERVER_MAIN(App) \
         int main(int argc, char ** argv) \
         { \
@@ -284,7 +190,6 @@ namespace Util
                 return Poco::Util::Application::EXIT_SOFTWARE; \
             } \
         }
-#endif
 
 
 #endif // Util_ServerApplication_INCLUDED
