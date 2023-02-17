@@ -381,7 +381,9 @@ class ClickhouseIntegrationTestsRunner:
 
     def _compress_logs(self, dir, relpaths, result_path):
         retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "tar czf {} -C {} {}".format(result_path, dir, " ".join(relpaths)),
+            "tar --use-compress-program='zstd --threads=0' -cf {} -C {} {}".format(
+                result_path, dir, " ".join(relpaths)
+            ),
             shell=True,
         )
         # tar return 1 when the files are changed on compressing, we ignore it
@@ -711,7 +713,7 @@ class ClickhouseIntegrationTestsRunner:
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
                     str(self.path()),
-                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.gz",
+                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
                 )
                 self._compress_logs(
                     os.path.join(repo_path, "tests/integration"),
