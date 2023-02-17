@@ -181,7 +181,9 @@ sudo yum install -y clickhouse-server clickhouse-client
 #### Start ClickHouse server
 
 ```bash
-sudo /etc/init.d/clickhouse-server start
+sudo systemctl enable clickhouse-server
+sudo systemctl start clickhouse-server
+sudo systemctl status clickhouse-server
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
