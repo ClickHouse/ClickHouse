@@ -4074,4 +4074,14 @@ bool Context::canUseParallelReplicasOnFollower() const
         && getClientInfo().collaborate_with_initiator;
 }
 
+UInt64 Context::getClientProtocolVersion() const
+{
+    return client_protocol_version;
+}
+
+void Context::setClientProtocolVersion(UInt64 version)
+{
+    client_protocol_version = version;
+}
+
 }
