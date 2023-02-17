@@ -154,7 +154,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::createBackgroundTasks()
 {
-    /// It has to be done before databases are loaded (to avoid a race condition on initalization)
+    /// It has to be done before databases are loaded (to avoid a race condition on initialization)
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
