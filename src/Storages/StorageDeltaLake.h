@@ -56,7 +56,8 @@ struct StorageDeltaLakeName
     static constexpr auto data_directory_prefix = "";
 };
 
-using StorageDeltaLake = IStorageDataLake<StorageDeltaLakeName, DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
+using StorageDeltaLake
+    = IStorageDataLake<StorageS3, StorageDeltaLakeName, DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 }
 
 #endif

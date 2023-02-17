@@ -6,6 +6,7 @@
 
 #    include <Storages/IStorageDataLake.h>
 #    include <Storages/S3DataLakeMetadataReadHelper.h>
+#    include <Storages/StorageS3.h>
 
 namespace DB
 {
@@ -43,7 +44,8 @@ struct StorageIcebergName
     static constexpr auto data_directory_prefix = "data";
 };
 
-using StorageIceberg = IStorageDataLake<StorageIcebergName, IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
+using StorageIceberg
+    = IStorageDataLake<StorageS3, StorageIcebergName, IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 }
 
 #endif

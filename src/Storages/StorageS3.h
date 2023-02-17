@@ -284,9 +284,13 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
-
     using ObjectInfos = StorageS3Source::ObjectInfos;
+
+    static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
+
+    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
+    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
         StorageS3::Configuration & configuration,
@@ -294,11 +298,8 @@ public:
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
 
-    static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
-
-    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
-
-    static void updateS3Configuration(ContextPtr, Configuration &);
+    static StorageS3::Configuration updateConfiguration(ContextPtr local_context, const Configuration & configuration);
+    static void updateConfiguration(ContextPtr local_context, Configuration & configuration);
 
 private:
     friend class StorageS3Cluster;
@@ -318,6 +319,8 @@ private:
     bool is_key_with_globs = false;
 
     ObjectInfos object_infos;
+
+    static void updateS3Configuration(ContextPtr, Configuration &);
 
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const Configuration & s3_configuration,
