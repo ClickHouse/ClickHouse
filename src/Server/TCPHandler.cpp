@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <iomanip>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -24,7 +23,6 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
@@ -39,9 +37,7 @@
 #include <Core/ExternalTable.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
