@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 template <typename Storage, typename Name, typename MetadataParser>
 class IStorageDataLake : public Storage
 {
