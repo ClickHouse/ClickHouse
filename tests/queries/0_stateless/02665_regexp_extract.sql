@@ -1,3 +1,4 @@
+-- { echoOn }
 select regexpExtract('100-200', '(\\d+)-(\\d+)', 1);
 select regexpExtract('100-200', '(\\d+)-(\\d+)');
 select regexpExtract('100-200', '(\\d+)-(\\d+)', 2);
@@ -51,3 +52,4 @@ select regexpExtract('100-200', '(\\d+)-(\\d+)', 3); -- { serverError INDEX_OF_P
 select regexpExtract('100-200', '(\\d+)-(\\d+)', -1); -- { serverError INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE }
 select regexpExtract('100-200', '\\d+-\\d+', 0);
 select regexpExtract('100-200', '\\d+-\\d+', 1);-- { serverError INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE }
+-- { echoOff }
