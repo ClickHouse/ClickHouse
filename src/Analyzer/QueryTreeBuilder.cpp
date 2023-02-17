@@ -886,7 +886,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             for (const auto & replace_transformer_child : replace_transformer->children)
             {
                 auto & replacement = replace_transformer_child->as<ASTColumnsReplaceTransformer::Replacement &>();
-                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, buildExpression(replacement.expr, context)});
+                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, buildExpression(replacement.children[0], context)});
             }
 
             column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));
