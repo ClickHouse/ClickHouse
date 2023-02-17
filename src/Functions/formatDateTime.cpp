@@ -342,10 +342,49 @@ private:
             return writeNumber2(dest, ToMonthImpl::execute(source, timezone));
         }
 
+        static size_t monthOfYearText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto month = ToMonthImpl::execute(source, timezone);
+            std::string_view str_view = abbreviate ? monthsShort[month - 1] : monthsFull[month - 1];
+            memcpy(dest, str_view.data(), str_view.size());
+            return str_view.size();
+        }
+
+        static size_t mysqlMonthOfYearTextShort(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        {
+            return monthOfYearText(dest, source, true, fractional_second, scale, timezone);
+        }
+
+        static size_t mysqlMonthOfYearTextLong(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        {
+            return monthOfYearText(dest, source, false, fractional_second, scale, timezone);
+        }
+
         static size_t mysqlDayOfWeek(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             *dest = '0' + ToDayOfWeekImpl::execute(source, 0, timezone);
             return 1;
+        }
+
+        static size_t dayOfWeekText(char * dest, Time source, bool abbreviate, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
+            if (week_day == 7)
+                week_day = 0;
+
+            std::string_view str_view = abbreviate ? weekdaysShort[week_day] : weekdaysFull[week_day];
+            memcpy(dest, str_view.data(), str_view.size());
+            return str_view.size();
+        }
+
+        static size_t mysqlDayOfWeekTextShort(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        {
+            return dayOfWeekText(dest, source, true, fractional_second, scale, timezone);
+        }
+
+        static size_t mysqlDayOfWeekTextLong(char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
+        {
+            return dayOfWeekText(dest, source, false, fractional_second, scale, timezone);
         }
 
         static size_t mysqlDayOfWeek0To6(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -409,6 +448,16 @@ private:
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             return 5;
+        }
+
+        static size_t mysqlHHMM12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto hour = ToHourImpl::execute(source, timezone);
+            writeNumber2(dest, hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour));
+            writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
+
+            dest[6] = hour >= 12 ? 'P' : 'A';
+            return 8;
         }
 
         static size_t mysqlSecond(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -503,15 +552,10 @@ private:
             return writeNumberWithPadding(dest, week_day, min_represent_digits);
         }
 
-        static size_t jodaDayOfWeekText(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        static size_t jodaDayOfWeekText(size_t min_represent_digits, char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
-            auto week_day = ToDayOfWeekImpl::execute(source, 0, timezone);
-            if (week_day == 7)
-                week_day = 0;
-
-            std::string_view str_view = min_represent_digits <= 3 ? weekdaysShort[week_day] : weekdaysFull[week_day];
-            memcpy(dest, str_view.data(), str_view.size());
-            return str_view.size();
+            bool abbreviate = min_represent_digits <= 3;
+            return dayOfWeekText(dest, source, abbreviate, fractional_second, scale, timezone);
         }
 
         static size_t jodaYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -527,6 +571,18 @@ private:
                 return writeNumberWithPadding(dest, year, min_represent_digits);
         }
 
+        static size_t jodaWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto week_year = ToWeekYearImpl::execute(source, timezone);
+            return writeNumberWithPadding(dest, week_year, min_represent_digits);
+        }
+
+        static size_t jodaWeekOfWeekYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto week_of_weekyear = ToWeekOfWeekYearImpl::execute(source, timezone);
+            return writeNumberWithPadding(dest, week_of_weekyear, min_represent_digits);
+        }
+
         static size_t jodaDayOfYear(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             auto day_of_year = ToDayOfYearImpl::execute(source, timezone);
@@ -539,12 +595,10 @@ private:
             return writeNumberWithPadding(dest, month_of_year, min_represent_digits);
         }
 
-        static size_t jodaMonthOfYearText(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        static size_t jodaMonthOfYearText(size_t min_represent_digits, char * dest, Time source, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & timezone)
         {
-            auto month = ToMonthImpl::execute(source, timezone);
-            std::string_view str_view = min_represent_digits <= 3 ? monthsShort[month - 1] : monthsFull[month - 1];
-            memcpy(dest, str_view.data(), str_view.size());
-            return str_view.size();
+            bool abbreviate = min_represent_digits <= 3;
+            return monthOfYearText(dest, source, abbreviate, fractional_second, scale, timezone);
         }
 
         static size_t jodaDayOfMonth(size_t min_represent_digits, char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -595,6 +649,30 @@ private:
         {
             auto second_of_minute = ToSecondImpl::execute(source, timezone);
             return writeNumberWithPadding(dest, second_of_minute, min_represent_digits);
+        }
+
+        static size_t jodaFractionOfSecond(size_t min_represent_digits, char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
+        {
+            if (min_represent_digits > 9)
+                min_represent_digits = 9;
+            if (fractional_second == 0)
+            {
+                for (UInt64 i = 0; i < min_represent_digits; ++i)
+                    dest[i] = '0';
+                return min_represent_digits;
+            }
+            auto str = toString(fractional_second);
+            if (min_represent_digits > scale)
+            {
+                for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
+                    str += '0';
+            }
+            else if (min_represent_digits < scale)
+            {
+                str = str.substr(0, min_represent_digits);
+            }
+            memcpy(dest, str.data(), str.size());
+            return min_represent_digits;
         }
 
         static size_t jodaTimezone(size_t min_represent_digits, char * dest, Time /*source*/, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -873,6 +951,24 @@ public:
 
                 switch (*pos)
                 {
+                    // Abbreviated weekday [Mon...Sun]
+                    case 'a':
+                        instructions.emplace_back(&Action<T>::mysqlDayOfWeekTextShort);
+                        out_template += "Mon";
+                        break;
+
+                    // Abbreviated month [Jan...Dec]
+                    case 'b':
+                        instructions.emplace_back(&Action<T>::mysqlMonthOfYearTextShort);
+                        out_template += "Jan";
+                        break;
+
+                    // Month as a decimal number (01-12)
+                    case 'c':
+                        instructions.emplace_back(&Action<T>::mysqlMonth);
+                        out_template += "00";
+                        break;
+
                     // Year, divided by 100, zero-padded
                     case 'C':
                         instructions.emplace_back(&Action<T>::mysqlCentury);
@@ -954,6 +1050,12 @@ public:
                         out_template += "0";
                         break;
 
+                    // Full weekday [Monday...Sunday]
+                    case 'W':
+                        instructions.emplace_back(&Action<T>::mysqlDayOfWeekTextLong);
+                        out_template += "Monday";
+                        break;
+
                     // Two digits year
                     case 'y':
                         instructions.emplace_back(&Action<T>::mysqlYear2);
@@ -992,10 +1094,22 @@ public:
                         out_template += "AM";
                         break;
 
-                    // 24-hour HH:MM time, equivalent to %H:%M 14:55
+                    // 12-hour HH:MM time, equivalent to %h:%i %p 2:55 PM
+                    case 'r':
+                        add_instruction_or_extra_shift(&Action<T>::mysqlHHMM12, 8);
+                        out_template += "12:00 AM";
+                        break;
+
+                    // 24-hour HH:MM time, equivalent to %H:%i 14:55
                     case 'R':
                         add_instruction_or_extra_shift(&Action<T>::mysqlHHMM24, 5);
                         out_template += "00:00";
+                        break;
+
+                    // Seconds
+                    case 's':
+                        add_instruction_or_extra_shift(&Action<T>::mysqlSecond, 2);
+                        out_template += "00";
                         break;
 
                     // Seconds
@@ -1004,15 +1118,27 @@ public:
                         out_template += "00";
                         break;
 
-                    // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
+                    // ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S 14:55:02
                     case 'T':
                         add_instruction_or_extra_shift(&Action<T>::mysqlISO8601Time, 8);
                         out_template += "00:00:00";
                         break;
 
+                    // Hour in 12h format (01-12)
+                    case 'h':
+                        add_instruction_or_extra_shift(&Action<T>::mysqlHour12, 2);
+                        out_template += "12";
+                        break;
+
                     // Hour in 24h format (00-23)
                     case 'H':
                         add_instruction_or_extra_shift(&Action<T>::mysqlHour24, 2);
+                        out_template += "00";
+                        break;
+
+                    // Minute of hour range [0, 59]
+                    case 'i':
+                        add_instruction_or_extra_shift(&Action<T>::mysqlMinute, 2);
                         out_template += "00";
                         break;
 
@@ -1022,35 +1148,48 @@ public:
                         out_template += "12";
                         break;
 
-                    /// Escaped literal characters.
-                    case '%':
-                        add_extra_shift(1);
-                        out_template += "%";
+                    // Hour in 24h format (00-23)
+                    case 'k':
+                        add_instruction_or_extra_shift(&Action<T>::mysqlHour24, 2);
+                        out_template += "00";
                         break;
+
+                    // Hour in 12h format (01-12)
+                    case 'l':
+                        add_instruction_or_extra_shift(&Action<T>::mysqlHour12, 2);
+                        out_template += "12";
+                        break;
+
                     case 't':
                         add_extra_shift(1);
                         out_template += "\t";
                         break;
+
                     case 'n':
                         add_extra_shift(1);
                         out_template += "\n";
                         break;
 
+                    // Escaped literal characters.
+                    case '%':
+                        add_extra_shift(1);
+                        out_template += "%";
+                        break;
+
                     // Unimplemented
                     case 'U':
-                        [[fallthrough]];
-                    case 'W':
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "Wrong syntax '{}', symbol '{}' is not implemented for function {}",
-                            format,
-                            *pos,
-                            getName());
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
+                    case 'v':
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Mon-Sun)");
+                    case 'x':
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for YEAR for week (Mon-Sun)");
+                    case 'X':
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for YEAR for week (Sun-Sat)");
 
                     default:
                         throw Exception(
-                            ErrorCodes::ILLEGAL_COLUMN,
-                            "Wrong syntax '{}', unexpected symbol '{}' for function {}",
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Incorrect syntax '{}', symbol is not supported '{}' for function {}",
                             format,
                             *pos,
                             getName());
@@ -1147,9 +1286,15 @@ public:
                         reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                         break;
                     case 'x':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK_YEAR");
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekYear, repetitions));
+                        /// weekyear range [1900, 2299]
+                        reserve_size += std::max(repetitions, 4);
+                        break;
                     case 'w':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK_OF_WEEK_YEAR");
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaWeekOfWeekYear, repetitions));
+                        /// Week of weekyear range [1, 52]
+                        reserve_size += std::max(repetitions, 2);
+                        break;
                     case 'e':
                         instructions.emplace_back(std::bind_front(&Action<T>::jodaDayOfWeek1Based, repetitions));
                         /// Day of week range [1, 7]
@@ -1234,7 +1379,11 @@ public:
                         reserve_size += std::max(repetitions, 2);
                         break;
                     case 'S':
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for FRACTION_OF_SECOND");
+                        /// Default fraction of second is 0
+                        instructions.emplace_back(std::bind_front(&Action<T>::jodaFractionOfSecond, repetitions));
+                        /// 'S' repetitions range [0, 9]
+                        reserve_size += repetitions <= 9 ? repetitions : 9;
+                        break;
                     case 'z':
                         if (repetitions <= 3)
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
@@ -1291,6 +1440,8 @@ using FunctionFromUnixTimestampInJodaSyntax = FunctionFormatDateTimeImpl<NameFro
 REGISTER_FUNCTION(FormatDateTime)
 {
     factory.registerFunction<FunctionFormatDateTime>();
+    factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name);
+
     factory.registerFunction<FunctionFromUnixTimestamp>();
     factory.registerAlias("FROM_UNIXTIME", "fromUnixTimestamp");
 
