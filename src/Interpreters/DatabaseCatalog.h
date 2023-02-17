@@ -135,6 +135,7 @@ public:
     static DatabaseCatalog & instance();
     static void shutdown();
 
+    void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
     void startupBackgroundCleanup();
     void loadMarkedAsDroppedTables();

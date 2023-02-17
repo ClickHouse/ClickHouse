@@ -654,8 +654,9 @@ void LocalServer::processConfig()
 
         if (!config().has("only-system-tables"))
         {
-            DatabaseCatalog::instance().startupBackgroundCleanup();
+            DatabaseCatalog::instance().createBackgroundTasks();
             loadMetadata(global_context);
+            DatabaseCatalog::instance().startupBackgroundCleanup();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
