@@ -83,7 +83,9 @@ private:
 
     UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;
 
-    bool isExpressionOverSortingKey(const ASTPtr & ast) const;
+    bool hasPrimaryKeyAtoms(const ASTPtr & ast) const;
+
+    bool isPrimaryKeyAtom(const ASTPtr & ast) const;
 
     bool isSortingKey(const String & column_name) const;
 
@@ -103,6 +105,7 @@ private:
 
     using StringSet = std::unordered_set<std::string>;
 
+    String first_primary_key_column;
     const StringSet table_columns;
     const Names queried_columns;
     const NameSet sorting_key_names;

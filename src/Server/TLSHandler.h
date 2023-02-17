@@ -45,7 +45,8 @@ public:
         stack_data.socket = socket();
         stack_data.certificate = certificate;
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
+        throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     }
 private:

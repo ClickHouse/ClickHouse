@@ -2,9 +2,6 @@
 #include <Common/VersionNumber.h>
 #include <Poco/Environment.h>
 #include <Common/Stopwatch.h>
-/// for abortOnFailedAssertion() via chassert() (dependency chain looks odd)
-#include <Common/Exception.h>
-#include <base/defines.h>
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -44,8 +41,6 @@ enum PollPidResult
     #elif defined(__ppc64__)
         #define SYS_pidfd_open 434
     #elif defined(__riscv)
-        #define SYS_pidfd_open 434
-    #elif defined(__s390x__)
         #define SYS_pidfd_open 434
     #else
         #error "Unsupported architecture"
@@ -110,8 +105,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (ready <= 0)
         return PollPidResult::FAILED;
 
-    int err = close(pid_fd);
-    chassert(!err || errno == EINTR);
+    close(pid_fd);
 
     return PollPidResult::RESTART;
 }

@@ -183,7 +183,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
     , query(query_)
 {
     if (elements_actions.size() != required_sort_description.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of sort description and actions are mismatched");
+        throw Exception("Sizes of sort description and actions are mismatched", ErrorCodes::LOGICAL_ERROR);
 
     /// Do not analyze joined columns.
     /// They may have aliases and come to description as is.

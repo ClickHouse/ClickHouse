@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-s3-storage
+-- Tags: no-parallel
 
 DROP TABLE IF EXISTS t2;
 

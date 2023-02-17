@@ -71,15 +71,7 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const ColumnNode &>(rhs);
-
-    auto source = getColumnSourceOrNull();
-    auto rhs_source = rhs_typed.getColumnSourceOrNull();
-    if (source && !rhs_source)
-        return false;
-    if (!source && rhs_source)
-        return false;
-
-    return column == rhs_typed.column && (!source || source->isEqual(*rhs_source));
+    return column == rhs_typed.column;
 }
 
 void ColumnNode::updateTreeHashImpl(HashState & hash_state) const

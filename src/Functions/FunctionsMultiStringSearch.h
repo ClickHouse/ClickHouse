@@ -53,14 +53,13 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionsMultiStringSearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
+        return std::make_shared<FunctionsMultiStringSearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length);
     }
 
-    FunctionsMultiStringSearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_, bool reject_expensive_hyperscan_regexps_)
+    FunctionsMultiStringSearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_)
         : allow_hyperscan(allow_hyperscan_)
         , max_hyperscan_regexp_length(max_hyperscan_regexp_length_)
         , max_hyperscan_regexp_total_length(max_hyperscan_regexp_total_length_)
-        , reject_expensive_hyperscan_regexps(reject_expensive_hyperscan_regexps_)
     {}
 
     String getName() const override { return name; }
@@ -109,13 +108,13 @@ public:
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
                 col_needles_const->getValue<Array>(),
                 vec_res, offsets_res,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
         else
             Impl::vectorVector(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
                 col_needles_vector->getData(), col_needles_vector->getOffsets(),
                 vec_res, offsets_res,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
         // the combination of const haystack + const needle is not implemented because
         // useDefaultImplementationForConstants() == true makes upper layers convert both to
@@ -131,7 +130,6 @@ private:
     const bool allow_hyperscan;
     const size_t max_hyperscan_regexp_length;
     const size_t max_hyperscan_regexp_total_length;
-    const bool reject_expensive_hyperscan_regexps;
 };
 
 }

@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class ReadBuffer;
 
 /** A stream for inputting data in a binary line-by-line format.
@@ -54,6 +59,11 @@ public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
+    DataTypes readRowAndGetDataTypes() override
+    {
+        throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypes is not implemented"};
+    }
+
     BinaryFormatReader reader;
 };
 

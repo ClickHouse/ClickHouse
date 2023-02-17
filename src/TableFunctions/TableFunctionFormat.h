@@ -28,7 +28,6 @@ private:
 
     String format;
     String data;
-    String structure = "auto";
 };
 
 }

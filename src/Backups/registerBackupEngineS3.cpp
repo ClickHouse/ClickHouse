@@ -69,7 +69,9 @@ void registerBackupEngineS3(BackupFactory & factory)
                 s3_uri = fs::path(s3_uri) / config.getString(config_prefix + ".filename");
 
             if (args.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
+                throw Exception(
+                    "Backup S3 requires 1 or 2 arguments: named_collection, [filename]",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             if (args.size() == 1)
                 s3_uri = fs::path(s3_uri) / args[0].safeGet<String>();
@@ -77,8 +79,9 @@ void registerBackupEngineS3(BackupFactory & factory)
         else
         {
             if ((args.size() != 1) && (args.size() != 3))
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
+                throw Exception(
+                    "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             s3_uri = args[0].safeGet<String>();
             if (args.size() >= 3)
@@ -113,19 +116,10 @@ void registerBackupEngineS3(BackupFactory & factory)
         else
         {
             auto writer = std::make_shared<BackupWriterS3>(S3::URI{s3_uri}, access_key_id, secret_access_key, params.context);
-            return std::make_unique<BackupImpl>(
-                backup_name_for_logging,
-                archive_params,
-                params.base_backup_info,
-                writer,
-                params.context,
-                params.is_internal_backup,
-                params.backup_coordination,
-                params.backup_uuid,
-                params.deduplicate_files);
+            return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, writer, params.context, params.is_internal_backup, params.backup_coordination, params.backup_uuid);
         }
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "S3 support is disabled");
+        throw Exception("S3 support is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     };
 

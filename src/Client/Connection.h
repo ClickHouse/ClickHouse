@@ -110,7 +110,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -265,8 +265,7 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    ParallelReadRequest receiveParallelReadRequest() const;
-    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
+    PartitionReadRequest receivePartitionReadRequest() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

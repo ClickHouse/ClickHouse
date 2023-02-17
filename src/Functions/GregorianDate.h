@@ -219,9 +219,13 @@ namespace gd
     {
         char c;
         if (!in.read(c))
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected a digit at the end of stream");
+            throw Exception(
+                "Cannot parse input: expected a digit at the end of stream",
+                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
         else if (c < '0' || c > '9')
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot read input: expected a digit but got something else");
+            throw Exception(
+                "Cannot read input: expected a digit but got something else",
+                ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
         else
             return c - '0';
     }
@@ -250,7 +254,7 @@ namespace DB
         assertEOF(in);
 
         if (month_ < 1 || month_ > 12 || day_of_month_ < 1 || day_of_month_ > gd::monthLength(gd::is_leap_year(year_), month_))
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Invalid date: {}", toString());
+            throw Exception("Invalid date: " + toString(), ErrorCodes::CANNOT_PARSE_DATE);
     }
 
     template <typename YearT>
@@ -278,8 +282,9 @@ namespace DB
     {
         if (year_ < 0 || year_ > 9999)
         {
-            throw Exception(ErrorCodes::CANNOT_FORMAT_DATETIME,
-                "Impossible to stringify: year too big or small: {}", DB::toString(year_));
+            throw Exception(
+                "Impossible to stringify: year too big or small: " + DB::toString(year_),
+                ErrorCodes::CANNOT_FORMAT_DATETIME);
         }
         else
         {
@@ -318,7 +323,9 @@ namespace DB
     {
         if (day_of_year < 1 || day_of_year > (gd::is_leap_year(year) ? 366 : 365))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ordinal date: {}-{}", toString(year), toString(day_of_year));
+            throw Exception(
+                "Invalid ordinal date: " + toString(year) + "-" + toString(day_of_year),
+                ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -371,7 +378,9 @@ namespace DB
         , day_of_month_(day_of_month)
     {
         if (month < 1 || month > 12)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid month: {}", DB::toString(month));
+            throw Exception(
+                "Invalid month: " + DB::toString(month),
+                ErrorCodes::LOGICAL_ERROR);
         /* We can't validate day_of_month here, because we don't know if
          * it's a leap year. */
     }
@@ -379,8 +388,10 @@ namespace DB
     inline MonthDay::MonthDay(bool is_leap_year, uint16_t day_of_year)
     {
         if (day_of_year < 1 || day_of_year > (is_leap_year ? 366 : 365))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year: {}{}",
-                            (is_leap_year ? "leap, " : "non-leap, "), DB::toString(day_of_year));
+            throw Exception(
+                std::string("Invalid day of year: ") +
+                (is_leap_year ? "leap, " : "non-leap, ") + DB::toString(day_of_year),
+                ErrorCodes::LOGICAL_ERROR);
 
         month_ = 1;
         uint16_t d = day_of_year;
@@ -399,8 +410,11 @@ namespace DB
     {
         if (day_of_month_ < 1 || day_of_month_ > gd::monthLength(is_leap_year, month_))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of month: {}{}-{}",
-                (is_leap_year ? "leap, " : "non-leap, "), DB::toString(month_), DB::toString(day_of_month_));
+            throw Exception(
+                std::string("Invalid day of month: ") +
+                (is_leap_year ? "leap, " : "non-leap, ") + DB::toString(month_) +
+                "-" + DB::toString(day_of_month_),
+                ErrorCodes::LOGICAL_ERROR);
         }
         const auto k = month_ <= 2 ? 0 : is_leap_year ? -1 :-2;
         return (367 * month_ - 362) / 12 + k + day_of_month_;

@@ -43,3 +43,4 @@ SELECT groupBitmap(UserID) as num FROM t
 num
 3
 ```
+

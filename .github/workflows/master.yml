@@ -141,6 +141,37 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
+  SharedBuildSmokeTest:
+    needs: [BuilderDebShared]
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/split_build_check
+          REPO_COPY=${{runner.temp}}/split_build_check/ClickHouse
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          EOF
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Shared build check
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 split_build_smoke_check.py
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
@@ -477,6 +508,47 @@ jobs:
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
+  BuilderDebShared:
+    needs: [DockerHubPush]
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          BUILD_NAME=binary_shared
+          EOF
+      - name: Download changed images
+        uses: actions/download-artifact@v3
+        with:
+          name: changed_images
+          path: ${{ env.IMAGES_PATH }}
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          submodules: true
+      - name: Build
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
+      - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinClangTidy:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -728,7 +800,7 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinAmd64Compat:
+  BuilderBinAmd64SSE2:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
     steps:
@@ -739,7 +811,7 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          BUILD_NAME=binary_amd64_compat
+          BUILD_NAME=binary_amd64sse2
           EOF
       - name: Download changed images
         uses: actions/download-artifact@v3
@@ -893,9 +965,10 @@ jobs:
       - BuilderBinDarwinAarch64
       - BuilderBinFreeBSD
       - BuilderBinPPC64
-      - BuilderBinAmd64Compat
+      - BuilderBinAmd64SSE2
       - BuilderBinAarch64V80Compat
       - BuilderBinClangTidy
+      - BuilderDebShared
     runs-on: [self-hosted, style-checker]
     if: ${{ success() || failure() }}
     steps:
@@ -3135,6 +3208,7 @@ jobs:
       - UnitTestsMsan
       - UnitTestsUBsan
       - UnitTestsReleaseClang
+      - SharedBuildSmokeTest
       - SQLancerTestRelease
       - SQLancerTestDebug
     runs-on: [self-hosted, style-checker]

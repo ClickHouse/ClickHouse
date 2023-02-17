@@ -109,8 +109,6 @@ private:
 
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
-    bool tableSupportsPrewhere() const;
-
     friend class ReadFromMerge;
 };
 
@@ -148,9 +146,7 @@ public:
 
     const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
 
-    /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
-    static bool isFinal(const SelectQueryInfo & query_info);
+    void requestReadingInOrder(InputOrderInfoPtr order_info_) { order_info = order_info_; }
 
 private:
     const size_t required_max_block_size;
@@ -197,10 +193,10 @@ private:
         size_t streams_num,
         bool concat_streams = false);
 
-    static void convertingSourceStream(
+    void convertingSourceStream(
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
-        ContextPtr context,
-        QueryPipelineBuilder & builder);
+        ContextPtr context, ASTPtr & query,
+        QueryPipelineBuilder & builder, QueryProcessingStage::Enum processed_stage);
 };
 
 }

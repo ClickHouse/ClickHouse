@@ -19,7 +19,7 @@ static void checkSingleInput(const IProcessor & transform)
             transform.getInputs().size());
 
     if (transform.getInputs().front().isConnected())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Transform for chain has connected input");
+        throw Exception("Transform for chain has connected input", ErrorCodes::LOGICAL_ERROR);
 }
 
 static void checkSingleOutput(const IProcessor & transform)
@@ -32,7 +32,7 @@ static void checkSingleOutput(const IProcessor & transform)
             transform.getOutputs().size());
 
     if (transform.getOutputs().front().isConnected())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Transform for chain has connected output");
+        throw Exception("Transform for chain has connected output", ErrorCodes::LOGICAL_ERROR);
 }
 
 static void checkTransform(const IProcessor & transform)

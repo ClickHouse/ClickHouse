@@ -337,8 +337,7 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     }
 
     if (!insert_query_present)
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
-                        table_name.empty() ? "" : " for table " + table_name);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file", table_name.empty() ? "" : " for table " + table_name);
 
     skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
 }
@@ -436,7 +435,7 @@ DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
             skipFieldDelimiter(in);
 
         readQuotedField(value, in);
-        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
     skipEndOfRow(in, table_name);

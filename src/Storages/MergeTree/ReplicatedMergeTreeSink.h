@@ -4,8 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ZooKeeperRetries.h>
-#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/ZooKeeperWithFaultInjection.h>
 
 
 namespace Poco { class Logger; }
@@ -115,8 +114,6 @@ private:
 
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
-
-    UInt64 cache_version = 0;
 
     bool is_attach = false;
     bool quorum_parallel = false;

@@ -34,7 +34,8 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty minmax index {}", backQuote(index_name));
+        throw Exception(
+            "Attempt to write empty minmax index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
@@ -121,8 +122,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
+        throw Exception(
+                "The provided position is not less than the number of block rows. Position: "
+                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -189,7 +191,8 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     std::shared_ptr<MergeTreeIndexGranuleMinMax> granule
         = std::dynamic_pointer_cast<MergeTreeIndexGranuleMinMax>(idx_granule);
     if (!granule)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Minmax index condition got a granule with the wrong type.");
+        throw Exception(
+            "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
     return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
 }
 

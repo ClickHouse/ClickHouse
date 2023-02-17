@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int DNS_ERROR;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
 }
@@ -59,8 +58,9 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {
-            LOG_WARNING(LogToStr(fail_message, log), "There is no table {}.{} on server: {}",
-                        backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
+            fail_message = fmt::format("There is no table {}.{} on server: {}",
+                backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
+            LOG_WARNING(log, fmt::runtime(fail_message));
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             return;
         }
@@ -90,7 +90,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     catch (const Exception & e)
     {
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
-            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR)
+            && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);

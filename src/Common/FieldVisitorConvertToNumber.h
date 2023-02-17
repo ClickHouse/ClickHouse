@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -22,39 +23,38 @@ class FieldVisitorConvertToNumber : public StaticVisitor<T>
 public:
     T operator() (const Null &) const
     {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert NULL to {}", demangle(typeid(T).name()));
+        throw Exception("Cannot convert NULL to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const String &) const
     {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert String to {}", demangle(typeid(T).name()));
+        throw Exception("Cannot convert String to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Array &) const
     {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Array to {}", demangle(typeid(T).name()));
+        throw Exception("Cannot convert Array to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Tuple &) const
     {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Tuple to {}", demangle(typeid(T).name()));
+        throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Map &) const
     {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Map to {}", demangle(typeid(T).name()));
+        throw Exception("Cannot convert Map to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const Object &) const
     {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Object to {}", demangle(typeid(T).name()));
+        throw Exception("Cannot convert Object to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
+    T operator() (const Int128 & x) const { return T(x); }
     T operator() (const UUID & x) const { return T(x.toUnderType()); }
-    T operator() (const IPv4 & x) const { return T(x.toUnderType()); }
-    T operator() (const IPv6 & x) const { return T(x.toUnderType()); }
 
     T operator() (const Float64 & x) const
     {
@@ -67,11 +67,11 @@ public:
                     return true;
 
                 /// Conversion of infinite values to integer is undefined.
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
+                throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
             else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
             {
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+                throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
         }
 
@@ -85,6 +85,11 @@ public:
         }
     }
 
+    T operator() (const UInt128 &) const
+    {
+        throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+
     template <typename U>
     T operator() (const DecimalField<U> & x) const
     {
@@ -96,12 +101,7 @@ public:
 
     T operator() (const AggregateFunctionStateData &) const
     {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert AggregateFunctionStateData to {}", demangle(typeid(T).name()));
-    }
-
-    T operator() (const CustomType &) const
-    {
-        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert CustomType to {}", demangle(typeid(T).name()));
+        throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
     template <typename U>
@@ -110,6 +110,8 @@ public:
     {
         if constexpr (is_decimal<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else if constexpr (std::is_same_v<T, UInt128>)
+            throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else
             return static_cast<T>(x);
     }

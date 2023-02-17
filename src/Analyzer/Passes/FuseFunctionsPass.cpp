@@ -26,22 +26,16 @@ namespace ErrorCodes
 namespace
 {
 
-class FuseFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<FuseFunctionsVisitor>
+class FuseFunctionsVisitor : public InDepthQueryTreeVisitor<FuseFunctionsVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<FuseFunctionsVisitor>;
-    using Base::Base;
 
-    explicit FuseFunctionsVisitor(const std::unordered_set<String> names_to_collect_, ContextPtr context)
-        : Base(std::move(context))
-        , names_to_collect(names_to_collect_)
+    explicit FuseFunctionsVisitor(const std::unordered_set<String> names_to_collect_)
+        : names_to_collect(names_to_collect_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_syntax_fuse_functions)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || !names_to_collect.contains(function_node->getFunctionName()))
             return;
@@ -65,19 +59,25 @@ private:
     std::unordered_set<String> names_to_collect;
 };
 
-QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, const DataTypePtr & result_type, QueryTreeNodes arguments)
 {
     auto function_node = std::make_shared<FunctionNode>(name);
 
     auto function = FunctionFactory::instance().get(name, context);
+    function_node->resolveAsFunction(std::move(function), result_type);
     function_node->getArguments().getNodes() = std::move(arguments);
-    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+
     return function_node;
 }
 
 FunctionNodePtr createResolvedAggregateFunction(const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {})
 {
     auto function_node = std::make_shared<FunctionNode>(name);
+
+    AggregateFunctionProperties properties;
+    auto aggregate_function = AggregateFunctionFactory::instance().get(name, {argument->getResultType()}, parameters, properties);
+    function_node->resolveAsAggregateFunction(aggregate_function, aggregate_function->getReturnType());
+    function_node->getArguments().getNodes() = { argument };
 
     if (!parameters.empty())
     {
@@ -86,27 +86,18 @@ FunctionNodePtr createResolvedAggregateFunction(const String & name, const Query
             parameter_nodes.emplace_back(std::make_shared<ConstantNode>(param));
         function_node->getParameters().getNodes() = std::move(parameter_nodes);
     }
-    function_node->getArguments().getNodes() = { argument };
-
-    AggregateFunctionProperties properties;
-    auto aggregate_function = AggregateFunctionFactory::instance().get(
-        name,
-        { argument->getResultType() },
-        parameters,
-        properties);
-    function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
 }
 
-QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, const DataTypePtr & result_type, QueryTreeNodePtr argument, UInt64 index)
 {
-    return createResolvedFunction(context, "tupleElement", {argument, std::make_shared<ConstantNode>(index)});
+    return createResolvedFunction(context, "tupleElement", result_type, {std::move(argument), std::make_shared<ConstantNode>(index)});
 }
 
-QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
+QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, const DataTypePtr & result_type, QueryTreeNodePtr argument, UInt64 index)
 {
-    return createResolvedFunction(context, "arrayElement", {argument, std::make_shared<ConstantNode>(index)});
+    return createResolvedFunction(context, "arrayElement", result_type, {std::move(argument), std::make_shared<ConstantNode>(index)});
 }
 
 void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_count_node, ContextPtr context)
@@ -124,20 +115,20 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     if (function_name == "sum")
     {
         assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
-        node = createTupleElementFunction(context, sum_count_node, 1);
+        node = createTupleElementFunction(context, node->getResultType(), sum_count_node, 1);
     }
     else if (function_name == "count")
     {
         assert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
-        node = createTupleElementFunction(context, sum_count_node, 2);
+        node = createTupleElementFunction(context, node->getResultType(), sum_count_node, 2);
     }
     else if (function_name == "avg")
     {
-        auto sum_result = createTupleElementFunction(context, sum_count_node, 1);
-        auto count_result = createTupleElementFunction(context, sum_count_node, 2);
+        auto sum_result = createTupleElementFunction(context, sum_count_result_type->getElement(0), sum_count_node, 1);
+        auto count_result = createTupleElementFunction(context, sum_count_result_type->getElement(1), sum_count_node, 2);
         /// To avoid integer division by zero
-        auto count_float_result = createResolvedFunction(context, "toFloat64", {count_result});
-        node = createResolvedFunction(context, "divide", {sum_result, count_float_result});
+        auto count_float_result = createResolvedFunction(context, "toFloat64", std::make_shared<DataTypeFloat64>(), {count_result});
+        node = createResolvedFunction(context, "divide", node->getResultType(), {sum_result, count_float_result});
     }
     else
     {
@@ -207,7 +198,7 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
 
 void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    FuseFunctionsVisitor visitor({"sum", "count", "avg"}, context);
+    FuseFunctionsVisitor visitor({"sum", "count", "avg"});
     visitor.visit(query_tree_node);
 
     for (auto & [argument, nodes] : visitor.argument_to_functions_mapping)
@@ -226,7 +217,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
 void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    FuseFunctionsVisitor visitor_quantile({"quantile"}, context);
+    FuseFunctionsVisitor visitor_quantile({"quantile"});
     visitor_quantile.visit(query_tree_node);
 
     for (auto & [argument, nodes_set] : visitor_quantile.argument_to_functions_mapping)
@@ -247,7 +238,7 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
         for (size_t i = 0; i < nodes_set.size(); ++i)
         {
             size_t array_index = i + 1;
-            *nodes[i] = createArrayElementFunction(context, quantiles_node, array_index);
+            *nodes[i] = createArrayElementFunction(context, result_array_type->getNestedType(), quantiles_node, array_index);
         }
     }
 }

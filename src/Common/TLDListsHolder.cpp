@@ -100,7 +100,7 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
             tld_list_tmp.emplace(line, TLDType::TLD_REGULAR);
     }
     if (!in.eof())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not all list had been read: {}", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not all list had been read", name);
 
     TLDList tld_list(tld_list_tmp.size());
     for (const auto & [host, type] : tld_list_tmp)

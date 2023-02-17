@@ -5,7 +5,7 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageS3.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -32,11 +32,6 @@ public:
 
     bool supportsReadingSubsetOfColumns() override;
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
-    {
-        return {"_path", "_file"};
-    }
-
 protected:
     friend class TableFunctionS3Cluster;
 
@@ -51,9 +46,9 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & configuration);
+    static void parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & configuration);
 
-    mutable StorageS3::Configuration configuration;
+    StorageS3Configuration configuration;
     ColumnsDescription structure_hint;
 };
 

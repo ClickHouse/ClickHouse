@@ -24,7 +24,6 @@ from docker_pull_helper import get_image_with_version, DockerImage
 from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
 from rerun_helper import RerunHelper
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
@@ -103,7 +102,7 @@ exit 1
     (TEMP_PATH / "preserve_logs.sh").write_text(preserve_logs, encoding="utf-8")
 
 
-def test_install_deb(image: DockerImage) -> TestResults:
+def test_install_deb(image: DockerImage) -> list:
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb
@@ -116,7 +115,7 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install_rpm(image: DockerImage) -> TestResults:
+def test_install_rpm(image: DockerImage) -> list:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
@@ -132,7 +131,7 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install_tgz(image: DockerImage) -> TestResults:
+def test_install_tgz(image: DockerImage) -> list:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
@@ -159,8 +158,8 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
-    test_results = []  # type: TestResults
+def test_install(image: DockerImage, tests: Dict[str, str]) -> list:
+    test_results = []
     for name, command in tests.items():
         stopwatch = Stopwatch()
         container_name = name.lower().replace(" ", "_").replace("/", "_")
@@ -199,7 +198,14 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
             logs.append(archive_path)
 
         subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
-        test_results.append(TestResult(name, status, stopwatch.duration_seconds, logs))
+        test_results.append(
+            [
+                name,
+                status,
+                f"{stopwatch.duration_seconds:.2f}",
+                str(list(log.as_posix() for log in logs)),  # It's terrible syntax for log files
+            ]
+        )
 
     return test_results
 
@@ -297,7 +303,7 @@ def main():
             args.check_name, REPORTS_PATH, TEMP_PATH, filter_artifacts
         )
 
-    test_results = []  # type: TestResults
+    test_results = []
     ch_binary = Path(TEMP_PATH) / "clickhouse"
     if ch_binary.exists():
         # make a copy of clickhouse to avoid redownload of exctracted binary
@@ -317,11 +323,11 @@ def main():
     state = SUCCESS
     test_status = OK
     description = "Packages installed successfully"
-    if FAIL in (result.status for result in test_results):
+    if FAIL in (result[1] for result in test_results):
         state = FAILURE
         test_status = FAIL
         description = "Failed to install packages: " + ", ".join(
-            result.name for result in test_results
+            result[0] for result in test_results
         )
 
     s3_helper = S3Helper()
@@ -333,6 +339,7 @@ def main():
         test_results,
         [],
         args.check_name,
+        with_raw_logs=False,
     )
     print(f"::notice ::Report url: {report_url}")
     if not CI:

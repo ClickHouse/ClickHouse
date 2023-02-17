@@ -24,7 +24,7 @@ private:
 public:
     explicit MetadataStorageFromStaticFilesWebServer(const WebObjectStorage & object_storage_);
 
-    MetadataTransactionPtr createTransaction() override;
+    MetadataTransactionPtr createTransaction() const override;
 
     const std::string & getPath() const override;
 

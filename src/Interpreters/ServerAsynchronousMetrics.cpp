@@ -245,12 +245,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
                     total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
                     total_number_of_rows += table_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_merge_tree->getActivePartsCount();
+                    total_number_of_parts += table_merge_tree->getPartsCount();
                 }
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
-                    ReplicatedTableStatus status;
+                    StorageReplicatedMergeTree::Status status;
                     table_replicated_merge_tree->getStatus(status, false);
 
                     calculateMaxAndSum(max_queue_size, sum_queue_size, status.queue.queue_size);

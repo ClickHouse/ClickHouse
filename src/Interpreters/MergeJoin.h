@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
+#include <shared_mutex>
+
 #include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
@@ -71,7 +72,7 @@ private:
 
     using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
-    mutable SharedMutex rwlock;
+    mutable std::shared_mutex rwlock;
     std::shared_ptr<TableJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;
