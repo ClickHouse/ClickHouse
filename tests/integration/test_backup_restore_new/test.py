@@ -632,7 +632,8 @@ def test_async_backups_to_same_destination(interface):
             f"BACKUP TABLE test.table TO {backup_name} ASYNC"
         )
 
-    # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+    # One of those two backups to the same destination is expected to fail.
+    # If the second backup is going to fail it can fail either immediately or after a while.
     # If it fails immediately we won't even get its ID.
     id2 = None if err else res.split("\t")[0]
 
@@ -647,17 +648,25 @@ def test_async_backups_to_same_destination(interface):
         "",
     )
 
-    # The first backup should succeed.
-    assert instance.query(
-        f"SELECT status, error FROM system.backups WHERE id='{id1}'"
-    ) == TSV([["BACKUP_CREATED", ""]])
-
-    if id2:
-        # The second backup should fail.
-        assert (
-            instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
-            == "BACKUP_FAILED\n"
+    ids_succeeded = (
+        instance.query(
+            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
         )
+        .rstrip("\n")
+        .split("\n")
+    )
+
+    ids_failed = (
+        instance.query(
+            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+        )
+        .rstrip("\n")
+        .split("\n")
+    )
+
+    assert len(ids_succeeded) == 1
+    assert len(ids_failed) <= 1
+    assert set(ids_succeeded + ids_failed) == set(ids)
 
     # Check that the first backup is all right.
     instance.query("DROP TABLE test.table")

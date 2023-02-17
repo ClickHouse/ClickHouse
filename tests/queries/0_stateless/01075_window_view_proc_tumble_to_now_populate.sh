@@ -15,11 +15,12 @@ CREATE TABLE mt(a Int32) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO mt VALUES (1);
 
-CREATE WINDOW VIEW wv TO dst POPULATE AS SELECT count(a) AS count, tumbleEnd(wid) FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '1' SECOND, 'US/Samoa') AS wid;
+CREATE WINDOW VIEW wv TO dst POPULATE AS SELECT count(a) AS count, tumbleEnd(wid) FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '5' SECOND, 'US/Samoa') AS wid;
 EOF
 
-while true; do
-	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
+for _ in {1..100}; do
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
+	sleep .5
 done
 
 $CLICKHOUSE_CLIENT --query="SELECT count FROM dst"
