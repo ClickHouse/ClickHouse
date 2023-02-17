@@ -78,6 +78,7 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
 {
     ASTPtr inner_query = select_query;
     std::optional<StorageID> dependent_table_storage_id;
+    bool allow_experimental_analyzer = context->getSettingsRef().allow_experimental_analyzer;
 
     while (true)
     {
@@ -100,7 +101,7 @@ SelectQueryDescription buildSelectQueryDescription(const ASTPtr & select_query, 
         if (auto db_and_table = getDatabaseAndTable(*inner_select_query, 0))
         {
             const auto * table_expression = getTableExpression(*inner_select_query, 0);
-            if (table_expression->database_and_table_name->tryGetAlias().empty())
+            if (allow_experimental_analyzer && table_expression->database_and_table_name->tryGetAlias().empty())
                 table_expression->database_and_table_name->setAlias("__dependent_table");
 
             String select_database_name = db_and_table->database;

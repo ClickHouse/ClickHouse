@@ -165,7 +165,13 @@ private:
 
 REGISTER_FUNCTION(Nested)
 {
-    factory.registerFunction<FunctionNested>();
+    factory.registerFunction<FunctionNested>({
+        R"(
+Returns the array of tuples from multiple arrays.
+)",
+        Documentation::Examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])"}},
+        Documentation::Categories{"OtherFunctions"}
+    });
 }
 
 }
