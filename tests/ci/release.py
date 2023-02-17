@@ -277,8 +277,12 @@ class Release:
             dry_run=self.dry_run,
         )
 
+    @property
+    def has_rollback(self) -> bool:
+        return bool(self._rollback_stack)
+
     def log_rollback(self):
-        if self._rollback_stack:
+        if self.has_rollback:
             rollback = self._rollback_stack.copy()
             rollback.reverse()
             logging.info(
@@ -635,7 +639,20 @@ def main():
         repo, args.commit, args.release_type, args.dry_run, args.with_stderr
     )
 
-    release.do(args.check_dirty, args.check_branch)
+    try:
+        release.do(args.check_dirty, args.check_branch)
+    except:
+        if release.has_rollback:
+            logging.error(
+                "!!The release process finished with error, read the output carefully!!"
+            )
+            logging.error(
+                "Probably, rollback finished with error. "
+                "If you don't see any of the following commands in the output, "
+                "execute them manually:"
+            )
+            release.log_rollback()
+        raise
 
 
 if __name__ == "__main__":
