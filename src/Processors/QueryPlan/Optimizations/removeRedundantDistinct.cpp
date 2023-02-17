@@ -88,7 +88,7 @@ namespace
             chassert(!node->children.empty());
             node = node->children.front();
         }
-        if (node->type != ActionsDAG::ActionType::INPUT)
+        if (node && node->type != ActionsDAG::ActionType::INPUT)
             return nullptr;
 
         return node;
