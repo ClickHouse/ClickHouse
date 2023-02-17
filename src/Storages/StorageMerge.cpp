@@ -24,6 +24,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include "DataTypes/IDataType.h"
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -145,48 +146,58 @@ bool StorageMerge::tableSupportsPrewhere() const
     /// If new table that matches regexp for current storage and doesn't support PREWHERE
     /// will appear after this check and before calling "read" method, the optimized query may fail.
     /// Since it's quite rare case, we just ignore this possibility.
-    const auto & table_doesnt_support_prewhere = getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); });
-    bool supports_prewhere = (table_doesnt_support_prewhere == nullptr);
-
-    if (!supports_prewhere)
-        return false;
-
-    if (!getInMemoryMetadataPtr())
-        return false;
-
-    std::unordered_map<std::string, const IDataType *> column_types;
-    for (const auto & name_type : getInMemoryMetadataPtr()->getColumns().getAll())
-    {
-        column_types.emplace(name_type.name, name_type.type.get());
-    }
-
-    /// Check that all tables have the same column types, otherwise prewhere will fail
-    forEachTable([&](const StoragePtr & table)
-    {
-        const auto & metadata_ptr = table->getInMemoryMetadataPtr();
-        if (!metadata_ptr)
-            supports_prewhere = false;
-
-        if (!supports_prewhere)
-            return;
-
-        for (const auto & column : metadata_ptr->getColumns().getAll())
-        {
-            const auto * src_type = column_types[column.name];
-            if (src_type && !src_type->equals(*column.type))
-            {
-                supports_prewhere = false;
-                return;
-            }
-        }
-    });
-
-    return supports_prewhere;
+    ///
+    /// NOTE: Type can be different, and in this case, PREWHERE cannot be
+    /// applied for those columns, but there a separate method to return
+    /// supported columns for PREWHERE - supportedPrewhereColumns().
+    return getFirstTable([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     return tableSupportsPrewhere();
+}
+
+std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
+{
+    bool supports_prewhere = true;
+
+    const auto & metadata = getInMemoryMetadata();
+    const auto & columns = metadata.getColumns();
+
+    NameSet supported_columns;
+
+    std::unordered_map<std::string, std::pair<const IDataType *, std::optional<ColumnDefault>>> column_type_default;
+    for (const auto & name_type : columns.getAll())
+    {
+        column_type_default.emplace(name_type.name, std::make_pair(
+            name_type.type.get(), columns.getDefault(name_type.name)));
+        supported_columns.emplace(name_type.name);
+    }
+
+    forEachTable([&](const StoragePtr & table)
+    {
+        const auto & table_metadata_ptr = table->getInMemoryMetadataPtr();
+        if (!table_metadata_ptr)
+            supports_prewhere = false;
+        if (!supports_prewhere)
+            return;
+
+        const auto & table_columns = table_metadata_ptr->getColumns();
+        for (const auto & column : table_columns.getAll())
+        {
+            const auto & root_type_default = column_type_default[column.name];
+            const IDataType * root_type = root_type_default.first;
+            const std::optional<ColumnDefault> & src_default = root_type_default.second;
+            if ((root_type && !root_type->equals(*column.type)) ||
+                src_default != table_columns.getDefault(column.name))
+            {
+                supported_columns.erase(column.name);
+            }
+        }
+    });
+
+    return supported_columns;
 }
 
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
@@ -299,12 +310,6 @@ void StorageMerge::read(
       */
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
-
-    if (query_info.prewhere_info && !tableSupportsPrewhere())
-        throw DB::Exception(
-            DB::ErrorCodes::ILLEGAL_PREWHERE,
-            "Cannot use PREWHERE with table {}, probably some columns don't have same type or an underlying table doesn't support PREWHERE",
-            getStorageID().getTableName());
 
     bool has_database_virtual_column = false;
     bool has_table_virtual_column = false;
