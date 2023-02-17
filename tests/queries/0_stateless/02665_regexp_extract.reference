@@ -73,6 +73,24 @@ select regexpExtract(materialize('100-200'), null, materialize(1));
 \N
 select regexpExtract(materialize('100-200'), '([a-z])', materialize(null));
 \N
+select regexpExtract('100-200', '(\\d+)-(\\d+)', number) from numbers(3);
+100-200
+100
+200
+select regexpExtract(materialize('100-200'), '(\\d+)-(\\d+)', number) from numbers(3);
+100-200
+100
+200
+select regexpExtract(number::String || '-' || (2*number)::String, '(\\d+)-(\\d+)', 1) from numbers(3);
+0
+1
+2
+select regexpExtract(number::String || '-' || (2*number)::String, '(\\d+)-(\\d+)', number%3) from numbers(5);
+0-0
+1
+4
+3-6
+4
 select regexpExtract('100-200'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select regexpExtract('100-200', '(\\d+)-(\\d+)', 1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select regexpExtract(cast('100-200' as FixedString(10)), '(\\d+)-(\\d+)', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
