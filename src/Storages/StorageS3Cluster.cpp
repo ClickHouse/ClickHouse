@@ -56,7 +56,7 @@ StorageS3Cluster::StorageS3Cluster(
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
     StorageInMemoryMetadata storage_metadata;
-    StorageS3::updateS3Configuration(context_, s3_configuration);
+    StorageS3::updateConfiguration(context_, s3_configuration);
 
     if (columns_.empty())
     {
@@ -96,7 +96,7 @@ Pipe StorageS3Cluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    StorageS3::updateS3Configuration(context, s3_configuration);
+    StorageS3::updateConfiguration(context, s3_configuration);
 
     auto cluster = getCluster(context);
     auto extension = getTaskIteratorExtension(query_info.query, context);
