@@ -8,6 +8,14 @@ select regexpExtract(null, '([a-z])', 1);
 select regexpExtract('100-200', null, 1);
 select regexpExtract('100-200', '([a-z])', null);
 
+select REGEXP_EXTRACT('100-200', '(\\d+)-(\\d+)', 1);
+select REGEXP_EXTRACT('100-200', '(\\d+)-(\\d+)');
+select REGEXP_EXTRACT('100-200', '(\\d+)-(\\d+)', 0);
+
+select regexpExtract('0123456789', '(\d+)(\d+)', 0);
+select regexpExtract('0123456789', '(\d+)(\d+)', 1);
+select regexpExtract('0123456789', '(\d+)(\d+)', 2);
+
 select regexpExtract(materialize('100-200'), '(\\d+)-(\\d+)');
 select regexpExtract(materialize('100-200'), '(\\d+)-(\\d+)', 1);
 select regexpExtract(materialize('100-200'), '(\\d+)-(\\d+)', 2);
