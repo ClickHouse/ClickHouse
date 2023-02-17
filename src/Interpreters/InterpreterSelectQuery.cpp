@@ -586,12 +586,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
+                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
+                const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+                if (supported_prewhere_columns.has_value())
+                    std::erase_if(queried_columns, [&](const auto & name) { return !supported_prewhere_columns->contains(name); });
+
                 MergeTreeWhereOptimizer{
                     current_info,
                     context,
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
-                    syntax_analyzer_result->requiredSourceColumns(),
+                    queried_columns,
                     log};
             }
         }
@@ -1994,6 +1999,27 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
     }
 
+    /// Set of all (including ALIAS) required columns for PREWHERE
+    auto get_prewhere_columns = [&]()
+    {
+        NameSet columns;
+
+        if (prewhere_info)
+        {
+            /// Get some columns directly from PREWHERE expression actions
+            auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
+            columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+
+            if (prewhere_info->row_level_filter)
+            {
+                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
+                columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
+            }
+        }
+
+        return columns;
+    };
+
     /// There are multiple sources of required columns:
     ///  - raw required columns,
     ///  - columns deduced from ALIAS columns,
@@ -2003,21 +2029,8 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     /// before any other executions.
     if (alias_columns_required)
     {
-        NameSet required_columns_from_prewhere; /// Set of all (including ALIAS) required columns for PREWHERE
+        NameSet required_columns_from_prewhere = get_prewhere_columns();
         NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
-
-        if (prewhere_info)
-        {
-            /// Get some columns directly from PREWHERE expression actions
-            auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
-            required_columns_from_prewhere.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
-
-            if (prewhere_info->row_level_filter)
-            {
-                auto row_level_required_columns = prewhere_info->row_level_filter->getRequiredColumns().getNames();
-                required_columns_from_prewhere.insert(row_level_required_columns.begin(), row_level_required_columns.end());
-            }
-        }
 
         /// Expression, that contains all raw required columns
         ASTPtr required_columns_all_expr = std::make_shared<ASTExpressionList>();
@@ -2112,6 +2125,18 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (!required_aliases_from_prewhere.contains(column))
                     if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                         required_columns.push_back(column);
+        }
+    }
+
+    const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+    if (supported_prewhere_columns.has_value())
+    {
+        NameSet required_columns_from_prewhere = get_prewhere_columns();
+
+        for (const auto & column_name : required_columns_from_prewhere)
+        {
+            if (!supported_prewhere_columns->contains(column_name))
+                throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE for {}", storage->getName(), column_name);
         }
     }
 }

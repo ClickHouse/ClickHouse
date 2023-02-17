@@ -678,7 +678,7 @@ void registerStorageStripeLog(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());
 
-        String disk_name = getDiskName(*args.storage_def);
+        String disk_name = getDiskName(*args.storage_def, args.getContext());
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return std::make_shared<StorageStripeLog>(

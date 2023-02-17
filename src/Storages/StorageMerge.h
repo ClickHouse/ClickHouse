@@ -47,6 +47,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    std::optional<NameSet> supportedPrewhereColumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
