@@ -173,7 +173,9 @@ class Release:
 
         self.check_commit_release_ready()
 
-    def do(self, check_dirty: bool, check_branch: bool) -> None:
+    def do(
+        self, check_dirty: bool, check_run_from_master: bool, check_branch: bool
+    ) -> None:
         self.check_prerequisites()
 
         if check_dirty:
@@ -183,8 +185,9 @@ class Release:
             except subprocess.CalledProcessError:
                 logging.fatal("Repo contains uncommitted changes")
                 raise
-            if self._git.branch != "master":
-                raise Exception("the script must be launched only from master")
+
+        if check_run_from_master and self._git.branch != "master":
+            raise Exception("the script must be launched only from master")
 
         self.set_release_info()
 
@@ -606,6 +609,14 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="(dangerous) if set, skip check repository for uncommited changes",
     )
+    parser.add_argument("--check-run-from-master", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--no-run-from-master",
+        dest="check_run_from_master",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="(for development) if set, the script could run from non-master branch",
+    )
     parser.add_argument("--check-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-check-branch",
@@ -640,7 +651,7 @@ def main():
     )
 
     try:
-        release.do(args.check_dirty, args.check_branch)
+        release.do(args.check_dirty, args.check_run_from_master, args.check_branch)
     except:
         if release.has_rollback:
             logging.error(
