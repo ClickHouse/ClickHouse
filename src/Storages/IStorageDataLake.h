@@ -30,7 +30,7 @@ public:
     // 2. Finds out parts with latest version
     // 3. Creates url for underlying StorageS3 enigne to handle reads
     IStorageDataLake(
-        const typename Storage::Configuration & configuration_,
+        const Configuration & configuration_,
         const StorageID & table_id_,
         ColumnsDescription columns_,
         const ConstraintsDescription & constraints_,
@@ -53,7 +53,7 @@ public:
     String getName() const override { return name; }
 
     static ColumnsDescription getTableStructureFromData(
-        typename Storage::Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
+        Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
     {
         Storage::updateConfiguration(ctx, configuration);
 
@@ -62,26 +62,24 @@ public:
         return Storage::getTableStructureFromData(new_configuration, format_settings, ctx, /*object_infos*/ nullptr);
     }
 
-    static typename Storage::Configuration
-    getAdjustedConfiguration(const ContextPtr & context, const typename Storage::Configuration & configuration, Poco::Logger * log)
+    static Configuration
+    getAdjustedConfiguration(const ContextPtr & context, const Configuration & configuration, Poco::Logger * log)
     {
         MetadataParser parser{configuration, context};
 
         auto keys = parser.getFiles();
-        String new_uri = std::filesystem::path(configuration.url.uri.toString()) / Name::data_directory_prefix
-            / MetadataParser::generateQueryFromKeys(keys, configuration.format);
 
-        typename Storage::Configuration new_configuration(configuration);
+        Configuration new_configuration(configuration);
 
-        /// The only S3 related stuff remain: S3::URI
-        new_configuration.url = S3::URI(new_uri);
+        new_configuration.appendToPath(
+            std::filesystem::path(Name::data_directory_prefix) / MetadataParser::generateQueryFromKeys(keys, configuration.format));
 
-        LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_uri);
+        LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, configuration.getPath());
 
         return new_configuration;
     }
 
-    static typename Storage::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
+    static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
     {
         auto configuration = Storage::getConfiguration(engine_args, local_context, false /* get_format_from_file */);
 

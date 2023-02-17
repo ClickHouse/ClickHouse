@@ -249,6 +249,10 @@ public:
         bool static_configuration = true;
         /// Headers from ast is a part of static configuration.
         HTTPHeaderEntries headers_from_ast;
+
+        void appendToPath(const String & suffix) { url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix}; }
+
+        String getPath() const { return url.uri.toString(); } /// For logging
     };
 
     StorageS3(
