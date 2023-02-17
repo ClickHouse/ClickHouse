@@ -53,20 +53,23 @@ list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 # Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
 
-if (NOT LINKER_NAME)
-    if (COMPILER_GCC)
-        find_program (LLD_PATH NAMES "ld.lld")
-        find_program (GOLD_PATH NAMES "ld.gold")
-    elseif (COMPILER_CLANG)
-        # llvm lld is a generic driver.
-        # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
-        if (OS_LINUX)
-            find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
-        elseif (OS_DARWIN)
-            find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
+# s390x doesnt support lld
+if (NOT ARCH_S390X)
+    if (NOT LINKER_NAME)
+        if (COMPILER_GCC)
+            find_program (LLD_PATH NAMES "ld.lld")
+            find_program (GOLD_PATH NAMES "ld.gold")
+        elseif (COMPILER_CLANG)
+            # llvm lld is a generic driver.
+            # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
+            if (OS_LINUX)
+                find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+            elseif (OS_DARWIN)
+                find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
+            endif ()
+            find_program (GOLD_PATH NAMES "ld.gold" "gold")
         endif ()
-        find_program (GOLD_PATH NAMES "ld.gold" "gold")
-    endif ()
+    endif()
 endif()
 
 if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)

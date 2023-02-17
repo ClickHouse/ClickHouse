@@ -606,6 +606,7 @@ Keys:
 -   `size` – Size of the file. Applies to `log` and `errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
 -   `count` – The number of archived log files that ClickHouse stores.
 -   `console` – Send `log` and `errorlog` to the console instead of file. To enable, set to `1` or `true`.
+-   `stream_compress` – Compress `log` and `errorlog` with `lz4` stream compression. To enable, set to `1` or `true`.
 
 **Example**
 
@@ -616,6 +617,7 @@ Keys:
     <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
     <size>1000M</size>
     <count>10</count>
+    <stream_compress>true</stream_compress>
 </logger>
 ```
 
@@ -1008,6 +1010,24 @@ Default value: 2.
 
 ```xml
 <background_merges_mutations_concurrency_ratio>3</background_merges_mutations_concurrency_ratio>
+```
+
+## background_merges_mutations_scheduling_policy {#background_merges_mutations_scheduling_policy}
+
+Algorithm used to select next merge or mutation to be executed by background thread pool. Policy may be changed at runtime without server restart.
+Could be applied from the `default` profile for backward compatibility.
+
+Possible values:
+
+-   "round_robin" — Every concurrent merge and mutation is executed in round-robin order to ensure starvation-free operation. Smaller merges are completed faster than bigger ones just because they have fewer blocks to merge.
+-   "shortest_task_first" — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by INSERTs.
+
+Default value: "round_robin".
+
+**Example**
+
+```xml
+<background_merges_mutations_scheduling_policy>shortest_task_first</background_merges_mutations_scheduling_policy>
 ```
 
 ## background_move_pool_size {#background_move_pool_size}
