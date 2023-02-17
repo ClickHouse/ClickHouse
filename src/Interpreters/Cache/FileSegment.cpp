@@ -668,7 +668,7 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock & lock) c
     info << "key: " << key().toString() << ", ";
     info << "state: " << download_state << ", ";
     info << "downloaded size: " << getDownloadedSizeUnlocked(lock) << ", ";
-    info << "reserved size: " << reserved_size << ", ";
+    info << "reserved size: " << reserved_size.load() << ", ";
     info << "downloader id: " << (downloader_id.empty() ? "None" : downloader_id) << ", ";
     info << "current write offset: " << getCurrentWriteOffsetUnlocked(lock) << ", ";
     info << "first non-downloaded offset: " << getFirstNonDownloadedOffsetUnlocked(lock) << ", ";
