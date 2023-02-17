@@ -45,6 +45,7 @@ select regexpExtract('100-200', '(\\d+)-(\\d+)', number) from numbers(3);
 select regexpExtract(materialize('100-200'), '(\\d+)-(\\d+)', number) from numbers(3);
 select regexpExtract(number::String || '-' || (2*number)::String, '(\\d+)-(\\d+)', 1) from numbers(3);
 select regexpExtract(number::String || '-' || (2*number)::String, '(\\d+)-(\\d+)', number%3) from numbers(5);
+select regexpExtract('100-200100-200', '(\\d+)-(\\d+)(\\d+)-(\\d+)', materialize(3));
 
 select regexpExtract('100-200'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select regexpExtract('100-200', '(\\d+)-(\\d+)', 1, 2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
