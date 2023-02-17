@@ -39,16 +39,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     bool use_uncompressed_cache_,
     bool is_remote_read_,
     const MergeTreeSettings & storage_settings_)
-    : IMergeTreeReadPool(
-            storage_snapshot_,
-            column_names_,
-            virtual_column_names_,
-            min_marks_for_concurrent_read_,
-            prewhere_info_,
-            parts_,
-            (preferred_block_size_bytes_ > 0),
-            /*do_not_steal_tasks_*/false)
-    , WithContext(context_)
+    : WithContext(context_)
     , log(&Poco::Logger::get("MergeTreePrefetchedReadPool(" + (parts_.empty() ? "" : parts_.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
     , header(storage_snapshot_->getSampleBlockForColumns(column_names_))
     , mark_cache(context_->getGlobalContext()->getMarkCache().get())
@@ -57,6 +48,10 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
     , index_granularity_bytes(storage_settings_.index_granularity_bytes)
     , fixed_index_granularity(storage_settings_.index_granularity)
+    , storage_snapshot(storage_snapshot_)
+    , column_names(column_names_)
+    , virtual_column_names(virtual_column_names_)
+    , prewhere_info(prewhere_info_)
     , is_remote_read(is_remote_read_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
 {

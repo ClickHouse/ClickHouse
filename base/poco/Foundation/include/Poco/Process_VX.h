@@ -18,57 +18,58 @@
 #define Foundation_Process_VX_INCLUDED
 
 
+#include <map>
+#include <vector>
 #include "Poco/Foundation.h"
 #include "Poco/RefCountedObject.h"
-#include <vector>
-#include <map>
 
 
 #undef PID
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Pipe;
 
 
-class Foundation_API ProcessHandleImpl: public RefCountedObject
+class Foundation_API ProcessHandleImpl : public RefCountedObject
 {
 public:
-	ProcessHandleImpl(int pid);
-	~ProcessHandleImpl();
-	
-	int id() const;
-	int wait() const;
-	
+    ProcessHandleImpl(int pid);
+    ~ProcessHandleImpl();
+
+    int id() const;
+    int wait() const;
+
 private:
-	int _pid;
+    int _pid;
 };
 
 
 class Foundation_API ProcessImpl
 {
 public:
-	typedef int PIDImpl;
-	typedef std::vector<std::string> ArgsImpl;
-	typedef std::map<std::string, std::string> EnvImpl;
-	
-	static PIDImpl idImpl();
-	static void timesImpl(long& userTime, long& kernelTime);
-	static ProcessHandleImpl* launchImpl(
-		const std::string& command, 
-		const ArgsImpl& args, 
-		const std::string& initialDirectory,
-		Pipe* inPipe, 
-		Pipe* outPipe, 
-		Pipe* errPipe,
-		const EnvImpl& env);
-	static void killImpl(ProcessHandleImpl& handle);
-	static void killImpl(PIDImpl pid);
-	static bool isRunningImpl(const ProcessHandleImpl& handle);
-	static bool isRunningImpl(PIDImpl pid);
-	static void requestTerminationImpl(PIDImpl pid);
+    typedef int PIDImpl;
+    typedef std::vector<std::string> ArgsImpl;
+    typedef std::map<std::string, std::string> EnvImpl;
+
+    static PIDImpl idImpl();
+    static void timesImpl(long & userTime, long & kernelTime);
+    static ProcessHandleImpl * launchImpl(
+        const std::string & command,
+        const ArgsImpl & args,
+        const std::string & initialDirectory,
+        Pipe * inPipe,
+        Pipe * outPipe,
+        Pipe * errPipe,
+        const EnvImpl & env);
+    static void killImpl(ProcessHandleImpl & handle);
+    static void killImpl(PIDImpl pid);
+    static bool isRunningImpl(const ProcessHandleImpl & handle);
+    static bool isRunningImpl(PIDImpl pid);
+    static void requestTerminationImpl(PIDImpl pid);
 };
 
 
