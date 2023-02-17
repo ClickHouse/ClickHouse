@@ -150,13 +150,13 @@ constexpr std::string_view monthsShort[]
   *
   * Performance on Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz:
   *
-  * WITH formatDateTime(now() + number, '%H:%M:%S') AS x SELECT count() FROM system.numbers WHERE NOT ignore(x);
+  * WITH formatDateTime(now() + number, '%H:%i:%S') AS x SELECT count() FROM system.numbers WHERE NOT ignore(x);
   * - 97 million rows per second per core;
   *
   * WITH formatDateTime(toDateTime('2018-01-01 00:00:00') + number, '%F %T') AS x SELECT count() FROM system.numbers WHERE NOT ignore(x)
   * - 71 million rows per second per core;
   *
-  * select count() from (select formatDateTime(t, '%m/%d/%Y %H:%M:%S') from (select toDateTime('2018-01-01 00:00:00')+number as t from numbers(100000000)));
+  * select count() from (select formatDateTime(t, '%m/%d/%Y %H:%i:%S') from (select toDateTime('2018-01-01 00:00:00')+number as t from numbers(100000000)));
   * - 53 million rows per second per core;
   *
   * select count() from (select formatDateTime(t, 'Hello %Y World') from (select toDateTime('2018-01-01 00:00:00')+number as t from numbers(100000000)));
@@ -951,13 +951,13 @@ public:
 
                 switch (*pos)
                 {
-                    // Abbreviated weekday [Mon...Sun]
+                    // Abbreviated weekday [Mon-Sun]
                     case 'a':
                         instructions.emplace_back(&Action<T>::mysqlDayOfWeekTextShort);
                         out_template += "Mon";
                         break;
 
-                    // Abbreviated month [Jan...Dec]
+                    // Abbreviated month [Jan-Dec]
                     case 'b':
                         instructions.emplace_back(&Action<T>::mysqlMonthOfYearTextShort);
                         out_template += "Jan";
@@ -987,7 +987,7 @@ public:
                         out_template += "00/00/00";
                         break;
 
-                    // Day of month, space-padded ( 1-31)  23
+                    // Day of month, space-padded (1-31)  23
                     case 'e':
                         instructions.emplace_back(&Action<T>::mysqlDayOfMonthSpacePadded);
                         out_template += " 0";
@@ -1032,6 +1032,12 @@ public:
                         out_template += "00";
                         break;
 
+                    // Full month [January-December]
+                    case 'M':
+                        instructions.emplace_back(&Action<T>::mysqlMonthOfYearTextLong);
+                        out_template += "January";
+                        break;
+
                     // ISO 8601 weekday as number with Monday as 1 (1-7)
                     case 'u':
                         instructions.emplace_back(&Action<T>::mysqlDayOfWeek);
@@ -1050,7 +1056,7 @@ public:
                         out_template += "0";
                         break;
 
-                    // Full weekday [Monday...Sunday]
+                    // Full weekday [Monday-Sunday]
                     case 'W':
                         instructions.emplace_back(&Action<T>::mysqlDayOfWeekTextLong);
                         out_template += "Monday";
@@ -1081,12 +1087,6 @@ public:
                         break;
 
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
-
-                    // Minute (00-59)
-                    case 'M':
-                        add_instruction_or_extra_shift(&Action<T>::mysqlMinute, 2);
-                        out_template += "00";
-                        break;
 
                     // AM or PM
                     case 'p':
