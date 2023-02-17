@@ -8,7 +8,7 @@ def compress_file_fast(path, archive_path):
     if os.path.exists("/usr/bin/pigz"):
         subprocess.check_call("pigz < {} > {}".format(path, archive_path), shell=True)
     else:
-        subprocess.check_call("gzip < {} > {}".format(path, archive_path), shell=True)
+        subprocess.check_call(f"gzip < {path} > {archive_path}", shell=True)
 
 
 def compress_fast(path, archive_path, exclude=None):
@@ -23,9 +23,9 @@ def compress_fast(path, archive_path, exclude=None):
     if exclude is None:
         exclude_part = ""
     elif isinstance(exclude, list):
-        exclude_part = " ".join(["--exclude {}".format(x) for x in exclude])
+        exclude_part = " ".join([f"--exclude {x}" for x in exclude])
     else:
-        exclude_part = "--exclude {}".format(str(exclude))
+        exclude_part = f"--exclude {exclude}"
 
     fname = os.path.basename(path)
     if os.path.isfile(path):
