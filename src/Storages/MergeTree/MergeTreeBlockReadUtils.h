@@ -91,6 +91,8 @@ struct MergeTreeReadTask
         int64_t priority_ = 0,
         std::future<MergeTreeReaderPtr> reader_ = {},
         std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_ = {});
+
+    ~MergeTreeReadTask();
 };
 
 
