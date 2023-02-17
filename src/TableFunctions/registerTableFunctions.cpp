@@ -29,6 +29,7 @@ void registerTableFunctions()
     registerTableFunctionCOS(factory);
     registerTableFunctionHudi(factory);
     registerTableFunctionDeltaLake(factory);
+    registerTableFunctionIceberg(factory);
     registerTableFunctionOSS(factory);
 
 #endif
