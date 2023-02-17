@@ -248,7 +248,7 @@ case $(uname -m) in
   *) echo "Unknown architecture $(uname -m)"; exit 1 ;;
 esac
 
-for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client
+for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
 do
   curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
     || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
