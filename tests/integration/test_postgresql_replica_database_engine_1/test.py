@@ -406,7 +406,9 @@ def test_table_schema_changes(started_cluster):
 
     altered_idx = random.randint(0, 4)
     altered_table = f"postgresql_replica_{altered_idx}"
-    prev_count = int(instance.query(f"SELECT count() FROM test_database.{altered_table}"))
+    prev_count = int(
+        instance.query(f"SELECT count() FROM test_database.{altered_table}")
+    )
 
     cursor.execute(f"ALTER TABLE {altered_table} DROP COLUMN value2")
     for i in range(NUM_TABLES):
@@ -415,7 +417,9 @@ def test_table_schema_changes(started_cluster):
     assert instance.wait_for_log_line(
         f"Table postgresql_replica_{altered_idx} is skipped from replication stream"
     )
-    assert prev_count == int(instance.query(f"SELECT count() FROM test_database.{altered_table}"))
+    assert prev_count == int(
+        instance.query(f"SELECT count() FROM test_database.{altered_table}")
+    )
 
 
 def test_many_concurrent_queries(started_cluster):
