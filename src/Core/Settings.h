@@ -907,6 +907,7 @@ class IColumn;
     \
     M(Bool, regexp_dict_allow_other_sources, false, "Allow regexp_tree dictionary to use sources other than yaml source.", 0) \
     M(Bool, regexp_dict_allow_hyperscan, false, "Allow regexp_tree dictionary using Hyperscan library.", 0) \
+    M(Bool, display_secrets_in_show_and_select_query, false, "Do not hide secrets in SHOW and SELECT queries. User must also have 'displaySecretsInShowSelect' privilege", IMPORTANT) \
 
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
