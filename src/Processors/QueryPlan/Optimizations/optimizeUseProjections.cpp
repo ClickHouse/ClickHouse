@@ -297,16 +297,42 @@ ActionsDAGPtr analyzeAggregateProjection(
 
             if (typeid_cast<const AggregateFunctionCount *>(candidate.function.get()))
             {
-                /// we can ignore arguments for count()
-                match = AggFuncMatch{idx, {}};
-                break;
+                bool all_args_not_null = true;
+                for (const auto & query_name : aggregate.argument_names)
+                {
+                    auto jt = index.find(query_name);
+
+                    if (jt == index.end() || jt->second->result_type->isNullable())
+                    {
+                        all_args_not_null = false;
+                        break;
+                    }
+                }
+
+                for (const auto & proj_name : candidate.argument_names)
+                {
+                    auto kt = proj_index.find(proj_name);
+
+                    if (kt == proj_index.end() || kt->second->result_type->isNullable())
+                    {
+                        all_args_not_null = false;
+                        break;
+                    }
+                }
+
+                if (all_args_not_null)
+                {
+                    /// we can ignore arguments for count()
+                    match = AggFuncMatch{idx, {}};
+                    break;
+                }
             }
 
             if (aggregate.argument_names.size() != candidate.argument_names.size())
                 continue;
 
-            ActionsDAG::NodeRawConstPtrs args;
             size_t num_args = aggregate.argument_names.size();
+            ActionsDAG::NodeRawConstPtrs args;
             args.reserve(num_args);
             for (size_t arg = 0; arg < num_args; ++arg)
             {
@@ -942,11 +968,14 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}",  proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
 
+    auto query_info_copy = query_info;
+    query_info_copy.prewhere_info = nullptr;
+
     auto projection_reading = reader.readFromParts(
         {},
         required_columns,
         proj_snapshot,
-        query_info,
+        query_info_copy,
         context,
         reading->getMaxBlockSize(),
         reading->getNumStreams(),
@@ -980,7 +1009,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             expr_or_filter_node.step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputStream(),
                 dag,
-                dag->getOutputs().front()->result_name,
+                filter_node->result_name,
                 true);
         }
         else
