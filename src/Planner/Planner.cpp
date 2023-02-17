@@ -185,6 +185,15 @@ public:
             /// Constness of offset is validated during query analysis stage
             limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         }
+
+        /// Apply limit and offset settings if not a subquery
+        if (!query_node.isSubquery())
+        {
+            if (settings.limit)
+                limit_length = limit_length ? std::min(settings.limit.value, limit_length) : settings.limit.value;
+            if (settings.offset)
+                limit_offset += settings.offset;
+        }
     }
 
     bool aggregate_overflow_row = false;
@@ -678,7 +687,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
 
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit &&
-        query_node.hasLimit() &&
+        query_analysis_result.limit_length &&
         !query_node.isLimitWithTies() &&
         !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree &&
         !query_analysis_result.query_has_array_join_in_join_tree &&
@@ -724,7 +733,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
       * Otherwise we can take several equal values from different streams
       * according to limit and skip some distinct values.
       */
-    if (query_node.hasLimit() && query_node.isDistinct())
+    if (query_analysis_result.limit_length && query_node.isDistinct())
     {
         addDistinctStep(query_plan,
             query_analysis_result,
@@ -742,7 +751,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
         addLimitByStep(query_plan, limit_by_analysis_result, query_node);
     }
 
-    if (query_node.hasLimit())
+    if (query_analysis_result.limit_length)
         addPreliminaryLimitStep(query_plan, query_analysis_result, planner_context, true /*do_not_skip_offset*/);
 }
 
@@ -1362,7 +1371,7 @@ void Planner::buildPlanForQueryNode()
 
         bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
-        if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_offset)
+        if (query_analysis_result.limit_length && query_node.isLimitWithTies() && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
         addExtremesStepIfNeeded(query_plan, planner_context);
@@ -1376,9 +1385,9 @@ void Planner::buildPlanForQueryNode()
           * This is the case for various optimizations for distributed queries,
           * and when LIMIT cannot be applied it will be applied on the initiator anyway.
           */
-        if (query_node.hasLimit() && apply_limit && !limit_applied && apply_offset)
+        if (query_analysis_result.limit_length && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
-        else if (!limit_applied && apply_offset && query_node.hasOffset())
+        else if (!limit_applied && apply_offset && query_analysis_result.limit_offset)
             addOffsetStep(query_plan, query_analysis_result);
 
         const auto & projection_analysis_result = expression_analysis_result.getProjection();
