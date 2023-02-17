@@ -348,8 +348,7 @@ def test_merge_tree_setting_override(start_cluster):
     node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
     assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        > 0
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
     )
 
     node.query(
@@ -366,6 +365,5 @@ def test_merge_tree_setting_override(start_cluster):
     node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
     assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        > 0
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
     )
