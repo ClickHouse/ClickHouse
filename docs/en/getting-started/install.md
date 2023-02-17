@@ -164,15 +164,44 @@ If you need to install specific version of ClickHouse you have to install all pa
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat, and all other rpm-based Linux distributions.
 
+#### Setup the RPM repository
 First, you need to add the official repository:
 
 ``` bash
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
-sudo yum install -y clickhouse-server clickhouse-client
+```
 
+#### Install ClickHouse server and client
+
+```bash
+sudo yum install -y clickhouse-server clickhouse-client
+```
+
+#### Start ClickHouse server
+
+```bash
 sudo /etc/init.d/clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
+```
+
+#### Install standalone ClickHouse Keeper
+
+:::tip
+If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
+do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+:::
+
+```bash
+sudo yum install -y clickhouse-keeper
+```
+
+#### Enable and start ClickHouse Keeper
+
+```bash
+sudo systemctl enable clickhouse-keeper
+sudo systemctl start clickhouse-keeper
+sudo systemctl status clickhouse-keeper
 ```
 
 <details markdown="1">
