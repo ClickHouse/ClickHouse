@@ -112,11 +112,10 @@ namespace
         }
 
     private:
-        template <class InputString>
         static void saveMatch(
-            const OptimizedRegularExpression::MatchVec& matches,
+            const OptimizedRegularExpression::MatchVec & matches,
             size_t match_index,
-            const InputString & data,
+            const ColumnString::Chars & data,
             size_t data_offset,
             ColumnString::Chars & res_data,
             ColumnString::Offsets & res_offsets,
@@ -226,11 +225,15 @@ namespace
             res_data.reserve(str.size() / 5);
             res_offsets.reserve(rows);
 
+            /// Copy data into padded array to be able to use memcpySmallAllowReadWriteOverflow15.
+            ColumnString::Chars padded_str;
+            padded_str.insert(str.begin(), str.end());
+
             const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
             unsigned capture = regexp.getNumberOfSubpatterns();
             OptimizedRegularExpression::MatchVec matches;
             matches.reserve(capture + 1);
-            regexp.match(str.data(), str.size(), matches, static_cast<unsigned>(capture + 1));
+            regexp.match(reinterpret_cast<const char *>(padded_str.data()), padded_str.size(), matches, static_cast<unsigned>(capture + 1));
 
             size_t res_offset = 0;
             for (size_t i = 0; i < rows; ++i)
@@ -243,7 +246,7 @@ namespace
                         index,
                         capture + 1);
 
-                saveMatch(matches, index, str, 0, res_data, res_offsets, res_offset);
+                saveMatch(matches, index, padded_str, 0, res_data, res_offsets, res_offset);
             }
         }
     };
