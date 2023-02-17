@@ -450,11 +450,13 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
     {
         const auto & rhs_sparse = assert_cast<const ColumnSparse &>(rhs);
         PaddedPODArray<Int8> nested_result;
-        values->compareColumn(rhs_sparse.getValuesColumn(), rhs_sparse.getValueIndex(rhs_row_num),
+        values->compareColumn(
+            rhs_sparse.getValuesColumn(),
+            rhs_sparse.getValueIndex(rhs_row_num),
             nullptr, nested_result, direction, nan_direction_hint);
 
         const auto & offsets_data = getOffsetsData();
-        compare_results.resize_fill(_size, nested_result[0]);
+        std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
         for (size_t i = 0; i < offsets_data.size(); ++i)
             compare_results[offsets_data[i]] = nested_result[i + 1];
     }
