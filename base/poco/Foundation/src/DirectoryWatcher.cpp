@@ -179,13 +179,7 @@ public:
 			filter |= FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;
 		
 		std::string path(owner().directory().path());
-#if defined(POCO_WIN32_UTF8)
-		std::wstring upath;
-		FileImpl::convertPath(path.c_str(), upath);
-		HANDLE hChange = FindFirstChangeNotificationW(upath.c_str(), FALSE, filter);
-#else
 		HANDLE hChange = FindFirstChangeNotificationA(path.c_str(), FALSE, filter);
-#endif
 
 		if (hChange == INVALID_HANDLE_VALUE)
 		{
@@ -317,38 +311,38 @@ public:
 				{
 					while (n > 0)
 					{
-						struct inotify_event* pEvent = reinterpret_cast<struct inotify_event*>(buffer.begin() + i);
+						struct inotify_event* event = reinterpret_cast<struct inotify_event*>(buffer.begin() + i);
 						
-						if (pEvent->len > 0)
+						if (event->len > 0)
 						{						
 							if (!owner().eventsSuspended())
 							{
 								Poco::Path p(owner().directory().path());
 								p.makeDirectory();
-								p.setFileName(pEvent->name);
+								p.setFileName(event->name);
 								Poco::File f(p.toString());
 	
-								if ((pEvent->mask & IN_CREATE) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_ADDED))
+								if ((event->mask & IN_CREATE) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_ADDED))
 								{
 									DirectoryWatcher::DirectoryEvent ev(f, DirectoryWatcher::DW_ITEM_ADDED);
 									owner().itemAdded(&owner(), ev);
 								}
-								if ((pEvent->mask & IN_DELETE) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_REMOVED))
+								if ((event->mask & IN_DELETE) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_REMOVED))
 								{
 									DirectoryWatcher::DirectoryEvent ev(f, DirectoryWatcher::DW_ITEM_REMOVED);
 									owner().itemRemoved(&owner(), ev);
 								}
-								if ((pEvent->mask & IN_MODIFY) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_MODIFIED))
+								if ((event->mask & IN_MODIFY) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_MODIFIED))
 								{
 									DirectoryWatcher::DirectoryEvent ev(f, DirectoryWatcher::DW_ITEM_MODIFIED);
 									owner().itemModified(&owner(), ev);
 								}
-								if ((pEvent->mask & IN_MOVED_FROM) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_MOVED_FROM))
+								if ((event->mask & IN_MOVED_FROM) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_MOVED_FROM))
 								{
 									DirectoryWatcher::DirectoryEvent ev(f, DirectoryWatcher::DW_ITEM_MOVED_FROM);
 									owner().itemMovedFrom(&owner(), ev);
 								}
-								if ((pEvent->mask & IN_MOVED_TO) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_MOVED_TO))
+								if ((event->mask & IN_MOVED_TO) && (owner().eventMask() & DirectoryWatcher::DW_ITEM_MOVED_TO))
 								{
 									DirectoryWatcher::DirectoryEvent ev(f, DirectoryWatcher::DW_ITEM_MOVED_TO);
 									owner().itemMovedTo(&owner(), ev);
@@ -356,8 +350,8 @@ public:
 							}
 						}
 						
-						i += sizeof(inotify_event) + pEvent->len;
-						n -= sizeof(inotify_event) + pEvent->len;
+						i += sizeof(inotify_event) + event->len;
+						n -= sizeof(inotify_event) + event->len;
 					}
 				}
 			}

@@ -336,6 +336,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     {
         auto subquery_options = select_query_options.subquery();
         Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
+        /// Propagate storage limits to subquery
+        subquery_planner.addStorageLimits(*select_query_info.storage_limits);
         subquery_planner.buildQueryPlanIfNeeded();
         query_plan = std::move(subquery_planner).extractQueryPlan();
     }

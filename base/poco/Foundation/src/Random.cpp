@@ -47,9 +47,6 @@
 #include "Poco/Random.h"
 #include "Poco/RandomStream.h"
 #include <ctime>
-#if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-#include "wce_time.h"
-#endif
 
 
 /*
@@ -153,11 +150,7 @@ Random::Random(int stateSize)
 	poco_assert (BREAK_0 <= stateSize && stateSize <= BREAK_4);
 
 	_pBuffer = new char[stateSize];
-#if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-	initState((UInt32) wceex_time(NULL), _pBuffer, stateSize);
-#else
 	initState((UInt32) std::time(NULL), _pBuffer, stateSize);
-#endif
 }
 
 
@@ -169,7 +162,7 @@ Random::~Random()
 
 /*
  * Compute x = (7^5 * x) mod (2^31 - 1)
- * wihout overflowing 31 bits:
+ * without overflowing 31 bits:
  *      (2^31 - 1) = 127773 * (7^5) + 2836
  * From "Random number generators: good ones are hard to find",
  * Park and Miller, Communications of the ACM, vol. 31, no. 10,
@@ -261,7 +254,7 @@ void Random::seed()
  *
  * Note: The Sparc platform requires that arg_state begin on an int
  * word boundary; otherwise a bus error will occur. Even so, lint will
- * complain about mis-alignment, but you should disregard these messages.
+ * complain about misalignment, but you should disregard these messages.
  */
 void Random::initState(UInt32 s, char* argState, Int32 n)
 {
