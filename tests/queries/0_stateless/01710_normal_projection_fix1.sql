@@ -7,6 +7,7 @@ insert into t values (1, 2);
 alter table t add projection x (select * order by j);
 
 insert into t values (1, 4);
+insert into t values (1, 5);
 
 set allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
 
