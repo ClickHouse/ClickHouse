@@ -304,7 +304,7 @@ public:
 
 protected:
     static StorageS3::Configuration updateConfiguration(ContextPtr local_context, const Configuration & configuration);
-    static void updateConfiguration(ContextPtr local_context, Configuration & configuration);
+    static void updateConfiguration(ContextPtr, Configuration &);
 
 private:
     friend class StorageS3Cluster;
@@ -324,8 +324,6 @@ private:
     bool is_key_with_globs = false;
 
     ObjectInfos object_infos;
-
-    static void updateS3Configuration(ContextPtr, Configuration &);
 
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const Configuration & s3_configuration,
