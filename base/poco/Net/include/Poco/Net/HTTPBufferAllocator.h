@@ -18,33 +18,36 @@
 #define Net_HTTPBufferAllocator_INCLUDED
 
 
-#include "Poco/Net/Net.h"
-#include "Poco/MemoryPool.h"
 #include <ios>
+#include "Poco/MemoryPool.h"
+#include "Poco/Net/Net.h"
 
 
-namespace Poco {
-namespace Net {
-
-
-class Net_API HTTPBufferAllocator
-	/// A BufferAllocator for HTTP streams.
+namespace Poco
 {
-public:
-	static char* allocate(std::streamsize size);
-	static void deallocate(char* ptr, std::streamsize size);
-
-	enum
-	{
-		BUFFER_SIZE = 128 * 1024 
-	};
-
-private:
-	static Poco::MemoryPool _pool;
-};
+namespace Net
+{
 
 
-} } // namespace Poco::Net
+    class Net_API HTTPBufferAllocator
+    /// A BufferAllocator for HTTP streams.
+    {
+    public:
+        static char * allocate(std::streamsize size);
+        static void deallocate(char * ptr, std::streamsize size);
+
+        enum
+        {
+            BUFFER_SIZE = 128 * 1024
+        };
+
+    private:
+        static Poco::MemoryPool _pool;
+    };
+
+
+}
+} // namespace Poco::Net
 
 
 #endif // Net_HTTPBufferAllocator_INCLUDED
