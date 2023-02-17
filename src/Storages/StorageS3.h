@@ -298,6 +298,7 @@ public:
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
 
+protected:
     static StorageS3::Configuration updateConfiguration(ContextPtr local_context, const Configuration & configuration);
     static void updateConfiguration(ContextPtr local_context, Configuration & configuration);
 
