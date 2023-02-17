@@ -229,7 +229,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
             }
         }
         else
-            LOG_DEBUG(log, "Skipping send data over distributed table.");
+            LOG_TEST(log, "Skipping send data over distributed table.");
 
         const auto now = std::chrono::system_clock::now();
         if (now - last_decrease_time > decrease_error_count_period)
