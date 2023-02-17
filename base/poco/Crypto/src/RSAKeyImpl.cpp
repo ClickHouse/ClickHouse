@@ -102,7 +102,7 @@ RSAKeyImpl::RSAKeyImpl(const std::string& publicKeyFile,
 	{
 		BIO* bio = BIO_new(BIO_s_file());
 		if (!bio) throw Poco::IOException("Cannot create BIO for reading public key", publicKeyFile);
-		int rc = BIO_read_filename(bio, publicKeyFile.c_str());
+		int rc = BIO_read_filename(bio, const_cast<char *>(publicKeyFile.c_str()));
 		if (rc)
 		{
 			RSA* pubKey = PEM_read_bio_RSAPublicKey(bio, &_pRSA, 0, 0);
@@ -132,7 +132,7 @@ RSAKeyImpl::RSAKeyImpl(const std::string& publicKeyFile,
 	{
 		BIO* bio = BIO_new(BIO_s_file());
 		if (!bio) throw Poco::IOException("Cannot create BIO for reading private key", privateKeyFile);
-		int rc = BIO_read_filename(bio, privateKeyFile.c_str());
+		int rc = BIO_read_filename(bio, const_cast<char *>(privateKeyFile.c_str()));
 		if (rc)
 		{
 			RSA* privKey = 0;
