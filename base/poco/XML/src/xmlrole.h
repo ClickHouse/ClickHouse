@@ -36,11 +36,6 @@
 #ifndef XmlRole_INCLUDED
 #define XmlRole_INCLUDED 1
 
-#ifdef __VMS
-/*      0        1         2         3      0        1         2         3
-        1234567890123456789012345678901     1234567890123456789012345678901 */
-#    define XmlPrologStateInitExternalEntity XmlPrologStateInitExternalEnt
-#endif
 
 #include "xmltok.h"
 
