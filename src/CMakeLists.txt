@@ -578,10 +578,12 @@ if (TARGET ch_rust::skim)
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
-if (TARGET ch_rust::prql_lib)
-    dbms_target_include_directories(PRIVATE ch_rust::prql_lib)
-    dbms_target_link_libraries(PRIVATE ch_rust::prql_lib)
-endif()
+target_link_libraries (dbms PUBLIC ch_rust::prql_lib)
+
+# if (TARGET ch_rust::prql_lib)
+#     dbms_target_include_directories(PRIVATE ch_rust::prql_lib)
+#     dbms_target_link_libraries(PRIVATE ch_rust::prql_lib)
+# endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
