@@ -51,7 +51,7 @@ public:
         has_aggregate_functions = true;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
     {
         if (only_check && has_aggregate_functions)
             return false;
