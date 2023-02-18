@@ -1507,6 +1507,8 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         std::vector<String> add_columns = metadata_for_reading->getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
+        if (!data.merging_params.is_deleted_column.empty())
+            column_names_to_read.push_back(data.merging_params.is_deleted_column);
         if (!data.merging_params.sign_column.empty())
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty())
