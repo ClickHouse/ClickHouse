@@ -1,5 +1,6 @@
 #include "config.h"
-#if USE_AWS_S3
+
+#if USE_AWS_S3 && USE_AVRO
 
 #    include <Storages/StorageIceberg.h>
 #    include <Common/logger_useful.h>
