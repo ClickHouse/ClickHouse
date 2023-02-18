@@ -45,39 +45,35 @@ struct ArraySortImpl
         }
     };
 
-    static void checkArguments(const String & name, const ColumnWithTypeAndName& arg)
+    static void checkArguments(std::span<const ColumnWithTypeAndName, num_fixed_params> arguments, const String & name)
         requires(num_fixed_params)
     {
-        WhichDataType which(arg.type.get());
+        if (arguments.size() != 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs limit argument", name);
+
+        WhichDataType which(arguments[0].type.get());
         if (!which.isUInt() && !which.isInt())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of limit argument of function {} (must be UInt or Int)",
-                arg.type->getName(),
+                arguments[0].type->getName(),
                 name);
     }
 
     static ColumnPtr execute(
         const ColumnArray & array,
         ColumnPtr mapped,
-        const ColumnWithTypeAndName & limit_arg)
+        std::span<const ColumnWithTypeAndName, num_fixed_params> arguments [[maybe_unused]] = {})
     {
-        const auto limit = [&]() -> size_t
+        [[maybe_unused]] const auto limit = [&]() -> size_t
         {
             if constexpr (is_partial)
             {
-                return limit_arg.column.get()->getUInt(0);
+                return arguments[0].column.get()->getUInt(0);
             }
             return 0;
         }();
-        return execute(array, mapped, limit);
-    }
 
-    static ColumnPtr execute(
-        const ColumnArray & array,
-        ColumnPtr mapped,
-        size_t limit [[maybe_unused]] = 0)
-    {
         const ColumnArray::Offsets & offsets = array.getOffsets();
 
         size_t size = offsets.size();

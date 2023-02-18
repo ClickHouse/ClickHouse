@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <type_traits>
 
 #include <Columns/ColumnArray.h>
@@ -10,7 +11,6 @@
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
-#include <Common/tuple.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -79,7 +79,6 @@ const IColumn::Offsets & getOffsets(const T & column)
   * It is possible for the functions to require fixed number of positional arguments:
   * arrayPartialSort(limit, arr)
   * arrayPartialSort(x -> predicate, limit, arr)
-  * See the arraySort.cpp for details.
   *
   * For some functions arrayCount, arrayExists, arrayAll, an overload of the form f(array) is available,
   *  which works in the same way as f(x -> x, array).
@@ -195,13 +194,8 @@ public:
                     arguments[num_fixed_params].type->getName());
 
             if constexpr (num_fixed_params)
-            {
-                // Arguments are (f0, f1, ..., arr)
-                // Delegate checking of (f0, f1, ...) to Impl
-                std::apply(
-                    [this](auto &&... args) { Impl::checkArguments(getName(), std::forward<decltype(args)>(args)...); },
-                    to_tuple<num_fixed_params>(std::begin(arguments)));
-            }
+                Impl::checkArguments(
+                    std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments), num_fixed_params), getName());
 
             DataTypePtr nested_type = data_type->getNestedType();
 
@@ -235,13 +229,8 @@ public:
                     arguments[0].type->getName());
 
             if constexpr (num_fixed_params)
-            {
-                // Arguments are (lambda, f0, f1, ..., arr0, arr1,...)
-                // Delegate checking of (f0, f1, ...) to Impl
-                std::apply(
-                    [this](auto &&... args) { Impl::checkArguments(getName(), std::forward<decltype(args)>(args)...); },
-                    to_tuple<num_fixed_params>(std::begin(arguments) + 1));
-            }
+                Impl::checkArguments(
+                    std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments) + 1, num_fixed_params), getName());
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
@@ -301,17 +290,23 @@ public:
 
             if constexpr (std::is_same_v<typename Impl::column_type, ColumnMap>)
             {
-                // Invoke Impl::execute, add the fixed arguments as trailing ones if applicable
-                return std::apply(
-                    [&](auto &&... args) { return Impl::execute(*column_array, column_array->getNestedColumn().getDataPtr(), std::forward<decltype(args)>(args)...); },
-                    to_tuple<num_fixed_params>(std::begin(arguments)));
+                if constexpr (num_fixed_params)
+                    return Impl::execute(
+                        *column_array,
+                        column_array->getNestedColumn().getDataPtr(),
+                        std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments), num_fixed_params));
+                else
+                    return Impl::execute(*column_array, column_array->getNestedColumn().getDataPtr());
             }
             else
             {
-                // Invoke Impl::execute, add the fixed arguments as trailing ones if applicable
-                return std::apply(
-                    [&](auto &&... args) { return Impl::execute(*column_array, column_array->getDataPtr(), std::forward<decltype(args)>(args)...); },
-                    to_tuple<num_fixed_params>(std::begin(arguments)));
+                if constexpr (num_fixed_params)
+                    return Impl::execute(
+                        *column_array,
+                        column_array->getDataPtr(),
+                        std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments), num_fixed_params));
+                else
+                    return Impl::execute(*column_array, column_array->getDataPtr());
             }
         }
         else
@@ -440,10 +435,13 @@ public:
                 }
             }
 
-            // Invoke Impl::execute, add the fixed arguments as trailing ones if applicable
-            return std::apply(
-                    [&](auto &&... args) { return Impl::execute(*column_first_array, lambda_result.column, std::forward<decltype(args)>(args)...); },
-                    to_tuple<num_fixed_params>(std::begin(arguments) + 1));
+            if constexpr (num_fixed_params)
+                return Impl::execute(
+                    *column_first_array,
+                    lambda_result.column,
+                    std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments) + 1, num_fixed_params));
+            else
+                return Impl::execute(*column_first_array, lambda_result.column);
         }
     }
 };
