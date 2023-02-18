@@ -66,7 +66,10 @@ static void extractMergingAndGatheringColumns(
 
     /// Force version column for Replacing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    {
+        key_columns.emplace(merging_params.is_deleted_column);
         key_columns.emplace(merging_params.version_column);
+    }
 
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -458,6 +461,17 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     ctx->column_num_for_vertical_merge = 0;
     ctx->it_name_and_type = global_ctx->gathering_columns.cbegin();
 
+    const auto & settings = global_ctx->context->getSettingsRef();
+    size_t max_delayed_streams = 0;
+    if (global_ctx->new_data_part->getDataPartStorage().supportParallelWrite())
+    {
+        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
+            max_delayed_streams = settings.max_insert_delayed_streams_for_parallel_write;
+        else
+            max_delayed_streams = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
+    }
+    ctx->max_delayed_streams = max_delayed_streams;
+
     return false;
 }
 
@@ -548,6 +562,12 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
 
     ctx->delayed_streams.emplace_back(std::move(ctx->column_to));
+
+    while (ctx->delayed_streams.size() > ctx->max_delayed_streams)
+    {
+        ctx->delayed_streams.front()->finish(ctx->need_sync);
+        ctx->delayed_streams.pop_front();
+    }
 
     if (global_ctx->rows_written != ctx->column_elems_written)
     {
@@ -656,6 +676,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->space_reservation,
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
+            global_ctx->cleanup,
             projection_merging_params,
             global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
@@ -890,8 +911,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
         case MergeTreeData::MergingParams::Replacing:
             merged_transform = std::make_shared<ReplacingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.version_column,
-                merge_block_size, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
+                merge_block_size, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
+                (data_settings->clean_deleted_rows != CleanDeletedRows::Never) || global_ctx->cleanup);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -953,10 +975,19 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
+    if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
+        return MergeAlgorithm::Horizontal;
+    if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
+        return MergeAlgorithm::Horizontal;
 
-    for (const auto & part : global_ctx->future_part->parts)
-        if (!part->supportsVerticalMerge() || !isFullPartStorage(part->getDataPartStorage()))
-            return MergeAlgorithm::Horizontal;
+    if (!data_settings->allow_vertical_merges_from_compact_to_wide_parts)
+    {
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            if (!isWidePart(part))
+                return MergeAlgorithm::Horizontal;
+        }
+    }
 
     bool is_supported_storage =
         ctx->merging_params.mode == MergeTreeData::MergingParams::Ordinary ||

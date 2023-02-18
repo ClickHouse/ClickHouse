@@ -65,22 +65,51 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
     return nullptr;
 }
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
+using StepStack = std::vector<IQueryPlanStep*>;
+
+QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))
+    {
+        backward_path.push_back(node.step.get());
         return &node;
+    }
 
     if (node.children.size() != 1)
         return nullptr;
 
+    backward_path.push_back(node.step.get());
+
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
-        return findReadingStep(*node.children.front());
+        return findReadingStep(*node.children.front(), backward_path);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
-        return findReadingStep(*node.children.front());
+        return findReadingStep(*node.children.front(), backward_path);
 
     return nullptr;
+}
+
+void updateStepsDataStreams(StepStack & steps_to_update)
+{
+    /// update data stream's sorting properties for found transforms
+    if (!steps_to_update.empty())
+    {
+        const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
+        chassert(dynamic_cast<ISourceStep *>(steps_to_update.back()));
+        steps_to_update.pop_back();
+
+        while (!steps_to_update.empty())
+        {
+            auto * transforming_step = dynamic_cast<ITransformingStep *>(steps_to_update.back());
+            if (!transforming_step)
+                break;
+
+            transforming_step->updateInputStream(*input_stream);
+            input_stream = &steps_to_update.back()->getOutputStream();
+            steps_to_update.pop_back();
+        }
+    }
 }
 
 /// FixedColumns are columns which values become constants after filtering.
@@ -646,7 +675,7 @@ AggregationInputOrder buildInputOrderInfo(
 }
 
 InputOrderInfoPtr buildInputOrderInfo(
-    ReadFromMergeTree * reading,
+    const ReadFromMergeTree * reading,
     const FixedColumns & fixed_columns,
     const ActionsDAGPtr & dag,
     const SortDescription & description,
@@ -749,9 +778,9 @@ AggregationInputOrder buildInputOrderInfo(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node, StepStack & backward_path)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node);
+    QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
     if (!reading_node)
         return nullptr;
 
@@ -774,7 +803,11 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             limit);
 
         if (order_info)
-            reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        {
+            bool can_read = reading->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+            if (!can_read)
+                return nullptr;
+        }
 
         return order_info;
     }
@@ -787,7 +820,11 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
             limit);
 
         if (order_info)
-            merge->requestReadingInOrder(order_info);
+        {
+            bool can_read = merge->requestReadingInOrder(order_info);
+            if (!can_read)
+                return nullptr;
+        }
 
         return order_info;
     }
@@ -795,9 +832,9 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     return nullptr;
 }
 
-AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node)
+AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, StepStack & backward_path)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node);
+    QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
     if (!reading_node)
         return {};
 
@@ -819,10 +856,14 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
             dag, keys);
 
         if (order_info.input_order)
-            reading->requestReadingInOrder(
+        {
+            bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit);
+            if (!can_read)
+                return {};
+        }
 
         return order_info;
     }
@@ -834,7 +875,11 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
             dag, keys);
 
         if (order_info.input_order)
-            merge->requestReadingInOrder(order_info.input_order);
+        {
+            bool can_read = merge->requestReadingInOrder(order_info.input_order);
+            if (!can_read)
+                return {};
+        }
 
         return order_info;
     }
@@ -856,6 +901,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
+    StepStack steps_to_update;
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
@@ -865,7 +911,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
         infos.reserve(node.children.size());
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, *child));
+            infos.push_back(buildInputOrderInfo(*sorting, *child, steps_to_update));
 
             if (infos.back() && (!max_sort_descr || max_sort_descr->size() < infos.back()->sort_description_for_merging.size()))
                 max_sort_descr = &infos.back()->sort_description_for_merging;
@@ -915,9 +961,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         sorting->convertToFinishSorting(*max_sort_descr);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front()))
+    else if (auto order_info = buildInputOrderInfo(*sorting, *node.children.front(), steps_to_update))
     {
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
+        /// update data stream's sorting properties
+        updateStepsDataStreams(steps_to_update);
     }
 }
 
@@ -930,13 +978,16 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!aggregating)
         return;
 
-    if (aggregating->inOrder() || aggregating->isGroupingSets())
+    if ((aggregating->inOrder() && !aggregating->explicitSortingRequired()) || aggregating->isGroupingSets())
         return;
 
     /// TODO: maybe add support for UNION later.
-    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front()); order_info.input_order)
+    std::vector<IQueryPlanStep*> steps_to_update;
+    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), steps_to_update); order_info.input_order)
     {
         aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
+        /// update data stream's sorting properties
+        updateStepsDataStreams(steps_to_update);
     }
 }
 
@@ -1023,7 +1074,9 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
-        read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        if (!can_read)
+            return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging);
     }
 
