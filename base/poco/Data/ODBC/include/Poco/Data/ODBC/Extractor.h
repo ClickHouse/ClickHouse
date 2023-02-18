@@ -34,9 +34,6 @@
 #include "Poco/Exception.h"
 #include "Poco/Nullable.h"
 #include "Poco/UTFString.h"
-#ifdef POCO_OS_FAMILY_WINDOWS
-#    include <windows.h>
-#endif
 #include <sqltypes.h>
 
 

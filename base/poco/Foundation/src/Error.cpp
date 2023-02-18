@@ -23,34 +23,6 @@
 namespace Poco {
 
 
-#ifdef POCO_OS_FAMILY_WINDOWS
-
-
-	DWORD Error::last()
-	{
-		return GetLastError();
-	}
-
-
-	std::string Error::getMessage(DWORD errorCode)
-	{
-		std::string errMsg;
-		DWORD dwFlg = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS;
-	#if defined(POCO_WIN32_UTF8) && !defined(POCO_NO_WSTRING)
-		LPWSTR lpMsgBuf = 0;
-		if (FormatMessageW(dwFlg, 0, errorCode, 0, (LPWSTR) & lpMsgBuf, 0, NULL))
-			UnicodeConverter::toUTF8(lpMsgBuf, errMsg);
-	#else
-		LPTSTR lpMsgBuf = 0;
-		if (FormatMessageA(dwFlg, 0, errorCode, 0, (LPTSTR) & lpMsgBuf, 0, NULL))
-			errMsg = lpMsgBuf;
-	#endif
-		LocalFree(lpMsgBuf);
-		return errMsg;
-	}
-
-
-#else
 
 
 	int Error::last()
@@ -111,7 +83,6 @@ namespace Poco {
 	}
 
 
-#endif
 
 
 } // namespace Poco

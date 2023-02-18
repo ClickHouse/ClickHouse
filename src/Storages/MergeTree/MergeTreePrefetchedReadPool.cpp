@@ -540,24 +540,6 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
     return result_threads_tasks;
 }
 
-MergeTreePrefetchedReadPool::~MergeTreePrefetchedReadPool()
-{
-    for (const auto & [_, thread_tasks] : threads_tasks)
-    {
-        for (const auto & task : thread_tasks)
-        {
-            if (task->reader.valid())
-                task->reader.wait();
-
-            for (const auto & pre_reader : task->pre_reader_for_step)
-            {
-                if (pre_reader.valid())
-                    pre_reader.wait();
-            }
-        }
-    }
-}
-
 std::string MergeTreePrefetchedReadPool::dumpTasks(const ThreadsTasks & tasks)
 {
     WriteBufferFromOwnString result;
