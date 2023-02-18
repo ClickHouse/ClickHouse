@@ -194,8 +194,7 @@ public:
                     arguments[num_fixed_params].type->getName());
 
             if constexpr (num_fixed_params)
-                Impl::checkArguments(
-                    std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments), num_fixed_params), getName());
+                Impl::checkArguments(getName(), arguments.data());
 
             DataTypePtr nested_type = data_type->getNestedType();
 
@@ -229,8 +228,7 @@ public:
                     arguments[0].type->getName());
 
             if constexpr (num_fixed_params)
-                Impl::checkArguments(
-                    std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments) + 1, num_fixed_params), getName());
+                Impl::checkArguments(getName(), arguments.data() + 1);
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
@@ -294,7 +292,7 @@ public:
                     return Impl::execute(
                         *column_array,
                         column_array->getNestedColumn().getDataPtr(),
-                        std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments), num_fixed_params));
+                        arguments.data());
                 else
                     return Impl::execute(*column_array, column_array->getNestedColumn().getDataPtr());
             }
@@ -304,7 +302,7 @@ public:
                     return Impl::execute(
                         *column_array,
                         column_array->getDataPtr(),
-                        std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments), num_fixed_params));
+                        arguments.data());
                 else
                     return Impl::execute(*column_array, column_array->getDataPtr());
             }
@@ -439,7 +437,7 @@ public:
                 return Impl::execute(
                     *column_first_array,
                     lambda_result.column,
-                    std::span<const ColumnWithTypeAndName, num_fixed_params>(std::begin(arguments) + 1, num_fixed_params));
+                    arguments.data() + 1);
             else
                 return Impl::execute(*column_first_array, lambda_result.column);
         }
