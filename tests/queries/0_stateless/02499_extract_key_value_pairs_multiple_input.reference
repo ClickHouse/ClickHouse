@@ -100,4 +100,4 @@ WITH
         ) AS x
 SELECT
     x;
-{'some_key':'dolla'}
+{'some_key':'@dolla%sign$'}
