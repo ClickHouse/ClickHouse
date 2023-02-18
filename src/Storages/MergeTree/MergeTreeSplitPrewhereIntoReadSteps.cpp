@@ -149,6 +149,27 @@ const ActionsDAG::Node & addCast(
     return addFunction(dag, func_builder_cast, std::move(children), node_remap);
 }
 
+/// Normalizes the filter node by adding AND with a constant true.
+/// This:
+/// 1. produces a result with the proper Nullable or non-Nullable UInt8 type and
+/// 2. makes sure that the result contains only 0 or 1 values even if the source column contains non-boolean values.
+const ActionsDAG::Node & addAndTrue(
+    ActionsDAGPtr dag,
+    const ActionsDAG::Node & filter_node_to_normalize,
+    OriginalToNewNodeMap & node_remap)
+{
+    Field const_true_value(true);
+
+    ColumnWithTypeAndName const_true_column;
+    const_true_column.column = DataTypeUInt8().createColumnConst(0, const_true_value);
+    const_true_column.type = std::make_shared<DataTypeUInt8>();
+
+    const auto * const_true_node = &dag->addColumn(std::move(const_true_column));
+    ActionsDAG::NodeRawConstPtrs children = {&filter_node_to_normalize, const_true_node};
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return addFunction(dag, func_builder_and, children, node_remap);
+}
+
 }
 
 /// We want to build a sequence of steps that will compute parts of the prewhere condition.
@@ -241,15 +262,21 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         else
         {
             const auto & result_node = *new_condition_nodes.front();
-            /// Add cast to UInt8 if needed
-            if (result_node.result_type->getTypeId() == TypeIndex::UInt8)
+            /// Check if explicit cast is needed for the condition to serve as a filter.
+            const auto result_type_name = result_node.result_type->getName();
+            if (result_type_name == "UInt8" ||
+                result_type_name == "Nullable(UInt8)" ||
+                result_type_name == "LowCardinality(UInt8)" ||
+                result_type_name == "LowCardinality(Nullable(UInt8))")
             {
+                /// No need to cast
                 step_dag->addOrReplaceInOutputs(result_node);
                 result_name = result_node.result_name;
             }
             else
             {
-                const auto & cast_node = addCast(step_dag, result_node, "UInt8", node_remap);
+                /// Build "condition AND True" expression to "cast" the condition to UInt8 or Nullable(UInt8) depending on its type.
+                const auto & cast_node = addAndTrue(step_dag, result_node, node_remap);
                 step_dag->addOrReplaceInOutputs(cast_node);
                 result_name = cast_node.result_name;
             }
@@ -278,19 +305,12 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
             /// to the last condition after filters from previous steps are applied. We just need to CAST the last condition
             /// to the type of combined filter. We do this in 2 steps:
             /// 1. AND the last condition with constant True. This is needed to make sure that in the last step filter has UInt8 type
-            ///    but containes values other than 0 and 1 (e.g. if it is (number%5) it contains 2,3,4)
+            ///    but contains values other than 0 and 1 (e.g. if it is (number%5) it contains 2,3,4)
             /// 2. CAST the result to the exact type of the PREWHERE column from the original DAG
             const auto & last_step_result_node_info = node_remap[steps.back().column_name];
             auto & last_step_dag = steps.back().actions;
             /// Build AND(last_step_result_node, true)
-            Field true_constant_value(true);
-            ColumnWithTypeAndName column;
-            column.column = DataTypeUInt8().createColumnConst(0, true_constant_value);
-            column.type = std::make_shared<DataTypeUInt8>();
-            const auto * cast_type_constant_node = &last_step_dag->addColumn(std::move(column));
-            ActionsDAG::NodeRawConstPtrs children = {last_step_result_node_info.node, cast_type_constant_node};
-            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-            const auto& and_node = addFunction(last_step_dag, func_builder_and, children, node_remap);
+            const auto & and_node = addAndTrue(last_step_dag, *last_step_result_node_info.node, node_remap);
             /// Build CAST(and_node, type of PREWHERE column)
             const auto & cast_node = addCast(last_step_dag, and_node, output->result_type->getName(), node_remap);
             /// Add alias for the result with the name of the PREWHERE column
