@@ -29,6 +29,22 @@ SELECT * FROM test_02559 PREWHERE id1 <= 3 AND id2 > 0 WHERE (id1 + id2 < 15) LI
 
 SELECT count() FROM test_02559 PREWHERE id2>=0 AND (1 OR ignore(id1)) WHERE ignore(id1)=0;
 
+SELECT count() FROM test_02559 PREWHERE ignore(id1);
+
+SELECT count() FROM test_02559 PREWHERE 1 OR ignore(id1);
+
+SELECT count() FROM test_02559 PREWHERE ignore(id1) AND id2 > 0;
+
+SELECT count() FROM test_02559 PREWHERE (1 OR ignore(id1)) AND id2 > 0;
+
+SELECT count() FROM test_02559 PREWHERE (id1 <= 10 AND id2 > 0) AND ignore(id1);
+
+SELECT count() FROM test_02559 PREWHERE ignore(id1) AND (id1 <= 10 AND id2 > 0);
+
+SELECT count() FROM test_02559 PREWHERE (id1 <= 10 AND id2 > 0) AND (1 OR ignore(id1));
+
+SELECT count() FROM test_02559 PREWHERE (1 OR ignore(id1)) AND (id1 <= 10 AND id2 > 0);
+
 CREATE ROW POLICY 02559_filter_1 ON test_02559 USING id2=2 AS permissive TO ALL;
 SELECT * FROM test_02559;
 
