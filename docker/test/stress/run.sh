@@ -402,7 +402,7 @@ start
 
 # NOTE Hung check is implemented in docker/tests/stress/stress
 rg -Fa "No queries hung" /test_output/test_results.tsv | grep -Fa "OK" \
-  || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log | unts)"
+  || echo -e "Hung check failed, possible deadlock found (see hung_check.log)$FAIL$(head_escaped /test_output/hung_check.log)" >> /test_output/test_results.tsv
 
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
@@ -546,6 +546,9 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
         # it uses recently introduced settings which previous versions may not have
         rm -f /etc/clickhouse-server/users.d/insert_keeper_retries.xml ||:
 
+        # Turn on after 23.1
+        rm -f /etc/clickhouse-server/users.d/prefetch_settings.xml ||:
+
         start
 
         clickhouse-client --query="SELECT 'Server version: ', version()"
@@ -642,7 +645,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "} <Error> TCPHandler: Code:" \
                    -e "} <Error> executeQuery: Code:" \
                    -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
-                   -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
+                   -e "[Queue = DB::DynamicRuntimeQueue]: Code: 235. DB::Exception: Part" \
                    -e "The set of parts restored in place of" \
                    -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
                    -e "Code: 269. DB::Exception: Destination table is myself" \
@@ -651,6 +654,7 @@ if [ "$DISABLE_BC_CHECK" -ne "1" ]; then
                    -e "No connection to ZooKeeper, cannot get shared table ID" \
                    -e "Session expired" \
                    -e "TOO_MANY_PARTS" \
+                   -e "Container already exists" \
             /var/log/clickhouse-server/clickhouse-server.backward.dirty.log | rg -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
             && echo -e "Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)$FAIL$(trim_server_logs bc_check_error_messages.txt)" \
                 >> /test_output/test_results.tsv \
@@ -717,7 +721,7 @@ mv /var/log/clickhouse-server/stderr.log /test_output/
 
 # Write check result into check_status.tsv
 # Try to choose most specific error for the whole check status
-clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
 (test like 'Backward compatibility check%'),  -- BC check goes last
 (test like '%Sanitizer%') DESC,
 (test like '%Killed by signal%') DESC,
@@ -731,7 +735,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 (test like '%Error message%') DESC,
 (test like '%previous release%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps

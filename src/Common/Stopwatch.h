@@ -55,7 +55,8 @@ public:
     UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
     double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
-    UInt64 getStart() { return start_ns; }
+    UInt64 getStart() const { return start_ns; }
+    UInt64 getEnd() const { return stop_ns; }
 
 private:
     UInt64 start_ns = 0;

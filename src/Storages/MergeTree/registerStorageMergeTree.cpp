@@ -136,7 +136,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
         * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
         * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
-        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
+        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column [, is_deleted_column]])
         * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
         *
         * Alternatively, you can specify:
@@ -227,6 +227,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Replacing:
+            add_optional_param("is_deleted column");
             add_optional_param("version");
             break;
         case MergeTreeData::MergingParams::Collapsing:
@@ -243,6 +244,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     ASTs & engine_args = args.engine_args;
+    auto context = args.getContext();
     size_t arg_num = 0;
     size_t arg_cnt = engine_args.size();
 
@@ -326,10 +328,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// We did unfold it in previous versions to make moving table from Atomic to Ordinary database work correctly,
             /// but now it's not allowed (and it was the only reason to unfold {uuid} macro).
             info.table_id.uuid = UUIDHelpers::Nil;
-            zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
+            zookeeper_path = context->getMacros()->expand(zookeeper_path, info);
 
             info.level = 0;
-            replica_name = args.getContext()->getMacros()->expand(replica_name, info);
+            replica_name = context->getMacros()->expand(replica_name, info);
         }
 
         ast_zk_path->value = zookeeper_path;
@@ -347,11 +349,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         if (!allow_uuid_macro)
             info.table_id.uuid = UUIDHelpers::Nil;
-        zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
+        zookeeper_path = context->getMacros()->expand(zookeeper_path, info);
 
         info.level = 0;
         info.table_id.uuid = UUIDHelpers::Nil;
-        replica_name = args.getContext()->getMacros()->expand(replica_name, info);
+        replica_name = context->getMacros()->expand(replica_name, info);
 
         /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.
         /// NOTE: it may happen if table was created by older version of ClickHouse (< 20.10) and macros was not unfolded on table creation
@@ -437,11 +439,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
+        // if there is args and number of optional parameter is higher than 1
+        // is_deleted is not allowed with the 'allow_deprecated_syntax_for_merge_tree' settings
+        if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>() && is_extended_storage_def)
+        {
+            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "is_deleted column name must be an identifier {}", verbose_help_message);
+            --arg_cnt;
+        }
+
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an unquoted string{}", verbose_help_message);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an identifier {}", verbose_help_message);
             --arg_cnt;
         }
     }
@@ -472,7 +483,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, format_str, error_msg);
 
         --arg_cnt;
-        setGraphitePatternsFromConfig(args.getContext(), graphite_config_name, merging_params.graphite_params);
+        setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
@@ -496,14 +507,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     ColumnsDescription columns;
     if (args.columns.empty() && replicated)
-        columns = getColumnsDescriptionFromZookeeper(zookeeper_path, args.getContext());
+        columns = getColumnsDescriptionFromZookeeper(zookeeper_path, context);
     else
         columns = args.columns;
 
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
-    const auto & initial_storage_settings = replicated ? args.getContext()->getReplicatedMergeTreeSettings() : args.getContext()->getMergeTreeSettings();
+    const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
     if (is_extended_storage_def)
@@ -515,7 +526,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Partition key may be undefined, but despite this we store it's empty
         /// value in partition_key structure. MergeTree checks this case and use
         /// single default partition with name "all".
-        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.getContext());
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, context);
 
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
@@ -532,16 +543,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
-            args.storage_def->order_by->ptr(), metadata.columns, args.getContext(), merging_param_key_arg);
+            args.storage_def->order_by->ptr(), metadata.columns, context, merging_param_key_arg);
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, context);
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
@@ -552,25 +563,25 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         FunctionNameNormalizer().visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, partition_key, minmax_columns, primary_key_asts, args.getContext()));
+            args.columns, partition_key, minmax_columns, primary_key_asts, context));
 
         if (args.storage_def->sample_by)
-            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.getContext());
+            metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, args.getContext(), metadata.primary_key);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key);
         }
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, args.getContext()));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
 
         if (args.query.columns_list && args.query.columns_list->projections)
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, args.getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
                 metadata.projections.add(std::move(projection));
             }
 
@@ -583,17 +594,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, args.getContext(), metadata.primary_key);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
-        storage_settings->loadFromQuery(*args.storage_def);
+        storage_settings->loadFromQuery(*args.storage_def, context);
 
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
         {
             if (!args.attach)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, args.storage_def->settings->changes);
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
     }
@@ -606,14 +617,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
 
-        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, args.getContext());
+        metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, context);
 
         ++arg_num;
 
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.getContext());
+            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
             ++arg_num;
         }
 
@@ -623,10 +634,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
         metadata.sorting_key
-            = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, args.getContext(), merging_param_key_arg);
+            = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, context, merging_param_key_arg);
 
         /// In old syntax primary_key always equals to sorting key.
-        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.getContext());
+        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, context);
         /// But it's not explicitly defined, so we evaluate definition to
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;
@@ -638,7 +649,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         FunctionNameNormalizer().visit(partition_key.get());
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, partition_key, minmax_columns, primary_key_asts, args.getContext()));
+            args.columns, partition_key, minmax_columns, primary_key_asts, context));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
@@ -680,7 +691,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.table_id,
             args.relative_data_path,
             metadata,
-            args.getContext(),
+            context,
             date_column_name,
             merging_params,
             std::move(storage_settings),
@@ -693,7 +704,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.relative_data_path,
             metadata,
             args.attach,
-            args.getContext(),
+            context,
             date_column_name,
             merging_params,
             std::move(storage_settings),

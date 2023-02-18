@@ -632,7 +632,8 @@ def test_async_backups_to_same_destination(interface):
             f"BACKUP TABLE test.table TO {backup_name} ASYNC"
         )
 
-    # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+    # One of those two backups to the same destination is expected to fail.
+    # If the second backup is going to fail it can fail either immediately or after a while.
     # If it fails immediately we won't even get its ID.
     id2 = None if err else res.split("\t")[0]
 
@@ -647,17 +648,25 @@ def test_async_backups_to_same_destination(interface):
         "",
     )
 
-    # The first backup should succeed.
-    assert instance.query(
-        f"SELECT status, error FROM system.backups WHERE id='{id1}'"
-    ) == TSV([["BACKUP_CREATED", ""]])
-
-    if id2:
-        # The second backup should fail.
-        assert (
-            instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
-            == "BACKUP_FAILED\n"
+    ids_succeeded = (
+        instance.query(
+            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
         )
+        .rstrip("\n")
+        .split("\n")
+    )
+
+    ids_failed = (
+        instance.query(
+            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+        )
+        .rstrip("\n")
+        .split("\n")
+    )
+
+    assert len(ids_succeeded) == 1
+    assert len(ids_failed) <= 1
+    assert set(ids_succeeded + ids_failed) == set(ids)
 
     # Check that the first backup is all right.
     instance.query("DROP TABLE test.table")
@@ -1331,23 +1340,16 @@ def test_tables_dependency():
     instance.query("CREATE DATABASE test2")
 
     # For this test we use random names of tables to check they're created according to their dependency (not just in alphabetic order).
-    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 10)]
+    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 15)]
     random.shuffle(random_table_names)
     random_table_names = [
         random.choice(["test", "test2"]) + "." + table_name
         for table_name in random_table_names
     ]
     print(f"random_table_names={random_table_names}")
-
-    t1 = random_table_names[0]
-    t2 = random_table_names[1]
-    t3 = random_table_names[2]
-    t4 = random_table_names[3]
-    t5 = random_table_names[4]
-    t6 = random_table_names[5]
-    t7 = random_table_names[6]
-    t8 = random_table_names[7]
-    t9 = random_table_names[8]
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15 = tuple(
+        random_table_names
+    )
 
     # Create a materialized view and a dictionary with a local table as source.
     instance.query(
@@ -1373,11 +1375,34 @@ def test_tables_dependency():
     instance.query(f"CREATE VIEW {t7} AS SELECT sum(x) FROM (SELECT x FROM {t6})")
 
     instance.query(
-        f"CREATE TABLE {t8} AS {t2} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+        f"CREATE DICTIONARY {t8} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
+    )
+
+    instance.query(f"CREATE TABLE {t9}(a Int64) ENGINE=Log")
+
+    instance.query(
+        f"CREATE VIEW {t10}(x Int64, y String) AS SELECT * FROM {t1} WHERE x IN {t9}"
     )
 
     instance.query(
-        f"CREATE DICTIONARY {t9} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(9)"
+        f"CREATE VIEW {t11}(x Int64, y String) AS SELECT * FROM {t2} WHERE x NOT IN (SELECT a FROM {t9})"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t12} AS {t1} ENGINE = Buffer({t2.split('.')[0]}, {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t13} AS {t1} ENGINE = Buffer((SELECT '{t2.split('.')[0]}'), (SELECT '{t2.split('.')[1]}'), 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t14} AS {t1} ENGINE = Buffer('', {t2.split('.')[1]}, 16, 10, 100, 10000, 1000000, 10000000, 100000000)",
+        database=t2.split(".")[0],
+    )
+
+    instance.query(
+        f"CREATE TABLE {t15} AS {t1} ENGINE = Buffer('', '', 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
     )
 
     # Make backup.
@@ -1386,8 +1411,14 @@ def test_tables_dependency():
 
     # Drop everything in reversive order.
     def drop():
-        instance.query(f"DROP DICTIONARY {t9}")
-        instance.query(f"DROP TABLE {t8} NO DELAY")
+        instance.query(f"DROP TABLE {t15} NO DELAY")
+        instance.query(f"DROP TABLE {t14} NO DELAY")
+        instance.query(f"DROP TABLE {t13} NO DELAY")
+        instance.query(f"DROP TABLE {t12} NO DELAY")
+        instance.query(f"DROP TABLE {t11} NO DELAY")
+        instance.query(f"DROP TABLE {t10} NO DELAY")
+        instance.query(f"DROP TABLE {t9} NO DELAY")
+        instance.query(f"DROP DICTIONARY {t8}")
         instance.query(f"DROP TABLE {t7} NO DELAY")
         instance.query(f"DROP TABLE {t6} NO DELAY")
         instance.query(f"DROP TABLE {t5} NO DELAY")
@@ -1406,7 +1437,7 @@ def test_tables_dependency():
     # Check everything is restored.
     assert instance.query(
         "SELECT concat(database, '.', name) AS c FROM system.tables WHERE database IN ['test', 'test2'] ORDER BY c"
-    ) == TSV(sorted([t1, t2, t3, t4, t5, t6, t7, t8, t9]))
+    ) == TSV(sorted(random_table_names))
 
     # Check logs.
     instance.query("SYSTEM FLUSH LOGS")
@@ -1421,8 +1452,20 @@ def test_tables_dependency():
         f"Table {t5} has 1 dependencies: {t4} (level 2)",
         f"Table {t6} has 1 dependencies: {t4} (level 2)",
         f"Table {t7} has 1 dependencies: {t6} (level 3)",
-        f"Table {t8} has 1 dependencies: {t2} (level 1)",
-        f"Table {t9} has 1 dependencies: {t1} (level 1)",
+        f"Table {t8} has 1 dependencies: {t1} (level 1)",
+        f"Table {t9} has no dependencies (level 0)",
+        (
+            f"Table {t10} has 2 dependencies: {t1}, {t9} (level 1)",
+            f"Table {t10} has 2 dependencies: {t9}, {t1} (level 1)",
+        ),
+        (
+            f"Table {t11} has 2 dependencies: {t2}, {t9} (level 1)",
+            f"Table {t11} has 2 dependencies: {t9}, {t2} (level 1)",
+        ),
+        f"Table {t12} has 1 dependencies: {t2} (level 1)",
+        f"Table {t13} has 1 dependencies: {t2} (level 1)",
+        f"Table {t14} has 1 dependencies: {t2} (level 1)",
+        f"Table {t15} has no dependencies (level 0)",
     ]
     for expect in expect_in_logs:
         assert any(

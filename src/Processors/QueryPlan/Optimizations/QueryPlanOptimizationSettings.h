@@ -35,6 +35,9 @@ struct QueryPlanOptimizationSettings
 
     bool aggregate_partitions_independently = false;
 
+    /// If removing redundant distinct steps is enabled
+    bool remove_redundant_distinct = true;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

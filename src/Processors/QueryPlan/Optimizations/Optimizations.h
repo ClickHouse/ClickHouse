@@ -61,6 +61,9 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 /// Remove redundant sorting
 void tryRemoveRedundantSorting(QueryPlan::Node * root);
 
+/// Remove redundant distinct steps
+size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
 /// Put some steps under union, so that plan optimisation could be applied to union parts separately.
 /// For example, the plan can be rewritten like:
 ///                      - Something -                    - Expression - Something -
@@ -72,7 +75,7 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 9> optimizations = {{
+    static const std::array<Optimization, 10> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
@@ -86,6 +89,7 @@ inline const auto & getOptimizations()
         {tryAggregatePartitionsIndependently,
          "aggregatePartitionsIndependently",
          &QueryPlanOptimizationSettings::aggregate_partitions_independently},
+        {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
     }};
 
     return optimizations;
