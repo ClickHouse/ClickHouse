@@ -15,6 +15,8 @@ SELECT cast(id1 as UInt16) AS id16 FROM test_02559 PREWHERE id16 and (id2 % 4000
 
 SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond LIMIT 10;
 
+SELECT cast(id1 as UInt16) AS cond1, (if(id2 > 3, id2, NULL) % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond LIMIT 10;
+
 SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond AND id2 > 4 LIMIT 10;
 
 SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE id2 > 5 AND cond LIMIT 10;
