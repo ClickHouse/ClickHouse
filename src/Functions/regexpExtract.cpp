@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE;
 }
@@ -38,7 +37,7 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             if (arguments.size() != 2 && arguments.size() != 3)
                 throw Exception(
@@ -47,26 +46,15 @@ namespace
                     getName(),
                     arguments.size());
 
-            if (!isString(arguments[0]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {}",
-                    arguments[0]->getName(),
-                    getName());
+            FunctionArgumentDescriptors args{
+                {"haystack", &isString<IDataType>, nullptr, "String"},
+                {"pattern", &isString<IDataType>, isColumnConst, "const String"},
+            };
 
-            if (!isString(arguments[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {}",
-                    arguments[1]->getName(),
-                    getName());
+            if (arguments.size() == 3)
+                args.emplace_back(FunctionArgumentDescriptor{"index", &isInteger<IDataType>, nullptr, "Integer"});
 
-            if (arguments.size() > 2 && !isInteger(arguments[2]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {}",
-                    arguments[2]->getName(),
-                    getName());
+            validateFunctionArgumentTypes(*this, arguments, args);
 
             return std::make_shared<DataTypeString>();
         }
