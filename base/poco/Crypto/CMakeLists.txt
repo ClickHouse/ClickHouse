@@ -21,6 +21,7 @@ if (ENABLE_SSL)
             -Wno-unreachable-code-return
             -Wno-unused-parameter
             -Wno-zero-as-null-pointer-constant
+            -Wno-used-but-marked-unused
     )
     target_include_directories (_poco_crypto SYSTEM PUBLIC "include")
     target_link_libraries (_poco_crypto PUBLIC Poco::Foundation OpenSSL::SSL OpenSSL::Crypto)
