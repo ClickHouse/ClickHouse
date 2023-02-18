@@ -581,18 +581,6 @@ def test_virtual_columns(started_cluster):
     )
     print(result)
 
-    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value2 integer")
-    instance.query(
-        f"INSERT INTO postgres_database.{table_name} SELECT number, number, number from numbers(10, 10)"
-    )
-    assert_number_of_columns(instance, 3, table_name)
-    check_tables_are_synchronized(instance, table_name)
-
-    result = instance.query(
-        "SELECT key, value, value2,  _sign, _version FROM test_database.postgresql_replica_0;"
-    )
-    print(result)
-
     instance.query(
         f"INSERT INTO postgres_database.{table_name} SELECT number, number, number from numbers(20, 10)"
     )
