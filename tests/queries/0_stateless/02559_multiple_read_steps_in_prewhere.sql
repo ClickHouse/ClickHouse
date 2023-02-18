@@ -23,6 +23,8 @@ SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) A
 
 SELECT cast(id1 as UInt16) AS cond1 FROM test_02559 PREWHERE cond1 LIMIT 10; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 
+SELECT * FROM test_02559 PREWHERE id1 <= 3 AND id2 > 0 WHERE (id1 + id2 < 15) LIMIT 10;
+
 SELECT count() FROM test_02559 PREWHERE id2>=0 AND (1 OR ignore(id1)) WHERE ignore(id1)=0;
 
 CREATE ROW POLICY 02559_filter_1 ON test_02559 USING id2=2 AS permissive TO ALL;
