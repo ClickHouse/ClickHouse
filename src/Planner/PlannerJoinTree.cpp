@@ -679,6 +679,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     for (auto & column_from_joined_table : columns_from_joined_table)
     {
+        /// Add columns from joined table only if they are presented in outer scope, otherwise they can be dropped
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
             outer_scope_columns.contains(column_from_joined_table.name))
             table_join->addJoinedColumn(column_from_joined_table);
@@ -928,7 +929,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     }
 
     std::vector<JoinTreeQueryPlan> query_plans_stack;
-    bool has_remote_table = false;
 
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
@@ -970,11 +970,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         else
         {
             const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-            if (table_expression_data.isRemote() && (has_remote_table || i != 0))
+            if (table_expression_data.isRemote() && i != 0)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "JOIN with multiple remote storages is unsupported");
-
-            has_remote_table = table_expression_data.isRemote();
 
             query_plans_stack.push_back(buildQueryPlanForTableExpression(table_expression,
                 select_query_info,

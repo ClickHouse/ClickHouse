@@ -164,6 +164,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
 {
+    /** Compute tree hash with this node as root.
+      *
+      * Some nodes can contain weak pointers to other nodes. Such weak nodes are not necessary
+      * part of tree that we try to hash, but we need to update hash state with their content.
+      *
+      * Algorithm
+      * For each node in tree we update hash state with their content.
+      * For weak nodes there is special handling. If we visit weak node first time we update hash state with weak node content and register
+      * identifier for this node, for subsequent visits of this weak node we hash weak node identifier instead of content.
+      */
     HashState hash_state;
 
     std::unordered_map<const IQueryTreeNode *, size_t> weak_node_to_identifier;

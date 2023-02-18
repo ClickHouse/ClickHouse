@@ -26,8 +26,8 @@ public:
       */
     InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
         const ContextPtr & context_,
-        const SelectQueryOptions & select_query_options_,
-        const StoragePtr & storage_);
+        const StoragePtr & storage_,
+        const SelectQueryOptions & select_query_options_);
 
     /// Initialize interpreter with query tree
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
@@ -45,7 +45,7 @@ public:
         const ContextPtr & context,
         const SelectQueryOptions & select_query_options = {});
 
-    static Block getSampleBlock(const QueryTreeNodePtr & query_,
+    static Block getSampleBlock(const QueryTreeNodePtr & query_tree,
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options = {});
 

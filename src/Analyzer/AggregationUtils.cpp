@@ -51,12 +51,9 @@ public:
         has_aggregate_functions = true;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
         if (only_check && has_aggregate_functions)
-            return false;
-
-        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
             return false;
 
         auto child_node_type = child_node->getNodeType();

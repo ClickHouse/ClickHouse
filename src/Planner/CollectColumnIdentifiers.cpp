@@ -20,11 +20,8 @@ public:
         , planner_context(planner_context_)
     {}
 
-    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child)
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
-        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
-            return false;
-
         auto child_node_type = child->getNodeType();
         return child_node_type != QueryTreeNodeType::TABLE
             && child_node_type != QueryTreeNodeType::TABLE_FUNCTION

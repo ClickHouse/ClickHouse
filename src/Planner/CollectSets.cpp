@@ -81,11 +81,8 @@ public:
         }
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
-        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
-            return false;
-
         auto child_node_type = child_node->getNodeType();
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }

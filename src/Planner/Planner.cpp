@@ -188,7 +188,9 @@ void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const Planner
 class QueryAnalysisResult
 {
 public:
-    QueryAnalysisResult(const QueryTreeNodePtr & query_tree, const PlannerQueryProcessingInfo & query_processing_info, const PlannerContextPtr & planner_context)
+    QueryAnalysisResult(const QueryTreeNodePtr & query_tree,
+        const PlannerQueryProcessingInfo & query_processing_info,
+        const PlannerContextPtr & planner_context)
     {
         const auto & query_node = query_tree->as<QueryNode &>();
         const auto & query_context = planner_context->getQueryContext();
@@ -198,7 +200,8 @@ public:
             && settings.group_by_overflow_mode == OverflowMode::ANY && settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
         aggregate_final = query_processing_info.getToStage() > QueryProcessingStage::WithMergeableState
             && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
-        aggregate_with_grouping_set = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets();
+        aggregation_with_rollup_or_cube_or_grouping_sets = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() ||
+            query_node.isGroupByWithGroupingSets();
         aggregation_should_produce_results_in_order_of_bucket_number = query_processing_info.getToStage() == QueryProcessingStage::WithMergeableState &&
             settings.distributed_aggregation_memory_efficient;
 
@@ -233,7 +236,7 @@ public:
 
     bool aggregate_overflow_row = false;
     bool aggregate_final = false;
-    bool aggregate_with_grouping_set = false;
+    bool aggregation_with_rollup_or_cube_or_grouping_sets = false;
     bool aggregation_should_produce_results_in_order_of_bucket_number = false;
     bool query_has_array_join_in_join_tree = false;
     bool query_has_with_totals_in_any_subquery_in_join_tree = false;
@@ -409,7 +412,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         params,
         query_analysis_result.aggregate_final,
         /// Grouping sets don't work with distributed_aggregation_memory_efficient enabled (#43989)
-        settings.distributed_aggregation_memory_efficient && is_remote_storage && !query_analysis_result.aggregate_with_grouping_set,
+        settings.distributed_aggregation_memory_efficient && is_remote_storage && !query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets,
         settings.max_threads,
         settings.aggregation_memory_efficient_merge_threads,
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,

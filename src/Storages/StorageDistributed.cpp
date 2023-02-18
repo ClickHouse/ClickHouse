@@ -689,9 +689,7 @@ QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const Sele
         if (!storage)
             storage = std::make_shared<StorageDistributedLocal>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
 
-        auto storage_lock = storage->lockForShare(query_context->getInitialQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
-        auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), query_context);
-        replacement_table_expression = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+        replacement_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
     }
 
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());

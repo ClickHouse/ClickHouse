@@ -253,7 +253,7 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
     std::deque<QueryTreeNodePtr> nodes_to_process;
     nodes_to_process.push_back(join_tree_node);
 
-    while (!nodes_to_process.empty())
+    while (!result)
     {
         auto node_to_process = std::move(nodes_to_process.front());
         nodes_to_process.pop_front();
@@ -379,58 +379,6 @@ bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, Identifier
 namespace
 {
 
-class ValidateFunctionNodesVisitor : public ConstInDepthQueryTreeVisitor<ValidateFunctionNodesVisitor>
-{
-public:
-    explicit ValidateFunctionNodesVisitor(std::string_view function_name_,
-        int exception_code_,
-        std::string_view exception_function_name_,
-        std::string_view exception_place_message_)
-        : function_name(function_name_)
-        , exception_code(exception_code_)
-        , exception_function_name(exception_function_name_)
-        , exception_place_message(exception_place_message_)
-    {}
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        auto * function_node = node->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == function_name)
-            throw Exception(exception_code,
-                "{} function {} is found {} in query",
-                exception_function_name,
-                function_node->formatASTForErrorMessage(),
-                exception_place_message);
-    }
-
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
-    {
-        auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
-    }
-
-private:
-    std::string_view function_name;
-    int exception_code = 0;
-    std::string_view exception_function_name;
-    std::string_view exception_place_message;
-};
-
-}
-
-void assertNoFunctionNodes(const QueryTreeNodePtr & node,
-    std::string_view function_name,
-    int exception_code,
-    std::string_view exception_function_name,
-    std::string_view exception_place_message)
-{
-    ValidateFunctionNodesVisitor visitor(function_name, exception_code, exception_function_name, exception_place_message);
-    visitor.visit(node);
-}
-
-namespace
-{
-
 class CheckFunctionExistsVisitor : public ConstInDepthQueryTreeVisitor<CheckFunctionExistsVisitor>
 {
 public:
@@ -450,12 +398,9 @@ public:
         has_function = function_node->getFunctionName() == function_name;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
         if (has_function)
-            return false;
-
-        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
             return false;
 
         auto child_node_type = child_node->getNodeType();
@@ -511,11 +456,8 @@ public:
         node = node_it->second;
     }
 
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
-        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
-            return false;
-
         auto child_node_type = child_node->getNodeType();
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }

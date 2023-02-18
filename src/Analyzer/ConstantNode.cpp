@@ -17,12 +17,12 @@
 namespace DB
 {
 
-ConstantNode::ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression)
+ConstantNode::ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
     , value_string(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
 {
-    children[source_child_index] = std::move(source_expression);
+    source_expression = std::move(source_expression_);
 }
 
 ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
@@ -72,7 +72,7 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state) const
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value);
+    return std::make_shared<ConstantNode>(constant_value, source_expression);
 }
 
 ASTPtr ConstantNode::toASTImpl() const

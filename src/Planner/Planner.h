@@ -58,9 +58,9 @@ private:
     void buildPlanForQueryNode();
 
     QueryTreeNodePtr query_tree;
-    QueryPlan query_plan;
     SelectQueryOptions select_query_options;
     PlannerContextPtr planner_context;
+    QueryPlan query_plan;
     StorageLimitsList storage_limits;
 };
 
