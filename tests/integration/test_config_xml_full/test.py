@@ -58,5 +58,19 @@ def test_xml_full_conf():
             == "64999\n"
         )
 
+        assert (
+            node.query(
+                "select value from system.server_settings where name = 'max_connections'"
+            )
+            == "4096\n"
+        )
+
+        assert (
+            node.query(
+                "select changed from system.server_settings where name = 'max_connections'"
+            )
+            == "1\n"
+        )
+
     finally:
         cluster.shutdown()
