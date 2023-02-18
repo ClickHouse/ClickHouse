@@ -133,6 +133,9 @@ const ActionsDAG::Node & addCast(
         const String & type_name,
         OriginalToNewNodeMap & node_remap)
 {
+    if (node_to_cast.result_type->getName() == type_name)
+        return node_to_cast;
+
     Field cast_type_constant_value(type_name);
 
     ColumnWithTypeAndName column;
@@ -271,12 +274,28 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         else if (output->result_name == prewhere_info->prewhere_column_name)
         {
             /// Special case for final PREWHERE column: it is an AND combination of all conditions,
-            /// but we have only the condition for the last step here.
-            /// However we know that the ultimate result after filtering is constant 1 for the PREWHERE column.
-            auto const_true = output->result_type->createColumnConst(0, Field{1});
-            const auto & prewhere_result_node =
-                steps.back().actions->addColumn(ColumnWithTypeAndName(const_true, output->result_type, output->result_name));
-            steps.back().actions->addOrReplaceInOutputs(prewhere_result_node);
+            /// but we have only the condition for the last step here. We know that the combined filter is equivalent to
+            /// to the last condition after filters from previous steps are applied. We just need to CAST the last condition
+            /// to the type of combined filter. We do this in 2 steps:
+            /// 1. AND the last condition with constant True. This is needed to make sure that in the last step filter has UInt8 type
+            ///    but containes values other than 0 and 1 (e.g. if it is (number%5) it contains 2,3,4)
+            /// 2. CAST the result to the exact type of the PREWHERE column from the original DAG
+            const auto & last_step_result_node_info = node_remap[steps.back().column_name];
+            auto & last_step_dag = steps.back().actions;
+            /// Build AND(last_step_result_node, true)
+            Field true_constant_value(true);
+            ColumnWithTypeAndName column;
+            column.column = DataTypeUInt8().createColumnConst(0, true_constant_value);
+            column.type = std::make_shared<DataTypeUInt8>();
+            const auto * cast_type_constant_node = &last_step_dag->addColumn(std::move(column));
+            ActionsDAG::NodeRawConstPtrs children = {last_step_result_node_info.node, cast_type_constant_node};
+            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+            const auto& and_node = addFunction(last_step_dag, func_builder_and, children, node_remap);
+            /// Build CAST(and_node, type of PREWHERE column)
+            const auto & cast_node = addCast(last_step_dag, and_node, output->result_type->getName(), node_remap);
+            /// Add alias for the result with the name of the PREWHERE column
+            const auto & prewhere_result_node = last_step_dag->addAlias(cast_node, output->result_name);
+            last_step_dag->addOrReplaceInOutputs(prewhere_result_node);
         }
         else
         {
