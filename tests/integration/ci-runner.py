@@ -380,11 +380,6 @@ class ClickhouseIntegrationTestsRunner:
         )
 
     def _compress_logs(self, dir, relpaths, result_path):
-        # We execute sync in advance to have all files written after containers
-        # are finished or killed
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "sync", shell=True
-        )
         retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
             "tar czf {} -C {} {}".format(result_path, dir, " ".join(relpaths)),
             shell=True,
@@ -760,7 +755,7 @@ class ClickhouseIntegrationTestsRunner:
 
         tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
         if not tests_to_run:
-            logging.info("No tests to run found")
+            logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         self._install_clickhouse(build_path)

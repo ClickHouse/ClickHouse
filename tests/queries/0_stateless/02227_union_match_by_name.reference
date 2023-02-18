@@ -31,8 +31,8 @@ Header: avgWeighted(x, y) Nullable(Float64)
             Header: x Nullable(Nothing)
                     y UInt8
               Expression (Before ORDER BY)
-              Header: NULL Nullable(Nothing)
-                      1 UInt8
+              Header: 1 UInt8
+                      NULL Nullable(Nothing)
                       dummy UInt8
                 ReadFromStorage (SystemOne)
                 Header: dummy UInt8

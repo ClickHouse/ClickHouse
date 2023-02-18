@@ -135,28 +135,43 @@ NameSet injectRequiredColumns(
 
 
 MergeTreeReadTask::MergeTreeReadTask(
-    const MergeTreeData::DataPartPtr & data_part_,
+    const DataPartPtr & data_part_,
     const MarkRanges & mark_ranges_,
     size_t part_index_in_query_,
-    const Names & ordered_names_,
     const NameSet & column_name_set_,
     const MergeTreeReadTaskColumns & task_columns_,
     bool remove_prewhere_column_,
-    MergeTreeBlockSizePredictorPtr && size_predictor_)
+    MergeTreeBlockSizePredictorPtr size_predictor_,
+    int64_t priority_,
+    std::future<MergeTreeReaderPtr> reader_,
+    std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_)
     : data_part{data_part_}
     , mark_ranges{mark_ranges_}
     , part_index_in_query{part_index_in_query_}
-    , ordered_names{ordered_names_}
     , column_name_set{column_name_set_}
     , task_columns{task_columns_}
     , remove_prewhere_column{remove_prewhere_column_}
-    , size_predictor{std::move(size_predictor_)}
+    , size_predictor{size_predictor_}
+    , reader(std::move(reader_))
+    , pre_reader_for_step(std::move(pre_reader_for_step_))
+    , priority(priority_)
 {
 }
 
+MergeTreeReadTask::~MergeTreeReadTask()
+{
+    if (reader.valid())
+        reader.wait();
+
+    for (const auto & pre_reader : pre_reader_for_step)
+    {
+        if (pre_reader.valid())
+            pre_reader.wait();
+    }
+}
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
     : data_part(data_part_)
 {
     number_of_rows_in_part = data_part->rows_count;

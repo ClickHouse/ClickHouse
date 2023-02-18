@@ -488,6 +488,23 @@ Possible values:
 
 Default value: 0.
 
+## group_by_use_nulls {#group_by_use_nulls}
+
+Changes the way the [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
+Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
+
+Possible values:
+
+-   0 — The default value for the aggregation key type is used to produce missing values.
+-   1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/en/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/en/sql-reference/syntax.md) for rows that didn't use it.
+
+Default value: 0.
+
+See also:
+
+-   [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
+
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
@@ -1303,7 +1320,7 @@ Default value: `3`.
 
 ## use_query_cache {#use-query-cache}
 
-If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-readsfrom-query-cache)
+If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-reads-from-query-cache)
 and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in more detail how the cache is used.
 
 Possible values:
@@ -3310,6 +3327,15 @@ SELECT
 FROM fuse_tbl
 ```
 
+## optimize_rewrite_aggregate_function_with_if
+
+Rewrite aggregate functions with if expression as argument when logically equivalent.
+For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
+
+:::note
+Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+:::
+
 ## allow_experimental_database_replicated {#allow_experimental_database_replicated}
 
 Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
@@ -3459,7 +3485,7 @@ Possible values:
 
 Default value: `0`.
 
-## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
 

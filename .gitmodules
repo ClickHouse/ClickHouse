@@ -1,7 +1,3 @@
-[submodule "contrib/poco"]
-	path = contrib/poco
-	url = https://github.com/ClickHouse/poco
-	branch = clickhouse
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd
@@ -257,6 +253,9 @@
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
+[submodule "contrib/idxd-config"]
+	path = contrib/idxd-config
+	url = https://github.com/intel/idxd-config
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash
@@ -297,6 +296,9 @@
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
 	url = https://github.com/ridiculousfish/libdivide
+[submodule "contrib/ulid-c"]
+	path = contrib/ulid-c
+	url = https://github.com/ClickHouse/ulid-c.git
 [submodule "contrib/aws-crt-cpp"]
 	path = contrib/aws-crt-cpp
 	url = https://github.com/ClickHouse/aws-crt-cpp

@@ -15,7 +15,7 @@ namespace DB
 ///
 /// always_read_till_end - read all data from input ports even if limit was reached.
 /// with_ties, description - implementation of LIMIT WITH TIES. It works only for single port.
-class LimitTransform : public IProcessor
+class LimitTransform final : public IProcessor
 {
 private:
     UInt64 limit;

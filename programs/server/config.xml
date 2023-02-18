@@ -339,6 +339,7 @@
     <background_buffer_flush_schedule_pool_size>16</background_buffer_flush_schedule_pool_size>
     <background_pool_size>16</background_pool_size>
     <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+    <background_merges_mutations_scheduling_policy>round_robin</background_merges_mutations_scheduling_policy>
     <background_move_pool_size>8</background_move_pool_size>
     <background_fetches_pool_size>8</background_fetches_pool_size>
     <background_common_pool_size>8</background_common_pool_size>
@@ -854,6 +855,51 @@
                 </replica>
             </shard-->
         </test_cluster_one_shard_three_replicas_localhost>
+	<parallel_replicas>
+		<shard>
+            <internal_replication>false</internal_replication>
+            <replica>
+                <host>127.0.0.1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.2</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.3</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.4</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.5</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.6</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.7</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.8</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.9</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>127.0.0.10</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+	</parallel_replicas>
         <test_cluster_two_shards_localhost>
              <shard>
                  <replica>
@@ -1471,7 +1517,7 @@
     <!--     <size>1073741824</size> -->
     <!--     <max_entries>1024</max_entries> -->
     <!--     <max_entry_size>1048576</max_entry_size> -->
-    <!--     <max_entry_records>30000000</max_entry_records> -->
+    <!--     <max_entry_rows>30000000</max_entry_rows> -->
     <!-- </query_cache> -->
 
     <!-- Uncomment if enable merge tree metadata cache -->

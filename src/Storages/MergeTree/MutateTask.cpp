@@ -497,7 +497,15 @@ static NameSet collectFilesToSkip(
     auto source_updated_stream_counts = getStreamCounts(source_part, updated_header.getNames());
     auto new_updated_stream_counts = getStreamCounts(new_part, updated_header.getNames());
 
-    /// Skip updated files
+    /// Skip all modified files in new part.
+    for (const auto & [stream_name, _] : new_updated_stream_counts)
+    {
+        files_to_skip.insert(stream_name + ".bin");
+        files_to_skip.insert(stream_name + mrk_extension);
+    }
+
+    /// Skip files that we read from source part and do not write in new part.
+    /// E.g. ALTER MODIFY from LowCardinality(String) to String.
     for (const auto & [stream_name, _] : source_updated_stream_counts)
     {
         /// If we read shared stream and do not write it
@@ -885,6 +893,7 @@ public:
                 ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
+                false, // no cleanup
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 /* need_prefix */ true,
@@ -1543,13 +1552,6 @@ bool MutateTask::prepare()
 
     auto context_for_reading = Context::createCopy(ctx->context);
 
-    /// We must read with one thread because it guarantees that output stream will be sorted.
-    /// Disable all settings that can enable reading with several streams.
-    context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
-    context_for_reading->setSetting("max_threads", 1);
-    context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
-    context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
-
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
     context_for_reading->setSetting("force_index_by_date", false);
     context_for_reading->setSetting("force_primary_key", false);
@@ -1562,7 +1564,7 @@ bool MutateTask::prepare()
     }
 
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
+        *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -1596,6 +1598,15 @@ bool MutateTask::prepare()
     {
         LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
     }
+
+    /// We must read with one thread because it guarantees that output stream will be sorted.
+    /// Disable all settings that can enable reading with several streams.
+    /// NOTE: isStorageTouchedByMutations() above is done without this settings because it
+    /// should be ok to calculate count() with multiple streams.
+    context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
+    context_for_reading->setSetting("max_threads", 1);
+    context_for_reading->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
+    context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
 
     MutationHelpers::splitMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
 

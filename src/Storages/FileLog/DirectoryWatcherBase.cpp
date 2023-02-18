@@ -2,6 +2,7 @@
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/StorageFileLog.h>
+#include <base/defines.h>
 
 #include <filesystem>
 #include <unistd.h>
@@ -129,7 +130,8 @@ void DirectoryWatcherBase::watchFunc()
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {
     stop();
-    close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
 }
 
 void DirectoryWatcherBase::start()

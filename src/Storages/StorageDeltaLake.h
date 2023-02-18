@@ -4,21 +4,11 @@
 
 #if USE_AWS_S3
 
-#    include <Storages/IStorage.h>
+#    include <Storages/IStorageDataLake.h>
+#    include <Storages/S3DataLakeMetadataReadHelper.h>
 #    include <Storages/StorageS3.h>
 
-#    include <unordered_map>
 #    include <base/JSON.h>
-
-namespace Poco
-{
-class Logger;
-}
-
-namespace Aws::S3
-{
-class S3Client;
-}
 
 namespace DB
 {
@@ -39,65 +29,35 @@ private:
 };
 
 // class to get deltalake log json files and read json from them
-class JsonMetadataGetter
+template <typename Configuration, typename MetadataReadHelper>
+class DeltaLakeMetadataParser
 {
 public:
-    JsonMetadataGetter(StorageS3::S3Configuration & configuration_, const String & table_path_, ContextPtr context);
+    DeltaLakeMetadataParser(const Configuration & configuration_, ContextPtr context);
 
     std::vector<String> getFiles() { return std::move(metadata).listCurrentFiles(); }
+
+    static String generateQueryFromKeys(const std::vector<String> & keys, const String & format);
 
 private:
     void init(ContextPtr context);
 
-    std::vector<String> getJsonLogFiles();
-
-    std::shared_ptr<ReadBuffer> createS3ReadBuffer(const String & key, ContextPtr context);
+    std::vector<String> getJsonLogFiles() const;
 
     void handleJSON(const JSON & json);
 
-    StorageS3::S3Configuration base_configuration;
-    String table_path;
+    Configuration base_configuration;
     DeltaLakeMetadata metadata;
 };
 
-class StorageDeltaLake : public IStorage
+struct StorageDeltaLakeName
 {
-public:
-    // 1. Parses internal file structure of table
-    // 2. Finds out parts with latest version
-    // 3. Creates url for underlying StorageS3 enigne to handle reads
-    StorageDeltaLake(
-        const StorageS3Configuration & configuration_,
-        const StorageID & table_id_,
-        ColumnsDescription columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        ContextPtr context_,
-        std::optional<FormatSettings> format_settings_);
-
-    String getName() const override { return "DeltaLake"; }
-
-    // Reads latest version of DeltaLake table
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override;
-
-    static ColumnsDescription getTableStructureFromData(
-        const StorageS3Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr ctx);
-private:
-    StorageS3::S3Configuration base_configuration;
-    std::shared_ptr<StorageS3> s3engine;
-    Poco::Logger * log;
-    String table_path;
+    static constexpr auto name = "DeltaLake";
+    static constexpr auto data_directory_prefix = "";
 };
 
+using StorageDeltaLake
+    = IStorageDataLake<StorageS3, StorageDeltaLakeName, DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 }
 
 #endif

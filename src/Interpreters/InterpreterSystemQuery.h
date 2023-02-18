@@ -73,8 +73,6 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
-
-    void extendQueryLogElemImpl(QueryLogElement &, const ASTPtr &, ContextPtr) const override;
 };
 
 

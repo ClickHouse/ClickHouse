@@ -1,10 +1,11 @@
 ---
 sidebar_label: Install
 keywords: [clickhouse, install, getting started, quick start]
+description: Install ClickHouse
 slug: /en/install
 ---
 
-# Installing ClickHouse
+# Install ClickHouse
 
 You have three options for getting up and running with ClickHouse:
 
@@ -14,15 +15,7 @@ You have three options for getting up and running with ClickHouse:
 
 ## ClickHouse Cloud
 
-The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/):
-
-<div class="eighty-percent">
-
-![Create a ClickHouse Cloud service](@site/docs/en/_snippets/images/createservice1.png)
-</div>
-
-Once your Cloud service is provisioned, you will be able to [connect to it](/docs/en/integrations/connect-a-client.md) and start [inserting data](/docs/en/integrations/data-ingestion.md).
-
+The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/).
 
 ## Self-Managed Install
 
@@ -72,6 +65,7 @@ The [Quick Start](/docs/en/quick-start.mdx/#step-1-get-clickhouse) walks through
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
+#### Setup the Debian repository
 ``` bash
 sudo apt-get install -y apt-transport-https ca-certificates dirmngr
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
@@ -79,9 +73,16 @@ sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D7
 echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
     /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
+```
 
+#### Install ClickHouse server and client
+```bash
 sudo apt-get install -y clickhouse-server clickhouse-client
+```
 
+#### Start ClickHouse server
+
+```bash
 sudo service clickhouse-server start
 clickhouse-client # or "clickhouse-client --password" if you've set up a password.
 ```
@@ -127,12 +128,32 @@ You can replace `stable` with `lts` to use different [release kinds](/docs/en/fa
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
+#### Install standalone ClickHouse Keeper
+
+:::tip
+If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
+do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+:::
+
+```bash
+sudo apt-get install -y clickhouse-keeper
+```
+
+#### Enable and start ClickHouse Keeper
+
+```bash
+sudo systemctl enable clickhouse-keeper
+sudo systemctl start clickhouse-keeper
+sudo systemctl status clickhouse-keeper
+```
+
 #### Packages {#packages}
 
 -   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
 -   `clickhouse-server` — Creates a symbolic link for `clickhouse-server` and installs the default server configuration.
 -   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
+-   `clickhouse-keeper` - Used to install ClickHouse Keeper on dedicated ClickHouse Keeper nodes.  If you are running ClickHouse Keeper on the same server as ClickHouse server, then you do not need to install this package. Installs ClickHouse Keeper and the default ClickHouse Keeper configuration files.
 
 :::info
 If you need to install specific version of ClickHouse you have to install all packages with the same version:
@@ -143,15 +164,46 @@ If you need to install specific version of ClickHouse you have to install all pa
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat, and all other rpm-based Linux distributions.
 
+#### Setup the RPM repository
 First, you need to add the official repository:
 
 ``` bash
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
-sudo yum install -y clickhouse-server clickhouse-client
+```
 
-sudo /etc/init.d/clickhouse-server start
+#### Install ClickHouse server and client
+
+```bash
+sudo yum install -y clickhouse-server clickhouse-client
+```
+
+#### Start ClickHouse server
+
+```bash
+sudo systemctl enable clickhouse-server
+sudo systemctl start clickhouse-server
+sudo systemctl status clickhouse-server
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
+```
+
+#### Install standalone ClickHouse Keeper
+
+:::tip
+If you are going to run ClickHouse Keeper on the same server as ClickHouse server you
+do not need to install ClickHouse Keeper as it is included with ClickHouse server.  This command is only needed on standalone ClickHouse Keeper servers.
+:::
+
+```bash
+sudo yum install -y clickhouse-keeper
+```
+
+#### Enable and start ClickHouse Keeper
+
+```bash
+sudo systemctl enable clickhouse-keeper
+sudo systemctl start clickhouse-keeper
+sudo systemctl status clickhouse-keeper
 ```
 
 <details markdown="1">
@@ -198,7 +250,7 @@ case $(uname -m) in
   *) echo "Unknown architecture $(uname -m)"; exit 1 ;;
 esac
 
-for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client
+for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
 do
   curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
     || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"

@@ -3,7 +3,6 @@
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/CrashLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -18,6 +17,8 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -120,6 +121,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         return {};
     }
+    LOG_DEBUG(&Poco::Logger::get("SystemLog"),
+              "Creating {}.{} from {}", default_database_name, default_table_name, config_prefix);
 
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
@@ -200,7 +203,9 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log");
     text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
     metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
-    cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
+    filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
+    filesystem_read_prefetches_log = createSystemLog<FilesystemReadPrefetchesLog>(
+        global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
         "asynchronous_metric_log");
@@ -246,8 +251,10 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(transactions_info_log.get());
     if (processors_profile_log)
         logs.emplace_back(processors_profile_log.get());
-    if (cache_log)
-        logs.emplace_back(cache_log.get());
+    if (filesystem_cache_log)
+        logs.emplace_back(filesystem_cache_log.get());
+    if (filesystem_read_prefetches_log)
+        logs.emplace_back(filesystem_read_prefetches_log.get());
     if (asynchronous_insert_log)
         logs.emplace_back(asynchronous_insert_log.get());
 
@@ -469,28 +476,29 @@ void SystemLog<LogElement>::prepareTable()
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
-
-            ASTRenameQuery::Table from;
-            from.database = table_id.database_name;
-            from.table = table_id.table_name;
-
-            ASTRenameQuery::Table to;
-            to.database = table_id.database_name;
-            to.table = table_id.table_name + "_" + toString(suffix);
-
-            ASTRenameQuery::Element elem;
-            elem.from = from;
-            elem.to = to;
-
-            rename->elements.emplace_back(elem);
+            ASTRenameQuery::Element elem
+            {
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name)
+                },
+                ASTRenameQuery::Table
+                {
+                    table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(table_id.database_name),
+                    std::make_shared<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                }
+            };
 
             LOG_DEBUG(
                 log,
                 "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
                 description,
-                backQuoteIfNeed(to.table),
+                backQuoteIfNeed(elem.to.getTable()),
                 old_create_query,
                 create_query);
+
+            rename->elements.emplace_back(std::move(elem));
 
             auto query_context = Context::createCopy(context);
             query_context->makeQueryContext();
@@ -569,7 +577,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
-        storage_settings->loadFromQuery(*create->storage);
+        storage_settings->loadFromQuery(*create->storage, getContext());
     }
 
     return create;
