@@ -600,11 +600,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         storage_settings->loadFromQuery(*args.storage_def, context);
 
-        if (storage_settings->disk.changed && storage_settings->storage_policy.changed)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
-
         // updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
         {
