@@ -89,22 +89,16 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     if (visited.contains(node))
         return visited[node];
 
-    auto has_match_in_group_by_actions_that_is_also_irreducible = [&irreducible_nodes, &matches, &node]()
+    bool res = false;
+    /// `matches` maps partition key nodes into nodes in group by actions
+    if (matches.contains(node))
     {
-        /// `matches` maps partition key nodes into nodes in group by actions
-        if (matches.contains(node))
-        {
-            if (const auto * node_in_gb_actions = matches.at(node).node;
-                /// Double-check is needed because function can be mapped into its arg (see matchTrees)
-                node_in_gb_actions && node_in_gb_actions->result_name == node->result_name)
-            {
-                return irreducible_nodes.contains(node_in_gb_actions);
-            }
-        }
-        return false;
-    };
+        const auto & match = matches.at(node);
+        /// Function could be mapped into its argument. In this case .monotonicity != std::nullopt (see matchTrees)
+        if (match.node && match.node->result_name == node->result_name && !match.monotonicity)
+            res = irreducible_nodes.contains(match.node);
+    }
 
-    bool res = has_match_in_group_by_actions_that_is_also_irreducible();
     if (!res)
     {
         switch (node->type)
