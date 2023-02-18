@@ -163,8 +163,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
     const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_,
-    const StoragePtr & storage_)
+    const StoragePtr & storage_,
+    const SelectQueryOptions & select_query_options_)
     : query(normalizeAndValidateQuery(query_))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
@@ -181,7 +181,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
-    , planner(query_tree, select_query_options)
+    , planner(query_tree_, select_query_options_)
 {
 }
 
@@ -196,13 +196,13 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     return interpreter.getSampleBlock();
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query,
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
     auto select_query_options_copy = select_query_options;
     select_query_options_copy.only_analyze = true;
-    InterpreterSelectQueryAnalyzer interpreter(query, context, select_query_options_copy);
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options);
 
     return interpreter.getSampleBlock();
 }

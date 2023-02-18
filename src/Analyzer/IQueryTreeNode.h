@@ -100,7 +100,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = {true}) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
 
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;

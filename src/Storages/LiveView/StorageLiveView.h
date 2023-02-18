@@ -104,7 +104,7 @@ public:
 
     /// Get blocks hash
     /// must be called with mutex locked
-    String getBlocksHashKey(std::lock_guard<std::mutex> &)
+    String getBlocksHashKey(const std::lock_guard<std::mutex> &)
     {
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->hash;
@@ -112,7 +112,7 @@ public:
     }
     /// Get blocks version
     /// must be called with mutex locked
-    UInt64 getBlocksVersion(std::lock_guard<std::mutex> &)
+    UInt64 getBlocksVersion(const std::lock_guard<std::mutex> &)
     {
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->version;
@@ -124,7 +124,7 @@ public:
     void refresh();
 
 private:
-    void refreshImpl(std::lock_guard<std::mutex> & lock);
+    void refreshImpl(const std::lock_guard<std::mutex> & lock);
 
     String getBlocksTableName() const
     {
@@ -139,14 +139,14 @@ private:
 
     /// Check we have any active readers
     /// must be called with mutex locked
-    bool hasActiveUsers(std::lock_guard<std::mutex> &) const
+    bool hasActiveUsers(const std::lock_guard<std::mutex> &) const
     {
         return active_ptr.use_count() > 1;
     }
 
     /// Get blocks time
     /// must be called with mutex locked
-    Time getBlocksTime(std::lock_guard<std::mutex> &)
+    Time getBlocksTime(const std::lock_guard<std::mutex> &)
     {
         if (*blocks_metadata_ptr)
             return (*blocks_metadata_ptr)->time;
@@ -155,7 +155,7 @@ private:
 
     /// Reset blocks
     /// must be called with mutex locked
-    void reset(std::lock_guard<std::mutex> &)
+    void reset(const std::lock_guard<std::mutex> &)
     {
         (*blocks_ptr).reset();
         if (*blocks_metadata_ptr)
@@ -164,18 +164,18 @@ private:
     }
 
     /// Collect mergeable blocks and their sample. Must be called holding mutex
-    MergeableBlocksPtr collectMergeableBlocks(ContextPtr context, std::lock_guard<std::mutex> & lock) const;
+    MergeableBlocksPtr collectMergeableBlocks(ContextPtr context, const std::lock_guard<std::mutex> & lock) const;
 
     /// Complete query using input streams from mergeable blocks
     QueryPipelineBuilder completeQuery(Pipes pipes);
 
     /// Read new data blocks that store query result
-    bool getNewBlocks(std::lock_guard<std::mutex> & lock);
+    bool getNewBlocks(const std::lock_guard<std::mutex> & lock);
 
     void periodicRefreshTaskFunc();
 
     /// Must be called with mutex locked
-    void scheduleNextPeriodicRefresh(std::lock_guard<std::mutex> & lock);
+    void scheduleNextPeriodicRefresh(const std::lock_guard<std::mutex> & lock);
 
     SelectQueryDescription select_query_description;
 

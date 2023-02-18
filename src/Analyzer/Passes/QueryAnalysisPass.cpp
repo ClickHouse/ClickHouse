@@ -52,6 +52,8 @@
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/ValidationUtils.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
 #include <Analyzer/ColumnTransformers.h>
@@ -71,7 +73,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
-#include <Analyzer/HashUtils.h>
 
 namespace ProfileEvents
 {
@@ -99,7 +100,6 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
-    extern const int NOT_AN_AGGREGATE;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_FINAL;
@@ -2991,13 +2991,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     {
         resolved_identifier = resolved_identifier->clone();
         auto & resolved_column = resolved_identifier->as<ColumnNode &>();
-        const auto & resolved_column_type = resolved_column.getColumnType();
-        const auto & resolved_column_name = resolved_column.getColumnName();
-
-        auto to_nullable_function_resolver = FunctionFactory::instance().get("toNullable", scope.context);
-        auto to_nullable_function_arguments = {ColumnWithTypeAndName(nullptr, resolved_column_type, resolved_column_name)};
-        auto to_nullable_function = to_nullable_function_resolver->build(to_nullable_function_arguments);
-        resolved_column.setColumnType(to_nullable_function->getResultType());
+        resolved_column.setColumnType(makeNullableSafe(resolved_column.getColumnType()));
     }
 
     return resolved_identifier;
@@ -5891,8 +5885,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
             continue;
         }
-
-        if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
+        else if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
             if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
@@ -5912,8 +5905,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
           * We cannot skip analysis for such arguments, because some table functions cannot provide
           * information if analysis for argument should be skipped until other arguments will be resolved.
           *
-          * Example: SELECT key from remote('127.0.0.{1,2}', view(select number AS key from numbers(2)), key);
-          * Example: SELECT id from remote('127.0.0.{1,2}', 'default', 'test_table', id);
+          * Example: SELECT key from remote('127.0.0.{1,2}', view(select number AS key from numbers(2)), cityHash64(key));
+          * Example: SELECT id from remote('127.0.0.{1,2}', 'default', 'test_table', cityHash64(id));
           */
         try
         {
@@ -6240,7 +6233,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
         auto [it, inserted] = scope.alias_name_to_table_expression_node.emplace(alias_name, table_expression_node);
         if (!inserted)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                 "Duplicate aliases {} for table expressions in FROM section are not allowed. Try to register {}. Already registered {}.",
                 alias_name,
                 table_expression_node->formatASTForErrorMessage(),
@@ -6250,108 +6243,6 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     add_table_expression_alias_into_scope(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
-
-class ValidateGroupByColumnsVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsVisitor>
-{
-public:
-    ValidateGroupByColumnsVisitor(const QueryTreeNodes & group_by_keys_nodes_, const IdentifierResolveScope & scope_)
-        : group_by_keys_nodes(group_by_keys_nodes_)
-        , scope(scope_)
-    {}
-
-    void visitImpl(const QueryTreeNodePtr & node)
-    {
-        auto query_tree_node_type = node->getNodeType();
-        if (query_tree_node_type == QueryTreeNodeType::CONSTANT ||
-            query_tree_node_type == QueryTreeNodeType::SORT ||
-            query_tree_node_type == QueryTreeNodeType::INTERPOLATE)
-            return;
-
-        if (nodeIsAggregateFunctionOrInGroupByKeys(node))
-            return;
-
-        auto * function_node = node->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "grouping")
-        {
-            auto & grouping_function_arguments_nodes = function_node->getArguments().getNodes();
-            for (auto & grouping_function_arguments_node : grouping_function_arguments_nodes)
-            {
-                bool found_argument_in_group_by_keys = false;
-
-                for (const auto & group_by_key_node : group_by_keys_nodes)
-                {
-                    if (grouping_function_arguments_node->isEqual(*group_by_key_node))
-                    {
-                        found_argument_in_group_by_keys = true;
-                        break;
-                    }
-                }
-
-                if (!found_argument_in_group_by_keys)
-                    throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-                        "GROUPING function argument {} is not in GROUP BY. In scope {}",
-                        grouping_function_arguments_node->formatASTForErrorMessage(),
-                        scope.scope_node->formatASTForErrorMessage());
-            }
-
-            return;
-        }
-
-        auto * column_node = node->as<ColumnNode>();
-        if (!column_node)
-            return;
-
-        auto column_node_source = column_node->getColumnSource();
-        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
-            return;
-
-        std::string column_name;
-
-        if (column_node_source->hasAlias())
-            column_name = column_node_source->getAlias();
-        else if (auto * table_node = column_node_source->as<TableNode>())
-            column_name = table_node->getStorageID().getFullTableName();
-
-        if (!column_name.empty())
-            column_name += '.';
-
-        column_name += column_node->getColumnName();
-
-        throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-            "Column {} is not under aggregate function and not in GROUP BY. In scope {}",
-            column_name,
-            scope.scope_node->formatASTForErrorMessage());
-    }
-
-    bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
-    {
-        if (nodeIsAggregateFunctionOrInGroupByKeys(parent_node))
-            return false;
-
-        if (parent_node->getNodeType() == QueryTreeNodeType::CONSTANT)
-            return false;
-
-        auto child_node_type = child_node->getNodeType();
-        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
-    }
-
-private:
-    bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
-    {
-        if (auto * function_node = node->as<FunctionNode>())
-            if (function_node->isAggregateFunction())
-                return true;
-
-        for (const auto & group_by_key_node : group_by_keys_nodes)
-            if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
-                return true;
-
-        return false;
-    }
-
-    const QueryTreeNodes & group_by_keys_nodes;
-    const IdentifierResolveScope & scope;
-};
 
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
@@ -6674,128 +6565,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             "ARRAY JOIN",
             "in PREWHERE");
 
-    /** Validate aggregates
-      *
-      * 1. Check that there are no aggregate functions and GROUPING function in JOIN TREE, WHERE, PREWHERE, in another aggregate functions.
-      * 2. Check that there are no window functions in JOIN TREE, WHERE, PREWHERE, HAVING, WINDOW, inside another aggregate function,
-      * inside window function arguments, inside window function window definition.
-      * 3. Check that there are no columns that are not specified in GROUP BY keys.
-      * 4. Validate GROUP BY modifiers.
-      */
-    auto join_tree_node_type = query_node_typed.getJoinTree()->getNodeType();
-    bool join_tree_is_subquery = join_tree_node_type == QueryTreeNodeType::QUERY || join_tree_node_type == QueryTreeNodeType::UNION;
-
-    if (!join_tree_is_subquery)
-    {
-        assertNoAggregateFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-        assertNoGroupingFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-        assertNoWindowFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-    }
-
-    if (query_node_typed.hasWhere())
-    {
-        assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
-        assertNoGroupingFunctionNodes(query_node_typed.getWhere(), "in WHERE");
-        assertNoWindowFunctionNodes(query_node_typed.getWhere(), "in WHERE");
-    }
-
-    if (query_node_typed.hasPrewhere())
-    {
-        assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
-        assertNoGroupingFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
-        assertNoWindowFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
-    }
-
-    if (query_node_typed.hasHaving())
-        assertNoWindowFunctionNodes(query_node_typed.getHaving(), "in HAVING");
-
-    if (query_node_typed.hasWindow())
-        assertNoWindowFunctionNodes(query_node_typed.getWindowNode(), "in WINDOW");
-
-    QueryTreeNodes aggregate_function_nodes;
-    QueryTreeNodes window_function_nodes;
-
-    collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
-    collectWindowFunctionNodes(query_node, window_function_nodes);
-
-    if (query_node_typed.hasGroupBy())
-    {
-        assertNoAggregateFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
-        assertNoGroupingFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
-        assertNoWindowFunctionNodes(query_node_typed.getGroupByNode(), "in GROUP BY");
-    }
-
-    for (auto & aggregate_function_node : aggregate_function_nodes)
-    {
-        auto & aggregate_function_node_typed = aggregate_function_node->as<FunctionNode &>();
-
-        assertNoAggregateFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside another aggregate function");
-        assertNoGroupingFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside another aggregate function");
-        assertNoWindowFunctionNodes(aggregate_function_node_typed.getArgumentsNode(), "inside an aggregate function");
-    }
-
-    for (auto & window_function_node : window_function_nodes)
-    {
-        auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
-        assertNoWindowFunctionNodes(window_function_node_typed.getArgumentsNode(), "inside another window function");
-
-        if (query_node_typed.hasWindow())
-            assertNoWindowFunctionNodes(window_function_node_typed.getWindowNode(), "inside window definition");
-    }
-
-    QueryTreeNodes group_by_keys_nodes;
-    group_by_keys_nodes.reserve(query_node_typed.getGroupBy().getNodes().size());
-
-    for (auto & node : query_node_typed.getGroupBy().getNodes())
-    {
-        if (query_node_typed.isGroupByWithGroupingSets())
-        {
-            auto & grouping_set_keys = node->as<ListNode &>();
-            for (auto & grouping_set_key : grouping_set_keys.getNodes())
-            {
-                if (grouping_set_key->as<ConstantNode>())
-                    continue;
-
-                group_by_keys_nodes.push_back(grouping_set_key);
-            }
-        }
-        else
-        {
-            if (node->as<ConstantNode>())
-                continue;
-
-            group_by_keys_nodes.push_back(node);
-        }
-    }
-
-    if (query_node_typed.getGroupBy().getNodes().empty())
-    {
-        if (query_node_typed.hasHaving())
-            assertNoGroupingFunctionNodes(query_node_typed.getHaving(), "in HAVING without GROUP BY");
-
-        if (query_node_typed.hasOrderBy())
-            assertNoGroupingFunctionNodes(query_node_typed.getOrderByNode(), "in ORDER BY without GROUP BY");
-
-        assertNoGroupingFunctionNodes(query_node_typed.getProjectionNode(), "in SELECT without GROUP BY");
-    }
-
-    bool has_aggregation = !query_node_typed.getGroupBy().getNodes().empty() || !aggregate_function_nodes.empty();
-
-    if (has_aggregation)
-    {
-        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, scope);
-
-        if (query_node_typed.hasHaving())
-            validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
-
-        if (query_node_typed.hasOrderBy())
-            validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
-
-        validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
-    }
-
-    if (!has_aggregation && (query_node_typed.isGroupByWithGroupingSets() || is_rollup_or_cube || query_node_typed.isGroupByWithTotals()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation");
+    validateAggregates(query_node);
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
       * and CTE for other sections to use.

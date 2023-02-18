@@ -34,8 +34,11 @@ std::vector<size_t> TableFunctionExecutable::skipAnalysisForArguments(const Quer
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
     size_t table_function_node_arguments_size = table_function_node_arguments.size();
 
-    std::vector<size_t> result_indexes;
+    if (table_function_node_arguments_size <= 3)
+        return {};
 
+    std::vector<size_t> result_indexes;
+    result_indexes.reserve(table_function_node_arguments_size - 3);
     for (size_t i = 3; i < table_function_node_arguments_size; ++i)
         result_indexes.push_back(i);
 

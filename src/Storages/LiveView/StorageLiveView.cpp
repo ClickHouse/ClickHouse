@@ -481,7 +481,7 @@ void StorageLiveView::refresh()
     refreshImpl(lock);
 }
 
-void StorageLiveView::refreshImpl(std::lock_guard<std::mutex> & lock)
+void StorageLiveView::refreshImpl(const std::lock_guard<std::mutex> & lock)
 {
     if (getNewBlocks(lock))
         condition.notify_all();
@@ -553,7 +553,7 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
     return inner_blocks_query->clone();
 }
 
-MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_context, std::lock_guard<std::mutex> &) const
+MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_context, const std::lock_guard<std::mutex> &) const
 {
     MergeableBlocksPtr new_mergeable_blocks = std::make_shared<MergeableBlocks>();
     BlocksPtrs new_blocks = std::make_shared<std::vector<BlocksPtr>>();
@@ -672,7 +672,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     return builder;
 }
 
-bool StorageLiveView::getNewBlocks(std::lock_guard<std::mutex> & lock)
+bool StorageLiveView::getNewBlocks(const std::lock_guard<std::mutex> & lock)
 {
     SipHash hash;
     UInt128 key;
@@ -751,7 +751,7 @@ void StorageLiveView::periodicRefreshTaskFunc()
         scheduleNextPeriodicRefresh(lock);
 }
 
-void StorageLiveView::scheduleNextPeriodicRefresh(std::lock_guard<std::mutex> & lock)
+void StorageLiveView::scheduleNextPeriodicRefresh(const std::lock_guard<std::mutex> & lock)
 {
     Seconds current_time = std::chrono::duration_cast<Seconds>(std::chrono::system_clock::now().time_since_epoch());
     Seconds blocks_time = std::chrono::duration_cast<Seconds>(getBlocksTime(lock).time_since_epoch());
