@@ -107,10 +107,10 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
     return distributed_header;
 }
 
-OpenTelemetry::TracingContextHolderPtr DistributedAsyncInsertHeader::createTracingContextHolder(std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const
+OpenTelemetry::TracingContextHolderPtr DistributedAsyncInsertHeader::createTracingContextHolder(const char * function, std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const
 {
     OpenTelemetry::TracingContextHolderPtr trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
-        __PRETTY_FUNCTION__,
+        function,
         client_info.client_trace_context,
         std::move(open_telemetry_span_log));
     trace_context->root_span.addAttribute("clickhouse.shard_num", shard_num);

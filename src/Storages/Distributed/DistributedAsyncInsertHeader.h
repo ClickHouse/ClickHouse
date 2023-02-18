@@ -39,7 +39,7 @@ struct DistributedAsyncInsertHeader
     Block block_header;
 
     static DistributedAsyncInsertHeader read(ReadBufferFromFile & in, Poco::Logger * log);
-    OpenTelemetry::TracingContextHolderPtr createTracingContextHolder(std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const;
+    OpenTelemetry::TracingContextHolderPtr createTracingContextHolder(const char * function, std::shared_ptr<OpenTelemetrySpanLog> open_telemetry_span_log) const;
 };
 
 }

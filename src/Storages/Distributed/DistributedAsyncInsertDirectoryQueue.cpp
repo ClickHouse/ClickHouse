@@ -418,8 +418,9 @@ void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_
 
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = DistributedAsyncInsertHeader::read(in, log);
-        thread_trace_context =
-            distributed_header.createTracingContextHolder(storage.getContext()->getOpenTelemetrySpanLog());
+        thread_trace_context = distributed_header.createTracingContextHolder(
+            __PRETTY_FUNCTION__,
+            storage.getContext()->getOpenTelemetrySpanLog());
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
