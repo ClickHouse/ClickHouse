@@ -20,6 +20,13 @@ SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) A
 7	7	1
 8	8	1
 9	9	1
+SELECT cast(id1 as UInt16) AS cond1, (if(id2 > 3, id2, NULL) % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond LIMIT 10;
+4	4	1
+5	5	1
+6	6	1
+7	7	1
+8	8	1
+9	9	1
 SELECT cast(id1 as UInt16) AS cond1, (id2 % 40000) AS cond2, (cond1 AND cond2) AS cond FROM test_02559 PREWHERE cond AND id2 > 4 LIMIT 10;
 5	5	1
 6	6	1
