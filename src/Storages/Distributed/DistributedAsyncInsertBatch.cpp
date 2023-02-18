@@ -212,6 +212,7 @@ void DistributedAsyncInsertBatch::sendBatch()
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
             tracing_contexts.emplace_back(distributed_header.createTracingContextHolder(
+                __PRETTY_FUNCTION__,
                 parent.storage.getContext()->getOpenTelemetrySpanLog()));
             tracing_contexts.back()->root_span.addAttribute("clickhouse.distributed_batch_start_time", batch_start_time);
 
@@ -268,6 +269,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles()
 
             // This function is called in a separated thread, so we set up the trace context from the file
             trace_context = distributed_header.createTracingContextHolder(
+                __PRETTY_FUNCTION__,
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
