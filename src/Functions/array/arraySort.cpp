@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 /** Sort arrays, by values of its elements, or by values of corresponding elements of calculated expression (known as "schwartzsort").
@@ -45,31 +46,38 @@ struct ArraySortImpl
         }
     };
 
-    static void checkArguments(std::span<const ColumnWithTypeAndName, num_fixed_params> arguments, const String & name)
+    static void checkArguments(const String & name, const ColumnWithTypeAndName * fixed_arguments)
         requires(num_fixed_params)
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs limit argument", name);
-
-        WhichDataType which(arguments[0].type.get());
+        if (!fixed_arguments)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected fixed arguments to get the limit for partial array sort"
+            );
+        WhichDataType which(fixed_arguments[0].type.get());
         if (!which.isUInt() && !which.isInt())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of limit argument of function {} (must be UInt or Int)",
-                arguments[0].type->getName(),
+                fixed_arguments[0].type->getName(),
                 name);
     }
 
     static ColumnPtr execute(
         const ColumnArray & array,
         ColumnPtr mapped,
-        std::span<const ColumnWithTypeAndName, num_fixed_params> arguments [[maybe_unused]] = {})
+        const ColumnWithTypeAndName * fixed_arguments [[maybe_unused]] = nullptr)
     {
         [[maybe_unused]] const auto limit = [&]() -> size_t
         {
             if constexpr (is_partial)
             {
-                return arguments[0].column.get()->getUInt(0);
+                if (!fixed_arguments)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected fixed arguments to get the limit for partial array sort"
+                    );
+                return fixed_arguments[0].column.get()->getUInt(0);
             }
             return 0;
         }();
