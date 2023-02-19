@@ -7,15 +7,15 @@ SELECT count() FROM test.hits_s3;
 8873898
 SELECT count() FROM test.hits_s3 WHERE AdvEngineID != 0;
 30641
-SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM test.hits_s3 ;
+SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM test.hits_s3;
 329039	8873898	1400.8565027454677
-SELECT sum(UserID) FROM test.hits_s3 ;
+SELECT sum(UserID) FROM test.hits_s3;
 15358948234638402412
-SELECT uniq(UserID) FROM test.hits_s3 ;
+SELECT uniq(UserID) FROM test.hits_s3;
 120665
-SELECT uniq(SearchPhrase) FROM test.hits_s3 ;
+SELECT uniq(SearchPhrase) FROM test.hits_s3;
 132591
-SELECT min(EventDate), max(EventDate) FROM test.hits_s3 ;
+SELECT min(EventDate), max(EventDate) FROM test.hits_s3;
 2014-03-17	2014-03-23
 SELECT AdvEngineID, count() FROM test.hits_s3 WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY AdvEngineID DESC;
 62	7
