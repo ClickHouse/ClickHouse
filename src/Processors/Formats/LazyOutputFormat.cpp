@@ -7,29 +7,6 @@ namespace DB
 
 WriteBuffer LazyOutputFormat::out(nullptr, 0);
 
-Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
-{
-    if (isFinished())
-        return {};
-
-    Chunk chunk;
-    if (milliseconds)
-    {
-        if (!queue.tryPop(chunk, milliseconds))
-            return {};
-    }
-    else
-    {
-        if (!queue.pop(chunk))
-            return {};
-    }
-
-    if (chunk)
-        info.update(chunk.getNumRows(), chunk.allocatedBytes());
-
-    return chunk;
-}
-
 Chunk LazyOutputFormat::getTotals()
 {
     return std::move(totals);
