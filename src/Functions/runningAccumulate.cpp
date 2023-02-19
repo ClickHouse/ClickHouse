@@ -125,7 +125,7 @@ public:
                 }
 
                 agg_func.create(place.data()); /// This function can throw.
-                state_created = true; //-V519
+                state_created = true;
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());

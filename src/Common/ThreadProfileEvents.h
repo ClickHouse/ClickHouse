@@ -204,7 +204,7 @@ public:
     void updateCounters(ProfileEvents::Counters & profile_events);
 
 private:
-    ::taskstats stats;  //-V730_NOINIT
+    ::taskstats stats;
     std::function<::taskstats()> stats_getter;
 
     explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);

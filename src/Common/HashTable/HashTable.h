@@ -369,7 +369,7 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell> //-V730
+struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;

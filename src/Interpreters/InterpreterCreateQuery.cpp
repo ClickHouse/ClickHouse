@@ -312,7 +312,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         {
 
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode}; //-V560
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
             loader.loadTables();
             loader.startupTables();
         }

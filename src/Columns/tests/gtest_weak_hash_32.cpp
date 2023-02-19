@@ -182,7 +182,7 @@ TEST(WeakHash32, ColumnVectorI32)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int32_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 16); //-V610
+            data.push_back(i << 16);
     }
 
     WeakHash32 hash(col->size());
@@ -216,7 +216,7 @@ TEST(WeakHash32, ColumnVectorI64)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 32); //-V610
+            data.push_back(i << 32);
     }
 
     WeakHash32 hash(col->size());
@@ -258,7 +258,7 @@ TEST(WeakHash32, ColumnVectorI128)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 32); //-V610
+            data.push_back(i << 32);
     }
 
     WeakHash32 hash(col->size());
@@ -275,7 +275,7 @@ TEST(WeakHash32, ColumnDecimal32)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int32_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 16); //-V610
+            data.push_back(i << 16);
     }
 
     WeakHash32 hash(col->size());
@@ -292,7 +292,7 @@ TEST(WeakHash32, ColumnDecimal64)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 32); //-V610
+            data.push_back(i << 32);
     }
 
     WeakHash32 hash(col->size());
@@ -309,7 +309,7 @@ TEST(WeakHash32, ColumnDecimal128)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 32); //-V610
+            data.push_back(i << 32);
     }
 
     WeakHash32 hash(col->size());
