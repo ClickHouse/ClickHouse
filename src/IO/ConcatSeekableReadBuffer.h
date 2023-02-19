@@ -21,7 +21,7 @@ public:
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 
-    std::optional<size_t> getFileSize() override { return total_size; }
+    size_t getFileSize() override { return total_size; }
 
 private:
     bool nextImpl() override;
@@ -30,7 +30,7 @@ private:
     struct BufferInfo
     {
         BufferInfo() = default;
-        BufferInfo(BufferInfo &&) = default;
+        BufferInfo(BufferInfo && src) noexcept;
         ~BufferInfo();
         SeekableReadBuffer * in = nullptr;
         bool own_in = false;

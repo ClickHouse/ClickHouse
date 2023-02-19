@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/index
 toc_hidden_folder: true
 sidebar_position: 42
 sidebar_label: "Манипуляции с индексами"
@@ -9,9 +10,9 @@ sidebar_label: "Манипуляции с индексами"
 Добавить или удалить индекс можно с помощью операций
 
 ``` sql
-ALTER TABLE [db.]name ADD INDEX name expression TYPE type GRANULARITY value [FIRST|AFTER name]
-ALTER TABLE [db.]name DROP INDEX name
-ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX name expression TYPE type GRANULARITY value [FIRST|AFTER name]
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX name
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX name IN PARTITION partition_name
 ```
 
 Поддерживается только таблицами семейства `*MergeTree`.
@@ -22,4 +23,3 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 `MATERIALIZE INDEX` - перестраивает индекс в указанной партиции. Реализовано как мутация. В случае если нужно перестроить индекс над всеми данными то писать `IN PARTITION` не нужно.
 
 Запрос на изменение индексов реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
-

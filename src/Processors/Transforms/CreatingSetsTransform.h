@@ -2,10 +2,10 @@
 
 #include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Interpreters/PreparedSets.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>
@@ -50,7 +50,6 @@ private:
     Stopwatch watch;
 
     bool done_with_set = true;
-    //bool done_with_join = true;
     bool done_with_table = true;
 
     SizeLimits network_transfer_limits;

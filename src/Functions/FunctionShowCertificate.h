@@ -1,6 +1,9 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
+
+#include <memory>
+#include <string>
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
@@ -33,13 +36,17 @@ class FunctionShowCertificate : public IFunction
 public:
     static constexpr auto name = "showCertificate";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr ctx)
     {
 #if !defined(USE_SSL) || USE_SSL == 0
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support is disabled");
 #endif
-        return std::make_shared<FunctionShowCertificate>();
+        return std::make_shared<FunctionShowCertificate>(ctx->getQueryContext()->getClientInfo().certificate);
     }
+
+    std::string certificate;
+
+    explicit FunctionShowCertificate(const std::string & certificate_ = "") : certificate(certificate_) {}
 
     String getName() const override { return name; }
 
@@ -61,7 +68,15 @@ public:
         if (input_rows_count)
         {
 #if USE_SSL
-            if (const X509 * cert = SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext()))
+            std::unique_ptr<Poco::Crypto::X509Certificate> x509_cert;
+            if (!certificate.empty())
+                x509_cert = std::make_unique<Poco::Crypto::X509Certificate>(certificate);
+
+            const X509 * cert = x509_cert ?
+                x509_cert->certificate() :
+                SSL_CTX_get0_certificate(Poco::Net::SSLManager::instance().defaultServerContext()->sslContext());
+
+            if (cert)
             {
                 BIO * b = BIO_new(BIO_s_mem());
                 SCOPE_EXIT(
@@ -74,7 +89,7 @@ public:
 
                 {
                     char buf[1024] = {0};
-                    const ASN1_INTEGER * sn = cert->cert_info->serialNumber;
+                    const ASN1_INTEGER * sn = X509_get0_serialNumber(cert);
                     BIGNUM * bnsn = ASN1_INTEGER_to_BN(sn, nullptr);
                     SCOPE_EXIT(
                     {
@@ -101,7 +116,7 @@ public:
                     }
                 }
 
-                char * issuer = X509_NAME_oneline(cert->cert_info->issuer, nullptr, 0);
+                char * issuer = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
                 if (issuer)
                 {
                     SCOPE_EXIT(
@@ -130,7 +145,7 @@ public:
                     }
                 }
 
-                char * subject = X509_NAME_oneline(cert->cert_info->subject, nullptr, 0);
+                char * subject = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
                 if (subject)
                 {
                     SCOPE_EXIT(

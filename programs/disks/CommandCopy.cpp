@@ -1,6 +1,6 @@
-#pragma once
-
 #include "ICommand.h"
+#include <Interpreters/Context.h>
+#include <Common/TerminalSize.h>
 
 namespace DB
 {
@@ -10,15 +10,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandCopy : public ICommand
+class CommandCopy final : public ICommand
 {
 public:
     CommandCopy()
     {
         command_name = "copy";
-        command_option_description.emplace(createOptionsDescription("Help Message for copy", getTerminalWidth()));
+        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
         description = "Recursively copy data containing at `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
-        usage = "Usage: copy [OPTION]... <FROM_PATH> <TO_PATH>";
+        usage = "copy [OPTION]... <FROM_PATH> <TO_PATH>";
         command_option_description->add_options()
             ("diskFrom", po::value<String>(), "set name for disk from which we do operations")
             ("diskTo", po::value<String>(), "set name for disk to which we do operations")
@@ -36,30 +36,30 @@ public:
             config.setString("diskTo", options["diskTo"].as<String>());
     }
 
-    void executeImpl(
-        const ContextMutablePtr & global_context,
-        const Poco::Util::LayeredConfiguration & config) const override
+    void execute(
+        const std::vector<String> & command_arguments,
+        DB::ContextMutablePtr & global_context,
+        Poco::Util::LayeredConfiguration & config) override
     {
-        if (pos_arguments.size() != 2)
+        if (command_arguments.size() != 2)
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         String disk_name_from = config.getString("diskFrom", config.getString("disk", "default"));
         String disk_name_to = config.getString("diskTo", config.getString("disk", "default"));
 
-        String path_from = pos_arguments[0];
-        String path_to =  pos_arguments[1];
-
+        const String & path_from = command_arguments[0];
+        const String & path_to =  command_arguments[1];
 
         DiskPtr disk_from = global_context->getDisk(disk_name_from);
         DiskPtr disk_to = global_context->getDisk(disk_name_to);
 
-        String full_path_from = fullPathWithValidate(disk_from, path_from);
-        String full_path_to = fullPathWithValidate(disk_to, path_to);
+        String relative_path_from = validatePathAndGetAsRelative(path_from);
+        String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        disk_from->copy(full_path_from, disk_to, full_path_to);
+        disk_from->copy(relative_path_from, disk_to, relative_path_to);
     }
 };
 }

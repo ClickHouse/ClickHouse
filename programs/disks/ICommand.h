@@ -2,16 +2,10 @@
 
 #include <Disks/IDisk.h>
 
-#include <Poco/Util/Application.h>
-
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/copyData.h>
-
 #include <boost/program_options.hpp>
 
-#include <Common/TerminalSize.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Poco/Util/Application.h>
 
 #include <memory>
 
@@ -26,24 +20,24 @@ class ICommand
 {
 public:
     ICommand() = default;
+
     virtual ~ICommand() = default;
-    void execute(
+
+    virtual void execute(
         const std::vector<String> & command_arguments,
         DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration & config);
+        Poco::Util::LayeredConfiguration & config) = 0;
+
+    const std::optional<ProgramOptionsDescription> & getCommandOptions() const { return command_option_description; }
+
+    void addOptions(ProgramOptionsDescription & options_description);
+
+    virtual void processOptions(Poco::Util::LayeredConfiguration & config, po::variables_map & options) const = 0;
 
 protected:
-    virtual void processOptions(
-        Poco::Util::LayeredConfiguration & config,
-        po::variables_map & options) const = 0;
-
-    virtual void executeImpl(
-        const DB::ContextMutablePtr & global_context,
-        const Poco::Util::LayeredConfiguration & config) const = 0;
-
     void printHelpMessage() const;
 
-    static String fullPathWithValidate(const DiskPtr & disk, const String & path);
+    static String validatePathAndGetAsRelative(const String & path);
 
 public:
     String command_name;
@@ -53,16 +47,18 @@ protected:
     std::optional<ProgramOptionsDescription> command_option_description;
     String usage;
     po::positional_options_description positional_options_description;
-    std::vector<String> pos_arguments;
 };
+
+using CommandPtr = std::unique_ptr<ICommand>;
 
 }
 
-std::unique_ptr <DB::ICommand> makeCommandCopy();
-std::unique_ptr <DB::ICommand> makeCommandLink();
-std::unique_ptr <DB::ICommand> makeCommandList();
-std::unique_ptr <DB::ICommand> makeCommandListDisks();
-std::unique_ptr <DB::ICommand> makeCommandMove();
-std::unique_ptr <DB::ICommand> makeCommandRead();
-std::unique_ptr <DB::ICommand> makeCommandRemove();
-std::unique_ptr <DB::ICommand> makeCommandWrite();
+DB::CommandPtr makeCommandCopy();
+DB::CommandPtr makeCommandLink();
+DB::CommandPtr makeCommandList();
+DB::CommandPtr makeCommandListDisks();
+DB::CommandPtr makeCommandMove();
+DB::CommandPtr makeCommandRead();
+DB::CommandPtr makeCommandRemove();
+DB::CommandPtr makeCommandWrite();
+DB::CommandPtr makeCommandMkDir();

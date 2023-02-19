@@ -8,6 +8,10 @@ endif()
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/curl")
 
 set (SRCS
+    "${LIBRARY_DIR}/lib/fopen.c"
+    "${LIBRARY_DIR}/lib/noproxy.c"
+    "${LIBRARY_DIR}/lib/idn.c"
+    "${LIBRARY_DIR}/lib/cfilters.c"
     "${LIBRARY_DIR}/lib/file.c"
     "${LIBRARY_DIR}/lib/timeval.c"
     "${LIBRARY_DIR}/lib/base64.c"
@@ -82,9 +86,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/openldap.c"
     "${LIBRARY_DIR}/lib/curl_gethostname.c"
     "${LIBRARY_DIR}/lib/gopher.c"
-    "${LIBRARY_DIR}/lib/idn_win32.c"
     "${LIBRARY_DIR}/lib/http_proxy.c"
-    "${LIBRARY_DIR}/lib/non-ascii.c"
     "${LIBRARY_DIR}/lib/asyn-thread.c"
     "${LIBRARY_DIR}/lib/curl_gssapi.c"
     "${LIBRARY_DIR}/lib/http_ntlm.c"
@@ -93,10 +95,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_sasl.c"
     "${LIBRARY_DIR}/lib/rand.c"
     "${LIBRARY_DIR}/lib/curl_multibyte.c"
-    "${LIBRARY_DIR}/lib/hostcheck.c"
     "${LIBRARY_DIR}/lib/conncache.c"
-    "${LIBRARY_DIR}/lib/dotdot.c"
-    "${LIBRARY_DIR}/lib/x509asn1.c"
     "${LIBRARY_DIR}/lib/http2.c"
     "${LIBRARY_DIR}/lib/smb.c"
     "${LIBRARY_DIR}/lib/curl_endian.c"
@@ -106,7 +105,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/sha256.c"
     "${LIBRARY_DIR}/lib/setopt.c"
     "${LIBRARY_DIR}/lib/curl_path.c"
-    "${LIBRARY_DIR}/lib/curl_ctype.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
     "${LIBRARY_DIR}/lib/psl.c"
     "${LIBRARY_DIR}/lib/doh.c"
@@ -120,6 +118,9 @@ set (SRCS
     "${LIBRARY_DIR}/lib/http_aws_sigv4.c"
     "${LIBRARY_DIR}/lib/mqtt.c"
     "${LIBRARY_DIR}/lib/rename.c"
+    "${LIBRARY_DIR}/lib/h2h3.c"
+    "${LIBRARY_DIR}/lib/headers.c"
+    "${LIBRARY_DIR}/lib/timediff.c"
     "${LIBRARY_DIR}/lib/vauth/vauth.c"
     "${LIBRARY_DIR}/lib/vauth/cleartext.c"
     "${LIBRARY_DIR}/lib/vauth/cram.c"
@@ -142,11 +143,13 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vtls/sectransp.c"
     "${LIBRARY_DIR}/lib/vtls/gskit.c"
     "${LIBRARY_DIR}/lib/vtls/mbedtls.c"
-    "${LIBRARY_DIR}/lib/vtls/mesalink.c"
     "${LIBRARY_DIR}/lib/vtls/bearssl.c"
     "${LIBRARY_DIR}/lib/vtls/keylog.c"
+    "${LIBRARY_DIR}/lib/vtls/x509asn1.c"
+    "${LIBRARY_DIR}/lib/vtls/hostcheck.c"
     "${LIBRARY_DIR}/lib/vquic/ngtcp2.c"
     "${LIBRARY_DIR}/lib/vquic/quiche.c"
+    "${LIBRARY_DIR}/lib/vquic/msh3.c"
     "${LIBRARY_DIR}/lib/vssh/libssh2.c"
     "${LIBRARY_DIR}/lib/vssh/libssh.c"
 )
@@ -169,6 +172,8 @@ target_include_directories (_curl SYSTEM PUBLIC
 target_link_libraries (_curl PRIVATE OpenSSL::SSL)
 
 # The library is large - avoid bloat (XXX: is it?)
-target_compile_options (_curl PRIVATE -g0)
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options (_curl PRIVATE -g0)
+endif()
 
 add_library (ch_contrib::curl ALIAS _curl)

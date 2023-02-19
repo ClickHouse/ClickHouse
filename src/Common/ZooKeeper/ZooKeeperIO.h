@@ -22,6 +22,7 @@ void write(uint64_t x, WriteBuffer & out);
 
 void write(int64_t x, WriteBuffer & out);
 void write(int32_t x, WriteBuffer & out);
+void write(uint8_t x, WriteBuffer & out);
 void write(OpNum x, WriteBuffer & out);
 void write(bool x, WriteBuffer & out);
 void write(const std::string & s, WriteBuffer & out);
@@ -50,6 +51,7 @@ void read(uint64_t & x, ReadBuffer & in);
 #endif
 void read(int64_t & x, ReadBuffer & in);
 void read(int32_t & x, ReadBuffer & in);
+void read(uint8_t & x, ReadBuffer & in);
 void read(OpNum & x, ReadBuffer & in);
 void read(bool & x, ReadBuffer & in);
 void read(int8_t & x, ReadBuffer & in);
@@ -65,7 +67,7 @@ void read(std::array<char, N> & s, ReadBuffer & in)
     read(size, in);
     if (size != N)
         throw Exception("Unexpected array size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
-    in.read(s.data(), N);
+    in.readStrict(s.data(), N);
 }
 
 template <typename T>

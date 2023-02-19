@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/groupbitxor
 sidebar_position: 127
 ---
 
@@ -44,4 +45,3 @@ SELECT groupBitXor(num) FROM t
 binary     decimal
 01101000 = 104
 ```
-

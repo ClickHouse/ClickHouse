@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -20,7 +21,7 @@ namespace DB
         }
 
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
 
             if (background_exception)
                 std::rethrow_exception(background_exception);
@@ -30,7 +31,7 @@ namespace DB
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
     {
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             if (background_exception && can_throw_exception)
                 std::rethrow_exception(background_exception);
         }
@@ -97,6 +98,10 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         setThreadName("Collector");
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -154,6 +159,10 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
     {
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
         setThreadName("Formatter");
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -207,7 +216,7 @@ namespace DB
                 }
                 case ProcessingUnitType::FINALIZE:
                 {
-                    formatter->setOutsideStatistics(std::move(unit.statistics));
+                    formatter->statistics = std::move(unit.statistics);
                     formatter->finalizeImpl();
                     break;
                 }

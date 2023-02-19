@@ -33,7 +33,7 @@ FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_
     , sort_description(std::move(sort_description_)), interpolate_description(interpolate_description_)
 {
     if (!input_stream_.has_single_port)
-        throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
 }
 
 void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -57,4 +57,12 @@ void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Sort Description", explainSortDescription(sort_description));
 }
 
+void FillingStep::updateOutputStream()
+{
+    if (!input_streams.front().has_single_port)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
+
+    output_stream = createOutputStream(
+        input_streams.front(), FillingTransform::transformHeader(input_streams.front().header, sort_description), getDataStreamTraits());
+}
 }

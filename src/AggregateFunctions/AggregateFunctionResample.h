@@ -43,7 +43,7 @@ public:
         size_t step_,
         const DataTypes & arguments,
         const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params}
+        : IAggregateFunctionHelper<AggregateFunctionResample<Key>>{arguments, params, createResultType(nested_function_)}
         , nested_function{nested_function_}
         , last_col{arguments.size() - 1}
         , begin{begin_}
@@ -55,9 +55,7 @@ public:
     {
         // notice: argument types has been checked before
         if (step == 0)
-            throw Exception("The step given in function "
-                    + getName() + " should not be zero",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The step given in function {} should not be zero", getName());
 
         if (end < begin)
             total = 0;
@@ -68,17 +66,16 @@ public:
             if (common::subOverflow(end, begin, dif)
                 || common::addOverflow(static_cast<size_t>(dif), step, sum))
             {
-                throw Exception("Overflow in internal computations in function " + getName()
-                    + ". Too large arguments", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Overflow in internal computations in function {}. "
+                    "Too large arguments", getName());
             }
 
             total = (sum - 1) / step; // total = (end - begin + step - 1) / step
         }
 
         if (total > max_elements)
-            throw Exception("The range given in function "
-                    + getName() + " contains too many elements",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
+                    getName());
     }
 
     String getName() const override
@@ -89,6 +86,21 @@ public:
     bool isState() const override
     {
         return nested_function->isState();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_function->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_function->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_function->getDefaultVersion();
     }
 
     bool allocatesMemoryInArena() const override
@@ -134,7 +146,13 @@ public:
             nested_function->destroy(place + i * size_of_data);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        for (size_t i = 0; i < total; ++i)
+            nested_function->destroyUpToState(place + i * size_of_data);
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Key key;
 
@@ -151,38 +169,54 @@ public:
         nested_function->add(place + pos * size_of_data, columns, row_num, arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->serialize(place + i * size_of_data, buf, version);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->deserialize(place + i * size_of_data, buf, version, arena);
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
-        return std::make_shared<DataTypeArray>(nested_function->getReturnType());
+        return std::make_shared<DataTypeArray>(nested_function_->getResultType());
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
+    template <bool merge>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         for (size_t i = 0; i < total; ++i)
-            nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
+        {
+            if constexpr (merge)
+                nested_function->insertMergeResultInto(place + i * size_of_data, col.getData(), arena);
+            else
+                nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
+        }
 
         col_offsets.getData().push_back(col.getData().size());
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

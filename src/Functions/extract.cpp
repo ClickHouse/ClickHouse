@@ -1,6 +1,6 @@
-#include "FunctionsStringSearchToString.h"
-#include "FunctionFactory.h"
-#include "Regexps.h"
+#include <Functions/FunctionsStringSearchToString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/Regexps.h>
 #include <Common/OptimizedRegularExpression.h>
 
 
@@ -65,7 +65,7 @@ using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, NameExtract>;
 
 }
 
-void registerFunctionExtract(FunctionFactory & factory)
+REGISTER_FUNCTION(Extract)
 {
     factory.registerFunction<FunctionExtract>();
 }

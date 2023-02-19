@@ -69,6 +69,10 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
+    SCOPE_EXIT_SAFE(
+        if (thread_group)
+            CurrentThread::detachQueryIfNotDetached();
+    );
     setThreadName("QueryPullPipeEx");
 
     try
@@ -113,7 +117,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     data->rethrowExceptionIfHas();
 
     bool is_execution_finished
-        = !data->executor->checkTimeLimitSoft() || lazy_format ? lazy_format->isFinished() : data->is_finished.load();
+        = !data->executor->checkTimeLimitSoft() || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
 
     if (is_execution_finished)
     {
@@ -127,6 +131,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (lazy_format)
     {
         chunk = lazy_format->getChunk(milliseconds);
+        data->rethrowExceptionIfHas();
         return true;
     }
 
@@ -170,20 +175,35 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
 void PullingAsyncPipelineExecutor::cancel()
 {
+    if (!data)
+        return;
+
     /// Cancel execution if it wasn't finished.
-    if (data && !data->is_finished && data->executor)
-        data->executor->cancel();
+    try
+    {
+        if (!data->is_finished && data->executor)
+            data->executor->cancel();
+    }
+    catch (...)
+    {
+        /// Store exception only of during query execution there was no
+        /// exception, since only one exception can be re-thrown.
+        if (!data->has_exception)
+        {
+            data->exception = std::current_exception();
+            data->has_exception = true;
+        }
+    }
 
     /// The following code is needed to rethrow exception from PipelineExecutor.
     /// It could have been thrown from pull(), but we will not likely call it again.
 
     /// Join thread here to wait for possible exception.
-    if (data && data->thread.joinable())
+    if (data->thread.joinable())
         data->thread.join();
 
     /// Rethrow exception to not swallow it in destructor.
-    if (data)
-        data->rethrowExceptionIfHas();
+    data->rethrowExceptionIfHas();
 }
 
 Chunk PullingAsyncPipelineExecutor::getTotals()
