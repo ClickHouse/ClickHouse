@@ -194,7 +194,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
-    if (isAlreadySorted(block, description, limit))
+    if (isAlreadySorted(block, description))
     {
         if (limit && block.rows() > limit)
             for (auto & elem : block)
@@ -224,37 +224,33 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
     getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, out_permutation);
 }
 
-bool isAlreadySorted(const Block & block, const SortDescription & description, UInt64 limit)
+bool isAlreadySorted(const Block & block, const SortDescription & description)
 {
     if (!block)
         return true;
 
     size_t rows = block.rows();
 
-    if (limit == 0 || limit > rows)
-        limit = rows;
-
-    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
-
-    PartialSortingLess less(columns_with_sort_desc);
+    ColumnsWithSortDescriptions columns_with_sort_description = getColumnsWithSortDescription(block, description);
+    PartialSortingLess less(columns_with_sort_description);
 
     /** If the rows are not too few, then let's make a quick attempt to verify that the block is not sorted.
       * Constants - arbitrary choice.
       */
     static constexpr size_t num_rows_to_try = 10;
-    if (limit > num_rows_to_try * 5)
+    if (rows > num_rows_to_try * 5)
     {
         for (size_t i = 1; i < num_rows_to_try; ++i)
         {
-            size_t prev_position = limit * (i - 1) / num_rows_to_try;
-            size_t curr_position = limit * i / num_rows_to_try;
+            size_t prev_position = rows * (i - 1) / num_rows_to_try;
+            size_t curr_position = rows * i / num_rows_to_try;
 
             if (less(curr_position, prev_position))
                 return false;
         }
     }
 
-    for (size_t i = 1; i < limit; ++i)
+    for (size_t i = 1; i < rows; ++i)
         if (less(i, i - 1))
             return false;
 
