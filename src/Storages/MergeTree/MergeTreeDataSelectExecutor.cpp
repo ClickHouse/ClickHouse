@@ -794,14 +794,18 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
 
-    if (metadata_snapshot->hasPartitionKey() && !settings.allow_experimental_analyzer)
+    if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
+        auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
-        minmax_idx_condition.emplace(
-            query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            minmax_idx_condition.emplace(query_info.filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
+        else
+            minmax_idx_condition.emplace(query_info, context, minmax_columns_names, minmax_expression_actions);
+
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
