@@ -6,6 +6,6 @@ CREATE TABLE test_table__fuzz_2 (`id` LowCardinality(UInt64), `value` LowCardina
 
 INSERT INTO test_table__fuzz_2 VALUES (9806329011943062144,'wS6*');
 
-SELECT arrayMap(x -> (id + (SELECT c1 AS id FROM VALUES((1911323367950415347, '@]~2|%N')) WHERE arrayMap(x -> (id + 9806329011943062144), [10])[NULL])), [1048575]) FROM test_table__fuzz_2;
+SELECT arrayMap(x -> (id + (SELECT 1911323367950415347 AS id WHERE arrayMap(x -> (id + 9806329011943062144), [10])[NULL])), [1048575]) FROM test_table__fuzz_2;
 
 DROP TABLE test_table__fuzz_2;
