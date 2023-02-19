@@ -13,7 +13,6 @@ Header: count() UInt64
       Join (JOIN FillRightFirst)
       Header: default.a.a2_4 String
               default.c.c1_2 UInt64
-              default.d.d1_3 UInt64
         Expression ((JOIN actions + DROP unused columns after JOIN))
         Header: default.a.a2_4 String
                 default.c.c1_2 UInt64
@@ -56,21 +55,18 @@ Header: a2 String
   Header: default.a.k_2 UInt64
           default.a.a2_0 String
           default.d.d2_1 String
-          default.d.k_5 UInt64
     Expression (DROP unused columns after JOIN)
     Header: default.a.k_2 UInt64
             default.a.a2_0 String
       Join (JOIN FillRightFirst)
       Header: default.a.k_2 UInt64
               default.a.a2_0 String
-              default.c.k_4 UInt64
         Expression (DROP unused columns after JOIN)
         Header: default.a.k_2 UInt64
                 default.a.a2_0 String
           Join (JOIN FillRightFirst)
           Header: default.a.k_2 UInt64
                   default.a.a2_0 String
-                  default.b.k_3 UInt64
             Expression (Change column names to column identifiers)
             Header: default.a.k_2 UInt64
                     default.a.a2_0 String
@@ -111,7 +107,6 @@ Header: bx String
               b.bx_0 String
               default.c.c2_5 String
               default.c.c1_3 UInt64
-              d.d1_4 UInt64
         Filter (( + (JOIN actions + DROP unused columns after JOIN)))
         Header: default.a.a2_6 String
                 b.bx_0 String

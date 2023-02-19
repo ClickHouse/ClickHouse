@@ -217,7 +217,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         all_const);
 }
 
-const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type)
+const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name)
 {
     Field cast_type_constant_value(cast_type->getName());
 
@@ -230,7 +230,7 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
     FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
 
-    return addFunction(func_builder_cast, std::move(children), node_to_cast.result_name);
+    return addFunction(func_builder_cast, std::move(children), result_name);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
