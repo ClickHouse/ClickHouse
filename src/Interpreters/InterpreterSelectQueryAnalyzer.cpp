@@ -7,6 +7,7 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/QueryNode.h>
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -51,6 +52,8 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query)
 QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query, const SelectQueryOptions & select_query_options, const ContextPtr & context)
 {
     auto query_tree = buildQueryTree(query, context);
+
+    query_tree->as<QueryNode>()->setIsSubquery(select_query_options.subquery_depth);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager);
