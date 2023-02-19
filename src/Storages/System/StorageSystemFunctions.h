@@ -1,6 +1,5 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -13,13 +12,15 @@ class Context;
 /** Implements `functions`system table, which allows you to get a list
   * all normal and aggregate functions.
   */
-class StorageSystemFunctions final : public shared_ptr_helper<StorageSystemFunctions>, public IStorageSystemOneBlock<StorageSystemFunctions>
+class StorageSystemFunctions final : public IStorageSystemOneBlock<StorageSystemFunctions>
 {
-    friend struct shared_ptr_helper<StorageSystemFunctions>;
 public:
     std::string getName() const override { return "SystemFunctions"; }
 
     static NamesAndTypesList getNamesAndTypes();
+
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "DictionaryStructure.h"
 
 namespace DB
@@ -80,7 +80,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const DictionaryStructure & dict_struct,
-    ContextPtr context,
+    ContextPtr global_context,
     const std::string & default_database,
     bool check_config) const
 {
@@ -99,7 +99,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
         const auto & create_source = found->second;
         auto sample_block = createSampleBlock(dict_struct);
-        return create_source(dict_struct, config, config_prefix, sample_block, context, default_database, check_config);
+        return create_source(dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
     }
 
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,

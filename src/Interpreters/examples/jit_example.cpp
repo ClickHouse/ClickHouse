@@ -1,8 +1,6 @@
 #include <iostream>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 

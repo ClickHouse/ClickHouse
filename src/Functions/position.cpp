@@ -13,13 +13,13 @@ struct NamePosition
     static constexpr auto name = "position";
 };
 
-using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition>;
+using FunctionPosition = FunctionsStringSearch<PositionImpl<NamePosition, PositionCaseSensitiveASCII>>;
 
 }
 
-void registerFunctionPosition(FunctionFactory & factory)
+REGISTER_FUNCTION(Position)
 {
-    factory.registerFunction<FunctionPosition>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionPosition>({}, FunctionFactory::CaseInsensitive);
     factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);
 }
 }

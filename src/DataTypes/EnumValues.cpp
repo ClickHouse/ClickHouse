@@ -1,4 +1,7 @@
 #include <DataTypes/EnumValues.h>
+#include <boost/algorithm/string.hpp>
+#include <base/sort.h>
+
 
 namespace DB
 {
@@ -15,9 +18,9 @@ EnumValues<T>::EnumValues(const Values & values_)
     : values(values_)
 {
     if (values.empty())
-        throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
 
-    std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
+    ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
     {
         return left.second < right.second;
     });
@@ -34,17 +37,15 @@ void EnumValues<T>::fillMaps()
             { StringRef{name_and_value.first}, name_and_value.second });
 
         if (!inserted_value.second)
-            throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and " + toString(inserted_value.first->getMapped()),
-                ErrorCodes::SYNTAX_ERROR};
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate names in enum: '{}' = {} and {}",
+                    name_and_value.first, toString(name_and_value.second), toString(inserted_value.first->getMapped()));
 
         const auto inserted_name = value_to_name_map.insert(
             { name_and_value.second, StringRef{name_and_value.first} });
 
         if (!inserted_name.second)
-            throw Exception{"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + toString((*inserted_name.first).first) + "'",
-                ErrorCodes::SYNTAX_ERROR};
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate values in enum: '{}' = {} and '{}'",
+                    name_and_value.first, toString(name_and_value.second), toString((*inserted_name.first).first));
     }
 }
 
@@ -68,7 +69,7 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
         }
         auto hints = this->getHints(field_name.toString());
         auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
-        throw Exception{"Unknown element '" + field_name.toString() + "' for enum" + hints_string, ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown element '{}' for enum {}", field_name.toString(), hints_string);
     }
     return it->getMapped();
 }
@@ -79,6 +80,24 @@ Names EnumValues<T>::getAllRegisteredNames() const
     Names result;
     for (const auto & value : values)
         result.emplace_back(value.first);
+    return result;
+}
+
+template <typename T>
+std::unordered_set<String> EnumValues<T>::getSetOfAllNames(bool to_lower) const
+{
+    std::unordered_set<String> result;
+    for (const auto & value : values)
+        result.insert(to_lower ? boost::algorithm::to_lower_copy(value.first) : value.first);
+    return result;
+}
+
+template <typename T>
+std::unordered_set<T> EnumValues<T>::getSetOfAllValues() const
+{
+    std::unordered_set<T> result;
+    for (const auto & value : values)
+        result.insert(value.second);
     return result;
 }
 

@@ -1,7 +1,7 @@
-# docker build -t yandex/clickhouse-mysql-php-client .
+# docker build -t clickhouse/mysql-php-client .
 # MySQL PHP client docker container
 
-FROM php:7.3-cli
+FROM php:8.0.18-cli
 
 COPY ./client.crt client.crt
 COPY ./client.key client.key

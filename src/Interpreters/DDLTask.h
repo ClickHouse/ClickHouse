@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
 
@@ -19,6 +20,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
@@ -61,11 +67,21 @@ struct HostID
 
 struct DDLLogEntry
 {
+    static constexpr const UInt64 OLDEST_VERSION = 1;
+    static constexpr const UInt64 SETTINGS_IN_ZK_VERSION = 2;
+    static constexpr const UInt64 NORMALIZE_CREATE_ON_INITIATOR_VERSION = 3;
+    static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
+    /// Add new version here
+
+    /// Remember to update the value below once new version is added
+    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 4;
+
     UInt64 version = 1;
     String query;
     std::vector<HostID> hosts;
     String initiator; // optional
     std::optional<SettingsChanges> settings;
+    OpenTelemetry::TracingContext tracing_context;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
@@ -83,6 +99,9 @@ struct DDLTaskBase
     String host_id_str;
     ASTPtr query;
 
+    String query_str;
+    String query_for_logging;
+
     bool is_initial_query = false;
     bool is_circular_replicated = false;
     bool execute_on_leader = false;
@@ -98,14 +117,19 @@ struct DDLTaskBase
     virtual ~DDLTaskBase() = default;
 
     virtual void parseQueryFromEntry(ContextPtr context);
+    void formatRewrittenQuery(ContextPtr context);
 
     virtual String getShardID() const = 0;
 
     virtual ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
+    virtual Coordination::RequestPtr getOpToUpdateLogPointer() { return nullptr; }
+
+    virtual void createSyncedNodeIfNeed(const ZooKeeperPtr & /*zookeeper*/) {}
 
     inline String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
     inline String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
     inline String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
+    inline String getSyncedNodePath() const { return fs::path(entry_path) / "synced" / host_id_str; }
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
@@ -140,6 +164,8 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     String getShardID() const override;
     void parseQueryFromEntry(ContextPtr context) override;
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+    Coordination::RequestPtr getOpToUpdateLogPointer() override;
+    void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };
@@ -164,13 +190,21 @@ class ZooKeeperMetadataTransaction
     ZooKeeperPtr current_zookeeper;
     String zookeeper_path;
     bool is_initial_query;
+    String task_path;
     Coordination::Requests ops;
 
+    /// CREATE OR REPLACE is special query that consists of 3 separate DDL queries (CREATE, RENAME, DROP)
+    /// and not all changes should be applied to metadata in ZooKeeper
+    /// (otherwise we may get partially applied changes on connection loss).
+    /// So we need this flag to avoid doing unnecessary operations with metadata.
+    bool is_create_or_replace_query = false;
+
 public:
-    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_)
+    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_, const String & task_path_)
     : current_zookeeper(current_zookeeper_)
     , zookeeper_path(zookeeper_path_)
     , is_initial_query(is_initial_query_)
+    , task_path(task_path_)
     {
     }
 
@@ -180,15 +214,25 @@ public:
 
     String getDatabaseZooKeeperPath() const { return zookeeper_path; }
 
+    String getTaskZooKeeperPath() const { return task_path; }
+
+    ZooKeeperPtr getZooKeeper() const { return current_zookeeper; }
+
+    void setIsCreateOrReplaceQuery() { is_create_or_replace_query = true; }
+
+    bool isCreateOrReplaceQuery() const { return is_create_or_replace_query; }
+
     void addOp(Coordination::RequestPtr && op)
     {
-        assert(!isExecuted());
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
         ops.emplace_back(op);
     }
 
     void moveOpsTo(Coordination::Requests & other_ops)
     {
-        assert(!isExecuted());
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
         state = COMMITTED;
@@ -196,7 +240,7 @@ public:
 
     void commit();
 
-    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
+    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
 };
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -62,11 +62,18 @@ public:
 
     void addPart(DataPartInMemoryPtr & part);
     void dropPart(const String & part_name);
-    std::vector<MergeTreeMutableDataPartPtr> restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    std::vector<MergeTreeMutableDataPartPtr> restore(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        std::unique_lock<std::mutex> & parts_lock,
+        bool readonly);
 
     using MinMaxBlockNumber = std::pair<Int64, Int64>;
     static std::optional<MinMaxBlockNumber> tryParseMinMaxBlockNumber(const String & filename);
+    void shutdown();
 
+    /// Drop all write ahead logs from disk. Useful during table drop.
+    static void dropAllWriteAheadLogs(DiskPtr disk_to_drop, std::string relative_data_path);
 private:
     void init();
     void rotate(const std::unique_lock<std::mutex> & lock);
@@ -78,7 +85,7 @@ private:
     String path;
 
     std::unique_ptr<WriteBuffer> out;
-    std::unique_ptr<NativeBlockOutputStream> block_out;
+    std::unique_ptr<NativeWriter> block_out;
 
     Int64 min_block_number = std::numeric_limits<Int64>::max();
     Int64 max_block_number = -1;
@@ -89,8 +96,11 @@ private:
 
     size_t bytes_at_last_sync = 0;
     bool sync_scheduled = false;
+    bool shutdown_called = false;
 
     mutable std::mutex write_mutex;
+
+    Poco::Logger * log;
 };
 
 }

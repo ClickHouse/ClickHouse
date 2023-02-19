@@ -2,11 +2,13 @@
 
 #include <Common/ThreadPool.h>
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/sort.h>
 
 #include <algorithm>
 #include <thread>
 #include <numeric>
+
 
 namespace DB
 {
@@ -87,7 +89,7 @@ std::vector<Coord> SlabsPolygonIndex::uniqueX(const std::vector<Polygon> & polyg
     }
 
     /** Making all_x sorted and distinct */
-    std::sort(all_x.begin(), all_x.end());
+    ::sort(all_x.begin(), all_x.end());
     all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
 
     return all_x;
@@ -104,7 +106,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     }
 
     /** Sorting edges of (left_point, right_point, polygon_id) in that order */
-    std::sort(all_edges.begin(), all_edges.end(), Edge::compareByLeftPoint);
+    ::sort(all_edges.begin(), all_edges.end(), Edge::compareByLeftPoint);
     for (size_t i = 0; i != all_edges.size(); ++i)
         all_edges[i].edge_id = i;
 
@@ -129,7 +131,6 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     /** Map of interesting edge ids to the index of left x, the index of right x */
     std::vector<size_t> edge_left(m, n), edge_right(m, n);
 
-    size_t total_index_edges = 0;
     size_t edges_it = 0;
     for (size_t l = 0, r = 1; r < sorted_x.size(); ++l, ++r)
     {
@@ -151,7 +152,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         }
     }
 
-    for (size_t i = 0; i != all_edges.size(); i++)
+    for (size_t i = 0; i != all_edges.size(); ++i)
     {
         size_t l = edge_left[i];
         size_t r = edge_right[i];
@@ -168,12 +169,10 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
             if (l & 1)
             {
                 edges_index_tree[l++].emplace_back(all_edges[i]);
-                ++total_index_edges;
             }
             if (r & 1)
             {
                 edges_index_tree[--r].emplace_back(all_edges[i]);
-                ++total_index_edges;
             }
         }
     }
@@ -298,7 +297,7 @@ bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
     } while (pos != 0);
 
     /** Sort all ids and find smallest with odd occurrences */
-    std::sort(intersections.begin(), intersections.end());
+    ::sort(intersections.begin(), intersections.end());
     for (size_t i = 0; i < intersections.size(); i += 2)
     {
         if (i + 1 == intersections.size() || intersections[i] != intersections[i + 1])

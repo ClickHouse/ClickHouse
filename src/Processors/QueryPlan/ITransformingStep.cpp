@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -29,14 +29,14 @@ DataStream ITransformingStep::createOutputStream(
     if (stream_traits.preserves_sorting)
     {
         output_stream.sort_description = input_stream.sort_description;
-        output_stream.sort_mode = input_stream.sort_mode;
+        output_stream.sort_scope = input_stream.sort_scope;
     }
 
     return output_stream;
 }
 
 
-QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelineBuilderPtr ITransformingStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (collect_processors)
     {

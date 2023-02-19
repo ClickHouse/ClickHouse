@@ -1,16 +1,19 @@
 #!/usr/bin/expect -f
 
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
 log_user 0
 set timeout 60
 match_max 100000
-# A default timeout action is to do nothing, change it to fail
 expect_after {
-    timeout {
-        exit 1
-    }
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
 }
 
-set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
 expect ":) "
 
@@ -20,6 +23,7 @@ expect "SET max_distributed"
 
 # Wait for suggestions to load, they are loaded in background
 set is_done 0
+set timeout 1
 while {$is_done == 0} {
     send -- "\t"
     expect {
@@ -27,10 +31,15 @@ while {$is_done == 0} {
             set is_done 1
         }
         default {
-            sleep 1
+            # expect "_" will wait for timeout,
+            # if completion was not loaded it will fail,
+            # and we will retry,
+            # but for retry on timeout default should be reseted,
+            # this is what for this block.
         }
     }
 }
+set timeout 60
 
 send -- "\3\4"
 expect eof

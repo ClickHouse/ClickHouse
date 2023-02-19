@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+# shellcheck source=./replication.lib
+. "$CURDIR"/replication.lib
 
 REPLICAS=3
 
@@ -77,7 +80,6 @@ timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 
-
 wait
 
 echo "Finishing alters"
@@ -101,11 +103,17 @@ while [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alte
     sleep 1
 done
 
+check_replication_consistency "concurrent_alter_add_drop_" "count(), sum(key), sum(cityHash64(value0))"
+
 for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_add_drop_$i"
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i'"
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE is_done = 0 and table = 'concurrent_alter_add_drop_$i'"
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i'"
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue WHERE table = 'concurrent_alter_add_drop_$i' and (type = 'ALTER_METADATA' or type = 'MUTATE_PART')"
+
+    $CLICKHOUSE_CLIENT --query "DETACH TABLE concurrent_alter_add_drop_$i"
+    $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_alter_add_drop_$i"
+
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_alter_add_drop_$i"
 done

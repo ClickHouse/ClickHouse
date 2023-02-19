@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/text_log
+---
 # system.text_log {#system_tables-text_log}
 
 Содержит записи логов. Уровень логирования для таблицы может быть ограничен параметром сервера `text_log.level`.
@@ -42,11 +45,10 @@ microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information
-query_id:                
+query_id:
 logger_name:             DNSCacheUpdater
 message:                 Update period 15 seconds
 revision:                54440
 source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void DB::DNSCacheUpdater::start()
 source_line:             45
 ```
-

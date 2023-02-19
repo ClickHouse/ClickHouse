@@ -7,12 +7,13 @@
 namespace DB
 {
 
-void registerFunctionsBitmap(FunctionFactory & factory)
+REGISTER_FUNCTION(Bitmap)
 {
     factory.registerFunction<FunctionBitmapBuild>();
     factory.registerFunction<FunctionBitmapToArray>();
     factory.registerFunction<FunctionBitmapSubsetInRange>();
     factory.registerFunction<FunctionBitmapSubsetLimit>();
+    factory.registerFunction<FunctionBitmapSubsetOffsetLimit>();
     factory.registerFunction<FunctionBitmapTransform>();
 
     factory.registerFunction<FunctionBitmapSelfCardinality>();

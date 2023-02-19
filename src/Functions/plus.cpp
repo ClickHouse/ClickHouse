@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -10,6 +10,7 @@ struct PlusImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
     static const constexpr bool is_commutative = true;
 
     template <typename Result = ResultType>
@@ -24,7 +25,7 @@ struct PlusImpl
             return static_cast<Result>(static_cast<CastA>(a)) + static_cast<Result>(static_cast<CastB>(b));
         }
         else
-            return static_cast<Result>(a) + b;
+            return static_cast<Result>(a) + static_cast<Result>(b);
     }
 
     /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false otherwise.
@@ -47,7 +48,7 @@ struct PlusImpl
 struct NamePlus { static constexpr auto name = "plus"; };
 using FunctionPlus = BinaryArithmeticOverloadResolver<PlusImpl, NamePlus>;
 
-void registerFunctionPlus(FunctionFactory & factory)
+REGISTER_FUNCTION(Plus)
 {
     factory.registerFunction<FunctionPlus>();
 }

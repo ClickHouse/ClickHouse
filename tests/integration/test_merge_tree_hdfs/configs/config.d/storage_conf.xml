@@ -1,9 +1,11 @@
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <hdfs>
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <!-- FIXME: chicken and egg problem with current cluster.py -->
+                <skip_access_check>true</skip_access_check>
             </hdfs>
             <hdd>
                 <type>local</type>
@@ -27,4 +29,4 @@
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     </merge_tree>
-</yandex>
+</clickhouse>

@@ -1,10 +1,13 @@
+---
+slug: /ru/operations/system-tables/opentelemetry_span_log
+---
 # system.opentelemetry_span_log {#system_tables-opentelemetry_span_log}
 
 Содержит информацию о [trace spans](https://opentracing.io/docs/overview/spans/) для выполненных запросов.
 
 Столбцы:
 
--   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md) — идентификатор трассировки для выполненного запроса.
+-   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md)) — идентификатор трассировки для выполненного запроса.
 
 -   `span_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — идентификатор `trace span`.
 
@@ -45,4 +48,3 @@ finish_date:      2021-02-03
 attribute.names:  []
 attribute.values: []
 ```
-

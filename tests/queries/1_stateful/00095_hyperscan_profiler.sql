@@ -1,3 +1,5 @@
+-- Tags: no-debug, use-vectorscan
+
 -- Check that server does not get segfault due to bad stack unwinding from Hyperscan
 
 SET query_profiler_cpu_time_period_ns = 1000000;

@@ -20,9 +20,9 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <Core/TypeListNumber.h>
+#include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -46,6 +46,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -105,8 +106,8 @@ private:
         NumberExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
             : arrays(arrays_), data_type(data_type_), result(result_) {}
 
-        template <typename T, size_t>
-        void operator()();
+        template <class T>
+        void operator()(Id<T>);
     };
 
     struct DecimalExecutor
@@ -118,8 +119,8 @@ private:
         DecimalExecutor(const UnpackedArrays & arrays_, const DataTypePtr & data_type_, ColumnPtr & result_)
             : arrays(arrays_), data_type(data_type_), result(result_) {}
 
-        template <typename T, size_t>
-        void operator()();
+        template <class T>
+        void operator()(Id<T>);
     };
 };
 
@@ -132,14 +133,15 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
     bool has_nothing = false;
 
     if (arguments.empty())
-        throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
     for (auto i : collections::range(0, arguments.size()))
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
         if (!array_type)
-            throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                            + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument {} for function {} must be an array but it has type {}.",
+                            i, getName(), arguments[i]->getName());
 
         const auto & nested_type = array_type->getNestedType();
 
@@ -177,8 +179,8 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
         if (!array_type)
-            throw Exception{"Cannot cast array column to column with type "
-                            + data_type->getName() + " in function " + getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast array column to column with type {} in function {}",
+                            data_type->getName(), getName());
 
         auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
         return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
@@ -188,8 +190,8 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
 
         if (!tuple_type)
-            throw Exception{"Cannot cast tuple column to type "
-                            + data_type->getName() + " in function " + getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}",
+                            data_type->getName(), getName());
 
         auto columns_number = column_tuple->tupleSize();
         Columns columns(columns_number);
@@ -351,7 +353,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             }
         }
         else
-            throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments for function {} must be arrays.", getName());
     }
 
     if (all_const)
@@ -369,7 +371,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             if (arrays.base_rows == 0 && rows > 0)
                 arrays.base_rows = rows;
             else if (arrays.base_rows != rows)
-                throw Exception("Non-const array columns in function " + getName() + "should have same rows", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-const array columns in function {}should have same rows", getName());
         }
     }
 
@@ -381,7 +383,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
     if (!return_type_array)
-        throw Exception{"Return type for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
 
     const auto & nested_return_type = return_type_array->getNestedType();
 
@@ -402,8 +404,8 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
-    TypeListNativeNumbers::forEach(NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
-    TypeListDecimalNumbers::forEach(DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListUtils::forEach(TypeListIntAndFloat{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListUtils::forEach(TypeListDecimal{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
     using DateMap = ClearableHashMapWithStackMemory<DataTypeDate::FieldType,
         size_t, DefaultHash<DataTypeDate::FieldType>, INITIAL_SIZE_DEGREE>;
@@ -443,8 +445,8 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
     return result_column;
 }
 
-template <typename T, size_t>
-void FunctionArrayIntersect::NumberExecutor::operator()()
+template <class T>
+void FunctionArrayIntersect::NumberExecutor::operator()(Id<T>)
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
@@ -453,8 +455,8 @@ void FunctionArrayIntersect::NumberExecutor::operator()()
         result = execute<Container, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
 }
 
-template <typename T, size_t>
-void FunctionArrayIntersect::DecimalExecutor::operator()()
+template <class T>
+void FunctionArrayIntersect::DecimalExecutor::operator()(Id<T>)
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
@@ -476,13 +478,13 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     columns.reserve(args);
     for (const auto & arg : arrays.args)
     {
-        if constexpr (std::is_same<ColumnType, IColumn>::value)
+        if constexpr (std::is_same_v<ColumnType, IColumn>)
             columns.push_back(arg.nested_column);
         else
             columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
 
         if (!columns.back())
-            throw Exception("Unexpected array type for function arrayIntersect", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected array type for function arrayIntersect");
 
         if (!arg.null_map)
             all_nullable = false;
@@ -529,7 +531,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     {
                         value = &map[columns[arg_num]->getElement(i)];
                     }
-                    else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
+                    else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                         value = &map[columns[arg_num]->getDataAt(i)];
                     else
                     {
@@ -565,7 +567,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 ++result_offset;
                 if constexpr (is_numeric_column)
                     result_data.insertValue(pair.getKey());
-                else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
+                else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                     result_data.insertData(pair.getKey().data, pair.getKey().size);
                 else
                     result_data.deserializeAndInsertFromArena(pair.getKey().data);
@@ -584,7 +586,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 }
 
 
-void registerFunctionArrayIntersect(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayIntersect)
 {
     factory.registerFunction<FunctionArrayIntersect>();
 }

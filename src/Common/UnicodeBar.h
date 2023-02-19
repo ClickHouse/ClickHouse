@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <common/types.h>
+#include <base/types.h>
 
 #define UNICODE_BAR_CHAR_SIZE (strlen("█"))
 
@@ -14,6 +14,6 @@ namespace UnicodeBar
     size_t getWidthInBytes(double width);
 
     /// In `dst` there must be a space for barWidthInBytes(width) characters and a trailing zero.
-    void render(double width, char * dst);
+    void render(double width, char * dst, const char * dst_end);
     std::string render(double width);
 }

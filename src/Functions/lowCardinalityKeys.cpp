@@ -28,13 +28,15 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
         if (!type)
-            throw Exception("First first argument of function lowCardinalityKeys must be ColumnLowCardinality, but got "
-                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First first argument of function lowCardinalityKeys must be ColumnLowCardinality, "
+                            "but got {}", arguments[0]->getName());
 
         return type->getDictionaryType();
     }
@@ -49,7 +51,7 @@ public:
 
 }
 
-void registerFunctionLowCardinalityKeys(FunctionFactory & factory)
+REGISTER_FUNCTION(LowCardinalityKeys)
 {
     factory.registerFunction<FunctionLowCardinalityKeys>();
 }

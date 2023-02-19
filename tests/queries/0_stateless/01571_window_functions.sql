@@ -1,6 +1,5 @@
 -- { echo }
 -- Another test for window functions because the other one is too long.
-set allow_experimental_window_functions = 1;
 
 -- some craziness with a mix of materialized and unmaterialized const columns
 -- after merging sorted transform, that used to break the peer group detection in
@@ -38,3 +37,6 @@ select number,
 from numbers(10)
 window w as (order by number)
 ;
+
+-- the case when current_row goes past the partition end at the block end
+select number, row_number() over (partition by number rows between unbounded preceding and 1 preceding) from numbers(4) settings max_block_size = 2;

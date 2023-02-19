@@ -21,7 +21,7 @@ public:
 private:
     ASTPtr query_ptr;
 
-    BlockInputStreamPtr executeImpl();
+    QueryPipeline executeImpl();
 };
 
 

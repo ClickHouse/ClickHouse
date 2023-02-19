@@ -2,7 +2,7 @@
 #include <Functions/FunctionStringToString.h>
 #include "FunctionsURL.h"
 #include "path.h"
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
 struct NamePath { static constexpr auto name = "path"; };
 using FunctionPath = FunctionStringToString<ExtractSubstringImpl<ExtractPath<false>>, NamePath>;
 
-void registerFunctionPath(FunctionFactory & factory)
+REGISTER_FUNCTION(Path)
 {
     factory.registerFunction<FunctionPath>();
 }

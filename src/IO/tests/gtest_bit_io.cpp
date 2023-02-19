@@ -1,7 +1,11 @@
-#include <string.h>
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
+#include <cstring>
 #include <IO/BitHelpers.h>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/BitHelpers.h>
@@ -158,7 +162,6 @@ TEST_P(BitIO, WriteAndRead)
 
         BitReader reader(data.data(), data.size());
 
-        int bitpos = 0;
         int item = 0;
         for (const auto & bv : bits_and_vals)
         {
@@ -172,7 +175,6 @@ TEST_P(BitIO, WriteAndRead)
             ASSERT_TRUE(BinaryEqual(getBits(bv.first, bv.second), reader.readBits(bv.first)));
 
             ++item;
-            bitpos += bv.first;
         }
     }
 }

@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/settings_profiles
+---
 # system.settings_profiles {#system_tables-settings_profiles}
 
 Содержит свойства сконфигурированных профилей настроек.
@@ -7,7 +10,7 @@
 
 -    `id` ([UUID](../../sql-reference/data-types/uuid.md)) — ID профиля настроек.
 
--    `storage` ([String](../../sql-reference/data-types/string.md)) — Путь к хранилищу профилей настроек. Настраивается в параметре `access_control_path`. 
+-    `storage` ([String](../../sql-reference/data-types/string.md)) — Путь к хранилищу профилей настроек. Настраивается в параметре `access_control_path`.
 
 -    `num_elements` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Число элементов для этого профиля в таблице `system.settings_profile_elements`.
 
@@ -20,4 +23,3 @@
 ## Смотрите также {#see-also}
 
 -   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
-

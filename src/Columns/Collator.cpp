@@ -1,8 +1,6 @@
 #include <Columns/Collator.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config.h"
 
 #if USE_ICU
 #    include <unicode/locid.h>
@@ -19,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Poco/String.h>
 #include <algorithm>
+#include <base/sort.h>
 
 
 namespace DB
@@ -76,10 +75,10 @@ AvailableCollationLocales::LocalesVector AvailableCollationLocales::getAvailable
         result.push_back(name_and_locale.second);
 
     auto comparator = [] (const LocaleAndLanguage & f, const LocaleAndLanguage & s)
-        {
-            return f.locale_name < s.locale_name;
-        };
-    std::sort(result.begin(), result.end(), comparator);
+    {
+        return f.locale_name < s.locale_name;
+    };
+    ::sort(result.begin(), result.end(), comparator);
 
     return result;
 }
@@ -87,7 +86,7 @@ AvailableCollationLocales::LocalesVector AvailableCollationLocales::getAvailable
 bool AvailableCollationLocales::isCollationSupported(const std::string & locale_name) const
 {
     /// We support locale names in any case, so we have to convert all to lower case
-    return locales_map.count(Poco::toLower(locale_name));
+    return locales_map.contains(Poco::toLower(locale_name));
 }
 
 Collator::Collator(const std::string & locale_)
@@ -97,7 +96,7 @@ Collator::Collator(const std::string & locale_)
     /// We check it here, because ucol_open will fallback to default locale for
     /// almost all random names.
     if (!AvailableCollationLocales::instance().isCollationSupported(locale))
-        throw DB::Exception("Unsupported collation locale: " + locale, DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE);
+        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE, "Unsupported collation locale: {}", locale);
 
     UErrorCode status = U_ZERO_ERROR;
 
@@ -105,10 +104,11 @@ Collator::Collator(const std::string & locale_)
     if (U_FAILURE(status))
     {
         ucol_close(collator);
-        throw DB::Exception("Failed to open locale: " + locale + " with error: " + u_errorName(status), DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE);
+        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE, "Failed to open locale: {} with error: {}", locale, u_errorName(status));
     }
 #else
-    throw DB::Exception("Collations support is disabled, because ClickHouse was built without ICU library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
+    throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Collations support is disabled, because ClickHouse was built without ICU library");
 #endif
 }
 
@@ -131,8 +131,8 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
     UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);
 
     if (U_FAILURE(status))
-        throw DB::Exception("ICU collation comparison failed with error code: " + std::string(u_errorName(status)),
-                            DB::ErrorCodes::COLLATION_COMPARISON_FAILED);
+        throw DB::Exception(DB::ErrorCodes::COLLATION_COMPARISON_FAILED, "ICU collation comparison failed with error code: {}",
+                            std::string(u_errorName(status)));
 
     /** Values of enum UCollationResult are equals to what exactly we need:
      *     UCOL_EQUAL = 0

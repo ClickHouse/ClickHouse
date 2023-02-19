@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Access/AccessRightsElement.h>
+#include <Core/SettingsEnums.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
@@ -15,8 +16,11 @@ namespace DB
 class ASTCreateQuery;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
+class ASTStorage;
 class IDatabase;
+class DDLGuard;
 using DatabasePtr = std::shared_ptr<IDatabase>;
+using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
 
 /** Allows to create new table or database,
@@ -52,6 +56,11 @@ public:
         force_attach = force_attach_;
     }
 
+    void setLoadDatabaseWithoutTables(bool load_database_without_tables_)
+    {
+        load_database_without_tables = load_database_without_tables_;
+    }
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
@@ -74,18 +83,26 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties setProperties(ASTCreateQuery & create) const;
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    static String getTableEngineName(DefaultTableEngine default_table_engine);
+    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties);
+    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
+
+    /// Update create query with columns description from storage if query doesn't have it.
+    /// It's used to prevent automatic schema inference while table creation on each server startup.
+    void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
+
+    BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
     ASTPtr query_ptr;
 
@@ -94,6 +111,7 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
+    bool load_database_without_tables = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

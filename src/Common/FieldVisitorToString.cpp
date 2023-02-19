@@ -26,7 +26,7 @@ template <typename T>
 static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf);
+    writeText(x.getValue(), x.getScale(), buf, {});
     writeChar('\'', buf);
 }
 
@@ -46,15 +46,12 @@ static String formatFloat(const Float64 x)
     const auto result = DoubleConverter<true>::instance().ToShortest(x, &builder);
 
     if (!result)
-        throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print float or double number");
 
     return { buffer, buffer + builder.position() };
 }
 
-
-String FieldVisitorToString::operator() (const Null &) const { return "NULL"; }
-String FieldVisitorToString::operator() (const NegativeInfinity &) const { return "-Inf"; }
-String FieldVisitorToString::operator() (const PositiveInfinity &) const { return "+Inf"; }
+String FieldVisitorToString::operator() (const Null & x) const { return x.isNegativeInfinity() ? "-Inf" : (x.isPositiveInfinity() ? "+Inf" : "NULL"); }
 String FieldVisitorToString::operator() (const UInt64 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int64 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Float64 & x) const { return formatFloat(x); }
@@ -68,7 +65,11 @@ String FieldVisitorToString::operator() (const UInt128 & x) const { return forma
 String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UUID & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const IPv4 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const IPv6 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
+String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
+String FieldVisitorToString::operator() (const CustomType & x) const { return x.toString(); }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -128,5 +129,30 @@ String FieldVisitorToString::operator() (const Map & x) const
     return wb.str();
 }
 
+String FieldVisitorToString::operator() (const Object & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << '{';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+
+        writeDoubleQuoted(it->first, wb);
+        wb << ": " << applyVisitor(*this, it->second);
+    }
+    wb << '}';
+
+    return wb.str();
+
 }
 
+String convertFieldToString(const Field & field)
+{
+    if (field.getType() == Field::Types::Which::String)
+        return field.get<String>();
+    return applyVisitor(FieldVisitorToString(), field);
+}
+
+}

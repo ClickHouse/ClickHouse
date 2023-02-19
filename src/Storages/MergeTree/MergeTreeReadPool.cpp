@@ -1,7 +1,9 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include "Common/Stopwatch.h"
 #include <Common/formatReadable.h>
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace ProfileEvents
@@ -17,36 +19,94 @@ namespace ErrorCodes
 
 namespace DB
 {
+
 MergeTreeReadPool::MergeTreeReadPool(
-    const size_t threads_,
-    const size_t sum_marks_,
-    const size_t min_marks_for_concurrent_read_,
+    size_t threads_,
+    size_t sum_marks_,
+    size_t min_marks_for_concurrent_read_,
     RangesInDataParts && parts_,
-    const MergeTreeData & data_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
-    const bool check_columns_,
     const Names & column_names_,
-    const BackoffSettings & backoff_settings_,
-    size_t preferred_block_size_bytes_,
-    const bool do_not_steal_tasks_)
-    : backoff_settings{backoff_settings_}
+    const Names & virtual_column_names_,
+    ContextPtr context_,
+    bool do_not_steal_tasks_)
+    : storage_snapshot(storage_snapshot_)
+    , column_names(column_names_)
+    , virtual_column_names(virtual_column_names_)
+    , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
+    , prewhere_info(prewhere_info_)
+    , parts_ranges(std::move(parts_))
+    , predict_block_size_bytes(context_->getSettingsRef().preferred_block_size_bytes > 0)
+    , do_not_steal_tasks(do_not_steal_tasks_)
+    , backoff_settings{context_->getSettingsRef()}
     , backoff_state{threads_}
-    , data{data_}
-    , metadata_snapshot{metadata_snapshot_}
-    , column_names{column_names_}
-    , do_not_steal_tasks{do_not_steal_tasks_}
-    , predict_block_size_bytes{preferred_block_size_bytes_ > 0}
-    , prewhere_info{prewhere_info_}
-    , parts_ranges{std::move(parts_)}
 {
     /// parts don't contain duplicate MergeTreeDataPart's.
-    const auto per_part_sum_marks = fillPerPartInfo(parts_ranges, check_columns_);
-    fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges, min_marks_for_concurrent_read_);
+    const auto per_part_sum_marks = fillPerPartInfo(
+        parts_ranges, storage_snapshot, is_part_on_remote_disk,
+        do_not_steal_tasks, predict_block_size_bytes,
+        column_names, virtual_column_names, prewhere_info, per_part_params);
+
+    fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges);
+}
+
+std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
+    const RangesInDataParts & parts,
+    const StorageSnapshotPtr & storage_snapshot,
+    std::vector<bool> & is_part_on_remote_disk,
+    bool & do_not_steal_tasks,
+    bool & predict_block_size_bytes,
+    const Names & column_names,
+    const Names & virtual_column_names,
+    const PrewhereInfoPtr & prewhere_info,
+    std::vector<MergeTreeReadPool::PerPartParams> & per_part_params)
+{
+    std::vector<size_t> per_part_sum_marks;
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    is_part_on_remote_disk.resize(parts.size());
+
+    for (const auto i : collections::range(0, parts.size()))
+    {
+        const auto & part = parts[i];
+#ifndef NDEBUG
+        assertSortedAndNonIntersecting(part.ranges);
+#endif
+
+        bool part_on_remote_disk = part.data_part->isStoredOnRemoteDisk();
+        is_part_on_remote_disk[i] = part_on_remote_disk;
+        do_not_steal_tasks |= part_on_remote_disk;
+
+        /// Read marks for every data part.
+        size_t sum_marks = 0;
+        for (const auto & range : part.ranges)
+            sum_marks += range.end - range.begin;
+
+        per_part_sum_marks.push_back(sum_marks);
+
+        auto task_columns = getReadTaskColumns(
+            LoadedMergeTreeDataPartInfoForReader(part.data_part), storage_snapshot,
+            column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
+
+        auto size_predictor = !predict_block_size_bytes ? nullptr
+            : IMergeTreeSelectAlgorithm::getSizePredictor(part.data_part, task_columns, sample_block);
+
+        auto & per_part = per_part_params.emplace_back();
+
+        per_part.data_part = part;
+        per_part.size_predictor = std::move(size_predictor);
+
+        /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
+        const auto & required_column_names = task_columns.columns.getNames();
+        per_part.column_name_set = {required_column_names.begin(), required_column_names.end()};
+        per_part.task_columns = std::move(task_columns);
+    }
+
+    return per_part_sum_marks;
 }
 
 
-MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
+MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t thread)
 {
     const std::lock_guard lock{mutex};
 
@@ -86,15 +146,18 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     auto & thread_task = thread_tasks.parts_and_ranges.back();
     const auto part_idx = thread_task.part_idx;
 
-    auto & part = parts_with_idx[part_idx];
+    auto & part = per_part_params[part_idx].data_part;
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
 
-    /// Get whole part to read if it is small enough.
-    auto need_marks = std::min(marks_in_part, min_marks_to_read);
+    size_t need_marks;
+    if (is_part_on_remote_disk[part_idx]) /// For better performance with remote disks
+        need_marks = marks_in_part;
+    else /// Get whole part to read if it is small enough.
+        need_marks = std::min(marks_in_part, min_marks_for_concurrent_read);
 
     /// Do not leave too little rows in part for next time.
     if (marks_in_part > need_marks &&
-        marks_in_part - need_marks < min_marks_to_read)
+        marks_in_part - need_marks < min_marks_for_concurrent_read)
         need_marks = marks_in_part;
 
     MarkRanges ranges_to_get_from_part;
@@ -102,10 +165,8 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     /// Get whole part to read if it is small enough.
     if (marks_in_part <= need_marks)
     {
-        const auto marks_to_get_from_range = marks_in_part;
         ranges_to_get_from_part = thread_task.ranges;
-
-        marks_in_part -= marks_to_get_from_range;
+        marks_in_part = 0;
 
         thread_tasks.parts_and_ranges.pop_back();
         thread_tasks.sum_marks_in_parts.pop_back();
@@ -133,45 +194,23 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         }
     }
 
-    auto curr_task_size_predictor = !per_part_size_predictor[part_idx] ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
+    const auto & per_part = per_part_params[part_idx];
+
+    auto curr_task_size_predictor = !per_part.size_predictor ? nullptr
+        : std::make_unique<MergeTreeBlockSizePredictor>(*per_part.size_predictor); /// make a copy
 
     return std::make_unique<MergeTreeReadTask>(
-        part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
-        per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-        prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
-}
-
-MarkRanges MergeTreeReadPool::getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const
-{
-    MarkRanges all_part_ranges;
-
-    /// Inefficient in presence of large number of data parts.
-    for (const auto & part_ranges : parts_ranges)
-    {
-        if (part_ranges.data_part.get() == &part)
-        {
-            all_part_ranges = part_ranges.ranges;
-            break;
-        }
-    }
-    if (all_part_ranges.empty())
-        throw Exception("Trying to read marks range [" + std::to_string(from.begin) + ", " + std::to_string(from.end) + "] from part '"
-            + part.getFullPath() + "' which has no ranges in this query", ErrorCodes::LOGICAL_ERROR);
-
-    auto begin = std::lower_bound(all_part_ranges.begin(), all_part_ranges.end(), from, [] (const auto & f, const auto & s) { return f.begin < s.begin; });
-    if (begin == all_part_ranges.end())
-        begin = std::prev(all_part_ranges.end());
-    begin->begin = from.begin;
-    return MarkRanges(begin, all_part_ranges.end());
+        part.data_part, ranges_to_get_from_part, part.part_index_in_query,
+        per_part.column_name_set, per_part.task_columns,
+        prewhere_info && prewhere_info->remove_prewhere_column, std::move(curr_task_size_predictor));
 }
 
 Block MergeTreeReadPool::getHeader() const
 {
-    return metadata_snapshot->getSampleBlockForColumns(column_names, data.getVirtuals(), data.getStorageID());
+    return storage_snapshot->getSampleBlockForColumns(column_names);
 }
 
-void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
+void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)
 {
     if (backoff_settings.min_read_latency_ms == 0 || do_not_steal_tasks)
         return;
@@ -211,57 +250,9 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
 }
 
 
-std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
-    const RangesInDataParts & parts, const bool check_columns)
-{
-    std::vector<size_t> per_part_sum_marks;
-    Block sample_block = metadata_snapshot->getSampleBlock();
-
-    for (const auto i : collections::range(0, parts.size()))
-    {
-        const auto & part = parts[i];
-
-        /// Read marks for every data part.
-        size_t sum_marks = 0;
-        for (const auto & range : part.ranges)
-            sum_marks += range.end - range.begin;
-
-        per_part_sum_marks.push_back(sum_marks);
-
-        auto [required_columns, required_pre_columns, should_reorder] =
-            getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info, check_columns);
-
-        if (predict_block_size_bytes)
-        {
-            const auto & required_column_names = required_columns.getNames();
-            const auto & required_pre_column_names = required_pre_columns.getNames();
-            NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
-            complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
-
-            per_part_size_predictor.emplace_back(std::make_unique<MergeTreeBlockSizePredictor>(
-                part.data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block));
-        }
-        else
-            per_part_size_predictor.emplace_back(nullptr);
-
-        /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-        const auto & required_column_names = required_columns.getNames();
-        per_part_column_name_set.emplace_back(required_column_names.begin(), required_column_names.end());
-
-        per_part_pre_columns.push_back(std::move(required_pre_columns));
-        per_part_columns.push_back(std::move(required_columns));
-        per_part_should_reorder.push_back(should_reorder);
-
-        parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
-    }
-
-    return per_part_sum_marks;
-}
-
-
 void MergeTreeReadPool::fillPerThreadInfo(
-    const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
-    const RangesInDataParts & parts, const size_t min_marks_for_concurrent_read)
+    size_t threads, size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+    const RangesInDataParts & parts)
 {
     threads_tasks.resize(threads);
     if (parts.empty())
@@ -287,7 +278,7 @@ void MergeTreeReadPool::fillPerThreadInfo(
         {
             PartInfo part_info{parts[i], per_part_sum_marks[i], i};
             if (parts[i].data_part->isStoredOnDisk())
-                parts_per_disk[parts[i].data_part->volume->getDisk()->getName()].push_back(std::move(part_info));
+                parts_per_disk[parts[i].data_part->getDataPartStorage().getDiskName()].push_back(std::move(part_info));
             else
                 parts_per_disk[""].push_back(std::move(part_info));
         }
@@ -339,7 +330,7 @@ void MergeTreeReadPool::fillPerThreadInfo(
                 while (need_marks > 0)
                 {
                     if (part.ranges.empty())
-                        throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among threads");
 
                     MarkRange & range = part.ranges.front();
 
@@ -372,6 +363,150 @@ void MergeTreeReadPool::fillPerThreadInfo(
             parts_queue.pop();
         }
     }
+}
+
+
+MergeTreeReadPoolParallelReplicas::~MergeTreeReadPoolParallelReplicas() = default;
+
+
+Block MergeTreeReadPoolParallelReplicas::getHeader() const
+{
+    return storage_snapshot->getSampleBlockForColumns(extension.colums_to_read);
+}
+
+MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t thread)
+{
+    /// This parameter is needed only to satisfy the interface
+    UNUSED(thread);
+
+    std::lock_guard lock(mutex);
+
+    if (no_more_tasks_available)
+        return nullptr;
+
+    if (buffered_ranges.empty())
+    {
+        auto result = extension.callback(ParallelReadRequest{
+            .replica_num = extension.number_of_current_replica, .min_number_of_marks = min_marks_for_concurrent_read * threads});
+
+        if (!result || result->finish)
+        {
+            no_more_tasks_available = true;
+            return nullptr;
+        }
+
+        buffered_ranges = std::move(result->description);
+    }
+
+    if (buffered_ranges.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No tasks to read. This is a bug");
+
+    auto & current_task = buffered_ranges.front();
+
+    RangesInDataPart part;
+    size_t part_idx = 0;
+    for (size_t index = 0; index < per_part_params.size(); ++index)
+    {
+        auto & other_part = per_part_params[index];
+        if (other_part.data_part.data_part->info == current_task.info)
+        {
+            part = other_part.data_part;
+            part_idx = index;
+            break;
+        }
+    }
+
+    MarkRanges ranges_to_read;
+    size_t current_sum_marks = 0;
+    while (current_sum_marks < min_marks_for_concurrent_read && !current_task.ranges.empty())
+    {
+        auto diff = min_marks_for_concurrent_read - current_sum_marks;
+        auto range = current_task.ranges.front();
+        if (range.getNumberOfMarks() > diff)
+        {
+            auto new_range = range;
+            new_range.end = range.begin + diff;
+            range.begin += diff;
+
+            current_task.ranges.front() = range;
+            ranges_to_read.push_back(new_range);
+            current_sum_marks += new_range.getNumberOfMarks();
+            continue;
+        }
+
+        ranges_to_read.push_back(range);
+        current_sum_marks += range.getNumberOfMarks();
+        current_task.ranges.pop_front();
+    }
+
+    if (current_task.ranges.empty())
+        buffered_ranges.pop_front();
+
+    const auto & per_part = per_part_params[part_idx];
+
+    auto curr_task_size_predictor
+        = !per_part.size_predictor ? nullptr : std::make_unique<MergeTreeBlockSizePredictor>(*per_part.size_predictor); /// make a copy
+
+    return std::make_unique<MergeTreeReadTask>(
+        part.data_part,
+        ranges_to_read,
+        part.part_index_in_query,
+        per_part.column_name_set,
+        per_part.task_columns,
+        prewhere_info && prewhere_info->remove_prewhere_column,
+        std::move(curr_task_size_predictor));
+}
+
+
+MarkRanges MergeTreeInOrderReadPoolParallelReplicas::getNewTask(RangesInDataPartDescription description)
+{
+    std::lock_guard lock(mutex);
+
+    auto get_from_buffer = [&]() -> std::optional<MarkRanges>
+    {
+        for (auto & desc : buffered_tasks)
+        {
+            if (desc.info == description.info && !desc.ranges.empty())
+            {
+                auto result = std::move(desc.ranges);
+                desc.ranges = MarkRanges{};
+                return result;
+            }
+        }
+        return std::nullopt;
+    };
+
+    if (auto result = get_from_buffer(); result)
+        return result.value();
+
+    if (no_more_tasks)
+        return {};
+
+    auto response = extension.callback(ParallelReadRequest{
+        .mode = mode,
+        .replica_num = extension.number_of_current_replica,
+        .min_number_of_marks = min_marks_for_concurrent_read * request.size(),
+        .description = request,
+    });
+
+    if (!response || response->description.empty() || response->finish)
+    {
+        no_more_tasks = true;
+        return {};
+    }
+
+    /// Fill the buffer
+    for (size_t i = 0; i < request.size(); ++i)
+    {
+        auto & new_ranges = response->description[i].ranges;
+        auto & old_ranges = buffered_tasks[i].ranges;
+        std::move(new_ranges.begin(), new_ranges.end(), std::back_inserter(old_ranges));
+    }
+
+    if (auto result = get_from_buffer(); result)
+        return result.value();
+
+    return {};
 }
 
 

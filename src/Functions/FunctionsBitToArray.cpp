@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <bit>
 
 
 namespace DB
@@ -45,13 +46,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypePtr & type = arguments[0];
 
         if (!isInteger(type))
-            throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as bitmask string", type->getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -69,9 +71,8 @@ public:
             || (res = executeType<Int16>(arguments))
             || (res = executeType<Int32>(arguments))
             || (res = executeType<Int64>(arguments))))
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
 
         return res;
     }
@@ -92,7 +93,7 @@ private:
             if (!first)
                 writeChar(',', out);
             first = false;
-            writeIntText(T(bit), out);
+            writeIntText(static_cast<T>(bit), out);
         }
     }
 
@@ -141,12 +142,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isInteger(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeArray>(arguments[0]);
     }
@@ -208,9 +210,8 @@ public:
             tryExecute<Int64>(in_column, out_column))
             return out_column;
 
-        throw Exception("Illegal column " + arguments[0].column->getName()
-                        + " of first argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                        arguments[0].column->getName(), getName());
     }
 };
 
@@ -227,6 +228,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -282,7 +284,7 @@ public:
             {
                 while (x)
                 {
-                    result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
+                    result_array_values_data.push_back(std::countr_zero(x));
                     x &= (x - 1);
                 }
             }
@@ -326,7 +328,7 @@ public:
 
 }
 
-void registerFunctionsBitToArray(FunctionFactory & factory)
+REGISTER_FUNCTION(BitToArray)
 {
     factory.registerFunction<FunctionBitPositionsToArray>();
     factory.registerFunction<FunctionBitmaskToArray>();

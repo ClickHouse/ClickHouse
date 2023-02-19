@@ -3,7 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <common/getThreadId.h>
+#include <base/getThreadId.h>
 
 namespace DB
 {
@@ -21,6 +21,8 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto current_tid = getThreadId();
@@ -30,7 +32,7 @@ namespace
 
 }
 
-void registerFunctionTid(FunctionFactory & factory)
+REGISTER_FUNCTION(Tid)
 {
     factory.registerFunction<FunctionTid>();
 }

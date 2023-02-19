@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS tvs;
 
 CREATE TABLE tvs(k UInt32, t UInt32, tv UInt64) ENGINE = Memory;

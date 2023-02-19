@@ -1,6 +1,7 @@
 ---
-toc_priority: 38
-toc_title: GRANT
+slug: /ru/sql-reference/statements/grant
+sidebar_position: 38
+sidebar_label: GRANT
 ---
 
 # GRANT
@@ -13,7 +14,7 @@ toc_title: GRANT
 ## Синтаксис присвоения привилегий {#grant-privigele-syntax}
 
 ```sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 - `privilege` — Тип привилегии
@@ -21,18 +22,20 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 - `user` — Пользователь ClickHouse.
 
 `WITH GRANT OPTION` разрешает пользователю или роли выполнять запрос `GRANT`. Пользователь может выдавать только те привилегии, которые есть у него, той же или меньшей области действий.
+`WITH REPLACE OPTION` заменяет все старые привилегии новыми привилегиями для `user` или `role`, если не указано, добавляет новые привилегии.
 
 
 ## Синтаксис назначения ролей {#assign-role-syntax}
 
 ```sql
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 ```
 
 - `role` — Роль пользователя ClickHouse.
 - `user` — Пользователь ClickHouse.
 
 `WITH ADMIN OPTION` присваивает привилегию [ADMIN OPTION](#admin-option-privilege) пользователю или роли.
+`WITH REPLACE OPTION` заменяет все старые роли новыми ролями для пользователя `user` или `role`, если не указано, добавляет новые новые роли.
 
 ## Использование {#grant-usage}
 
@@ -84,7 +87,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             - `ALTER RENAME COLUMN`
         - `ALTER INDEX`
             - `ALTER ORDER BY`
-            - `ALTER SAMPLE BY`			
+            - `ALTER SAMPLE BY`
             - `ALTER ADD INDEX`
             - `ALTER DROP INDEX`
             - `ALTER MATERIALIZE INDEX`
@@ -107,11 +110,13 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
         - `CREATE TEMPORARY TABLE`
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
+    - `CREATE FUNCTION`
 - [DROP](#grant-drop)
     - `DROP DATABASE`
     - `DROP TABLE`
     - `DROP VIEW`
     - `DROP DICTIONARY`
+    - `DROP FUNCTION`
 - [TRUNCATE](#grant-truncate)
 - [OPTIMIZE](#grant-optimize)
 - [SHOW](#grant-show)
@@ -153,6 +158,8 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
         - `SYSTEM RELOAD CONFIG`
         - `SYSTEM RELOAD DICTIONARY`
             - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        -   `SYSTEM RELOAD FUNCTION`
+        -   `SYSTEM RELOAD FUNCTIONS`
     - `SYSTEM MERGES`
     - `SYSTEM TTL MERGES`
     - `SYSTEM FETCHES`
@@ -183,7 +190,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 Примеры того, как трактуется данная иерархия:
 
-- Привилегия `ALTER` включает все остальные `ALTER*` привилегии. 
+- Привилегия `ALTER` включает все остальные `ALTER*` привилегии.
 - `ALTER CONSTRAINT` включает `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
 
 Привилегии применяются на разных уровнях. Уровень определяет синтаксис присваивания привилегии.
@@ -214,7 +221,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 Отсутствие привилегий у пользователя или роли отображается как привилегия [NONE](#grant-none).
 
-Выполнение некоторых запросов требует определенного набора привилегий. Например, чтобы выполнить запрос [RENAME](misc.md#misc_operations-rename), нужны следующие привилегии: `SELECT`, `CREATE TABLE`, `INSERT` и `DROP TABLE`.
+Выполнение некоторых запросов требует определенного набора привилегий. Например, чтобы выполнить запрос [RENAME](rename.md#rename-table), нужны следующие привилегии: `SELECT`, `CREATE TABLE`, `INSERT` и `DROP TABLE`.
 
 
 ### SELECT {#grant-select}
@@ -257,7 +264,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Разрешает выполнять запросы [ALTER](alter/index.md) в соответствии со следующей иерархией привилегий:
 
-- `ALTER`. Уровень: `COLUMN`. 
+- `ALTER`. Уровень: `COLUMN`.
     - `ALTER TABLE`. Уровень: `GROUP`
         - `ALTER UPDATE`. Уровень: `COLUMN`.  Алиасы: `UPDATE`
         - `ALTER DELETE`. Уровень: `COLUMN`. Алиасы: `DELETE`
@@ -270,7 +277,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER RENAME COLUMN`. Уровень: `COLUMN`. Алиасы: `RENAME COLUMN`
         - `ALTER INDEX`. Уровень: `GROUP`. Алиасы: `INDEX`
             - `ALTER ORDER BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
-            - `ALTER SAMPLE BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`			
+            - `ALTER SAMPLE BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
             - `ALTER ADD INDEX`. Уровень: `TABLE`. Алиасы: `ADD INDEX`
             - `ALTER DROP INDEX`. Уровень: `TABLE`. Алиасы: `DROP INDEX`
             - `ALTER MATERIALIZE INDEX`. Уровень: `TABLE`. Алиасы: `MATERIALIZE INDEX`
@@ -290,7 +297,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Примеры того, как трактуется данная иерархия:
 
-- Привилегия `ALTER` включает все остальные `ALTER*` привилегии. 
+- Привилегия `ALTER` включает все остальные `ALTER*` привилегии.
 - `ALTER CONSTRAINT` включает `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
 
 **Дополнительно**
@@ -302,7 +309,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### CREATE {#grant-create}
 
-Разрешает выполнять DDL-запросы [CREATE](../../sql-reference/statements/create/index.md) и [ATTACH](misc.md#attach) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять DDL-запросы [CREATE](../../sql-reference/statements/create/index.md) и [ATTACH](attach.md) в соответствии со следующей иерархией привилегий:
 
 - `CREATE`. Уровень: `GROUP`
     - `CREATE DATABASE`. Уровень: `DATABASE`
@@ -317,7 +324,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### DROP {#grant-drop}
 
-Разрешает выполнять запросы [DROP](misc.md#drop) и [DETACH](misc.md#detach-statement) в соответствии со следующей иерархией привилегий:
+Разрешает выполнять запросы [DROP](drop.md) и [DETACH](detach.md) в соответствии со следующей иерархией привилегий:
 
 - `DROP`. Уровень: `GROUP`
     - `DROP DATABASE`. Уровень: `DATABASE`
@@ -333,7 +340,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### OPTIMIZE {#grant-optimize}
 
-Разрешает выполнять запросы [OPTIMIZE TABLE](misc.md#misc_operations-optimize).
+Разрешает выполнять запросы [OPTIMIZE TABLE](optimize.md).
 
 Уровень: `TABLE`.
 
@@ -481,4 +488,3 @@ GRANT INSERT(x,y) ON db.table TO john
 ### ADMIN OPTION {#admin-option-privilege}
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
-

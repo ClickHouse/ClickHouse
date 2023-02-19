@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <dictionary>
       <name>file</name>
       <source>
@@ -50,4 +49,4 @@
         </attribute>
       </structure>
     </dictionary>
-</yandex>
+</clickhouse>

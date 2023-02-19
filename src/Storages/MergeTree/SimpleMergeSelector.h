@@ -63,7 +63,7 @@ merge selecting algorithm is applied and the relevant metrics are calculated to 
 their sizes, at what time intervals they are inserted;
 
 There is a research thesis dedicated to optimization of merge algorithm:
-https://presentations.clickhouse.tech/hse_2019/merge_algorithm.pptx
+https://presentations.clickhouse.com/hse_2019/merge_algorithm.pptx
 
 This work made attempt to variate the coefficients in SimpleMergeSelector and to solve the optimization task:
 maybe some change in coefficients will give a clear win on all metrics. Surprisingly enough, it has found
@@ -141,6 +141,11 @@ public:
         double heuristic_to_align_parts_max_absolute_difference_in_powers_of_two = 0.5;
         double heuristic_to_align_parts_max_score_adjustment = 0.75;
 
+        /** If it's not 0, all part ranges that have min_age larger than min_age_to_force_merge
+          * will be considered for merging
+          */
+        size_t min_age_to_force_merge = 0;
+
         /** Heuristic:
           * From right side of range, remove all parts, that size is less than specified ratio of sum_size.
           */
@@ -152,7 +157,7 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        const size_t max_total_size_to_merge) override;
+        size_t max_total_size_to_merge) override;
 
 private:
     const Settings settings;

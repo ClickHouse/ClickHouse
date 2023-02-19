@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
@@ -7,4 +6,4 @@
         <size>1000M</size>
         <count>10</count>
     </logger>
-</yandex>
+</clickhouse>

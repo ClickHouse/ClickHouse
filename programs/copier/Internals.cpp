@@ -1,6 +1,11 @@
 #include "Internals.h"
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -55,19 +60,20 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 }
 
 
-BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
+Block getBlockWithAllStreamData(QueryPipelineBuilder builder)
 {
-    return std::make_shared<SquashingBlockInputStream>(
-            stream,
-            std::numeric_limits<size_t>::max(),
-            std::numeric_limits<size_t>::max());
-}
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(
+        builder.getHeader(),
+        std::numeric_limits<size_t>::max(),
+        std::numeric_limits<size_t>::max()));
 
-Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
-{
-    return squashStreamIntoOneBlock(stream)->read();
-}
+    auto cur_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    Block block;
+    PullingPipelineExecutor executor(cur_pipeline);
+    executor.pull(block);
 
+    return block;
+}
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
@@ -84,9 +90,7 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception(
-                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     if (isExtendedDefinitionStorage(storage_ast))
@@ -103,14 +107,13 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
         size_t min_args = is_replicated ? 3 : 1;
 
         if (!engine.arguments)
-            throw Exception("Expected arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected arguments in {}", storage_str);
 
         ASTPtr arguments_ast = engine.arguments->clone();
         ASTs & arguments = arguments_ast->children;
 
         if (arguments.size() < min_args)
-            throw Exception("Expected at least " + toString(min_args) + " arguments in " + storage_str,
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least {} arguments in {}", min_args, storage_str);
 
         ASTPtr & month_arg = is_replicated ? arguments[2] : arguments[1];
         return makeASTFunction("toYYYYMM", month_arg->clone());
@@ -126,14 +129,12 @@ ASTPtr extractPrimaryKey(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     if (!isExtendedDefinitionStorage(storage_ast))
     {
-        throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Is not extended deginition storage {} Will be fixed later.", storage_str);
     }
 
     if (storage.primary_key)
@@ -152,20 +153,18 @@ ASTPtr extractOrderBy(const ASTPtr & storage_ast)
 
     if (!endsWith(engine.name, "MergeTree"))
     {
-        throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     if (!isExtendedDefinitionStorage(storage_ast))
     {
-        throw Exception("Is not extended deginition storage " + storage_str + " Will be fixed later.",
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Is not extended deginition storage {} Will be fixed later.", storage_str);
     }
 
     if (storage.order_by)
         return storage.order_by->clone();
 
-    throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
 }
 
 /// Wraps only identifiers with backticks.
@@ -185,7 +184,7 @@ std::string wrapIdentifiersWithBackticks(const ASTPtr & root)
         return boost::algorithm::join(function_arguments, ", ");
     }
 
-    throw Exception("Primary key could be represented only as columns or functions from columns.", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key could be represented only as columns or functions from columns.");
 }
 
 
@@ -204,9 +203,9 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     size_t sorting_key_size = sorting_key_expr_list->children.size();
 
     if (primary_key_size > sorting_key_size)
-        throw Exception("Primary key must be a prefix of the sorting key, but its length: "
-                        + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
-                        ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
+                        "{} is greater than the sorting key length: {}",
+                        primary_key_size, sorting_key_size);
 
     Names primary_key_columns;
     NameSet primary_key_columns_set;
@@ -215,19 +214,19 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     {
         /// Column name could be represented as a f_1(f_2(...f_n(column_name))).
         /// Each f_i could take one or more parameters.
-        /// We will wrap identifiers with backticks to allow non-standart identifier names.
+        /// We will wrap identifiers with backticks to allow non-standard identifier names.
         String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
 
         if (i < primary_key_size)
         {
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
-                                + toString(i) + " is " + sorting_key_column +", not " + pk_column,
-                                ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Primary key must be a prefix of the sorting key, "
+                                "but the column in the position {} is {}, not {}", i, sorting_key_column, pk_column);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
-                throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key contains duplicate columns");
 
             primary_key_columns.push_back(wrapIdentifiersWithBackticks(primary_key_expr_list->children[i]));
         }
@@ -244,9 +243,7 @@ bool isReplicatedTableEngine(const ASTPtr & storage_ast)
     if (!endsWith(engine.name, "MergeTree"))
     {
         String storage_str = queryToString(storage_ast);
-        throw Exception(
-                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported engine was specified in {}, only *MergeTree engines are supported", storage_str);
     }
 
     return startsWith(engine.name, "Replicated");

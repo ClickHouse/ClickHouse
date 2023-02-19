@@ -1,8 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-    </preconditions>
-
     <create_query>CREATE TABLE hits_none (Title String CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <fill_query>INSERT INTO hits_none SELECT Title FROM test.hits</fill_query>
     <fill_query>OPTIMIZE TABLE hits_none FINAL</fill_query>

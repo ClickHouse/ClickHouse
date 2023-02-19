@@ -1,4 +1,10 @@
-# LDAP {#external-authenticators-ldap}
+---
+slug: /en/operations/external-authenticators/ldap
+title: "LDAP"
+---
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+
+<SelfManaged />
 
 LDAP server can be used to authenticate ClickHouse users. There are two different approaches for doing this:
 
@@ -14,7 +20,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 **Example**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <ldap_servers>
         <!- Typical LDAP server. -->
@@ -45,7 +51,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <enable_tls>no</enable_tls>
         </my_ad_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 Note, that you can define multiple LDAP servers inside the `ldap_servers` section using distinct names.
@@ -90,7 +96,7 @@ At each login attempt, ClickHouse tries to "bind" to the specified DN defined by
 **Example**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -101,7 +107,7 @@ At each login attempt, ClickHouse tries to "bind" to the specified DN defined by
             </ldap>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be configured in the main `config.xml` file as described previously.
@@ -125,7 +131,7 @@ At each login attempt, ClickHouse tries to find the user definition locally and 
 Goes into `config.xml`.
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <user_directories>
         <!- Typical LDAP server. -->
@@ -156,7 +162,7 @@ Goes into `config.xml`.
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 Note that `my_ldap_server` referred in the `ldap` section inside the `user_directories` section must be a previously defined LDAP server that is configured in the `config.xml` (see [LDAP Server Definition](#ldap-server-definition)).
@@ -178,5 +184,3 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
             - Note, that the special characters must be escaped properly in XML.
         - `attribute` — Attribute name whose values will be returned by the LDAP search. `cn`, by default.
         - `prefix` — Prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Empty by default.
-
-[Original article](https://clickhouse.tech/docs/en/operations/external-authenticators/ldap/) <!--hide-->

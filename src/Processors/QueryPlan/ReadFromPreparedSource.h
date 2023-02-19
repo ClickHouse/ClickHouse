@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -9,27 +9,33 @@ namespace DB
 class ReadFromPreparedSource : public ISourceStep
 {
 public:
-    explicit ReadFromPreparedSource(Pipe pipe_, std::shared_ptr<const Context> context_ = nullptr);
+    explicit ReadFromPreparedSource(Pipe pipe_);
 
     String getName() const override { return "ReadFromPreparedSource"; }
 
-    void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-private:
+protected:
     Pipe pipe;
-    std::shared_ptr<const Context> context;
+    ContextPtr context;
 };
 
 class ReadFromStorageStep : public ReadFromPreparedSource
 {
 public:
-    ReadFromStorageStep(Pipe pipe_, String storage_name)
-        : ReadFromPreparedSource(std::move(pipe_))
+    ReadFromStorageStep(Pipe pipe_, String storage_name, std::shared_ptr<const StorageLimitsList> storage_limits_)
+        : ReadFromPreparedSource(std::move(pipe_)), storage_limits(std::move(storage_limits_))
     {
         setStepDescription(storage_name);
+
+        for (const auto & processor : pipe.getProcessors())
+            processor->setStorageLimits(storage_limits);
     }
 
     String getName() const override { return "ReadFromStorage"; }
+
+private:
+    std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 
 }

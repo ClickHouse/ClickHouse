@@ -8,8 +8,9 @@ namespace DB
 template <typename A>
 struct NegateImpl
 {
-    using ResultType = std::conditional_t<IsDecimalNumber<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
+    using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
     static constexpr const bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
@@ -41,11 +42,11 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
     static bool has() { return true; }
     static IFunction::Monotonicity get(const Field &, const Field &)
     {
-        return { true, false };
+        return { .is_monotonic = true, .is_positive = false, .is_strict = true };
     }
 };
 
-void registerFunctionNegate(FunctionFactory & factory)
+REGISTER_FUNCTION(Negate)
 {
     factory.registerFunction<FunctionNegate>();
 }

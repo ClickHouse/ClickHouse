@@ -1,5 +1,6 @@
 ---
-toc_priority: 144
+slug: /ru/sql-reference/aggregate-functions/reference/sumcount
+sidebar_position: 144
 ---
 
 # sumCount {#agg_function-sumCount}
@@ -12,7 +13,7 @@ toc_priority: 144
 sumCount(x)
 ```
 
-**Аргументы** 
+**Аргументы**
 
 -   `x` — Входное значение типа [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), или [Decimal](../../../sql-reference/data-types/decimal.md).
 
@@ -43,4 +44,4 @@ SELECT sumCount(x) from s_table;
 
 **Смотрите также**
 
-- Настройка [optimize_fuse_sum_count_avg](../../../operations/settings/settings.md#optimize_fuse_sum_count_avg)
+- Настройка [optimize_syntax_fuse_functions](../../../operations/settings/settings.md#optimize_syntax_fuse_functions)

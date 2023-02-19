@@ -14,18 +14,6 @@ void FieldVisitorHash::operator() (const Null &) const
     hash.update(type);
 }
 
-void FieldVisitorHash::operator() (const NegativeInfinity &) const
-{
-    UInt8 type = Field::Types::NegativeInfinity;
-    hash.update(type);
-}
-
-void FieldVisitorHash::operator() (const PositiveInfinity &) const
-{
-    UInt8 type = Field::Types::PositiveInfinity;
-    hash.update(type);
-}
-
 void FieldVisitorHash::operator() (const UInt64 & x) const
 {
     UInt8 type = Field::Types::UInt64;
@@ -57,6 +45,20 @@ void FieldVisitorHash::operator() (const Int128 & x) const
 void FieldVisitorHash::operator() (const UUID & x) const
 {
     UInt8 type = Field::Types::UUID;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const IPv4 & x) const
+{
+    UInt8 type = Field::Types::IPv4;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const IPv6 & x) const
+{
+    UInt8 type = Field::Types::IPv6;
     hash.update(type);
     hash.update(x);
 }
@@ -104,6 +106,19 @@ void FieldVisitorHash::operator() (const Array & x) const
 
     for (const auto & elem : x)
         applyVisitor(*this, elem);
+}
+
+void FieldVisitorHash::operator() (const Object & x) const
+{
+    UInt8 type = Field::Types::Object;
+    hash.update(type);
+    hash.update(x.size());
+
+    for (const auto & [key, value]: x)
+    {
+        hash.update(key);
+        applyVisitor(*this, value);
+    }
 }
 
 void FieldVisitorHash::operator() (const DecimalField<Decimal32> & x) const
@@ -156,6 +171,23 @@ void FieldVisitorHash::operator() (const Int256 & x) const
     UInt8 type = Field::Types::Int256;
     hash.update(type);
     hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const bool & x) const
+{
+    UInt8 type = Field::Types::Bool;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const CustomType & x) const
+{
+    UInt8 type = Field::Types::CustomType;
+    hash.update(type);
+    hash.update(x.getTypeName());
+    auto result = x.toString();
+    hash.update(result.size());
+    hash.update(result.data(), result.size());
 }
 
 }

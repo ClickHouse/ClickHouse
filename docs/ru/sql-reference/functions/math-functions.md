@@ -1,6 +1,7 @@
 ---
-toc_priority: 44
-toc_title: "Математические функции"
+slug: /ru/sql-reference/functions/math-functions
+sidebar_position: 44
+sidebar_label: "Математические функции"
 ---
 
 # Математические функции {#matematicheskie-funktsii}
@@ -467,4 +468,3 @@ SELECT sign(-1);
 │       -1 │
 └──────────┘
 ```
-

@@ -8,21 +8,21 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/DummyJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/ASTs/ASTJSONPath.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPath.h>
-#include <Functions/RapidJSONParser.h>
-#include <Functions/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
-#include <common/range.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <base/range.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config.h"
 
 namespace DB
 {
@@ -47,39 +47,36 @@ public:
 
             if (arguments.size() < 2)
             {
-                throw Exception{"JSONPath functions require at least 2 arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "JSONPath functions require at least 2 arguments");
             }
 
-            const auto & first_column = arguments[0];
+            const auto & json_column = arguments[0];
 
-            /// Check 1 argument: must be of type String (JSONPath)
-            if (!isString(first_column.type))
+            if (!isString(json_column.type))
             {
-                throw Exception(
-                    "JSONPath functions require 1 argument to be JSONPath of type string, illegal type: " + first_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "JSONPath functions require first argument to be JSON of string, illegal type: {}",
+                                json_column.type->getName());
             }
-            /// Check 1 argument: must be const (JSONPath)
-            if (!isColumnConst(*first_column.column))
+
+            const auto & json_path_column = arguments[1];
+
+            if (!isString(json_path_column.type))
             {
-                throw Exception("1 argument (JSONPath) must be const", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "JSONPath functions require second argument "
+                                "to be JSONPath of type string, illegal type: {}", json_path_column.type->getName());
             }
-
-            const auto & second_column = arguments[1];
-
-            /// Check 2 argument: must be of type String (JSON)
-            if (!isString(second_column.type))
+            if (!isColumnConst(*json_path_column.column))
             {
-                throw Exception(
-                    "JSONPath functions require 2 argument to be JSON of string, illegal type: " + second_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (JSONPath) must be constant string");
             }
 
-            const ColumnPtr & arg_jsonpath = first_column.column;
+            const ColumnPtr & arg_jsonpath = json_path_column.column;
             const auto * arg_jsonpath_const = typeid_cast<const ColumnConst *>(arg_jsonpath.get());
             const auto * arg_jsonpath_string = typeid_cast<const ColumnString *>(arg_jsonpath_const->getDataColumnPtr().get());
 
-            const ColumnPtr & arg_json = second_column.column;
+            const ColumnPtr & arg_json = json_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
@@ -104,7 +101,7 @@ public:
             const bool parse_res = parser.parse(token_iterator, res, expected);
             if (!parse_res)
             {
-                throw Exception{"Unable to parse JSONPath", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to parse JSONPath");
             }
 
             /// Get data and offsets for 2 argument (JSON)
@@ -152,7 +149,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -166,7 +164,7 @@ public:
         /// 2. Create ASTPtr
         /// 3. Parser(Tokens, ASTPtr) -> complete AST
         /// 4. Execute functions: call getNextItem on generator and handle each item
-        uint32_t parse_depth = getContext()->getSettingsRef().max_parser_depth;
+        unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
             return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
@@ -244,7 +242,7 @@ public:
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
         VisitorStatus status;
-        Element res;
+
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)
@@ -264,15 +262,26 @@ public:
         }
 
         if (status == VisitorStatus::Exhausted)
-        {
             return false;
-        }
 
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(output_str.data(), output_str.size());
+        ColumnString::Chars & data = col_str.getChars();
+        ColumnString::Offsets & offsets = col_str.getOffsets();
+
+        if (current_element.isString())
+        {
+            ReadBufferFromString buf(output_str);
+            readJSONStringInto(data, buf);
+            data.push_back(0);
+            offsets.push_back(data.size());
+        }
+        else
+        {
+            col_str.insertData(output_str.data(), output_str.size());
+        }
         return true;
     }
 };

@@ -4,7 +4,7 @@
 #include <optional>
 
 #include <Core/Names.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -36,6 +36,7 @@ struct RequiredSourceColumnsData
 
     bool has_table_join = false;
     bool has_array_join = false;
+    bool visit_index_hint = false;
 
     bool addColumnAliasIfAny(const IAST & ast);
     void addColumnIdentifier(const ASTIdentifier & node);

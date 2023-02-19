@@ -3,11 +3,13 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTInterpolateElement.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -31,7 +33,7 @@ public:
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
-            throw Exception("Normalized AST is too deep. Maximum: " + toString(data.settings.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+            throw Exception(ErrorCodes::TOO_DEEP_AST, "Normalized AST is too deep. Maximum: {}", data.settings.max_ast_depth);
         ++data.level;
     }
 
@@ -81,7 +83,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name());
     if (!data.allow_self_aliases && current_alias == node.name())
-        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias", backQuote(current_alias), backQuote(node.name()));
+        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias",
+                        backQuote(current_alias), backQuote(node.name()));
 
     if (it_alias != data.aliases.end() && current_alias != node.name())
     {
@@ -97,9 +100,9 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
         String node_alias = ast->tryGetAlias();
 
-        if (current_asts.count(alias_node.get()) /// We have loop of multiple aliases
+        if (current_asts.contains(alias_node.get()) /// We have loop of multiple aliases
             || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
-            throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
+            throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic aliases");
 
         /// Let's replace it with the corresponding tree node.
         if (!node_alias.empty() && node_alias != our_alias_or_name)
@@ -111,14 +114,23 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             if (!is_cycle)
             {
                 /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
+                /// Check size of the alias before cloning too large alias AST
+                alias_node->checkSize(data.settings.max_expanded_ast_elements);
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
             }
         }
         else
-            ast = alias_node;
+        {
+            /// Check size of the alias before cloning too large alias AST
+            alias_node->checkSize(data.settings.max_expanded_ast_elements);
+            auto alias_name = ast->getAliasOrColumnName();
+            ast = alias_node->clone();
+            ast->setAlias(alias_name);
+        }
     }
 }
+
 
 void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
@@ -133,7 +145,8 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 
 static bool needVisitChild(const ASTPtr & child)
 {
-    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>());
+    /// exclude interpolate elements - they are not subject for normalization and will be processed in filling transform
+    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>() || child->as<ASTInterpolateElement>());
 }
 
 /// special visitChildren() for ASTSelectQuery
@@ -166,10 +179,28 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         if (func_node->tryGetQueryArgument())
         {
             if (func_node->name != "view")
-                throw Exception("Query argument can only be used in the `view` TableFunction", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Query argument can only be used in the `view` TableFunction");
             /// Don't go into query argument.
             return;
         }
+
+        /// For lambda functions we need to avoid replacing lambda parameters with external aliases, for example,
+        /// Select 1 as x, arrayMap(x -> x + 2, [1, 2, 3])
+        /// shouldn't be replaced with Select 1 as x, arrayMap(x -> **(1 as x)** + 2, [1, 2, 3])
+        Aliases extracted_aliases;
+        if (func_node->name == "lambda")
+        {
+            Names lambda_aliases = RequiredSourceColumnsMatcher::extractNamesFromLambda(*func_node);
+            for (const auto & name : lambda_aliases)
+            {
+                auto it = data.aliases.find(name);
+                if (it != data.aliases.end())
+                {
+                    extracted_aliases.insert(data.aliases.extract(it));
+                }
+            }
+        }
+
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
         size_t first_pos = 0;
         if (func_node->name == "lambda")
@@ -192,6 +223,11 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         {
             visitChildren(func_node->window_definition.get(), data);
         }
+
+        for (auto & it : extracted_aliases)
+        {
+            data.aliases.insert(it);
+        }
     }
     else if (!node->as<ASTSelectQuery>())
     {
@@ -209,7 +245,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     auto & finished_asts = data.finished_asts;
     auto & current_asts = data.current_asts;
 
-    if (finished_asts.count(ast))
+    if (finished_asts.contains(ast))
     {
         ast = finished_asts[ast];
         return;
@@ -231,7 +267,13 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     else if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
-        throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+    {
+        if (!data.is_create_parameterized_view)
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Query parameter {} was not set", backQuote(node_param->name));
+    }
+    else if (auto * node_function = ast->as<ASTFunction>())
+        if (node_function->parameters)
+            visit(node_function->parameters, data);
 
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
     if (ast.get() != initial_ast.get())

@@ -1,0 +1,94 @@
+Row 1:
+──────
+stage:                Query log rows
+read_rows:            400
+written_rows:         201
+databases:            ['_table_function','default']
+tables:               ['_table_function.numbers','default.table_a','default.table_b','default.table_b_live_view','default.table_c']
+views:                ['default.matview_a_to_b','default.matview_b_to_c','default.table_b_live_view']
+sleep_calls:          200
+sleep_us:             298
+profile_select_rows:  400
+profile_select_bytes: 5200
+profile_insert_rows:  201
+profile_insert_bytes: 2808
+Row 1:
+──────
+stage:                Depending views
+view_name:            default.matview_a_to_b
+view_type:            Materialized
+status:               QueryFinish
+view_target:          default.table_b
+view_query:           SELECT toFloat64(a) AS a, b + sleepEachRow(0.000001) AS count FROM default.table_a
+read_rows:            100
+written_rows:         100
+sleep_calls:          100
+sleep_us:             99
+profile_select_rows:  100
+profile_select_bytes: 2000
+profile_insert_rows:  100
+profile_insert_bytes: 800
+
+Row 2:
+──────
+stage:                Depending views
+view_name:            default.matview_b_to_c
+view_type:            Materialized
+status:               QueryFinish
+view_target:          default.table_c
+view_query:           SELECT sum(a + sleepEachRow(0.000002)) AS a FROM default.table_b
+read_rows:            100
+written_rows:         1
+sleep_calls:          100
+sleep_us:             199
+profile_select_rows:  100
+profile_select_bytes: 800
+profile_insert_rows:  1
+profile_insert_bytes: 8
+
+Row 3:
+──────
+stage:                Depending views
+view_name:            default.table_b_live_view
+view_type:            Live
+status:               QueryFinish
+view_target:          default.table_b_live_view
+view_query:           SELECT sum(a + b) FROM default.table_b
+read_rows:            100
+written_rows:         0
+sleep_calls:          0
+sleep_us:             0
+profile_select_rows:  100
+profile_select_bytes: 1600
+profile_insert_rows:  0
+profile_insert_bytes: 0
+Row 1:
+──────
+stage:                Query log rows 2
+read_rows:            100
+written_rows:         100
+databases:            ['_table_function','default']
+tables:               ['_table_function.numbers','default.table_d','default.table_e','default.table_f']
+views:                ['default.matview_join_d_e']
+sleep_calls:          50
+sleep_us:             150
+profile_select_rows:  100
+profile_select_bytes: 800
+profile_insert_rows:  100
+profile_insert_bytes: 1600
+Row 1:
+──────
+stage:                Depending views 2
+view_name:            default.matview_join_d_e
+view_type:            Materialized
+status:               QueryFinish
+view_target:          default.table_f
+view_query:           SELECT table_d.a AS a, table_e.count + sleepEachRow(0.000003) AS count FROM default.table_d LEFT JOIN default.table_e ON table_d.a = table_e.a
+read_rows:            50
+written_rows:         50
+sleep_calls:          50
+sleep_us:             150
+profile_select_rows:  50
+profile_select_bytes: 400
+profile_insert_rows:  50
+profile_insert_bytes: 800

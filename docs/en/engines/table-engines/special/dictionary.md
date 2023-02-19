@@ -1,9 +1,10 @@
 ---
-toc_priority: 35
-toc_title: Dictionary
+slug: /en/engines/table-engines/special/dictionary
+sidebar_position: 20
+sidebar_label: Dictionary
 ---
 
-# Dictionary Table Engine {#dictionary}
+# Dictionary Table Engine
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table.
 

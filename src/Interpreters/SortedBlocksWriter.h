@@ -6,9 +6,9 @@
 #include <Common/filesystemHelpers.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockStream_fwd.h>
-
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 namespace DB
 {
@@ -17,12 +17,14 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 
+class Pipe;
+
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
 struct SortedBlocksWriter
 {
-    using TmpFilePtr = std::unique_ptr<TemporaryFile>;
+    using TmpFilePtr = TemporaryFileOnDiskHolder;
     using SortedFiles = std::vector<TmpFilePtr>;
 
     struct Blocks
@@ -56,7 +58,7 @@ struct SortedBlocksWriter
     struct PremergedFiles
     {
         SortedFiles files;
-        BlockInputStreams streams;
+        Pipe pipe;
     };
 
     static constexpr const size_t num_streams = 2;
@@ -94,7 +96,7 @@ struct SortedBlocksWriter
     }
 
     String getPath() const;
-    BlockInputStreamPtr streamFromFile(const TmpFilePtr & file) const;
+    Pipe streamFromFile(const TmpFilePtr & file) const;
 
     void insert(Block && block);
     TmpFilePtr flush(const BlocksList & blocks) const;

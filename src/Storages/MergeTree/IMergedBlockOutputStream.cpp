@@ -4,19 +4,33 @@
 
 namespace DB
 {
+
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_)
+    const MergeTreeMutableDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const NamesAndTypesList & columns_list,
+    bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , volume(data_part->volume)
-    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
+    , data_part_storage(data_part->getDataPartStoragePtr())
+    , reset_columns(reset_columns_)
 {
+    if (reset_columns)
+    {
+        SerializationInfo::Settings info_settings =
+        {
+            .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .choose_kind = false,
+        };
+
+        new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
+    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
     const NameSet & empty_columns = data_part->expired_columns;
@@ -26,30 +40,31 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     if (empty_columns.empty() || isCompactPart(data_part))
         return {};
 
+    for (const auto & column : empty_columns)
+        LOG_TRACE(storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
+
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : columns)
+    for (const auto & column : columns)
     {
-        auto serialization = data_part->getSerializationForColumn(column);
-        serialization->enumerateStreams(
+        data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            },
-            {});
+                ++stream_counts[ISerialization::getFileNameForStream(column.name, substream_path)];
+            });
     }
 
     NameSet remove_files;
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        auto column_with_type = columns.tryGetByName(column_name);
-        if (!column_with_type)
-           continue;
+        auto serialization = data_part->tryGetSerialization(column_name);
+        if (!serialization)
+            continue;
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = ISerialization::getFileNameForStream(*column_with_type, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)
             {
@@ -58,17 +73,22 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        auto serialization = data_part->getSerializationForColumn(*column_with_type);
         serialization->enumerateStreams(callback);
+        serialization_infos.erase(column_name);
     }
 
     /// Remove files on disk and checksums
-    for (const String & removed_file : remove_files)
+    for (auto itr = remove_files.begin(); itr != remove_files.end();)
     {
-        if (checksums.files.count(removed_file))
+        if (checksums.files.contains(*itr))
         {
-            data_part->volume->getDisk()->removeFile(data_part->getFullRelativePath() + removed_file);
-            checksums.files.erase(removed_file);
+            checksums.files.erase(*itr);
+            ++itr;
+        }
+        else /// If we have no file in checksums it doesn't exist on disk
+        {
+            LOG_TRACE(storage.log, "Files {} doesn't exist in checksums so it doesn't exist on disk, will not try to remove it", *itr);
+            itr = remove_files.erase(itr);
         }
     }
 
@@ -85,6 +105,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (remove_it != columns.end())
             columns.erase(remove_it);
     }
+
     return remove_files;
 }
 

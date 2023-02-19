@@ -3,10 +3,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -115,6 +117,13 @@ private:
         [[maybe_unused]] const NullMap * const null_map_data,
         [[maybe_unused]] const NullMap * const null_map_item)
     {
+        if constexpr (std::is_same_v<Data, IColumn> && std::is_same_v<Target, IColumn>)
+        {
+            /// Generic variant is using IColumn::compare function that only allows to compare columns of identical types.
+            if (typeid(data) != typeid(target))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Columns {} and {} cannot be compared", data.getName(), target.getName());
+        }
+
         const size_t size = offsets.size();
 
         result.resize(size);
@@ -362,24 +371,110 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        auto first_argument_type = arguments[0].type;
+        auto second_argument_type = arguments[1].type;
 
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(first_argument_type.get());
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(first_argument_type.get());
 
-        if (!arguments[1]->onlyNull() && !allowArguments(array_type->getNestedType(), arguments[1]))
+        DataTypePtr inner_type;
+
+        /// If map is first argument only has(map_column, key) function is supported
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+        {
+            if (!array_type && !map_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be an array or map.",
+                    getName());
+
+            inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
+        }
+        else
+        {
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be an array.",
+                    getName());
+
+            inner_type = array_type->getNestedType();
+        }
+
+        if (!second_argument_type->onlyNull() && !allowArguments(inner_type, second_argument_type))
+        {
+            const char * first_argument_type_name = map_type ? "map" : "array";
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Types of array and 2nd argument of function `{}` must be identical up to nullability, cardinality, "
+                "Types of {} and 2nd argument of function `{}` must be identical up to nullability, cardinality, "
                 "numeric types, or Enum and numeric type. Passed: {} and {}.",
-                getName(), arguments[0]->getName(), arguments[1]->getName());
+                first_argument_type_name,
+                getName(),
+                first_argument_type->getName(),
+                second_argument_type->getName());
+        }
 
         return std::make_shared<DataTypeNumber<ResultType>>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    {
+        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
+        {
+            if (isMap(arguments[0].type))
+            {
+                auto non_const_map_column = arguments[0].column->convertToFullColumnIfConst();
+
+                const auto & map_column = assert_cast<const ColumnMap &>(*non_const_map_column);
+                const auto & map_array_column = map_column.getNestedColumn();
+                auto offsets = map_array_column.getOffsetsPtr();
+                auto keys = map_column.getNestedData().getColumnPtr(0);
+                auto array_column = ColumnArray::create(keys, offsets);
+
+                const auto & type_map = assert_cast<const DataTypeMap &>(*arguments[0].type);
+                auto array_type = std::make_shared<DataTypeArray>(type_map.getKeyType());
+
+                auto arguments_copy = arguments;
+                arguments_copy[0].column = std::move(array_column);
+                arguments_copy[0].type = std::move(array_type);
+                arguments_copy[0].name = arguments[0].name;
+
+                return executeArrayImpl(arguments_copy, result_type);
+            }
+        }
+
+        return executeArrayImpl(arguments, result_type);
+    }
+
+private:
+    using ResultType = typename ConcreteAction::ResultType;
+    using ResultColumnType = ColumnVector<ResultType>;
+    using ResultColumnPtr = decltype(ResultColumnType::create());
+
+    using NullMaps = std::pair<const NullMap *, const NullMap *>;
+
+    struct ExecutionData
+    {
+        const IColumn& left;
+        const IColumn& right;
+        const ColumnArray::Offsets& offsets;
+        ColumnPtr result_column;
+        NullMaps maps;
+        ResultColumnPtr result { ResultColumnType::create() };
+
+        inline void moveResult() { result_column = std::move(result); }
+    };
+
+    static inline bool allowArguments(const DataTypePtr & inner_type, const DataTypePtr & arg)
+    {
+        auto inner_type_decayed = removeNullable(removeLowCardinality(inner_type));
+        auto arg_decayed = removeNullable(removeLowCardinality(arg));
+
+        return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
+            || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
     /**
@@ -396,7 +491,7 @@ public:
       * (they are vectors of Fields, which may represent the NULL value),
       * they do not require any preprocessing.
       */
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         const ColumnPtr & ptr = arguments[0].column;
 
@@ -411,11 +506,13 @@ public:
         if (col_array)
             nullable = checkAndGetColumn<ColumnNullable>(col_array->getData());
 
-        auto & arg_column = arguments[1].column;
+        const auto & arg_column = arguments[1].column;
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(*arg_column);
 
         if (!nullable && !arg_nullable)
+        {
             return executeOnNonNullable(arguments, result_type);
+        }
         else
         {
             /**
@@ -475,34 +572,6 @@ public:
         }
     }
 
-private:
-    using ResultType = typename ConcreteAction::ResultType;
-    using ResultColumnType = ColumnVector<ResultType>;
-    using ResultColumnPtr = decltype(ResultColumnType::create());
-
-    using NullMaps = std::pair<const NullMap *, const NullMap *>;
-
-    struct ExecutionData
-    {
-        const IColumn& left;
-        const IColumn& right;
-        const ColumnArray::Offsets& offsets;
-        ColumnPtr result_column;
-        NullMaps maps;
-        ResultColumnPtr result { ResultColumnType::create() };
-
-        inline void moveResult() { result_column = std::move(result); }
-    };
-
-    static inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
-    {
-        auto inner_type_decayed = removeNullable(removeLowCardinality(array_inner_type));
-        auto arg_decayed = removeNullable(removeLowCardinality(arg));
-
-        return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
-            || getLeastSupertype({inner_type_decayed, arg_decayed});
-    }
-
 #define INTEGRAL_TPL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
 
     ColumnPtr executeOnNonNullable(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
@@ -514,9 +583,7 @@ private:
                 if (auto res = executeLowCardinality(arguments))
                     return res;
 
-                throw Exception(
-                    "Illegal internal type of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
             }
         }
 
@@ -525,9 +592,7 @@ private:
               || (res = executeConst(arguments, result_type))
               || (res = executeString(arguments))
               || (res = executeGeneric(arguments))))
-            throw Exception(
-                "Illegal internal type of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;
     }
@@ -649,9 +714,7 @@ private:
     /**
      * Catches arguments of type LowCardinality(T) (left) and U (right).
      *
-     * The perftests
-     * https://clickhouse-test-reports.s3.yandex.net/12550/2d27fa0fa8c198a82bf1fe3625050ccf56695976/integration_tests_(release).html
-     * showed that the amount of action needed to convert the non-constant right argument to the index column
+     * The perftests showed that the amount of action needed to convert the non-constant right argument to the index column
      * (similar to the left one's) is significantly higher than converting the array itself to an ordinary column.
      *
      * So, in terms of performance it's more optimal to fall back to default implementation and catch only constant
@@ -673,42 +736,34 @@ private:
 
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
-        const IColumn& col_arg = *arguments[1].column.get();
-
-        if (const ColumnConst * const col_arg_const = checkAndGetColumn<ColumnConst>(col_arg))
+        if (const ColumnConst * col_arg_const = checkAndGetColumn<ColumnConst>(*arguments[1].column))
         {
-            const IColumnUnique& col_lc_dict = col_lc->getDictionary();
-
-            const bool different_inner_types = col_lc_dict.isNullable()
-                ? !col_arg_const->structureEquals(*col_lc_dict.getNestedColumn().get())
-                : true; // Can't compare so ignore this check
-
-            const bool use_cloned_arg = col_arg_const->isNumeric()
-                // outer types do not match
-                && !col_arg_const->structureEquals(col_lc_dict)
-                // inner types do not match (like A and Nullable(B) or A and Const(B));
-                && different_inner_types;
+            const IColumnUnique & col_lc_dict = col_lc->getDictionary();
 
             const DataTypeArray * const array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
             const DataTypePtr target_type_ptr = recursiveRemoveLowCardinality(array_type->getNestedType());
 
-            const ColumnPtr col_arg_cloned = use_cloned_arg
-                ? castColumn(arguments[1], target_type_ptr)
-                : col_arg_const->getPtr();
+            ColumnPtr col_arg_cloned = castColumn(
+                {col_arg_const->getDataColumnPtr(), arguments[1].type, arguments[1].name}, target_type_ptr);
 
-            const StringRef elem = col_arg_cloned->getDataAt(0);
             ResultColumnPtr col_result = ResultColumnType::create();
-
             UInt64 index = 0;
 
-            if (elem != EMPTY_STRING_REF)
+            if (!col_arg_cloned->isNullAt(0))
             {
+                if (col_arg_cloned->isNullable())
+                    col_arg_cloned = checkAndGetColumn<ColumnNullable>(*col_arg_cloned)->getNestedColumnPtr();
+
+                StringRef elem = col_arg_cloned->getDataAt(0);
+
                 if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
+                {
                     index = *maybe_index;
+                }
                 else
                 {
                     const size_t offsets_size = col_array->getOffsets().size();
-                    auto& data = col_result->getData();
+                    auto & data = col_result->getData();
 
                     data.resize_fill(offsets_size);
 
@@ -719,7 +774,7 @@ private:
             Impl::Main<ConcreteAction, true>::vector(
                 col_lc->getIndexes(),
                 col_array->getOffsets(),
-                index,
+                index, /** Assuming LowCardinality has index of NULL always as zero. */
                 col_result->getData(),
                 null_map_data,
                 null_map_item);
@@ -733,9 +788,9 @@ private:
 
             const NullMap * const null_map_left_casted = &left_nullable.getNullMapColumn().getData();
 
-            const IColumn& left_ptr = left_nullable.getNestedColumn();
+            const IColumn & left_ptr = left_nullable.getNestedColumn();
 
-            const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
+            const ColumnPtr right_casted = arguments[1].column->convertToFullColumnIfLowCardinality();
             const ColumnNullable * const right_nullable = checkAndGetColumn<ColumnNullable>(right_casted.get());
 
             const NullMap * const null_map_right_casted = right_nullable
@@ -758,17 +813,17 @@ private:
         }
         else // LowCardinality(T) and U, T not Nullable
         {
-            if (col_arg.isNullable())
+            if (arguments[1].column->isNullable())
                 return nullptr;
 
-            if (const auto* const arg_lc = checkAndGetColumn<ColumnLowCardinality>(&col_arg);
+            if (const auto* const arg_lc = checkAndGetColumn<ColumnLowCardinality>(arguments[1].column.get());
                 arg_lc && arg_lc->isNullable())
                 return nullptr;
 
             // LowCardinality(T) and U (possibly LowCardinality(V))
 
             const ColumnPtr left_casted = col_lc->convertToFullColumnIfLowCardinality();
-            const ColumnPtr right_casted = col_arg.convertToFullColumnIfLowCardinality();
+            const ColumnPtr right_casted = arguments[1].column->convertToFullColumnIfLowCardinality();
 
             ExecutionData data =
             {
@@ -869,9 +924,7 @@ private:
                     null_map_data,
                     null_map_item);
             else
-                throw Exception(
-                    "Logical error: ColumnConst contains not String nor FixedString column",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
         }
         else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(&data.right))
         {
@@ -976,7 +1029,7 @@ private:
         DataTypePtr array_elements_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
         const DataTypePtr & index_type = arguments[1].type;
 
-        DataTypePtr common_type = getLeastSupertype({array_elements_type, index_type});
+        DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, index_type});
 
         ColumnPtr col_nested = castColumn({ col->getDataPtr(), array_elements_type, "" }, common_type);
 

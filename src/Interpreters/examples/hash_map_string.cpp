@@ -12,11 +12,11 @@
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -30,11 +30,14 @@ struct CompactStringRef
     union
     {
         const char * data_mixed = nullptr;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnested-anon-types"
         struct
         {
             char dummy[6];
             UInt16 size;
         };
+#pragma clang diagnostic pop
     };
 
     CompactStringRef(const char * data_, size_t size_)
@@ -256,7 +259,7 @@ struct Grower : public HashTableGrower<>
     static const size_t initial_size_degree = 16;
     Grower() { size_degree = initial_size_degree; }
 
-    size_t max_fill = (1ULL << initial_size_degree) * 0.9;
+    size_t max_fill = (1ULL << initial_size_degree) * 9 / 10;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -277,7 +280,7 @@ struct Grower : public HashTableGrower<>
     void increaseSize()
     {
         size_degree += size_degree >= 23 ? 1 : 2;
-        max_fill = (1ULL << size_degree) * 0.9;
+        max_fill = (1ULL << size_degree) * 9 / 10;
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.

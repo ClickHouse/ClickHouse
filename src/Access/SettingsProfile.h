@@ -18,8 +18,12 @@ struct SettingsProfile : public IAccessEntity
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<SettingsProfile>(); }
-    static constexpr const Type TYPE = Type::SETTINGS_PROFILE;
-    Type getType() const override { return TYPE; }
+    static constexpr const auto TYPE = AccessEntityType::SETTINGS_PROFILE;
+    AccessEntityType getType() const override { return TYPE; }
+
+    std::vector<UUID> findDependencies() const override;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    bool isBackupAllowed() const override { return elements.isBackupAllowed(); }
 };
 
 using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;

@@ -66,6 +66,7 @@ private:
         if (old_size < new_size)
         {
             char * old_state = state.array_of_aggregate_datas;
+
             char * new_state = arena.alignedAlloc(
                 new_size * nested_size_of_data,
                 nested_func->alignOfData());
@@ -90,7 +91,7 @@ private:
                 throw;
             }
 
-            for (i = 0; i < old_size; i++)
+            for (i = 0; i < old_size; ++i)
             {
                 nested_func->merge(&new_state[i * nested_size_of_data],
                         &old_state[i * nested_size_of_data],
@@ -105,18 +106,18 @@ private:
     }
 
 public:
-    AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, {})
+    AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
         nested_size_of_data = nested_func->sizeOfData();
 
         if (arguments.empty())
-            throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require at least one argument", getName());
 
         for (const auto & type : arguments)
             if (!isArray(type))
-                throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for aggregate function {} must be arrays", getName());
     }
 
     String getName() const override
@@ -124,26 +125,56 @@ public:
         return nested_func->getName() + "ForEach";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(AggregateFunctionPtr nested_)
     {
-        return std::make_shared<DataTypeArray>(nested_func->getReturnType());
+        return std::make_shared<DataTypeArray>(nested_->getResultType());
     }
 
-    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
+    }
+
+    template <bool up_to_state>
+    void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
         AggregateFunctionForEachData & state = data(place);
 
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->destroy(nested_state);
+            if constexpr (up_to_state)
+                nested_func->destroyUpToState(nested_state);
+            else
+                nested_func->destroy(nested_state);
+
             nested_state += nested_size_of_data;
         }
     }
 
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<false>(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        destroyImpl<true>(place);
+    }
+
     bool hasTrivialDestructor() const override
     {
-        return nested_func->hasTrivialDestructor();
+        return std::is_trivially_destructible_v<AggregateFunctionForEachData> && nested_func->hasTrivialDestructor();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -166,7 +197,7 @@ public:
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
             if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
-                throw Exception("Arrays passed to " + getName() + " aggregate function have different sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
         AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
@@ -196,7 +227,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const AggregateFunctionForEachData & state = data(place);
         writeBinary(state.dynamic_array_size, buf);
@@ -209,7 +240,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         AggregateFunctionForEachData & state = data(place);
 
@@ -221,12 +252,13 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < new_size; ++i)
         {
-            nested_func->deserialize(nested_state, buf, arena);
+            nested_func->deserialize(nested_state, buf, version, arena);
             nested_state += nested_size_of_data;
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    template <bool merge>
+    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         AggregateFunctionForEachData & state = data(place);
 
@@ -237,11 +269,24 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->insertResultInto(nested_state, elems_to, arena);
+            if constexpr (merge)
+                nested_func->insertMergeResultInto(nested_state, elems_to, arena);
+            else
+                nested_func->insertResultInto(nested_state, elems_to, arena);
             nested_state += nested_size_of_data;
         }
 
         offsets_to.push_back(offsets_to.back() + state.dynamic_array_size);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<false>(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

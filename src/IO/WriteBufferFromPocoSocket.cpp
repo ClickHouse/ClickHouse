@@ -1,11 +1,12 @@
 #include <Poco/Net/NetException.h>
 
+#include <base/scope_guard.h>
+
 #include <IO/WriteBufferFromPocoSocket.h>
 
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -30,6 +31,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int CANNOT_WRITE_TO_SOCKET;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -39,8 +41,13 @@ void WriteBufferFromPocoSocket::nextImpl()
         return;
 
     Stopwatch watch;
-
     size_t bytes_written = 0;
+
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
+    });
+
     while (bytes_written < offset())
     {
         ssize_t res = 0;
@@ -49,29 +56,32 @@ void WriteBufferFromPocoSocket::nextImpl()
         try
         {
             CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkSend);
-            res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
+            char * pos = working_buffer.begin() + bytes_written;
+            size_t size = offset() - bytes_written;
+            if (size > INT_MAX)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
+            res = socket.impl()->sendBytes(pos, static_cast<int>(size));
         }
         catch (const Poco::Net::NetException & e)
         {
-            throw NetException(e.displayText() + ", while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({})", e.displayText(), peer_address.toString());
         }
         catch (const Poco::TimeoutException &)
         {
-            throw NetException("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms)",
+                peer_address.toString(),
+                socket.impl()->getSendTimeout().totalMilliseconds());
         }
         catch (const Poco::IOException & e)
         {
-            throw NetException(e.displayText() + ", while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+            throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({})", e.displayText(), peer_address.toString());
         }
 
         if (res < 0)
-            throw NetException("Cannot write to socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+            throw NetException(ErrorCodes::CANNOT_WRITE_TO_SOCKET, "Cannot write to socket ({})", peer_address.toString());
 
         bytes_written += res;
     }
-
-    ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
-    ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
@@ -81,9 +91,7 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    next();
+    finalize();
 }
 
 }

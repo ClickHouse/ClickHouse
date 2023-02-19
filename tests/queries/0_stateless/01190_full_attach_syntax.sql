@@ -1,4 +1,8 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS test_01190;
+set allow_deprecated_database_ordinary=1;
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE DATABASE test_01190 ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic
 USE test_01190;
 

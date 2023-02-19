@@ -21,10 +21,12 @@ class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinat
 public:
     String getName() const override { return "Array"; }
 
+    bool supportsNesting() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("-Array aggregate functions require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "-Array aggregate functions require at least one argument");
 
         DataTypes nested_arguments;
         for (const auto & type : arguments)
@@ -32,8 +34,8 @@ public:
             if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(type.get()))
                 nested_arguments.push_back(array->getNestedType());
             else
-                throw Exception("Illegal type " + type->getName() + " of argument"
-                    " for aggregate function with " + getName() + " suffix. Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument"
+                                " for aggregate function with {} suffix. Must be array.", type->getName(), getName());
         }
 
         return nested_arguments;
@@ -43,9 +45,9 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array &) const override
+        const Array & params) const override
     {
-        return std::make_shared<AggregateFunctionArray>(nested_function, arguments);
+        return std::make_shared<AggregateFunctionArray>(nested_function, arguments, params);
     }
 };
 

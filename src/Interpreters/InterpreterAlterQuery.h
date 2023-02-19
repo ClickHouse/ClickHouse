@@ -9,6 +9,7 @@ namespace DB
 
 class AccessRightsElements;
 class ASTAlterCommand;
+class ASTAlterQuery;
 
 
 /** Allows you add or remove a column in the table.
@@ -25,8 +26,14 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
+    bool supportsTransactions() const override { return true; }
+
 private:
     AccessRightsElements getRequiredAccess() const;
+
+    BlockIO executeToTable(const ASTAlterQuery & alter);
+
+    BlockIO executeToDatabase(const ASTAlterQuery & alter);
 
     ASTPtr query_ptr;
 };

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSearchToString.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -92,7 +92,7 @@ struct ExtractURLParameterImpl
 struct NameExtractURLParameter { static constexpr auto name = "extractURLParameter"; };
 using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter>;
 
-void registerFunctionExtractURLParameter(FunctionFactory & factory)
+REGISTER_FUNCTION(ExtractURLParameter)
 {
     factory.registerFunction<FunctionExtractURLParameter>();
 }

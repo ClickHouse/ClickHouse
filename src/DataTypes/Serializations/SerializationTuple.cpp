@@ -1,13 +1,12 @@
-#include <common/map.h>
-#include <common/range.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -17,7 +16,7 @@ namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -31,33 +30,33 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
     return assert_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
-void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & tuple = get<const Tuple &>(field);
+    const auto & tuple = field.get<const Tuple &>();
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
-        serialization->serializeBinary(tuple[element_index], ostr);
+        serialization->serializeBinary(tuple[element_index], ostr, settings);
     }
 }
 
-void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) const
+void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     const size_t size = elems.size();
 
-    Tuple tuple(size);
-    for (const auto i : collections::range(0, size))
-        elems[i]->deserializeBinary(tuple[i], istr);
-
-    field = tuple;
+    field = Tuple();
+    Tuple & tuple = field.get<Tuple &>();
+    tuple.reserve(size);
+    for (size_t i = 0; i < size; ++i)
+        elems[i]->deserializeBinary(tuple.emplace_back(), istr, settings);
 }
 
-void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
-        serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr);
+        serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr, settings);
     }
 }
 
@@ -74,7 +73,7 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
         // Check that all columns now have the same size.
         size_t new_size = column.size();
-        for (auto i : collections::range(1, num_elems))
+        for (size_t i = 1; i < num_elems; ++i)
         {
             const auto & element_column = extractElementColumn(column, i);
             if (element_column.size() != new_size)
@@ -88,7 +87,7 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
     }
     catch (...)
     {
-        for (const auto & i : collections::range(0, num_elems))
+        for (size_t i = 0; i < num_elems; ++i)
         {
             auto & element_column = extractElementColumn(column, i);
             if (element_column.size() > old_size)
@@ -99,19 +98,19 @@ static void addElementSafe(size_t num_elems, IColumn & column, F && impl)
     }
 }
 
-void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe(elems.size(), column, [&]
     {
-        for (const auto & i : collections::range(0, elems.size()))
-            elems[i]->deserializeBinary(extractElementColumn(column, i), istr);
+        for (size_t i = 0; i < elems.size(); ++i)
+            elems[i]->deserializeBinary(extractElementColumn(column, i), istr, settings);
     });
 }
 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('(', ostr);
-    for (const auto i : collections::range(0, elems.size()))
+    for (size_t i = 0; i < elems.size(); ++i)
     {
         if (i != 0)
             writeChar(',', ostr);
@@ -120,14 +119,14 @@ void SerializationTuple::serializeText(const IColumn & column, size_t row_num, W
     writeChar(')', ostr);
 }
 
-void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     const size_t size = elems.size();
     assertChar('(', istr);
 
     addElementSafe(elems.size(), column, [&]
     {
-        for (const auto i : collections::range(0, size))
+        for (size_t i = 0; i < size; ++i)
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
@@ -137,26 +136,30 @@ void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, co
             }
             elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, settings);
         }
-    });
 
-    // Special format for one element tuple (1,)
-    if (1 == elems.size())
-    {
+        // Special format for one element tuple (1,)
+        if (1 == elems.size())
+        {
+            skipWhitespaceIfAny(istr);
+            // Allow both (1) and (1,)
+            checkChar(',', istr);
+        }
+
         skipWhitespaceIfAny(istr);
-        // Allow both (1) and (1,)
-        checkChar(',', istr);
-    }
-    skipWhitespaceIfAny(istr);
-    assertChar(')', istr);
+        assertChar(')', istr);
+
+        if (whole && !istr.eof())
+            throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
+    });
 }
 
 void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuples_as_objects
+    if (settings.json.write_named_tuples_as_objects
         && have_explicit_names)
     {
         writeChar('{', ostr);
-        for (const auto i : collections::range(0, elems.size()))
+        for (size_t i = 0; i < elems.size(); ++i)
         {
             if (i != 0)
             {
@@ -171,7 +174,7 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
     else
     {
         writeChar('[', ostr);
-        for (const auto i : collections::range(0, elems.size()))
+        for (size_t i = 0; i < elems.size(); ++i)
         {
             if (i != 0)
                 writeChar(',', ostr);
@@ -183,7 +186,7 @@ void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_nu
 
 void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.json.named_tuples_as_objects
+    if (settings.json.read_named_tuples_as_objects
         && have_explicit_names)
     {
         skipWhitespaceIfAny(istr);
@@ -192,12 +195,16 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 
         addElementSafe(elems.size(), column, [&]
         {
-            // Require all elements but in arbitrary order.
-            for (auto i : collections::range(0, elems.size()))
+            std::vector<UInt8> seen_elements(elems.size(), 0);
+            size_t processed = 0;
+            size_t skipped = 0;
+            while (!istr.eof() && *istr.position() != '}')
             {
-                if (i > 0)
+                if (!settings.json.ignore_unknown_keys_in_named_tuple && processed == elems.size())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of elements in named tuple. Expected no more than {} (consider enabling input_format_json_ignore_unknown_keys_in_named_tuple setting)", elems.size());
+
+                if (processed + skipped > 0)
                 {
-                    skipWhitespaceIfAny(istr);
                     assertChar(',', istr);
                     skipWhitespaceIfAny(istr);
                 }
@@ -209,22 +216,57 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
                 skipWhitespaceIfAny(istr);
 
                 const size_t element_pos = getPositionByName(name);
+                if (element_pos == std::numeric_limits<size_t>::max())
+                {
+                    if (settings.json.ignore_unknown_keys_in_named_tuple)
+                    {
+                        skipJSONField(istr, name);
+                        skipWhitespaceIfAny(istr);
+                        ++skipped;
+                        continue;
+                    }
+                    else
+                        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}', enable setting input_format_json_ignore_unknown_keys_in_named_tuple", name);
+                }
+
+                seen_elements[element_pos] = 1;
                 auto & element_column = extractElementColumn(column, element_pos);
                 elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+
+                skipWhitespaceIfAny(istr);
+                ++processed;
+            }
+
+            assertChar('}', istr);
+
+            /// Check if we have missing elements.
+            if (processed != elems.size())
+            {
+                for (size_t element_pos = 0; element_pos != seen_elements.size(); ++element_pos)
+                {
+                    if (seen_elements[element_pos])
+                        continue;
+
+                    if (!settings.json.defaults_for_missing_elements_in_named_tuple)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "JSON object doesn't contain tuple element {}. If you want to insert defaults in case of missing elements, "
+                            "enable setting input_format_json_defaults_for_missing_elements_in_named_tuple",
+                            elems[element_pos]->getElementName());
+
+                    auto & element_column = extractElementColumn(column, element_pos);
+                    element_column.insertDefault();
+                }
             }
         });
-
-        skipWhitespaceIfAny(istr);
-        assertChar('}', istr);
     }
     else
     {
-        const size_t size = elems.size();
         assertChar('[', istr);
 
         addElementSafe(elems.size(), column, [&]
         {
-            for (const auto i : collections::range(0, size))
+            for (size_t i = 0; i < elems.size(); ++i)
             {
                 skipWhitespaceIfAny(istr);
                 if (i != 0)
@@ -234,17 +276,17 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
                 }
                 elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr, settings);
             }
-        });
 
-        skipWhitespaceIfAny(istr);
-        assertChar(']', istr);
+            skipWhitespaceIfAny(istr);
+            assertChar(']', istr);
+        });
     }
 }
 
 void SerializationTuple::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeCString("<tuple>", ostr);
-    for (const auto i : collections::range(0, elems.size()))
+    for (size_t i = 0; i < elems.size(); ++i)
     {
         writeCString("<elem>", ostr);
         elems[i]->serializeTextXML(extractElementColumn(column, i), row_num, ostr, settings);
@@ -255,10 +297,10 @@ void SerializationTuple::serializeTextXML(const IColumn & column, size_t row_num
 
 void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    for (const auto i : collections::range(0, elems.size()))
+    for (size_t i = 0; i < elems.size(); ++i)
     {
         if (i != 0)
-            writeChar(',', ostr);
+            writeChar(settings.csv.tuple_delimiter, ostr);
         elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
     }
 }
@@ -268,12 +310,12 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     addElementSafe(elems.size(), column, [&]
     {
         const size_t size = elems.size();
-        for (const auto i : collections::range(0, size))
+        for (size_t i = 0; i < size; ++i)
         {
             if (i != 0)
             {
                 skipWhitespaceIfAny(istr);
-                assertChar(settings.csv.delimiter, istr);
+                assertChar(settings.csv.tuple_delimiter, istr);
                 skipWhitespaceIfAny(istr);
             }
             elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, settings);
@@ -281,10 +323,24 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     });
 }
 
-void SerializationTuple::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationTuple::enumerateStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
 {
-    for (const auto & elem : elems)
-        elem->enumerateStreams(callback, path);
+    const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
+    const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
+    const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        auto next_data = SubstreamData(elems[i])
+            .withType(type_tuple ? type_tuple->getElement(i) : nullptr)
+            .withColumn(column_tuple ? column_tuple->getColumnPtr(i) : nullptr)
+            .withSerializationInfo(info_tuple ? info_tuple->getElementInfo(i) : nullptr);
+
+        elems[i]->enumerateStreams(settings, callback, next_data);
+    }
 }
 
 struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBulkState
@@ -297,41 +353,9 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 };
 
-static SerializeBinaryBulkStateTuple * checkAndGetTupleSerializeState(ISerialization::SerializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeTuple.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * tuple_state = typeid_cast<SerializeBinaryBulkStateTuple *>(state.get());
-    if (!tuple_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid SerializeBinaryBulkState for DataTypeTuple. Expected: "
-                        + demangle(typeid(SerializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return tuple_state;
-}
-
-static DeserializeBinaryBulkStateTuple * checkAndGetTupleDeserializeState(ISerialization::DeserializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeTuple.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * tuple_state = typeid_cast<DeserializeBinaryBulkStateTuple *>(state.get());
-    if (!tuple_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid DeserializeBinaryBulkState for DataTypeTuple. Expected: "
-                        + demangle(typeid(DeserializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return tuple_state;
-}
 
 void SerializationTuple::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -339,7 +363,7 @@ void SerializationTuple::serializeBinaryBulkStatePrefix(
     tuple_state->states.resize(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->serializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
+        elems[i]->serializeBinaryBulkStatePrefix(extractElementColumn(column, i), settings, tuple_state->states[i]);
 
     state = std::move(tuple_state);
 }
@@ -348,7 +372,7 @@ void SerializationTuple::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetTupleSerializeState(state);
+    auto * tuple_state = checkAndGetState<SerializeBinaryBulkStateTuple>(state);
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->serializeBinaryBulkStateSuffix(settings, tuple_state->states[i]);
@@ -374,9 +398,9 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetTupleSerializeState(state);
+    auto * tuple_state = checkAndGetState<SerializeBinaryBulkStateTuple>(state);
 
-    for (const auto i : collections::range(0, elems.size()))
+    for (size_t i = 0; i < elems.size(); ++i)
     {
         const auto & element_col = extractElementColumn(column, i);
         elems[i]->serializeBinaryBulkWithMultipleStreams(element_col, offset, limit, settings, tuple_state->states[i]);
@@ -390,13 +414,13 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * tuple_state = checkAndGetTupleDeserializeState(state);
+    auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
     auto mutable_column = column->assumeMutable();
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);
 
     settings.avg_value_size_hint = 0;
-    for (const auto i : collections::range(0, elems.size()))
+    for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->deserializeBinaryBulkWithMultipleStreams(column_tuple.getColumnPtr(i), limit, settings, tuple_state->states[i], cache);
 }
 
@@ -406,7 +430,7 @@ size_t SerializationTuple::getPositionByName(const String & name) const
     for (size_t i = 0; i < size; ++i)
         if (elems[i]->getElementName() == name)
             return i;
-    throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+    return std::numeric_limits<size_t>::max();
 }
 
 }

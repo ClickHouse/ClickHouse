@@ -9,8 +9,8 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
-#include <common/chrono_io.h>
-#include <common/scope_guard_safe.h>
+#include <base/chrono_io.h>
+#include <Common/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -56,7 +56,7 @@ namespace
             static_assert(std::is_same_v<ReturnType, ExternalLoader::Loadables>);
             ExternalLoader::Loadables objects;
             objects.reserve(results.size());
-            for (const auto & result : results)
+            for (auto && result : results)
             {
                 if (auto object = std::move(result.object))
                     objects.push_back(std::move(object));
@@ -133,7 +133,13 @@ public:
         settings = settings_;
     }
 
-    using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>;
+    struct ObjectConfigs
+    {
+        std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>> configs_by_name;
+        size_t counter = 0;
+    };
+
+    using ObjectConfigsPtr = std::shared_ptr<const ObjectConfigs>;
 
     /// Reads all repositories.
     ObjectConfigsPtr read()
@@ -336,7 +342,7 @@ private:
         need_collect_object_configs = false;
 
         // Generate new result.
-        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>();
+        auto new_configs = std::make_shared<ObjectConfigs>();
 
         for (const auto & [repository, repository_info] : repositories)
         {
@@ -344,8 +350,8 @@ private:
             {
                 for (const auto & [object_name, key_in_config] : file_info.objects)
                 {
-                    auto already_added_it = new_configs->find(object_name);
-                    if (already_added_it == new_configs->end())
+                    auto already_added_it = new_configs->configs_by_name.find(object_name);
+                    if (already_added_it == new_configs->configs_by_name.end())
                     {
                         auto new_config = std::make_shared<ObjectConfig>();
                         new_config->config = file_info.file_contents;
@@ -353,7 +359,7 @@ private:
                         new_config->repository_name = repository->getName();
                         new_config->from_temp_repository = repository->isTemporary();
                         new_config->path = path;
-                        new_configs->emplace(object_name, std::move(new_config));
+                        new_configs->configs_by_name.emplace(object_name, std::move(new_config));
                     }
                     else
                     {
@@ -372,6 +378,7 @@ private:
             }
         }
 
+        new_configs->counter = counter++;
         object_configs = new_configs;
     }
 
@@ -383,6 +390,7 @@ private:
     std::unordered_map<Repository *, RepositoryInfo> repositories;
     ObjectConfigsPtr object_configs;
     bool need_collect_object_configs = false;
+    size_t counter = 0;
 };
 
 
@@ -433,13 +441,22 @@ public:
         if (configs == new_configs)
             return;
 
+        /// The following check prevents a race when two threads are trying to update configuration
+        /// at almost the same time:
+        /// 1) first thread reads a configuration (for example as a part of periodic updates)
+        /// 2) second thread sets a new configuration (for example after executing CREATE DICTIONARY)
+        /// 3) first thread sets the configuration it read in 1) and thus discards the changes made in 2).
+        /// So we use `counter` here to ensure we exchange the current configuration only for a newer one.
+        if (configs && (configs->counter >= new_configs->counter))
+            return;
+
         configs = new_configs;
 
         std::vector<String> removed_names;
         for (auto & [name, info] : infos)
         {
-            auto new_config_it = new_configs->find(name);
-            if (new_config_it == new_configs->end())
+            auto new_config_it = new_configs->configs_by_name.find(name);
+            if (new_config_it == new_configs->configs_by_name.end())
             {
                 removed_names.emplace_back(name);
             }
@@ -462,7 +479,7 @@ public:
         }
 
         /// Insert to the map those objects which added to the new configuration.
-        for (const auto & [name, config] : *new_configs)
+        for (const auto & [name, config] : new_configs->configs_by_name)
         {
             if (infos.find(name) == infos.end())
             {
@@ -697,7 +714,10 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    else
+                    {
+                        LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    }
                 }
             }
         }
@@ -949,13 +969,13 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupStatusPtr thread_group = {})
     {
-        if (thread_group)
-            CurrentThread::attachTo(thread_group);
-
         SCOPE_EXIT_SAFE(
             if (thread_group)
                 CurrentThread::detachQueryIfNotDetached();
         );
+
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
@@ -980,7 +1000,7 @@ private:
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
-                throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
 
             /// Saving the result of the loading.
             {
@@ -1250,7 +1270,6 @@ private:
 
     LoadablesConfigReader & config_files_reader;
     LoadingDispatcher & loading_dispatcher;
-
     mutable std::mutex mutex;
     bool enabled = false;
     ThreadFromGlobalPool thread;
@@ -1276,12 +1295,14 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
 {
     auto * ptr = repository.get();
     String name = ptr->getName();
+
     config_files_reader->addConfigRepository(std::move(repository));
     reloadConfig(name);
 
     return [this, ptr, name]()
     {
         config_files_reader->removeConfigRepository(ptr);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
 }
@@ -1419,7 +1440,7 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
     if (result.object && (!check_no_errors || !result.exception))
         return;
     if (result.status == ExternalLoader::Status::LOADING)
-        throw Exception(type_name + " '" + result.name + "' is still loading", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' is still loading", type_name, result.name);
     if (result.exception)
     {
         // Exception is shared for multiple threads.
@@ -1445,9 +1466,9 @@ void ExternalLoader::checkLoaded(const ExternalLoader::LoadResult & result,
         }
     }
     if (result.status == ExternalLoader::Status::NOT_EXIST)
-        throw Exception(type_name + " '" + result.name + "' not found", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not found", type_name, result.name);
     if (result.status == ExternalLoader::Status::NOT_LOADED)
-        throw Exception(type_name + " '" + result.name + "' not tried to load", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' not tried to load", type_name, result.name);
 }
 
 void ExternalLoader::checkLoaded(const ExternalLoader::LoadResults & results,

@@ -13,11 +13,11 @@ struct NameNotEmpty
 {
     static constexpr auto name = "notEmpty";
 };
-using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8>;
+using FunctionNotEmpty = FunctionStringOrArrayToT<EmptyImpl<true>, NameNotEmpty, UInt8, false>;
 
 }
 
-void registerFunctionNotEmpty(FunctionFactory & factory)
+REGISTER_FUNCTION(NotEmpty)
 {
     factory.registerFunction<FunctionNotEmpty>();
 }

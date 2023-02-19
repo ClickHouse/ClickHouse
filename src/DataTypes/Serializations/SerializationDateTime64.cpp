@@ -2,12 +2,9 @@
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
-#include <common/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
-#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -17,9 +14,9 @@ namespace DB
 {
 
 SerializationDateTime64::SerializationDateTime64(
-    const DateLUTImpl & time_zone_, const DateLUTImpl & utc_time_zone_, UInt32 scale_)
+    UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
-    , time_zone(time_zone_), utc_time_zone(utc_time_zone_)
+    , TimezoneMixin(time_zone_)
 {
 }
 
@@ -40,16 +37,21 @@ void SerializationDateTime64::serializeText(const IColumn & column, size_t row_n
     }
 }
 
-void SerializationDateTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDateTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     DateTime64 result = 0;
     readDateTime64Text(result, scale, istr, time_zone);
     assert_cast<ColumnType &>(column).getData().push_back(result);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "DateTime64");
 }
 
 void SerializationDateTime64::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextEscaped(column, istr, settings);
+    if (!istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "DateTime64");
 }
 
 void SerializationDateTime64::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -66,6 +68,9 @@ static inline void readText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, con
             return;
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
+            return;
+        case FormatSettings::DateTimeInputFormat::BestEffortUS:
+            parseDateTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
             return;
     }
 }

@@ -1,6 +1,7 @@
 ---
-toc_priority: 21
-toc_title: OnTime
+slug: /ru/getting-started/example-datasets/ontime
+sidebar_position: 21
+sidebar_label: OnTime
 ---
 
 # OnTime {#ontime}
@@ -15,13 +16,7 @@ toc_title: OnTime
 Скачивание данных (из `https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh`):
 
 ``` bash
-for s in `seq 1987 2018`
-do
-for m in `seq 1 12`
-do
-wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_${s}_${m}.zip
-done
-done
+wget --no-check-certificate --continue https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2021}_{1..12}.zip
 ```
 
 Создание таблицы:
@@ -38,7 +33,7 @@ CREATE TABLE `ontime`
     `Reporting_Airline`               String,
     `DOT_ID_Reporting_Airline`        Int32,
     `IATA_CODE_Reporting_Airline`     String,
-    `Tail_Number`                     Int32,
+    `Tail_Number`                     String,
     `Flight_Number_Reporting_Airline` String,
     `OriginAirportID`                 Int32,
     `OriginAirportSeqID`              Int32,
@@ -153,16 +148,17 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 ## Скачивание готовых партиций {#skachivanie-gotovykh-partitsii}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.com/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 $ # убедитесь, что установлены корректные права доступа на файлы
 $ sudo service clickhouse-server restart
 $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 ```
 
-!!! info "Info"
+:::info "Info"
     Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
 нужно добавить имя базы, `datasets.ontime`.
+:::
 
 ## Запросы: {#zaprosy}
 
@@ -407,4 +403,3 @@ LIMIT 10;
 -   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
-

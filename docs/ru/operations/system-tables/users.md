@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/users
+---
 # system.users {#system_tables-users}
 
 Содержит список [аккаунтов пользователей](../../operations/access-rights.md#user-account-management), настроенных на сервере.
@@ -7,7 +10,7 @@
 
 -    `id` ([UUID](../../sql-reference/data-types/uuid.md)) — ID пользователя.
 
--    `storage` ([String](../../sql-reference/data-types/string.md)) — Путь к хранилищу пользователей. Настраивается в параметре `access_control_path`. 
+-    `storage` ([String](../../sql-reference/data-types/string.md)) — Путь к хранилищу пользователей. Настраивается в параметре `access_control_path`.
 
 -    `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)('no_password' = 0,'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3)) — Показывает тип аутентификации. Существует несколько способов идентификации пользователя: без пароля, с помощью обычного текстового пароля, с помощью шифрования [SHA256] (https://ru.wikipedia.org/wiki/SHA-2) или с помощью шифрования [double SHA-1] (https://ru.wikipedia.org/wiki/SHA-1).
 
@@ -30,4 +33,3 @@
 ## Смотрите также {#see-also}
 
 -   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
-

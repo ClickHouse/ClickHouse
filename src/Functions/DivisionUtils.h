@@ -6,9 +6,7 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config.h"
 
 
 namespace DB
@@ -28,11 +26,11 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
     /// Is it better to use siglongjmp instead of checks?
 
     if (unlikely(b == 0))
-        throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     /// http://avva.livejournal.com/2548306.html
     if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
+        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
 }
 
 template <typename A, typename B>
@@ -72,6 +70,7 @@ struct DivideIntegralImpl
 {
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -81,7 +80,7 @@ struct DivideIntegralImpl
 
         /// Otherwise overflow may occur due to integer promotion. Example: int8_t(-1) / uint64_t(2).
         /// NOTE: overflow is still possible when dividing large signed number to large unsigned number or vice-versa. But it's less harmful.
-        if constexpr (is_integer_v<A> && is_integer_v<B> && (is_signed_v<A> || is_signed_v<B>))
+        if constexpr (is_integer<A> && is_integer<B> && (is_signed_v<A> || is_signed_v<B>))
         {
             using SignedCastA = make_signed_t<CastA>;
             using SignedCastB = std::conditional_t<sizeof(A) <= sizeof(B), make_signed_t<CastB>, SignedCastA>;
@@ -94,20 +93,17 @@ struct DivideIntegralImpl
 
             if constexpr (std::is_floating_point_v<A>)
                 if (isNaN(a) || a >= std::numeric_limits<CastA>::max() || a <= std::numeric_limits<CastA>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
             if constexpr (std::is_floating_point_v<B>)
                 if (isNaN(b) || b >= std::numeric_limits<CastB>::max() || b <= std::numeric_limits<CastB>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
             auto res = checkedDivision(CastA(a), CastB(b));
 
             if constexpr (std::is_floating_point_v<decltype(res)>)
                 if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
-                    throw Exception("Cannot perform integer division, because it will produce infinite or too large number",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division, because it will produce infinite or too large number");
 
             return static_cast<Result>(res);
         }
@@ -126,6 +122,7 @@ struct ModuloImpl
     using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
 
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -139,13 +136,11 @@ struct ModuloImpl
         {
             if constexpr (std::is_floating_point_v<A>)
                 if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
             if constexpr (std::is_floating_point_v<B>)
                 if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
@@ -163,7 +158,7 @@ struct ModuloImpl
                     return static_cast<Result>(int_a % static_cast<CastA>(int_b));
             }
             else
-                return IntegerAType(a) % IntegerBType(b);
+                return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
         }
     }
 
@@ -176,6 +171,34 @@ template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+};
+
+template <typename A, typename B>
+struct PositiveModuloImpl : ModuloImpl<A, B>
+{
+    using OriginResultType = typename ModuloImpl<A, B>::ResultType;
+    using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
+    {
+        auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
+        if constexpr (is_signed_v<A>)
+        {
+            if (res < 0)
+            {
+                if constexpr (is_unsigned_v<B>)
+                    res += static_cast<OriginResultType>(b);
+                else
+                {
+                    if (b == std::numeric_limits<B>::lowest())
+                        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+                    res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                }
+            }
+        }
+        return static_cast<ResultType>(res);
+    }
 };
 
 }

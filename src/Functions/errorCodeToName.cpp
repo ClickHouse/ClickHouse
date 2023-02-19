@@ -27,6 +27,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
@@ -44,7 +45,8 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const Int64 error_code = input_column.getInt(i);
-            std::string_view error_name = ErrorCodes::getName(error_code);
+            std::string_view error_name =
+                ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(error_code));
             col_res->insertData(error_name.data(), error_name.size());
         }
 
@@ -53,7 +55,7 @@ public:
 };
 
 
-void registerFunctionErrorCodeToName(FunctionFactory & factory)
+REGISTER_FUNCTION(ErrorCodeToName)
 {
     factory.registerFunction<FunctionErrorCodeToName>();
 }

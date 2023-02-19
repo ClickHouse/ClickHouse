@@ -1,6 +1,9 @@
+#include <Common/Exception.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Common/Exception.h>
+#include <Processors/QueryPlan/UnionStep.h>
+
 #include <stack>
 
 namespace DB
@@ -14,7 +17,7 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     if (!settings.optimize_plan)
         return;
@@ -34,7 +37,7 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
     };
 
     std::stack<Frame> stack;
-    stack.push(Frame{.node = &root});
+    stack.push({.node = &root});
 
     size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
@@ -50,10 +53,10 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
             /// Traverse all children first.
             if (frame.next_child < frame.node->children.size())
             {
-                stack.push(Frame
+                stack.push(
                 {
-                       .node = frame.node->children[frame.next_child],
-                       .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
+                    .node = frame.node->children[frame.next_child],
+                    .depth_limit = frame.depth_limit ? (frame.depth_limit - 1) : 0,
                 });
 
                 ++frame.next_child;
@@ -95,6 +98,43 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
 
         /// Nothing was applied.
         stack.pop();
+    }
+}
+
+void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    Stack stack;
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if (frame.next_child == 0)
+        {
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(*frame.node, nodes);
+
+            if (optimization_settings.aggregation_in_order)
+                optimizeAggregationInOrder(*frame.node, nodes);
+
+            if (optimization_settings.distinct_in_order)
+                tryDistinctReadInOrder(frame.node);
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        optimizePrimaryKeyCondition(stack);
+        enableMemoryBoundMerging(*frame.node, nodes);
+
+        stack.pop_back();
     }
 }
 

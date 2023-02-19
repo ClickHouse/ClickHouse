@@ -1,6 +1,7 @@
 ---
-toc_priority: 47
-toc_title: "更新"
+slug: /zh/operations/update
+sidebar_position: 47
+sidebar_label: "更新"
 ---
 
 # 更新 {#clickhouse-update}

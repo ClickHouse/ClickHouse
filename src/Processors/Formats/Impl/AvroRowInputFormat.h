@@ -1,7 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
-#include "config_core.h"
+#include "config.h"
 
 #if USE_AVRO
 
@@ -13,30 +12,56 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 
-#include <avro/DataFile.hh>
-#include <avro/Decoder.hh>
-#include <avro/Schema.hh>
-#include <avro/ValidSchema.hh>
+#include <DataFile.hh>
+#include <Decoder.hh>
+#include <Schema.hh>
+#include <ValidSchema.hh>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
+class AvroInputStreamReadBufferAdapter : public avro::InputStream
+{
+public:
+    explicit AvroInputStreamReadBufferAdapter(ReadBuffer & in_) : in(in_) {}
+
+    bool next(const uint8_t ** data, size_t * len) override;
+
+    void backup(size_t len) override;
+
+    void skip(size_t len) override;
+
+    size_t byteCount() const override;
+
+private:
+    ReadBuffer & in;
+};
+
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
     using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
+    using DeserializeNestedFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
+
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
-    static DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
+    DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
     SkipFn createSkipFn(avro::NodePtr root_node);
 
     struct Action
     {
-        enum Type {Noop, Deserialize, Skip, Record, Union};
+        enum Type {Noop, Deserialize, Skip, Record, Union, Nested};
         Type type;
         /// Deserialize
         int target_column_idx;
@@ -45,6 +70,9 @@ private:
         SkipFn skip_fn;
         /// Record | Union
         std::vector<Action> actions;
+        /// For flattened Nested column
+        std::vector<size_t> nested_column_indexes;
+        std::vector<DeserializeFn> nested_deserializers;
 
 
         Action() : type(Noop) {}
@@ -54,9 +82,14 @@ private:
             , target_column_idx(target_column_idx_)
             , deserialize_fn(deserialize_fn_) {}
 
-        Action(SkipFn skip_fn_)
+        explicit Action(SkipFn skip_fn_)
             : type(Skip)
             , skip_fn(skip_fn_) {}
+
+        Action(std::vector<size_t> nested_column_indexes_, std::vector<DeserializeFn> nested_deserializers_)
+            : type(Nested)
+            , nested_column_indexes(nested_column_indexes_)
+            , nested_deserializers(nested_deserializers_) {}
 
         static Action recordAction(std::vector<Action> field_actions) { return Action(Type::Record, field_actions); }
 
@@ -80,8 +113,16 @@ private:
                     for (const auto & action : actions)
                         action.execute(columns, decoder, ext);
                     break;
+                case Nested:
+                    deserializeNested(columns, decoder, ext);
+                    break;
                 case Union:
-                    actions[decoder.decodeUnionIndex()].execute(columns, decoder, ext);
+                    auto index = decoder.decodeUnionIndex();
+                    if (index >= actions.size())
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
+                    }
+                    actions[index].execute(columns, decoder, ext);
                     break;
             }
         }
@@ -89,6 +130,8 @@ private:
         Action(Type type_, std::vector<Action> actions_)
             : type(type_)
             , actions(actions_) {}
+
+        void deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
     };
 
     /// Populate actions by recursively traversing root schema
@@ -101,21 +144,24 @@ private:
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
+
+    bool null_as_default = false;
 };
 
-class AvroRowInputFormat : public IRowInputFormat
+class AvroRowInputFormat final : public IRowInputFormat
 {
 public:
     AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readPrefix() override;
 
     String getName() const override { return "AvroRowInputFormat"; }
 
 private:
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
+
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
-    bool allow_missing_fields;
+    FormatSettings format_settings;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
@@ -124,18 +170,21 @@ private:
 /// 2. SchemaRegistry: schema cache (schema_id -> schema)
 /// 3. AvroConfluentRowInputFormat: deserializer cache (schema_id -> AvroDeserializer)
 /// This is needed because KafkaStorage creates a new instance of InputFormat per a batch of messages
-class AvroConfluentRowInputFormat : public IRowInputFormat
+class AvroConfluentRowInputFormat final : public IRowInputFormat
 {
 public:
     AvroConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
-    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
     class SchemaRegistry;
-protected:
+
+private:
+    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
+
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-private:
+
     std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
@@ -144,6 +193,20 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
     FormatSettings format_settings;
+};
+
+class AvroSchemaReader : public ISchemaReader
+{
+public:
+    AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
+private:
+
+    bool confluent;
+    const FormatSettings format_settings;
 };
 
 }

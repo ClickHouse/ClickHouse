@@ -1,6 +1,7 @@
 ---
-toc_priority: 54
-toc_title: "Функции для работы с URL"
+slug: /ru/sql-reference/functions/url-functions
+sidebar_position: 54
+sidebar_label: "Функции для работы с URL"
 ---
 
 # Функции для работы с URL {#funktsii-dlia-raboty-s-url}
@@ -267,7 +268,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 Результат:
 
-```text 
+```text
 ┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
 │ foo                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -279,7 +280,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 ### port(URL[, default_port = 0]) {#port}
 
-Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL) 
+Возвращает порт или значение `default_port`, если в URL-адресе нет порта (или передан невалидный URL)
 
 ### path {#path}
 
@@ -403,5 +404,39 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 ### cutURLParameter(URL, name) {#cuturlparameterurl-name}
 
-Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
+Удаляет параметр с именем `name` из URL, если такой есть. Функция не кодирует или декодирует символы в именах параметров. Например `Client ID` и `Client%20ID` обрабатываются как разные имена параметров.
 
+**Синтаксис**
+
+``` sql
+cutURLParameter(URL, name)
+```
+
+**Аргументы**
+
+-   `url` — URL. [String](../../sql-reference/data-types/string.md).
+-   `name` — имя параметра URL. [String](../../sql-reference/data-types/string.md) или [Array](../../sql-reference/data-types/array.md) состоящий из строк.
+
+**Возвращаемое значение**
+
+-   URL с удалённым параметром URL с именем `name`.
+
+Type: `String`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') as url_without_a,
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) as url_without_c_and_e;
+```
+
+Результат:
+
+``` text
+┌─url_without_a────────────────┬─url_without_c_and_e──────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
+└──────────────────────────────┴──────────────────────────┘
+```

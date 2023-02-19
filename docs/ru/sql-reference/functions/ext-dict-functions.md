@@ -1,10 +1,12 @@
 ---
-toc_priority: 58
-toc_title: "Функции для работы с внешними словарями"
+slug: /ru/sql-reference/functions/ext-dict-functions
+sidebar_position: 58
+sidebar_label: "Функции для работы с внешними словарями"
 ---
 
-!!! attention "Внимание"
+:::note "Внимание"
     Для словарей, созданных с помощью [DDL-запросов](../../sql-reference/statements/create/dictionary.md), в параметре `dict_name` указывается полное имя словаря вместе с базой данных, например: `<database>.<dict_name>`. Если база данных не указана, используется текущая.
+:::
 
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
@@ -53,7 +55,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 Настройка внешнего словаря:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -77,7 +79,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Выполним запрос:
@@ -113,7 +115,7 @@ LIMIT 3;
 Настройка внешнего словаря:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-mult</name>
         <source>
@@ -138,18 +140,18 @@ LIMIT 3;
                 <name>c2</name>
                 <type>String</type>
                 <null_value></null_value>
-            </attribute>            
+            </attribute>
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Выполним запрос:
 
 ``` sql
 SELECT
-    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
+    dictGet('ext-dict-mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
 FROM system.numbers
 LIMIT 3;
@@ -290,16 +292,16 @@ Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-refere
 
 Возвращает потомков первого уровня в виде массива индексов. Это обратное преобразование для [dictGetHierarchy](#dictgethierarchy).
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 dictGetChildren(dict_name, key)
 ```
 
-**Аргументы** 
+**Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 
 **Возвращаемые значения**
 
@@ -345,9 +347,9 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 dictGetDescendants(dict_name, key, level)
 ```
 
-**Аргументы** 
+**Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 -   `level` — уровень иерархии. Если `level = 0`, возвращаются все потомки. [UInt8](../../sql-reference/data-types/int-uint.md).
 

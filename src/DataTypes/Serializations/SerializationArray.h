@@ -11,15 +11,15 @@ private:
     SerializationPtr nested;
 
 public:
-    SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
 
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -35,9 +35,13 @@ public:
       * This is necessary, because when implementing nested structures, several arrays can have common sizes.
       */
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
+            const IColumn & column,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
@@ -62,8 +66,18 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
-};
 
-ColumnPtr arrayOffsetsToSizes(const IColumn & column);
+private:
+    struct SubcolumnCreator : public ISubcolumnCreator
+    {
+        const ColumnPtr offsets;
+
+        explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
+    };
+};
 
 }

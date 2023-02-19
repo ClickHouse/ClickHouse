@@ -1,19 +1,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
-
-#include <Columns/ColumnVector.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
-#include <common/DateLUT.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/parseDateTimeBestEffort.h>
-#include <Parsers/ASTLiteral.h>
-
 #include <optional>
 #include <string>
 
@@ -33,8 +21,8 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_z
       TimezoneMixin(time_zone_name)
 {
     if (scale > max_scale)
-        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
+            "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
 DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
@@ -42,8 +30,8 @@ DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time
       TimezoneMixin(time_zone_info)
 {
     if (scale > max_scale)
-        throw Exception("Scale " + std::to_string(scale) + " is too large for DateTime64. Maximum is up to nanoseconds (9).",
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for DateTime64. "
+            "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
 std::string DataTypeDateTime64::doGetName() const
@@ -65,7 +53,7 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationDateTime64>(time_zone, utc_time_zone, scale);
+    return std::make_shared<SerializationDateTime64>(scale, *this);
 }
 
 }

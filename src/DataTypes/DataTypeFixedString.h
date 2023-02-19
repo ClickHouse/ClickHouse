@@ -2,12 +2,16 @@
 
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/Exception.h>
 
 #define MAX_FIXEDSTRING_SIZE 0xFFFFFF
+#define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
 
 
 namespace DB
 {
+
+class ColumnFixedString;
 
 namespace ErrorCodes
 {
@@ -21,18 +25,21 @@ private:
     size_t n;
 
 public:
-    static constexpr bool is_parametric = true;
+    using ColumnType = ColumnFixedString;
 
-    DataTypeFixedString(size_t n_) : n(n_)
+    static constexpr bool is_parametric = true;
+    static constexpr auto type_id = TypeIndex::FixedString;
+
+    explicit DataTypeFixedString(size_t n_) : n(n_)
     {
         if (n == 0)
-            throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "FixedString size must be positive");
         if (n > MAX_FIXEDSTRING_SIZE)
-            throw Exception("FixedString size is too large", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "FixedString size is too large");
     }
 
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeIndex::FixedString; }
+    TypeIndex getTypeId() const override { return type_id; }
 
     const char * getFamilyName() const override { return "FixedString"; }
 

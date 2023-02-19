@@ -1,0 +1,47 @@
+Log:
+empty:
+1 element:
+1	a
+__marks.mrk
+sizes.json
+x.bin
+y.bin
+3 elements:
+1	a
+22	bc
+333	def
+__marks.mrk greater size
+sizes.json
+x.bin greater size
+y.bin greater size
+
+TinyLog:
+empty:
+1 element:
+1	a
+sizes.json
+x.bin
+y.bin
+3 elements:
+1	a
+22	bc
+333	def
+sizes.json
+x.bin greater size
+y.bin greater size
+
+StripeLog:
+empty:
+1 element:
+1	a
+data.bin
+index.mrk
+sizes.json
+3 elements:
+1	a
+22	bc
+333	def
+data.bin greater size
+index.mrk greater size
+sizes.json
+

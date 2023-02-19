@@ -1,8 +1,5 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
-    ConnectionParameters.cpp
-    QueryFuzzer.cpp
-    Suggest.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK
@@ -15,6 +12,10 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_parsers
         string_utils
 )
+
+if (TARGET ch_rust::skim)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::skim)
+endif()
 
 # Always use internal readpassphrase
 list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)

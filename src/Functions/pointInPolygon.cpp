@@ -13,7 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -81,11 +81,13 @@ public:
         return 0;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
         {
-            throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Too few arguments");
         }
 
         /** We allow function invocation in one of the following forms:
@@ -101,19 +103,19 @@ public:
         auto validate_tuple = [this](size_t i, const DataTypeTuple * tuple)
         {
             if (tuple == nullptr)
-                throw Exception(getMessagePrefix(i) + " must contain a tuple", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain a tuple", getMessagePrefix(i));
 
             const DataTypes & elements = tuple->getElements();
 
             if (elements.size() != 2)
-                throw Exception(getMessagePrefix(i) + " must have exactly two elements", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must have exactly two elements", getMessagePrefix(i));
 
             for (auto j : collections::range(0, elements.size()))
             {
                 if (!isNativeNumber(elements[j]))
                 {
-                    throw Exception(getMessagePrefix(i) + " must contain numeric tuple at position " + toString(j + 1),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain numeric tuple at position {}",
+                                    getMessagePrefix(i), j + 1);
                 }
             }
         };
@@ -124,8 +126,7 @@ public:
         {
             const auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
             if (array == nullptr)
-                throw Exception(getMessagePrefix(1) + " must contain an array of tuples or an array of arrays of tuples.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples or an array of arrays of tuples.", getMessagePrefix(1));
 
             const auto * nested_array = checkAndGetDataType<DataTypeArray>(array->getNestedType().get());
             if (nested_array != nullptr)
@@ -137,12 +138,11 @@ public:
         }
         else
         {
-            for (size_t i = 1; i < arguments.size(); i++)
+            for (size_t i = 1; i < arguments.size(); ++i)
             {
                 const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
                 if (array == nullptr)
-                    throw Exception(getMessagePrefix(i) + " must contain an array of tuples",
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain an array of tuples", getMessagePrefix(i));
 
                 validate_tuple(i, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
             }
@@ -160,12 +160,12 @@ public:
 
         const auto * tuple_col = checkAndGetColumn<ColumnTuple>(point_col);
         if (!tuple_col)
-            throw Exception("First argument for function " + getName() + " must be constant array of tuples.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be constant array of tuples.",
+                            getName());
 
         const auto & tuple_columns = tuple_col->getColumns();
 
-        const ColumnWithTypeAndName poly = arguments[1];
+        const ColumnWithTypeAndName & poly = arguments[1];
         const IColumn * poly_col = poly.column.get();
         const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
 
@@ -186,7 +186,7 @@ public:
             /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
             using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
-            /// C++11 has thread-safe function-local statics.
+            /// C++11 has thread-safe function-local static.
             static Pool known_polygons;
 
             auto factory = [&polygon]()
@@ -214,8 +214,8 @@ public:
         else
         {
             if (arguments.size() != 2)
-                throw Exception("Multi-argument version of function " + getName() + " works only with const polygon",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon",
+                    getName());
 
             auto res_column = ColumnVector<UInt8>::create(input_rows_count);
             auto & data = res_column->getData();
@@ -429,8 +429,9 @@ private:
         {
             Int64 result = 0;
             if (common::mulOverflow(static_cast<Int64>(x_data[i]), static_cast<Int64>(y_data[i]), result))
-                throw Exception("The coordinates of the point are such that subsequent calculations cannot be performed correctly. " \
-                                "Most likely they are very large in modulus.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The coordinates of the point are such that "
+                                "subsequent calculations cannot be performed correctly. "
+                                "Most likely they are very large in modulus.");
 
             out_container.emplace_back(x_data[i], y_data[i]);
         }
@@ -483,14 +484,14 @@ private:
         {
             const auto * const_col = checkAndGetColumn<ColumnConst>(arguments[i].column.get());
             if (!const_col)
-                throw Exception("Multi-argument version of function " + getName() + " works only with const polygon",
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon",
+                    getName());
 
             const auto * array_col = checkAndGetColumn<ColumnArray>(&const_col->getDataColumn());
             const auto * tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
 
             if (!tuple_col)
-                throw Exception(getMessagePrefix(i) + " must be constant array of tuples", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} must be constant array of tuples", getMessagePrefix(i));
 
             const auto & tuple_columns = tuple_col->getColumns();
             const auto & column_x = tuple_columns[0];
@@ -504,7 +505,7 @@ private:
             auto size = column_x->size();
 
             if (size == 0)
-                throw Exception(getMessagePrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} shouldn't be empty.", getMessagePrefix(i));
 
             for (auto j : collections::range(0, size))
             {
@@ -564,7 +565,7 @@ private:
             std::string failure_message;
             auto is_valid = boost::geometry::is_valid(out_polygon, failure_message);
             if (!is_valid)
-                throw Exception("Polygon is not valid: " + failure_message, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: {}", failure_message);
         }
 #endif
     }
@@ -572,7 +573,7 @@ private:
 
 }
 
-void registerFunctionPointInPolygon(FunctionFactory & factory)
+REGISTER_FUNCTION(PointInPolygon)
 {
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>>>();
 }

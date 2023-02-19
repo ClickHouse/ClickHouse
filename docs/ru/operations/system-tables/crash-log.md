@@ -1,11 +1,14 @@
+---
+slug: /ru/operations/system-tables/crash-log
+---
 # system.crash_log {#system-tables_crash_log}
 
 Содержит информацию о трассировках стека для фатальных ошибок. Таблица не содержится в базе данных по умолчанию, а создается только при возникновении фатальных ошибок.
 
 Колонки:
 
--   `event_date` ([Datetime](../../sql-reference/data-types/datetime.md)) — Дата события.
--   `event_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — Время события.
+-   `event_date` ([DateTime](../../sql-reference/data-types/datetime.md)) — Дата события.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Время события.
 -   `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Время события с наносекундами.
 -   `signal` ([Int32](../../sql-reference/data-types/int-uint.md)) — Номер сигнала, пришедшего в поток.
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Идентификатор треда.
@@ -45,4 +48,4 @@ build_id:
 **См. также**
 -   Системная таблица [trace_log](../../operations/system-tables/trace_log.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/crash-log)
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/crash-log)

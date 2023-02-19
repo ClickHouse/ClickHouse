@@ -29,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_AGGREGATION;
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -39,19 +40,19 @@ const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
 void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, CaseSensitiveness case_sensitiveness)
 {
     if (creator_with_properties.creator == nullptr)
-        throw Exception("AggregateFunctionFactory: the aggregate function " + name + " has been provided "
-            " a null constructor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
+            "the aggregate function {} has been provided  a null constructor", name);
 
     if (!aggregate_functions.emplace(name, creator_with_properties).second)
-        throw Exception("AggregateFunctionFactory: the aggregate function name '" + name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",
+            name);
 
     if (case_sensitiveness == CaseInsensitive)
     {
         auto key = Poco::toLower(name);
         if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
-            throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
+                "the case insensitive aggregate function name '{}' is not unique", name);
         case_insensitive_name_mapping[key] = name;
     }
 }
@@ -69,22 +70,25 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name, const DataTypes & argument_types, const Array & parameters, AggregateFunctionProperties & out_properties) const
 {
-    auto type_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
+    auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
-    /// If one of the types is Nullable, we apply aggregate function combinator "Null".
-
-    if (std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
+    /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
+    /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
+    /// they must handle the nullability themselves
+    auto properties = tryGetPropertiesImpl(name);
+    bool is_window_function = properties.has_value() && properties->is_window_function;
+    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
-            throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.",
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: cannot find aggregate function combinator "
+                            "to apply a function to Nullable arguments.");
 
-        DataTypes nested_types = combinator->transformArguments(type_without_low_cardinality);
+        DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        bool has_null_arguments = std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
+        bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
         AggregateFunctionPtr nested_function = getImpl(
@@ -96,16 +100,13 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         // that are rewritten to AggregateFunctionNothing, in this case
         // nested_function is nullptr.
         if (!nested_function || !nested_function->isOnlyWindowFunction())
-        {
-            return combinator->transformAggregateFunction(nested_function,
-                out_properties, type_without_low_cardinality, parameters);
-        }
+            return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
+    auto with_original_arguments = getImpl(name, types_without_low_cardinality, parameters, out_properties, false);
 
     if (!with_original_arguments)
-        throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: AggregateFunctionFactory returned nullptr");
     return with_original_arguments;
 }
 
@@ -154,18 +155,37 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     }
 
     /// Combinators of aggregate functions.
-    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with the name 'aggComb',
     ///  that can have different number and/or types of arguments, different result type and different behaviour.
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
     {
+        const std::string & combinator_name = combinator->getName();
+
         if (combinator->isForInternalUsageOnly())
-            throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                "Aggregate function combinator '{}' is only for internal usage",
+                combinator_name);
 
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator->getName());
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunctionCombinator, combinator_name);
 
-        String nested_name = name.substr(0, name.size() - combinator->getName().size());
+        String nested_name = name.substr(0, name.size() - combinator_name.size());
+        /// Nested identical combinators (i.e. uniqCombinedIfIf) is not
+        /// supported (since they don't work -- silently).
+        ///
+        /// But non-identical is supported and works. For example,
+        /// uniqCombinedIfMergeIf is useful in cases when the underlying
+        /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
+        /// need to filter aggregation result based on another column.
+
+        if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
+                "Nested identical combinator '{}' is not supported",
+                combinator_name);
+        }
+
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
@@ -214,7 +234,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         return found.properties;
 
     /// Combinators of aggregate functions.
-    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with the name 'aggComb',
     ///  that can have different number and/or types of arguments, different result type and different behaviour.
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
@@ -240,11 +260,11 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
 {
-    if (aggregate_functions.count(name) || isAlias(name))
+    if (aggregate_functions.contains(name) || isAlias(name))
         return true;
 
     String name_lowercase = Poco::toLower(name);
-    if (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase))
+    if (case_insensitive_aggregate_functions.contains(name_lowercase) || isAlias(name_lowercase))
         return true;
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))

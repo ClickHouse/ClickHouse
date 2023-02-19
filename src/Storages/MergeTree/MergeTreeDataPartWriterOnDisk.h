@@ -6,10 +6,10 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Disks/IDisk.h>
-
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 namespace DB
 {
@@ -50,27 +50,37 @@ public:
     {
         Stream(
             const String & escaped_column_name_,
-            DiskPtr disk_,
+            const MutableDataPartStoragePtr & data_part_storage,
             const String & data_path_,
             const std::string & data_file_extension_,
             const std::string & marks_path_,
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_);
+            size_t max_compress_block_size_,
+            const CompressionCodecPtr & marks_compression_codec_,
+            size_t marks_compress_block_size_,
+            const WriteSettings & query_write_settings);
 
         String escaped_column_name;
         std::string data_file_extension;
         std::string marks_file_extension;
 
-        /// compressed -> compressed_buf -> plain_hashing -> plain_file
+        /// compressed_hashing -> compressor -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
         HashingWriteBuffer plain_hashing;
-        CompressedWriteBuffer compressed_buf;
-        HashingWriteBuffer compressed;
+        CompressedWriteBuffer compressor;
+        HashingWriteBuffer compressed_hashing;
 
-        /// marks -> marks_file
+        /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
-        HashingWriteBuffer marks;
+        HashingWriteBuffer marks_hashing;
+        CompressedWriteBuffer marks_compressor;
+        HashingWriteBuffer marks_compressed_hashing;
+        bool compress_marks;
+
+        bool is_prefinalized = false;
+
+        void preFinalize();
 
         void finalize();
 
@@ -82,7 +92,7 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
 
     MergeTreeDataPartWriterOnDisk(
-        const MergeTreeData::DataPartPtr & data_part_,
+        const MergeTreeMutableDataPartPtr & data_part_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -108,9 +118,11 @@ protected:
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void fillPrimaryIndexChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishPrimaryIndexSerialization(bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    void fillSkipIndicesChecksums(MergeTreeData::DataPart::Checksums & checksums);
+    void finishSkipIndicesSerialization(bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
@@ -122,7 +134,6 @@ protected:
 
     const MergeTreeIndices skip_indices;
 
-    const String part_path;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
 
@@ -132,11 +143,12 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
 
-    using SerializationsMap = std::unordered_map<String, SerializationPtr>;
-    SerializationsMap serializations;
-
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
-    std::unique_ptr<HashingWriteBuffer> index_stream;
+    std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
+    std::unique_ptr<CompressedWriteBuffer> index_compressor_stream;
+    std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
+    bool compress_primary_key;
+
     DataTypes index_types;
     /// Index columns from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method
@@ -150,6 +162,7 @@ protected:
     /// Data is already written up to this mark.
     size_t current_mark = 0;
 
+    GinIndexStoreFactory::GinIndexStores gin_index_stores;
 private:
     void initSkipIndices();
     void initPrimaryIndex();

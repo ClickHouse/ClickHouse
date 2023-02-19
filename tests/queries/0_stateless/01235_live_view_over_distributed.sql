@@ -1,3 +1,5 @@
+-- Tags: distributed, no-replicated-database, no-parallel, no-fasttest
+
 set insert_distributed_sync = 1;
 SET allow_experimental_live_view = 1;
 

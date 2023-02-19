@@ -1,12 +1,12 @@
 #include "MetricsTransmitter.h"
 
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Common/AsynchronousMetrics.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
-#include <daemon/BaseDaemon.h>
+#include <Daemon/BaseDaemon.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -123,7 +123,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (const auto & name_value : async_metrics_values)
         {
-            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second);
+            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second.value);
         }
     }
 

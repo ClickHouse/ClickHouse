@@ -1,11 +1,9 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
-#    include <Common/LRUCache.h>
+#    include <Common/CacheBase.h>
 #    include <Common/HashTable/Hash.h>
 #    include <Interpreters/JIT/CHJIT.h>
 
@@ -37,10 +35,10 @@ struct CompiledFunctionWeightFunction
     }
 };
 
-class CompiledExpressionCache : public LRUCache<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>
+class CompiledExpressionCache : public CacheBase<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>
 {
 public:
-    using Base = LRUCache<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>;
+    using Base = CacheBase<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>;
     using Base::Base;
 };
 
@@ -52,7 +50,7 @@ private:
 public:
     static CompiledExpressionCacheFactory & instance();
 
-    void init(size_t cache_size);
+    void init(size_t cache_size_in_bytes, size_t cache_size_in_elements);
     CompiledExpressionCache * tryGetCache();
 };
 

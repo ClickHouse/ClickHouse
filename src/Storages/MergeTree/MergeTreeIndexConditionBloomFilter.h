@@ -25,6 +25,7 @@ public:
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_HAS_ANY,
+            FUNCTION_HAS_ALL,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
@@ -37,7 +38,7 @@ public:
             ALWAYS_TRUE,
         };
 
-        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {}
+        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {} /// NOLINT
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
@@ -52,7 +53,7 @@ public:
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
             return mayBeTrueOnGranule(bf_granule);
 
-        throw Exception("LOGICAL ERROR: require bloom filter index granule.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: require bloom filter index granule.");
     }
 
 private:
@@ -61,21 +62,27 @@ private:
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
 
-    SetPtr getPreparedSet(const ASTPtr & node);
-
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const;
 
-    bool traverseAtomAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    bool traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out, const ASTPtr & parent);
+    bool traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent);
 
-    bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out);
+    bool traverseTreeIn(
+        const String & function_name,
+        const RPNBuilderTreeNode & key_node,
+        const ConstSetPtr & prepared_set,
+        const DataTypePtr & type,
+        const ColumnPtr & column,
+        RPNElement & out);
 
-    bool traverseASTIn(
-        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out);
-
-    bool traverseASTEquals(
-        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent);
+    bool traverseTreeEquals(
+        const String & function_name,
+        const RPNBuilderTreeNode & key_node,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out,
+        const RPNBuilderTreeNode * parent);
 };
 
 }

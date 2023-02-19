@@ -5,16 +5,24 @@
 #include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnLowCardinality.h>
+
+#include <Formats/MsgPackExtensionTypes.h>
 
 namespace DB
 {
@@ -24,8 +32,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_)
-    : IRowOutputFormat(header_, out_, params_), packer(out_) {}
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), packer(out_), format_settings(format_settings_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
 {
@@ -90,16 +98,16 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         }
         case TypeIndex::String:
         {
-            const StringRef & string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-            packer.pack_str(string.size);
-            packer.pack_str_body(string.data, string.size);
+            const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+            packer.pack_bin(static_cast<unsigned>(string.size()));
+            packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
             return;
         }
         case TypeIndex::FixedString:
         {
-            const StringRef & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
-            packer.pack_str(string.size);
-            packer.pack_str_body(string.data, string.size);
+            const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+            packer.pack_bin(static_cast<unsigned>(string.size()));
+            packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
             return;
         }
         case TypeIndex::Array:
@@ -110,7 +118,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             const ColumnArray::Offsets & offsets = column_array.getOffsets();
             size_t offset = offsets[row_num - 1];
             size_t size = offsets[row_num] - offset;
-            packer.pack_array(size);
+            packer.pack_array(static_cast<unsigned>(size));
             for (size_t i = 0; i < size; ++i)
             {
                 serializeField(nested_column, nested_type, offset + i);
@@ -132,33 +140,97 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_nil();
             return;
         }
+        case TypeIndex::Map:
+        {
+            const auto & map_column = assert_cast<const ColumnMap &>(column);
+            const auto & nested_column = map_column.getNestedColumn();
+            const auto & key_value_columns = map_column.getNestedData().getColumns();
+            const auto & key_column = key_value_columns[0];
+            const auto & value_column = key_value_columns[1];
+
+            const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
+            const auto & offsets = nested_column.getOffsets();
+            size_t offset = offsets[row_num - 1];
+            size_t size = offsets[row_num] - offset;
+            packer.pack_map(static_cast<unsigned>(size));
+            for (size_t i = 0; i < size; ++i)
+            {
+                serializeField(*key_column, map_type.getKeyType(), offset + i);
+                serializeField(*value_column, map_type.getValueType(), offset + i);
+            }
+            return;
+        }
+        case TypeIndex::LowCardinality:
+        {
+            const auto & lc_column = assert_cast<const ColumnLowCardinality &>(column);
+            auto dict_type = assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType();
+            auto dict_column = lc_column.getDictionary().getNestedColumn();
+            size_t index = lc_column.getIndexAt(row_num);
+            serializeField(*dict_column, dict_type, index);
+            return;
+        }
+        case TypeIndex::UUID:
+        {
+            const auto & uuid_column = assert_cast<const ColumnUUID &>(column);
+            switch (format_settings.msgpack.output_uuid_representation)
+            {
+                case FormatSettings::MsgPackUUIDRepresentation::BIN:
+                {
+                    WriteBufferFromOwnString buf;
+                    writeBinary(uuid_column.getElement(row_num), buf);
+                    std::string_view uuid_bin = buf.stringView();
+                    packer.pack_bin(static_cast<unsigned>(uuid_bin.size()));
+                    packer.pack_bin_body(uuid_bin.data(), static_cast<unsigned>(uuid_bin.size()));
+                    return;
+                }
+                case FormatSettings::MsgPackUUIDRepresentation::STR:
+                {
+                    WriteBufferFromOwnString buf;
+                    writeText(uuid_column.getElement(row_num), buf);
+                    std::string_view uuid_text = buf.stringView();
+                    packer.pack_str(static_cast<unsigned>(uuid_text.size()));
+                    packer.pack_bin_body(uuid_text.data(), static_cast<unsigned>(uuid_text.size()));
+                    return;
+                }
+                case FormatSettings::MsgPackUUIDRepresentation::EXT:
+                {
+                    WriteBufferFromOwnString buf;
+                    UUID value = uuid_column.getElement(row_num);
+                    writeBinaryBigEndian(value.toUnderType().items[0], buf);
+                    writeBinaryBigEndian(value.toUnderType().items[1], buf);
+                    std::string_view uuid_ext = buf.stringView();
+                    packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUIDType));
+                    packer.pack_ext_body(uuid_ext.data(), static_cast<unsigned>(uuid_ext.size()));
+                    return;
+                }
+            }
+        }
         default:
             break;
     }
-    throw Exception("Type " + data_type->getName() + " is not supported for MsgPack output format", ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for MsgPack output format", data_type->getName());
 }
 
 void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
-    for (size_t i = 0; i < num_columns; ++i)
+    size_t columns_size = columns.size();
+    for (size_t i = 0; i < columns_size; ++i)
     {
         serializeField(*columns[i], types[i], row_num);
     }
 }
 
 
-void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
+void registerOutputFormatMsgPack(FormatFactory & factory)
 {
-
-    factory.registerOutputFormatProcessor("MsgPack", [](
+    factory.registerOutputFormat("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
-            const FormatSettings &)
+            const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, settings);
     });
+    factory.markOutputFormatSupportsParallelFormatting("MsgPack");
 }
 
 }
@@ -168,7 +240,7 @@ void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProcessorMsgPack(FormatFactory &)
+void registerOutputFormatMsgPack(FormatFactory &)
 {
 }
 }

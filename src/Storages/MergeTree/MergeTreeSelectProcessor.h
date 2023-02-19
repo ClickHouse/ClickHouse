@@ -1,8 +1,9 @@
 #pragma once
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -13,12 +14,12 @@ namespace DB
 /// Used to read data from single part with select query
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeSelectProcessor : public MergeTreeBaseSelectProcessor
+class MergeTreeSelectAlgorithm : public IMergeTreeSelectAlgorithm
 {
 public:
-    MergeTreeSelectProcessor(
+    MergeTreeSelectAlgorithm(
         const MergeTreeData & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
@@ -28,24 +29,19 @@ public:
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         ExpressionActionsSettings actions_settings,
-        bool check_columns,
         const MergeTreeReaderSettings & reader_settings,
+        MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
         const Names & virt_column_names = {},
-        size_t part_index_in_query = 0,
-        bool quiet = false);
+        size_t part_index_in_query_ = 0,
+        bool has_limit_below_one_block_ = false);
 
-    ~MergeTreeSelectProcessor() override;
-
-    String getName() const override { return "MergeTree"; }
-
-    /// Closes readers and unlock part locks
-    void finish();
+    ~MergeTreeSelectAlgorithm() override;
 
 protected:
-
-    bool getNewTask() override;
-
-private:
+    /// Defer initialization from constructor, because it may be heavy
+    /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
+    void initializeReaders();
+    void finish() final;
 
     /// Used by Task
     Names required_columns;
@@ -58,17 +54,21 @@ private:
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
 
+    /// Cache getSampleBlock call, which might be heavy.
+    Block sample_block;
+
     /// Mark ranges we should read (in ascending order)
     MarkRanges all_mark_ranges;
-    /// Total number of marks we should read
-    size_t total_marks_count = 0;
     /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
+    /// If true, every task will be created only with one range.
+    /// It reduces amount of read data for queries with small LIMIT.
+    bool has_limit_below_one_block = false;
 
-    bool check_columns;
-    bool is_first_task = true;
+    /// Pool for reading in order
+    MergeTreeInOrderReadPoolParallelReplicasPtr pool;
 
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
+    size_t total_rows = 0;
 };
 
 }

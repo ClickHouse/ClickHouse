@@ -1,7 +1,7 @@
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -71,7 +71,7 @@ public:
 
     static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Functions trimLeft, trimRight and trimBoth cannot work with FixedString argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Functions trimLeft, trimRight and trimBoth cannot work with FixedString argument");
     }
 
 private:
@@ -107,7 +107,7 @@ using FunctionTrimBoth = FunctionStringToString<FunctionTrimImpl<TrimModeBoth>, 
 
 }
 
-void registerFunctionTrim(FunctionFactory & factory)
+REGISTER_FUNCTION(Trim)
 {
     factory.registerFunction<FunctionTrimLeft>();
     factory.registerFunction<FunctionTrimRight>();

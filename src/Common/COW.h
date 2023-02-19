@@ -81,7 +81,7 @@ private:
 
 protected:
     template <typename T>
-    class mutable_ptr : public boost::intrusive_ptr<T>
+    class mutable_ptr : public boost::intrusive_ptr<T> /// NOLINT
     {
     private:
         using Base = boost::intrusive_ptr<T>;
@@ -96,16 +96,16 @@ protected:
         mutable_ptr(const mutable_ptr &) = delete;
 
         /// Move: ok.
-        mutable_ptr(mutable_ptr &&) = default;
-        mutable_ptr & operator=(mutable_ptr &&) = default;
+        mutable_ptr(mutable_ptr &&) = default; /// NOLINT
+        mutable_ptr & operator=(mutable_ptr &&) = default; /// NOLINT
 
         /// Initializing from temporary of compatible type.
         template <typename U>
-        mutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {}
+        mutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {} /// NOLINT
 
         mutable_ptr() = default;
 
-        mutable_ptr(std::nullptr_t) {}
+        mutable_ptr(std::nullptr_t) {} /// NOLINT
     };
 
 public:
@@ -113,7 +113,7 @@ public:
 
 protected:
     template <typename T>
-    class immutable_ptr : public boost::intrusive_ptr<const T>
+    class immutable_ptr : public boost::intrusive_ptr<const T> /// NOLINT
     {
     private:
         using Base = boost::intrusive_ptr<const T>;
@@ -129,19 +129,19 @@ protected:
         immutable_ptr & operator=(const immutable_ptr &) = default;
 
         template <typename U>
-        immutable_ptr(const immutable_ptr<U> & other) : Base(other) {}
+        immutable_ptr(const immutable_ptr<U> & other) : Base(other) {} /// NOLINT
 
         /// Move: ok.
-        immutable_ptr(immutable_ptr &&) = default;
-        immutable_ptr & operator=(immutable_ptr &&) = default;
+        immutable_ptr(immutable_ptr &&) = default; /// NOLINT
+        immutable_ptr & operator=(immutable_ptr &&) = default; /// NOLINT
 
         /// Initializing from temporary of compatible type.
         template <typename U>
-        immutable_ptr(immutable_ptr<U> && other) : Base(std::move(other)) {}
+        immutable_ptr(immutable_ptr<U> && other) : Base(std::move(other)) {} /// NOLINT
 
         /// Move from mutable ptr: ok.
         template <typename U>
-        immutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {}
+        immutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {} /// NOLINT
 
         /// Copy from mutable ptr: not possible.
         template <typename U>
@@ -149,7 +149,7 @@ protected:
 
         immutable_ptr() = default;
 
-        immutable_ptr(std::nullptr_t) {}
+        immutable_ptr(std::nullptr_t) {} /// NOLINT
     };
 
 public:
@@ -161,7 +161,6 @@ public:
     template <typename T>
     static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
 
-public:
     Ptr getPtr() const { return static_cast<Ptr>(derived()); }
     MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
 
@@ -193,14 +192,14 @@ public:
 protected:
     /// It works as immutable_ptr if it is const and as mutable_ptr if it is non const.
     template <typename T>
-    class chameleon_ptr
+    class chameleon_ptr /// NOLINT
     {
     private:
         immutable_ptr<T> value;
 
     public:
         template <typename... Args>
-        chameleon_ptr(Args &&... args) : value(std::forward<Args>(args)...) {}
+        chameleon_ptr(Args &&... args) : value(std::forward<Args>(args)...) {} /// NOLINT
 
         template <typename U>
         chameleon_ptr(std::initializer_list<U> && arg) : value(std::forward<std::initializer_list<U>>(arg)) {}
@@ -214,13 +213,13 @@ protected:
         const T & operator*() const { return *value; }
         T & operator*() { return value->assumeMutableRef(); }
 
-        operator const immutable_ptr<T> & () const { return value; }
-        operator immutable_ptr<T> & () { return value; }
+        operator const immutable_ptr<T> & () const { return value; } /// NOLINT
+        operator immutable_ptr<T> & () { return value; } /// NOLINT
 
         /// Get internal immutable ptr. Does not change internal use counter.
         immutable_ptr<T> detach() && { return std::move(value); }
 
-        operator bool() const { return value != nullptr; }
+        explicit operator bool() const { return value != nullptr; }
         bool operator! () const { return value == nullptr; }
 
         bool operator== (const chameleon_ptr & rhs) const { return value == rhs.value; }

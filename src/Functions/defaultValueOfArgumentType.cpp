@@ -23,6 +23,11 @@ public:
         return name;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return false;
+    }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
@@ -51,7 +56,7 @@ public:
 
 }
 
-void registerFunctionDefaultValueOfArgumentType(FunctionFactory & factory)
+REGISTER_FUNCTION(DefaultValueOfArgumentType)
 {
     factory.registerFunction<FunctionDefaultValueOfArgumentType>();
 }

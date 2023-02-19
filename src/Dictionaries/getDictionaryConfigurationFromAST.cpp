@@ -4,18 +4,21 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/isLocalAddress.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -27,26 +30,40 @@ namespace ErrorCodes
     extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
+
 /// There are a lot of code, but it's very simple and straightforward
-/// We just convert
+/// We just perform conversion.
 namespace
 {
 
-using NamesToTypeNames = std::unordered_map<std::string, std::string>;
-/// Get value from field and convert it to string.
-/// Also remove quotes from strings.
-String getFieldAsString(const Field & field)
+struct AttributeConfiguration
 {
-    if (field.getType() == Field::Types::Which::String)
-        return field.get<String>();
-    return applyVisitor(FieldVisitorToString(), field);
+    std::string type;
+    std::string expression;
+};
+
+using AttributeNameToConfiguration = std::unordered_map<std::string, AttributeConfiguration>;
+
+String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_attr)
+{
+    if (!dict_attr->expression)
+        return {};
+
+    /// EXPRESSION PROPERTY should be expression or string
+    String expression_str;
+    if (const auto * literal = dict_attr->expression->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        expression_str = convertFieldToString(literal->value);
+    else
+        expression_str = queryToString(dict_attr->expression);
+
+    return expression_str;
 }
 
 
 using namespace Poco;
 using namespace Poco::XML;
-/*
- * Transforms next definition
+
+/* Transforms next definition
  *  LIFETIME(MIN 10, MAX 100)
  * to the next configuration
  *  <lifetime>
@@ -59,24 +76,22 @@ void buildLifetimeConfiguration(
     AutoPtr<Element> root,
     const ASTDictionaryLifetime * lifetime)
 {
+    if (!lifetime)
+        return;
 
-    if (lifetime)
-    {
-        AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
-        AutoPtr<Element> min_element(doc->createElement("min"));
-        AutoPtr<Element> max_element(doc->createElement("max"));
-        AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
-        min_element->appendChild(min_sec);
-        AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
-        max_element->appendChild(max_sec);
-        lifetime_element->appendChild(min_element);
-        lifetime_element->appendChild(max_element);
-        root->appendChild(lifetime_element);
-    }
+    AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
+    AutoPtr<Element> min_element(doc->createElement("min"));
+    AutoPtr<Element> max_element(doc->createElement("max"));
+    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+    min_element->appendChild(min_sec);
+    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+    max_element->appendChild(max_sec);
+    lifetime_element->appendChild(min_element);
+    lifetime_element->appendChild(max_element);
+    root->appendChild(lifetime_element);
 }
 
-/*
- * Transforms next definition
+/* Transforms next definition
  *  LAYOUT(FLAT())
  * to the next configuration
  *  <layout>
@@ -95,6 +110,7 @@ void buildLifetimeConfiguration(
 void buildLayoutConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
+    const ASTDictionarySettings * settings,
     const ASTDictionaryLayout * layout)
 {
     AutoPtr<Element> layout_element(doc->createElement("layout"));
@@ -102,52 +118,70 @@ void buildLayoutConfiguration(
     AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
 
-    if (layout->parameters)
-        for (const auto & param : layout->parameters->children)
+    if (!layout->parameters)
+        return;
+
+    if (settings != nullptr)
+    {
+        AutoPtr<Element> settings_element(doc->createElement("settings"));
+        root->appendChild(settings_element);
+        for (const auto & [name, value] : settings->changes)
         {
-            const ASTPair * pair = param->as<ASTPair>();
-            if (!pair)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary layout parameters must be key/value pairs, got '{}' instead",
-                    param->formatForErrorMessage());
-            }
-
-            const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
-            if (!value_literal)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be a literal, got '{}' instead",
-                    pair->second->formatForErrorMessage());
-            }
-
-            const auto value_field = value_literal->value;
-
-            if (value_field.getType() != Field::Types::UInt64
-                && value_field.getType() != Field::Types::String)
-            {
-                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
-                    value_field.getTypeName());
-            }
-
-            AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-            AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
-            layout_type_parameter_element->appendChild(value_to_append);
-            layout_type_element->appendChild(layout_type_parameter_element);
+            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            settings_element->appendChild(setting_change_element);
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
+            setting_change_element->appendChild(setting_value);
         }
+    }
+
+    for (const auto & param : layout->parameters->children)
+    {
+        const ASTPair * pair = param->as<ASTPair>();
+        if (!pair)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameters must be key/value pairs, got '{}' instead",
+                param->formatForErrorMessage());
+        }
+
+        const ASTLiteral * value_literal = pair->second->as<ASTLiteral>();
+        if (!value_literal)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be a literal, got '{}' instead",
+                pair->second->formatForErrorMessage());
+        }
+
+        const auto value_field = value_literal->value;
+
+        if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::String)
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary layout parameter value must be an UInt64 or String, got '{}' instead",
+                value_field.getTypeName());
+        }
+
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
+        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        layout_type_parameter_element->appendChild(value_to_append);
+        layout_type_element->appendChild(layout_type_parameter_element);
+    }
 }
 
-/*
- * Transforms next definition
+
+/* Transforms next definition
  *  RANGE(MIN StartDate, MAX EndDate)
  * to the next configuration
  *  <range_min><name>StartDate</name></range_min>
  *  <range_max><name>EndDate</name></range_max>
  */
-void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTDictionaryRange * range, const NamesToTypeNames & all_attrs)
+void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTDictionaryRange * range, const AttributeNameToConfiguration & all_attrs)
 {
     // appends <key><name>value</name></key> to root
-    auto append_element = [&doc, &root](const std::string & key, const std::string & name, const std::string & type)
+    auto append_element = [&doc, &root](const std::string & key, const std::string & name, const AttributeConfiguration & configuration)
     {
         AutoPtr<Element> element(doc->createElement(key));
         AutoPtr<Element> name_node(doc->createElement("name"));
@@ -156,22 +190,33 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         element->appendChild(name_node);
 
         AutoPtr<Element> type_node(doc->createElement("type"));
-        AutoPtr<Text> type_text(doc->createTextNode(type));
+        AutoPtr<Text> type_text(doc->createTextNode(configuration.type));
         type_node->appendChild(type_text);
         element->appendChild(type_node);
+
+        if (!configuration.expression.empty())
+        {
+            AutoPtr<Element> expression_node(doc->createElement("expression"));
+            AutoPtr<Text> expression_text(doc->createTextNode(configuration.expression));
+            expression_node->appendChild(expression_text);
+            element->appendChild(expression_node);
+        }
 
         root->appendChild(element);
     };
 
-    if (!all_attrs.count(range->min_attr_name))
+    auto range_min_attribute_it = all_attrs.find(range->min_attr_name);
+    if (range_min_attribute_it == all_attrs.end())
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-            "MIN ({}) attribute is not defined in the dictionary attributes", range->min_attr_name);
-    if (!all_attrs.count(range->max_attr_name))
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-            "MAX ({}) attribute is not defined in the dictionary attributes", range->max_attr_name);
+            "MIN {} attribute is not defined in the dictionary attributes", range->min_attr_name);
 
-    append_element("range_min", range->min_attr_name, all_attrs.at(range->min_attr_name));
-    append_element("range_max", range->max_attr_name, all_attrs.at(range->max_attr_name));
+    auto range_max_attribute_it = all_attrs.find(range->min_attr_name);
+    if (range_max_attribute_it == all_attrs.end())
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+            "MAX {} attribute is not defined in the dictionary attributes", range->max_attr_name);
+
+    append_element("range_min", range->min_attr_name, range_min_attribute_it->second);
+    append_element("range_max", range->max_attr_name, range_max_attribute_it->second);
 }
 
 
@@ -181,9 +226,9 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     Names result;
     const auto & children = primary_key->children;
 
-    for (size_t index = 0; index != children.size(); ++index)
+    for (const auto & child : children)
     {
-        const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
+        const ASTIdentifier * key_part = child->as<const ASTIdentifier>();
         result.push_back(key_part->name());
     }
     return result;
@@ -194,29 +239,17 @@ void buildAttributeExpressionIfNeeded(
     AutoPtr<Element> root,
     const ASTDictionaryAttributeDeclaration * dict_attr)
 {
-    if (dict_attr->expression != nullptr)
-    {
-        AutoPtr<Element> expression_element(doc->createElement("expression"));
+    if (!dict_attr->expression)
+        return;
 
-        /// EXPRESSION PROPERTY should be expression or string
-        String expression_str;
-        if (const auto * literal = dict_attr->expression->as<ASTLiteral>();
-                literal && literal->value.getType() == Field::Types::String)
-        {
-            expression_str = getFieldAsString(literal->value);
-        }
-        else
-            expression_str = queryToString(dict_attr->expression);
-
-
-        AutoPtr<Text> expression(doc->createTextNode(expression_str));
-        expression_element->appendChild(expression);
-        root->appendChild(expression_element);
-    }
+    AutoPtr<Element> expression_element(doc->createElement("expression"));
+    String expression_str = getAttributeExpression(dict_attr);
+    AutoPtr<Text> expression(doc->createTextNode(expression_str));
+    expression_element->appendChild(expression);
+    root->appendChild(expression_element);
 }
 
-/**
-  * Transofrms single dictionary attribute to configuration
+/** Transforms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>
@@ -247,7 +280,7 @@ void buildSingleAttribute(
     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
     String null_value_str;
     if (dict_attr->default_value)
-        null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
+        null_value_str = convertFieldToString(dict_attr->default_value->as<ASTLiteral>()->value);
     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
     null_value_element->appendChild(null_value);
     attribute_element->appendChild(null_value_element);
@@ -260,6 +293,14 @@ void buildSingleAttribute(
         AutoPtr<Text> hierarchical(doc->createTextNode("true"));
         hierarchical_element->appendChild(hierarchical);
         attribute_element->appendChild(hierarchical_element);
+    }
+
+    if (dict_attr->bidirectional)
+    {
+        AutoPtr<Element> bidirectional_element(doc->createElement("bidirectional"));
+        AutoPtr<Text> bidirectional(doc->createTextNode("true"));
+        bidirectional_element->appendChild(bidirectional);
+        attribute_element->appendChild(bidirectional_element);
     }
 
     if (dict_attr->injective)
@@ -280,8 +321,7 @@ void buildSingleAttribute(
 }
 
 
-/**
-  * Transforms
+/** Transforms
   *   PRIMARY KEY Attr1 ,..., AttrN
   * to the next configuration
   *  <id><name>Attr1</name></id>
@@ -318,11 +358,14 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        auto it = std::find_if(children.begin(), children.end(), [&](const ASTPtr & node)
-        {
-            const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
-            return dict_attr->name == identifier_name;
-        });
+        const auto * it = std::find_if(
+            children.begin(),
+            children.end(),
+            [&](const ASTPtr & node)
+            {
+                const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
+                return dict_attr->name == identifier_name;
+            });
 
         if (it == children.end())
         {
@@ -368,28 +411,30 @@ void buildPrimaryKeyConfiguration(
 }
 
 
-/**
-  * Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
+/** Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
   */
-NamesToTypeNames buildDictionaryAttributesConfiguration(
+AttributeNameToConfiguration buildDictionaryAttributesConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTExpressionList * dictionary_attributes,
     const Names & key_columns)
 {
     const auto & children = dictionary_attributes->children;
-    NamesToTypeNames attributes_names_and_types;
+    AttributeNameToConfiguration attributes_name_to_configuration;
+
     for (const auto & child : children)
     {
         const ASTDictionaryAttributeDeclaration * dict_attr = child->as<const ASTDictionaryAttributeDeclaration>();
         if (!dict_attr->type)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Dictionary attribute must has type");
 
-        attributes_names_and_types.emplace(dict_attr->name, queryToString(dict_attr->type));
+        AttributeConfiguration attribute_configuration {queryToString(dict_attr->type), getAttributeExpression(dict_attr)};
+        attributes_name_to_configuration.emplace(dict_attr->name, std::move(attribute_configuration));
+
         if (std::find(key_columns.begin(), key_columns.end(), dict_attr->name) == key_columns.end())
             buildSingleAttribute(doc, root, dict_attr);
     }
-    return attributes_names_and_types;
+    return attributes_name_to_configuration;
 }
 
 /** Transform function with key-value arguments to configuration
@@ -402,9 +447,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
-    for (size_t i = 0; i != children.size(); ++i)
+    for (const auto & child : children)
     {
-        const ASTPair * pair = children[i]->as<const ASTPair>();
+        const ASTPair * pair = child->as<const ASTPair>();
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
@@ -415,7 +460,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
-            AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
+            AutoPtr<Text> value(doc->createTextNode(convertFieldToString(literal->value)));
             current_xml_element->appendChild(value);
         }
         else if (const auto * list = pair->second->as<const ASTExpressionList>())
@@ -424,6 +469,12 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         }
         else if (const auto * func = pair->second->as<ASTFunction>())
         {
+            /// This branch exists only for compatibility.
+            /// It's not possible to have a function in a dictionary definition since 22.10,
+            /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
+            /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
+            assert(Context::getGlobalContextInstance()->getApplicationType() != Context::ApplicationType::SERVER
+                   || !Context::getGlobalContextInstance()->isServerCompletelyStarted());
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});
@@ -436,7 +487,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             Field value;
             result->get(0, value);
 
-            AutoPtr<Text> text_value(doc->createTextNode(getFieldAsString(value)));
+            AutoPtr<Text> text_value(doc->createTextNode(convertFieldToString(value)));
             current_xml_element->appendChild(text_value);
         }
         else
@@ -482,7 +533,7 @@ void buildSourceConfiguration(
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(getFieldAsString(value)));
+            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
             setting_change_element->appendChild(setting_value);
         }
     }
@@ -495,9 +546,6 @@ void checkAST(const ASTCreateQuery & query)
 {
     if (!query.is_dictionary || query.dictionary == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot convert dictionary to configuration from non-dictionary AST.");
-
-    if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty attributes list");
 
     if (query.dictionary->layout == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty layout");
@@ -512,14 +560,12 @@ void checkAST(const ASTCreateQuery & query)
 
     if (query.dictionary->source == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
-
-    /// Range can be empty
 }
 
-void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs)
+void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names & key_attrs)
 {
     for (const auto & key_attr : key_attrs)
-        if (all_attrs.count(key_attr) == 0)
+        if (all_attrs.find(key_attr) == all_attrs.end())
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown key attribute '{}'", key_attr);
 }
 
@@ -540,12 +586,12 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.table));
+    AutoPtr<Text> name(xml_document->createTextNode(query.getTable()));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
+    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.getDatabase()));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)
@@ -570,15 +616,56 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
-    buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
+    buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
     buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)
         buildRangeConfiguration(xml_document, structure_element, query.dictionary->range, all_attr_names_and_types);
 
+    if (query.comment)
+    {
+        AutoPtr<Element> comment_element(xml_document->createElement("comment"));
+        current_dictionary->appendChild(comment_element);
+        AutoPtr<Text> comment_value(xml_document->createTextNode(query.comment->as<ASTLiteral>()->value.safeGet<String>()));
+
+        comment_element->appendChild(comment_value);
+    }
+
     conf->load(xml_document);
     return conf;
+}
+
+std::optional<ClickHouseDictionarySourceInfo>
+getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, ContextPtr global_context)
+{
+    ClickHouseDictionarySourceInfo info;
+
+    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
+    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
+
+    String host = config->getString("dictionary.source.clickhouse.host", "localhost");
+    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
+    String database = config->getString("dictionary.source.clickhouse.db", "");
+    String table = config->getString("dictionary.source.clickhouse.table", "");
+
+    if (table.empty())
+        return {};
+
+    info.table_name = {database, table};
+
+    try
+    {
+        if (isLocalAddress({host, port}, default_port))
+            info.is_local = true;
+    }
+    catch (const Poco::Net::DNSException &)
+    {
+        /// Server may fail to start if we cannot resolve some hostname. It's ok to ignore exception and leave is_local false.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return info;
 }
 
 }

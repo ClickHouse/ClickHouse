@@ -1,8 +1,9 @@
 ---
+slug: /zh/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 41
-toc_title: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
+sidebar_position: 41
+sidebar_label: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
 ---
 
 # 在内存中存储字典 {#dicts-external-dicts-dict-layout}
@@ -28,7 +29,7 @@ ClickHouse为字典中的错误生成异常。 错误示例:
 配置如下所示:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
         <layout>
@@ -38,7 +39,7 @@ ClickHouse为字典中的错误生成异常。 错误示例:
         </layout>
         ...
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 相应的 [DDL-查询](../../statements/create.md#create-dictionary-query):
@@ -208,7 +209,7 @@ dictGetT('dict_name', 'attr_name', id, date)
 配置示例:
 
 ``` xml
-<yandex>
+<clickhouse>
         <dictionary>
 
                 ...
@@ -237,7 +238,7 @@ dictGetT('dict_name', 'attr_name', id, date)
                 </structure>
 
         </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 或
@@ -398,5 +399,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 还不支持其他类型。 该函数返回与此IP地址对应的前缀的属性。 如果有重叠的前缀，则返回最具体的前缀。
 
 数据存储在一个 `trie`. 它必须完全适合RAM。
-
-[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

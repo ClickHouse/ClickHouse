@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <!-- Profiles of settings. -->
     <profiles>
         <!-- Default settings. -->
@@ -117,4 +116,4 @@
             </interval>
         </default>
     </quotas>
-</yandex>
+</clickhouse>

@@ -18,10 +18,10 @@ namespace ErrorCodes
 
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWkt : public IFunction
+class FunctionReadWKT : public IFunction
 {
 public:
-    explicit FunctionReadWkt() = default;
+    explicit FunctionReadWKT() = default;
 
     static constexpr const char * name = NameHolder::name;
 
@@ -35,12 +35,13 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
         {
-            throw Exception("First argument should be String",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
         }
 
         return DataTypeFactory::instance().get(DataTypeName().getName());
@@ -53,7 +54,7 @@ public:
         Serializer serializer;
         Geometry geometry;
 
-        for (size_t i = 0; i < input_rows_count; i++)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto & str = column_string->getDataAt(i).toString();
             boost::geometry::read_wkt(str, geometry);
@@ -70,36 +71,36 @@ public:
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionReadWkt<DataTypeName, Geometry, Serializer, NameHolder>>();
+        return std::make_shared<FunctionReadWKT<DataTypeName, Geometry, Serializer, NameHolder>>();
     }
 };
 
-struct ReadWktPointNameHolder
+struct ReadWKTPointNameHolder
 {
-    static constexpr const char * name = "readWktPoint";
+    static constexpr const char * name = "readWKTPoint";
 };
 
-struct ReadWktRingNameHolder
+struct ReadWKTRingNameHolder
 {
-    static constexpr const char * name = "readWktRing";
+    static constexpr const char * name = "readWKTRing";
 };
 
-struct ReadWktPolygonNameHolder
+struct ReadWKTPolygonNameHolder
 {
-    static constexpr const char * name = "readWktPolygon";
+    static constexpr const char * name = "readWKTPolygon";
 };
 
-struct ReadWktMultiPolygonNameHolder
+struct ReadWKTMultiPolygonNameHolder
 {
-    static constexpr const char * name = "readWktMultiPolygon";
+    static constexpr const char * name = "readWKTMultiPolygon";
 };
 
-void registerFunctionReadWkt(FunctionFactory & factory)
+REGISTER_FUNCTION(ReadWKT)
 {
-    factory.registerFunction<FunctionReadWkt<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWktPointNameHolder>>();
-    factory.registerFunction<FunctionReadWkt<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWktRingNameHolder>>();
-    factory.registerFunction<FunctionReadWkt<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWktPolygonNameHolder>>();
-    factory.registerFunction<FunctionReadWkt<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWktMultiPolygonNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypePolygonName, CartesianPolygon, PolygonSerializer<CartesianPoint>, ReadWKTPolygonNameHolder>>();
+    factory.registerFunction<FunctionReadWKT<DataTypeMultiPolygonName, CartesianMultiPolygon, MultiPolygonSerializer<CartesianPoint>, ReadWKTMultiPolygonNameHolder>>();
 }
 
 }

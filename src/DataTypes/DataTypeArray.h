@@ -17,7 +17,7 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeArray(const DataTypePtr & nested_);
+    explicit DataTypeArray(const DataTypePtr & nested_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
@@ -48,16 +48,12 @@ public:
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
+    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
-
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-    SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 
@@ -65,12 +61,6 @@ public:
 
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
-
-private:
-    ColumnPtr getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const;
-    DataTypePtr tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const;
-    SerializationPtr getSubcolumnSerializationImpl(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter, size_t level) const;
 };
 
 }

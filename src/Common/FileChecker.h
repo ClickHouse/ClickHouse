@@ -1,19 +1,24 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Storages/CheckResults.h>
-#include <Disks/IDisk.h>
 
 
 namespace DB
 {
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
-/// stores the sizes of all columns, and can check whether the columns are corrupted
+
+/// Stores the sizes of all columns, and can check whether the columns are corrupted.
 class FileChecker
 {
 public:
+    FileChecker(const String & file_info_path_);
     FileChecker(DiskPtr disk_, const String & file_info_path_);
+
     void setPath(const String & file_info_path_);
+    String getPath() const;
 
     void update(const String & full_file_path);
     void setEmpty(const String & full_file_path);
@@ -28,20 +33,23 @@ public:
     /// The purpose of this function is to rollback a group of unfinished writes.
     void repair();
 
-    /// File name -> size.
-    using Map = std::map<String, UInt64>;
+    /// Returns stored file size.
+    size_t getFileSize(const String & full_file_path) const;
 
-    Map getFileSizes() const;
+    /// Returns total size of all files.
+    size_t getTotalSize() const;
 
 private:
     void load();
 
-    DiskPtr disk;
+    bool fileReallyExists(const String & path_) const;
+    size_t getRealFileSize(const String & path_) const;
+
+    const DiskPtr disk;
+    const Poco::Logger * log = &Poco::Logger::get("FileChecker");
+
     String files_info_path;
-
-    Map map;
-
-    Poco::Logger * log = &Poco::Logger::get("FileChecker");
+    std::map<String, size_t> map;
 };
 
 }

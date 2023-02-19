@@ -19,13 +19,14 @@ public:
     static constexpr auto name = "extractURLParameterNames";
     static String getName() { return name; }
 
+    static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
     static void checkArguments(const DataTypes & arguments)
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+            "Must be String.", arguments[0]->getName(), getName());
     }
 
     /// Returns the position of the argument that is the column of rows
@@ -33,6 +34,13 @@ public:
     {
         return 0;
     }
+
+    /// Returns the position of the possible max_substrings argument. std::nullopt means max_substrings argument is disabled in current function.
+    static std::optional<size_t> getMaxSubstringsArgumentPosition()
+    {
+        return std::nullopt;
+    }
+
 
     void init(const ColumnsWithTypeAndName & /*arguments*/) {}
 
@@ -88,7 +96,7 @@ public:
 struct NameExtractURLParameterNames { static constexpr auto name = "extractURLParameterNames"; };
 using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNamesImpl>;
 
-void registerFunctionExtractURLParameterNames(FunctionFactory & factory)
+REGISTER_FUNCTION(ExtractURLParameterNames)
 {
     factory.registerFunction<FunctionExtractURLParameterNames>();
 }

@@ -13,16 +13,17 @@ public:
 
     String getName() const override { return "Union"; }
 
-    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
     size_t getMaxThreads() const { return max_threads; }
 
+    void updateOutputSortDescription();
+
 private:
     Block header;
     size_t max_threads;
-    Processors processors;
 };
 
 }

@@ -1,6 +1,7 @@
 ---
-toc_priority: 55
-toc_title: "Функции для работы с IP-адресами"
+slug: /ru/sql-reference/functions/ip-address-functions
+sidebar_position: 55
+sidebar_label: "Функции для работы с IP-адресами"
 ---
 
 # Функции для работы с IP-адресами {#funktsii-dlia-raboty-s-ip-adresami}
@@ -53,7 +54,7 @@ LIMIT 10
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Принимает значение типа FixedString(16), содержащее IPv6-адрес в бинарном виде. Возвращает строку, содержащую этот адрес в текстовом виде.
-IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. 
+IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44.
 
 Примеры: `INET6_NTOA`.
 
@@ -137,7 +138,7 @@ HEX может быть в любом регистре.
 IPv6StringToNum(string)
 ```
 
-**Аргумент** 
+**Аргумент**
 
 -   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
 
@@ -281,7 +282,7 @@ toIPv6(string)
 
 **Возвращаемое значение**
 
--   IP адрес. 
+-   IP адрес.
 
 Тип: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 
@@ -445,4 +446,18 @@ SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
 ┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
 │                                            0 │
 └──────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128');
+```
+
+Результат:
+
+``` text
+┌─isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')─┐
+│                                                                  0 │
+└────────────────────────────────────────────────────────────────────┘
 ```

@@ -34,12 +34,17 @@ public:
         return 0;
     }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
 
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -60,7 +65,7 @@ public:
 
 }
 
-void registerFunctionRowNumberInBlock(FunctionFactory & factory)
+REGISTER_FUNCTION(RowNumberInBlock)
 {
     factory.registerFunction<FunctionRowNumberInBlock>();
 }

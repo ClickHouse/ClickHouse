@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include <Core/Block.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
@@ -47,21 +47,20 @@ template <> struct ConstructDecInt<32> { using Type = Int256; };
 template <typename T, typename U>
 struct DecCompareInt
 {
-    using Type = typename ConstructDecInt<(!IsDecimalNumber<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
+    using Type = typename ConstructDecInt<(!is_decimal<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
     using TypeA = Type;
     using TypeB = Type;
 };
 
-///
 template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
-    bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
+    bool _actual = is_decimal<A> || is_decimal<B>>
 class DecimalComparison
 {
 public:
     using CompareInt = typename DecCompareInt<A, B>::Type;
     using Op = Operation<CompareInt, CompareInt>;
-    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
-    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
+    using ColVecA = ColumnVectorOrDecimal<A>;
+    using ColVecB = ColumnVectorOrDecimal<B>;
 
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
@@ -83,7 +82,7 @@ public:
     {
         static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
         if (scale_a > max_scale || scale_b > max_scale)
-            throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Bad scale of decimal field");
 
         Shift shift;
         if (scale_a < scale_b)
@@ -116,8 +115,8 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
+    requires is_decimal<T> && is_decimal<U>
+    static Shift getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
         const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);
@@ -138,8 +137,8 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<IsDecimalNumber<T> && !IsDecimalNumber<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr &)
+    requires is_decimal<T> && (!is_decimal<U>)
+    static Shift getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
@@ -149,8 +148,8 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<!IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
-    getScales(const DataTypePtr &, const DataTypePtr & right_type)
+    requires (!is_decimal<T>) && is_decimal<U>
+    static Shift getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;
         const DataTypeDecimalBase<U> * decimal1 = checkDecimalBase<U>(*right_type);
@@ -190,7 +189,7 @@ private:
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                     constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
                 else
-                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
             }
             else if (c1_is_const)
             {
@@ -199,7 +198,7 @@ private:
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                     vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
                 else
-                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
             }
             else
             {
@@ -208,10 +207,10 @@ private:
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                         vectorVector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
                     else
-                        throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
                 }
                 else
-                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong column in Decimal comparison");
             }
         }
 
@@ -222,16 +221,16 @@ private:
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
-        if constexpr (IsDecimalNumber<A>)
+        if constexpr (is_decimal<A>)
             x = a.value;
         else
             x = a;
 
         CompareInt y;
-        if constexpr (IsDecimalNumber<B>)
+        if constexpr (is_decimal<B>)
             y = b.value;
         else
-            y = b;
+            y = static_cast<CompareInt>(b);
 
         if constexpr (_check_overflow)
         {
@@ -252,7 +251,7 @@ private:
                 overflow |= common::mulOverflow(y, scale, y);
 
             if (overflow)
-                throw Exception("Can't compare decimal number due to overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Can't compare decimal number due to overflow");
         }
         else
         {

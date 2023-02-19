@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SELECT 'database atomic tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_atomic;
@@ -70,6 +72,7 @@ SELECT '-----------------------';
 SELECT 'database ordinary tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_ordinary;
+set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test1601_detach_permanently_ordinary Engine=Ordinary;
 
 create table test1601_detach_permanently_ordinary.test_name_reuse (number UInt64) engine=MergeTree order by tuple();
@@ -129,7 +132,7 @@ SELECT 'And detach permanently again to check how database drop will behave';
 DETACH table test1601_detach_permanently_ordinary.test_name_reuse PERMANENTLY;
 
 SELECT 'DROP database - Directory not empty error, but database detached';
-DROP DATABASE test1601_detach_permanently_ordinary; -- { serverError 1001 }
+DROP DATABASE test1601_detach_permanently_ordinary; -- { serverError 219 }
 
 ATTACH DATABASE test1601_detach_permanently_ordinary;
 
@@ -203,7 +206,7 @@ SELECT 'And detach permanently again to check how database drop will behave';
 DETACH table test1601_detach_permanently_lazy.test_name_reuse PERMANENTLY;
 
 SELECT 'DROP database - Directory not empty error, but database deteched';
-DROP DATABASE test1601_detach_permanently_lazy; -- { serverError 1001 }
+DROP DATABASE test1601_detach_permanently_lazy; -- { serverError 219 }
 
 ATTACH DATABASE test1601_detach_permanently_lazy;
 

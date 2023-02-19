@@ -1,11 +1,11 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 #if USE_MYSQL
 
 #include <mysqlxx/PoolWithFailover.h>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/MultiEnum.h>
 #include <Core/SettingsEnums.h>
 #include <Storages/ColumnsDescription.h>

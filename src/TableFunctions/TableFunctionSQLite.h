@@ -1,7 +1,5 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#include "config_core.h"
-#endif
+#include "config.h"
 
 #if USE_SQLITE
 #include <TableFunctions/ITableFunction.h>

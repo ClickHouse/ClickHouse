@@ -7,7 +7,7 @@
 #include <Functions/PerformanceAdaptors.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 
 namespace DB
@@ -33,23 +33,23 @@ public:
 
     bool isVariadic() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                "Function " + getName() + " requires at least one argument: the size of resulting string",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least one argument: the size of resulting string", getName());
 
         if (arguments.size() > 2)
-            throw Exception(
-                "Function " + getName() + " requires at most two arguments: the size of resulting string and optional disambiguation tag",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
 
         const IDataType & length_type = *arguments[0];
         if (!isNumber(length_type))
-            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -75,7 +75,7 @@ public:
         {
             size_t length = length_column.getUInt(row_num);
             if (length > (1 << 30))
-                throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
             offset += length + 1;
             offsets_to[row_num] = offset;
@@ -124,7 +124,7 @@ private:
 
 }
 
-void registerFunctionRandomString(FunctionFactory & factory)
+REGISTER_FUNCTION(RandomString)
 {
     factory.registerFunction<FunctionRandomString>();
 }

@@ -6,7 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -27,12 +27,13 @@ namespace
 
         size_t getNumberOfArguments() const override { return 1; }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isString(arguments[0]))
-                throw Exception(
-                    "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arguments[0]->getName(), getName());
             return std::make_shared<DataTypeUInt8>();
         }
 
@@ -42,11 +43,11 @@ namespace
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
                 message = col->getDataAt(0).data;
             else
-                throw Exception(
-                    "First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
+                    getName());
 
             static auto * log = &Poco::Logger::get("FunctionLogTrace");
-            LOG_TRACE(log, message);
+            LOG_TRACE(log, fmt::runtime(message));
 
             return DataTypeUInt8().createColumnConst(input_rows_count, 0);
         }
@@ -54,7 +55,7 @@ namespace
 
 }
 
-void registerFunctionLogTrace(FunctionFactory & factory)
+REGISTER_FUNCTION(LogTrace)
 {
     factory.registerFunction<FunctionLogTrace>();
 }

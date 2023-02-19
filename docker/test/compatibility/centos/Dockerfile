@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-test-old-centos .
+# docker build -t clickhouse/test-old-centos .
 FROM centos:5
 
 CMD /bin/sh -c "/clickhouse server --config /config/config.xml > /var/log/clickhouse-server/stderr.log 2>&1 & \

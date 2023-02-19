@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -35,6 +36,11 @@ public:
         return name;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -42,7 +48,7 @@ public:
         const IDataType & type = *arguments[0];
 
         if (!isNativeNumber(type))
-            throw Exception("Cannot format " + type.getName() + " because it's not a native numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} because it's not a native numeric type", type.getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -62,9 +68,8 @@ public:
             || (res = executeType<Int64>(arguments))
             || (res = executeType<Float32>(arguments))
             || (res = executeType<Float64>(arguments))))
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
 
         return res;
     }

@@ -1,6 +1,6 @@
-[1,NULL,2]	[NULL,'Some string',NULL]	[0.00,NULL,42.42]
+[1,NULL,2]	[NULL,'Some string',NULL]	[0,NULL,42.42]
 [NULL]	[NULL]	[NULL]
 []	[]	[]
-[1,NULL,2]	[NULL,'Some string',NULL]	[0.00,NULL,42.42]
+[1,NULL,2]	[NULL,'Some string',NULL]	[0,NULL,42.42]
 [NULL]	[NULL]	[NULL]
 []	[]	[]

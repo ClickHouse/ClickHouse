@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 set -e
 
@@ -25,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_noisy"
 
 echo
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_each_row"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE json_each_row (d DateTime('Europe/Moscow')) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE json_each_row (d DateTime('Asia/Istanbul')) ENGINE = Memory"
 echo '{"d" : "2017-08-31 18:36:48", "t" : ""}
 {"d" : "1504193808", "t" : -1}
 {"d" : 1504193808, "t" : []}

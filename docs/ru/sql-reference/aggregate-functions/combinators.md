@@ -1,6 +1,7 @@
 ---
-toc_priority: 37
-toc_title: "Комбинаторы агрегатных функций"
+slug: /ru/sql-reference/aggregate-functions/combinators
+sidebar_position: 37
+sidebar_label: "Комбинаторы агрегатных функций"
 ---
 
 

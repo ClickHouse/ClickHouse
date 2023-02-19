@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/functions/bitmap-functions
+---
 # 位图函数 {#wei-tu-han-shu}
 
 位图函数用于对两个位图对象进行计算，对于任何一个位图函数，它都将返回一个位图对象，例如and，or，xor，not等等。
@@ -87,6 +90,30 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
     ┌─res───────────────────────┐
     │ [30,31,32,33,100,200,500] │
     └───────────────────────────┘
+
+## subBitmap {#subBitmap}
+
+将位图跳过`offset`个元素，限制大小为`limit`个的结果转换为另一个位图。
+
+    subBitmap(bitmap, offset, limit)
+
+**参数**
+
+-   `bitmap` – 位图对象.
+-   `offset` – 跳过多少个元素.
+-   `limit` – 子位图基数上限.
+
+**示例**
+
+``` sql
+SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res
+```
+
+```text
+┌─res─────────────────────────────┐
+│ [10,11,12,13,14,15,16,17,18,19] │
+└─────────────────────────────────┘
+```
 
 ## bitmapContains {#bitmapcontains}
 
@@ -380,5 +407,3 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
     ┌─res─┐
     │   2 │
     └─────┘
-
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/bitmap_functions/) <!--hide-->

@@ -1,6 +1,6 @@
 # This is an example of a configuration file "config.xml" rewritten in YAML
 # You can read this documentation for detailed information about YAML configuration:
-# https://clickhouse.tech/docs/en/operations/configuration-files/
+# https://clickhouse.com/docs/en/operations/configuration-files/
 
 # NOTE: User and query level settings are set up in "users.yaml" file.
 # If you have accidentally specified user-level settings here, server won't start.
@@ -103,7 +103,7 @@ interserver_http_port: 9009
 # If not specified, than it is determined analogous to 'hostname -f' command.
 # This setting could be used to switch replication to another network interface
 # (the server may be connected to multiple networks via multiple addresses)
-# interserver_http_host: example.yandex.ru
+# interserver_http_host: example.clickhouse.com
 
 # You can specify credentials for authenthication between replicas.
 # This is required when interserver_https_port is accessible from untrusted networks,
@@ -177,8 +177,8 @@ openSSL:
     server:
         # Used for https server AND secure tcp port
         # openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
-        certificateFile: /etc/clickhouse-server/server.crt
-        privateKeyFile: /etc/clickhouse-server/server.key
+        # certificateFile: /etc/clickhouse-server/server.crt
+        # privateKeyFile: /etc/clickhouse-server/server.key
 
         # dhparams are optional. You can delete the dhParamsFile: element.
         # To generate dhparams, use the following command:
@@ -271,7 +271,7 @@ mark_cache_size: 5368709120
 # The amount of data in mapped files can be monitored
 # in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
 # and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
-# and also in system.events, system.processes, system.query_log, system.query_thread_log by the
+# and also in system.events, system.processes, system.query_log, system.query_thread_log, system.query_views_log by the
 # CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
 # Note that the amount of data in mapped files does not consume memory directly and is not accounted
 # in query or server memory usage - because this memory can be discarded similar to OS page cache.
@@ -279,8 +279,11 @@ mark_cache_size: 5368709120
 # also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
 mmap_cache_size: 1000
 
-# Cache size for compiled expressions.
-compiled_expression_cache_size: 1073741824
+# Cache size in bytes for compiled expressions.
+compiled_expression_cache_size: 134217728
+
+# Cache size in elements for compiled expressions.
+compiled_expression_cache_elements_size: 10000
 
 # Path to data directory, with trailing slash.
 path: /var/lib/clickhouse/
@@ -473,8 +476,8 @@ default_database: default
 # If not specified, system time zone at server startup is used.
 
 # Please note, that server could display time zone alias instead of specified name.
-# Example: W-SU is an alias for Europe/Moscow and Zulu is an alias for UTC.
-# timezone: Europe/Moscow
+# Example: Zulu is an alias for UTC.
+# timezone: UTC
 
 # You can specify umask here (see "man umask"). Server will apply it on startup.
 # Number is always parsed as octal. Default umask is 027 (other users cannot read logs, data files, etc; group can only read).
@@ -509,7 +512,7 @@ remap_executable: false
 #     port: 9019
 
 # Configuration of clusters that could be used in Distributed tables.
-# https://clickhouse.tech/docs/en/operations/table_engines/distributed/
+# https://clickhouse.com/docs/en/operations/table_engines/distributed/
 remote_servers:
     # Test only shard config for testing distributed storage
     test_shard_localhost:
@@ -589,10 +592,10 @@ remote_servers:
 # remote_url_allow_hosts:
 
 # Host should be specified exactly as in URL. The name is checked before DNS resolution.
-# Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
+# Example: "clickhouse.com", "clickhouse.com." and "www.clickhouse.com" are different hosts.
 # If port is explicitly specified in URL, the host:port is checked as a whole.
 # If host specified here without port, any port with this host allowed.
-# "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
+# "clickhouse.com" -> "clickhouse.com:443", "clickhouse.com:80" etc. is allowed, but "clickhouse.com:80" -> only "clickhouse.com:80" is allowed.
 # If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
 # If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
 
@@ -602,11 +605,11 @@ remote_servers:
 
 # If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
 # By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
-# Values for substitutions are specified in /yandex/name_of_substitution elements in that file.
+# Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
 
 # ZooKeeper is used to store metadata about replicas, when using Replicated tables.
 # Optional. If you don't use replicated tables, you could omit that.
-# See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
+# See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
 
 # zookeeper:
 #     - node:
@@ -621,7 +624,7 @@ remote_servers:
 
 # Substitutions for parameters of replicated tables.
 # Optional. If you don't use replicated tables, you could omit that.
-# See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
+# See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
 # macros:
 #     shard: 01
 #     replica: example01-01-1
@@ -693,7 +696,7 @@ query_log:
     database: system
     table: query_log
 
-    # PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
+    # PARTITION BY expr: https://clickhouse.com/docs/en/table_engines/mergetree-family/custom_partitioning_key/
     # Example:
     # event_date
     # toMonday(event_date)
@@ -701,7 +704,7 @@ query_log:
     # toStartOfHour(event_time)
     partition_by: toYYYYMM(event_date)
 
-    # Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+    # Table TTL specification: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
     # Example:
     # event_date + INTERVAL 1 WEEK
     # event_date + INTERVAL 7 DAY DELETE
@@ -731,12 +734,21 @@ query_thread_log:
     partition_by: toYYYYMM(event_date)
     flush_interval_milliseconds: 7500
 
+# Query views log. Has information about all dependent views associated with a query.
+# Used only for queries with setting log_query_views = 1.
+query_views_log:
+    database: system
+    table: query_views_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
+
 # Uncomment if use part log.
 # Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
-# part_log:
-#     database: system
-#     table: part_log
-#     flush_interval_milliseconds: 7500
+part_log:
+    database: system
+    table: part_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
 
 # Uncomment to write text log into table.
 # Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -791,16 +803,6 @@ crash_log:
     partition_by: ''
     flush_interval_milliseconds: 1000
 
-# Parameters for embedded dictionaries, used in Yandex.Metrica.
-# See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
-
-# Path to file with region hierarchy.
-# path_to_regions_hierarchy_file: /opt/geo/regions_hierarchy.txt
-
-# Path to directory with files containing names of regions
-# path_to_regions_names_files: /opt/geo/
-
-
 # top_level_domains_path: /var/lib/clickhouse/top_level_domains/
 # Custom TLD lists.
 # Format: name: /path/to/file
@@ -812,7 +814,7 @@ top_level_domains_lists: ''
 # public_suffix_list: /path/to/public_suffix_list.dat
 
 # Configuration of external dictionaries. See:
-# https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
+# https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
 dictionaries_config: '*_dictionary.xml'
 
 # Uncomment if you want data to be compressed 30-100% better.

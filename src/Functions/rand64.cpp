@@ -11,7 +11,7 @@ using FunctionRand64 = FunctionRandom<UInt64, NameRand64>;
 
 }
 
-void registerFunctionRand64(FunctionFactory & factory)
+REGISTER_FUNCTION(Rand64)
 {
     factory.registerFunction<FunctionRand64>();
 }

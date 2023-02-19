@@ -1,5 +1,6 @@
 ---
-toc_title: FROM
+slug: /ru/sql-reference/statements/select/from
+sidebar_label: FROM
 ---
 
 # Секция FROM {#select-from}
@@ -20,7 +21,7 @@ toc_title: FROM
 
 Если в запросе используется модификатор `FINAL`, то ClickHouse полностью мёржит данные перед выдачей результата, таким образом выполняя все преобразования данных, которые производятся движком таблиц при мёржах.
 
-Он применим при выборе данных из таблиц, использующих [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)- семейство движков (кроме `GraphiteMergeTree`). Также поддерживается для:
+Он применим при выборе данных из таблиц, использующих [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)- семейство движков. Также поддерживается для:
 
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) варианты исполнения `MergeTree` движков.
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), и [MaterializedView](../../../engines/table-engines/special/materializedview.md), которые работают поверх других движков, если они созданы для таблиц с движками семейства `MergeTree`.
@@ -31,7 +32,7 @@ toc_title: FROM
 
 Запросы, которые используют `FINAL` выполняются немного медленее, чем аналогичные запросы без него, потому что:
 
--   Данные мёржатся во время выполнения запроса.
+-   Данные мёржатся во время выполнения запроса в памяти, и это не приводит к физическому мёржу кусков на дисках.
 -   Запросы с модификатором `FINAL` читают столбцы первичного ключа в дополнение к столбцам, используемым в запросе.
 
 **В большинстве случаев избегайте использования `FINAL`.** Общий подход заключается в использовании агрегирующих запросов, которые предполагают, что фоновые процессы движков семейства `MergeTree` ещё не случились  (например, сами отбрасывают дубликаты). {## TODO: examples ##}

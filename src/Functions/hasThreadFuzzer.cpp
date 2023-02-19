@@ -31,6 +31,8 @@ public:
         return 0;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
@@ -44,7 +46,7 @@ public:
 
 }
 
-void registerFunctionHasThreadFuzzer(FunctionFactory & factory)
+REGISTER_FUNCTION(HasThreadFuzzer)
 {
     factory.registerFunction<FunctionHasThreadFuzzer>();
 }

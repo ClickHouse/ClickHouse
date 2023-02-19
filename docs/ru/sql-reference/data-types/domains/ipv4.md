@@ -1,6 +1,7 @@
 ---
-toc_priority: 59
-toc_title: IPv4
+slug: /ru/sql-reference/data-types/domains/ipv4
+sidebar_position: 59
+sidebar_label: IPv4
 ---
 
 ## IPv4 {#ipv4}
@@ -31,16 +32,16 @@ CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
 `IPv4` поддерживает вставку в виде строк с текстовым представлением IPv4 адреса:
 
 ``` sql
-INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.tech', '183.247.232.58')('https://clickhouse.tech/docs/en/', '116.106.34.242');
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.com', '183.247.232.58')('https://clickhouse.com/docs/en/', '116.106.34.242');
 
 SELECT * FROM hits;
 ```
 
 ``` text
 ┌─url────────────────────────────────┬───────────from─┐
-│ https://clickhouse.tech/docs/en/ │ 116.106.34.242 │
+│ https://clickhouse.com/docs/en/ │ 116.106.34.242 │
 │ https://wikipedia.org              │ 116.253.40.133 │
-│ https://clickhouse.tech          │ 183.247.232.58 │
+│ https://clickhouse.com          │ 183.247.232.58 │
 └────────────────────────────────────┴────────────────┘
 ```
 
@@ -80,4 +81,3 @@ SELECT toTypeName(i), CAST(from AS UInt32) AS i FROM hits LIMIT 1;
 │ UInt32                           │ 3086477370 │
 └──────────────────────────────────┴────────────┘
 ```
-

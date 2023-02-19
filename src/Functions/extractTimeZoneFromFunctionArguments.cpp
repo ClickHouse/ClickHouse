@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
-#include <common/DateLUT.h>
+#include <Common/DateLUT.h>
 
 
 namespace DB
@@ -17,14 +17,14 @@ namespace ErrorCodes
 }
 
 
-static std::string extractTimeZoneNameFromColumn(const IColumn & column)
+std::string extractTimeZoneNameFromColumn(const IColumn & column)
 {
     const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(&column);
 
     if (!time_zone_column)
-        throw Exception("Illegal column " + column.getName()
-            + " of time zone argument of function, must be constant string",
-            ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of time zone argument of function, must be constant string",
+                        column.getName());
 
     return time_zone_column->getValue<String>();
 }
@@ -59,7 +59,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
     {
         std::string time_zone = extractTimeZoneNameFromColumn(*arguments[time_zone_arg_num].column);
         if (time_zone.empty())
-            throw Exception("Provided time zone must be non-empty and be a valid time zone", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
         return DateLUT::instance(time_zone);
     }
     else

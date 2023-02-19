@@ -10,45 +10,37 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
+IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_)
     : IOutputFormat(header, out_)
+    , num_columns(header.columns())
     , types(header.getDataTypes())
-    , params(params_)
+    , serializations(header.getSerializations())
 {
-    serializations.reserve(types.size());
-    for (const auto & type : types)
-        serializations.push_back(type->getDefaultSerialization());
 }
 
 void IRowOutputFormat::consume(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (!first_row)
+        if (haveWrittenData())
             writeRowBetweenDelimiter();
 
         write(columns, row);
-
-        if (params.callback)
-            params.callback(columns, row);
-
         first_row = false;
     }
 }
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-    writeSuffixIfNot();
+    if (!supportTotals())
+        return;
 
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
-        throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in totals chunk, expected 1", num_rows);
 
     const auto & columns = chunk.getColumns();
 
@@ -59,13 +51,13 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-    writeSuffixIfNot();
+    if (!supportExtremes())
+        return;
 
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
     if (num_rows != 2)
-        throw Exception("Got " + toString(num_rows) + " in extremes chunk, expected 2", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in extremes chunk, expected 2", num_rows);
 
     writeBeforeExtremes();
     writeMinExtreme(columns, 0);
@@ -74,17 +66,8 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     writeAfterExtremes();
 }
 
-void IRowOutputFormat::finalize()
-{
-    writePrefixIfNot();
-    writeSuffixIfNot();
-    writeLastSuffix();
-}
-
 void IRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
-
     writeRowStartDelimiter();
 
     for (size_t i = 0; i < num_columns; ++i)

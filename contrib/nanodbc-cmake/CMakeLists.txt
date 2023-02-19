@@ -1,18 +1,18 @@
-if (NOT USE_INTERNAL_NANODBC_LIBRARY)
+if (NOT ENABLE_ODBC)
     return ()
 endif ()
 
-set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/nanodbc")
-
-if (NOT TARGET unixodbc)
+if (NOT TARGET ch_contrib::unixodbc)
     message(FATAL_ERROR "Configuration error: unixodbc is not a target")
 endif()
+
+set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/nanodbc")
 
 set (SRCS
     "${LIBRARY_DIR}/nanodbc/nanodbc.cpp"
 )
 
-add_library(nanodbc ${SRCS})
-
-target_link_libraries (nanodbc PUBLIC unixodbc)
-target_include_directories (nanodbc SYSTEM PUBLIC "${LIBRARY_DIR}/")
+add_library(_nanodbc ${SRCS})
+target_link_libraries(_nanodbc PUBLIC ch_contrib::unixodbc)
+target_include_directories(_nanodbc SYSTEM PUBLIC "${LIBRARY_DIR}/")
+add_library(ch_contrib::nanodbc ALIAS _nanodbc)

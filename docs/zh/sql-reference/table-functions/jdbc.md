@@ -1,6 +1,7 @@
 ---
-toc_priority: 43
-toc_title: jdbc
+slug: /zh/sql-reference/table-functions/jdbc
+sidebar_position: 43
+sidebar_label: jdbc
 ---
 
 # jdbc {#table-function-jdbc}
@@ -25,7 +26,7 @@ SELECT * FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1
 ```
 
 ``` sql
-SELECT * 
+SELECT *
 FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
 ```
 
@@ -34,5 +35,3 @@ SELECT a.datasource AS server1, b.datasource AS server2, b.name AS db
 FROM jdbc('mysql-dev?datasource_column', 'show databases') a
 INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
 ```
-
-[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->

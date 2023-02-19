@@ -4,94 +4,108 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <errno.h>
 #include <pwd.h>
 #include <unistd.h>
 #include <Poco/Version.h>
-#include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <common/scope_guard.h>
-#include <common/defines.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <common/ErrorHandlers.h>
-#include <common/getMemoryAmount.h>
-#include <common/errnoToString.h>
-#include <common/coverage.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/logger_useful.h>
+#include <base/phdr_cache.h>
+#include <Common/ErrorHandlers.h>
+#include <base/getMemoryAmount.h>
+#include <base/getAvailableMemoryAmount.h>
+#include <base/errnoToString.h>
+#include <base/coverage.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/safeExit.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
+#include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include <common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
-#include <IO/HTTPCommon.h>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Core/ServerUUID.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/IOThreadPool.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
+#include <Storages/System/attachInformationSchemaTables.h>
+#include <Storages/Cache/ExternalDataSourceCache.h>
+#include <Storages/Cache/registerRemoteFileMetadatas.h>
+#include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <DataStreams/ConnectionCollector.h>
+#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <IO/Resource/registerSchedulerNodes.h>
+#include <IO/Resource/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
+#include <Server/TCPServer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/Elf.h>
+#include <Common/filesystemHelpers.h>
+#include <Compression/CompressionCodecEncrypted.h>
+#include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProxyV1HandlerFactory.h>
+#include <Server/TLSHandlerFactory.h>
+#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <filesystem>
+#include <unordered_set>
 
-
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#   if USE_OPENCL
-#       include "Common/BitonicSort.h" // Y_IGNORE
-#   endif
-#endif
+#include "config.h"
+#include "config_version.h"
 
 #if defined(OS_LINUX)
+#    include <cstddef>
+#    include <cstdlib>
+#    include <sys/socket.h>
+#    include <sys/un.h>
 #    include <sys/mman.h>
 #    include <sys/ptrace.h>
 #    include <Common/hasLinuxCapability.h>
-#    include <unistd.h>
-#    include <sys/syscall.h>
 #endif
 
 #if USE_SSL
@@ -104,11 +118,16 @@
 #endif
 
 #if USE_NURAFT
-#   include <Server/KeeperTCPHandlerFactory.h>
+#    include <Coordination/FourLetterCommand.h>
+#    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
 namespace CurrentMetrics
@@ -117,6 +136,13 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
+    extern const Metric MaxPushedDDLEntryID;
+}
+
+namespace ProfileEvents
+{
+    extern const Event MainConfigLoads;
+    extern const Event ServerStartupMilliseconds;
 }
 
 namespace fs = std::filesystem;
@@ -136,7 +162,6 @@ static bool jemallocOptionEnabled(const char *name)
 static bool jemallocOptionEnabled(const char *) { return 0; }
 #endif
 
-
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
@@ -155,7 +180,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     /// Can be overridden by environment variable (cannot use server config at this moment).
     if (argc > 0)
     {
-        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE");
+        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE"); // NOLINT(concurrency-mt-unsafe)
         if (env_watchdog)
         {
             if (0 == strcmp(env_watchdog, "1"))
@@ -183,32 +208,12 @@ int mainEntryClickHouseServer(int argc, char ** argv)
 namespace
 {
 
-void setupTmpPath(Poco::Logger * log, const std::string & path)
+size_t waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
 {
-    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
-
-    fs::create_directories(path);
-
-    /// Clearing old temporary files.
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
-    {
-        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
-        {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-            fs::remove(it->path());
-        }
-        else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
-    }
-}
-
-int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
-{
-    const int sleep_max_ms = 1000 * seconds_to_wait;
-    const int sleep_one_ms = 100;
-    int sleep_current_ms = 0;
-    int current_connections = 0;
+    const size_t sleep_max_ms = 1000 * seconds_to_wait;
+    const size_t sleep_one_ms = 100;
+    size_t sleep_current_ms = 0;
+    size_t current_connections = 0;
     for (;;)
     {
         current_connections = 0;
@@ -243,7 +248,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
     extern const int NETWORK_ERROR;
@@ -255,7 +259,7 @@ static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
-        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "path configuration parameter is empty");
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -309,22 +313,15 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port
     return socket_address;
 }
 
-Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
+Poco::Net::SocketAddress Server::socketBindListen(
+    const Poco::Util::AbstractConfiguration & config,
+    Poco::Net::ServerSocket & socket,
+    const std::string & host,
+    UInt16 port,
+    [[maybe_unused]] bool secure) const
 {
     auto address = makeSocketAddress(host, port, &logger());
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
-    if (secure)
-        /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
-        /// https://github.com/pocoproject/poco/pull/2257
-        socket.bind(address, /* reuseAddress = */ true);
-    else
-#endif
-#if POCO_VERSION < 0x01080000
-    socket.bind(address, /* reuseAddress = */ true);
-#else
-    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
-#endif
-
+    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
     /// If caller requests any available port from the OS, discover it after binding.
     if (port == 0)
     {
@@ -332,21 +329,80 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
         LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
-    socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+    socket.listen(/* backlog = */ config.getUInt("listen_backlog", 4096));
 
     return address;
 }
 
-void Server::createServer(const std::string & listen_host, const char * port_name, bool listen_try, CreateServerFunc && func) const
+Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
+{
+    auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+    if (listen_hosts.empty())
+    {
+        listen_hosts.emplace_back("::1");
+        listen_hosts.emplace_back("127.0.0.1");
+    }
+    return listen_hosts;
+}
+
+Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
+{
+    auto interserver_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
+    if (!interserver_listen_hosts.empty())
+      return interserver_listen_hosts;
+
+    /// Use more general restriction in case of emptiness
+    return getListenHosts(config);
+}
+
+bool getListenTry(const Poco::Util::AbstractConfiguration & config)
+{
+    bool listen_try = config.getBool("listen_try", false);
+    if (!listen_try)
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        listen_try =
+            DB::getMultipleValuesFromConfig(config, "", "listen_host").empty() &&
+            std::none_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
+            {
+                return config.has("protocols." + protocol + ".host") && config.has("protocols." + protocol + ".port");
+            });
+    }
+    return listen_try;
+}
+
+
+void Server::createServer(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & listen_host,
+    const char * port_name,
+    bool listen_try,
+    bool start_server,
+    std::vector<ProtocolServerAdapter> & servers,
+    CreateServerFunc && func) const
 {
     /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-    if (!config().has(port_name))
+    if (config.getString(port_name, "").empty())
         return;
 
-    auto port = config().getInt(port_name);
+    /// If we already have an active server for this listen_host/port_name, don't create it again
+    for (const auto & server : servers)
+    {
+        if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
+            return;
+    }
+
+    auto port = config.getInt(port_name);
     try
     {
-        func(port);
+        servers.push_back(func(port));
+        if (start_server)
+        {
+            servers.back().start();
+            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
+        }
+        global_context->registerServerPort(port_name, port);
     }
     catch (const Poco::Exception &)
     {
@@ -362,10 +418,37 @@ void Server::createServer(const std::string & listen_host, const char * port_nam
         }
         else
         {
-            throw Exception{message, ErrorCodes::NETWORK_ERROR};
+            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
         }
     }
 }
+
+
+#if defined(OS_LINUX)
+namespace
+{
+
+void setOOMScore(int value, Poco::Logger * log)
+{
+    try
+    {
+        std::string value_string = std::to_string(value);
+        DB::WriteBufferFromFile buf("/proc/self/oom_score_adj");
+        buf.write(value_string.c_str(), value_string.size());
+        buf.next();
+        buf.close();
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_WARNING(log, "Failed to adjust OOM score: '{}'.", e.displayText());
+        return;
+    }
+    LOG_INFO(log, "Set OOM score adjustment to {}", value);
+}
+
+}
+#endif
+
 
 void Server::uninitialize()
 {
@@ -445,35 +528,189 @@ void checkForUsersNotInMainConfig(
     }
 }
 
-
-[[noreturn]] void forceShutdown()
+/// Unused in other builds
+#if defined(OS_LINUX)
+static String readString(const String & path)
 {
-#if defined(THREAD_SANITIZER) && defined(OS_LINUX)
-    /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
-    /// while connection handling threads are still run.
-    (void)syscall(SYS_exit_group, 0);
-    __builtin_unreachable();
-#else
-    _exit(0);
-#endif
+    ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
 }
 
+static int readNumber(const String & path)
+{
+    ReadBufferFromFile in(path);
+    int result;
+    readText(result, in);
+    return result;
+}
+
+#endif
+
+static void sanityChecks(Server & server)
+{
+    std::string data_path = getCanonicalPath(server.config().getString("path", DBMS_DEFAULT_PATH));
+    std::string logs_path = server.config().getString("logger.log", "");
+
+    if (server.logger().is(Poco::Message::PRIO_TEST))
+        server.context()->addWarningMessage("Server logging level is set to 'test' and performance is degraded. This cannot be used in production.");
+
+#if defined(OS_LINUX)
+    try
+    {
+        const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
+        String clocksource = readString(filename);
+        if (clocksource.find("tsc") == std::string::npos && clocksource.find("kvm-clock") == std::string::npos)
+            server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/vm/overcommit_memory";
+        if (readNumber(filename) == 2)
+            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
+        if (readString(filename).find("[always]") != std::string::npos)
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/kernel/pid_max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/kernel/threads-max";
+        if (readNumber(filename) < 30000)
+            server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
+    }
+    catch (...)
+    {
+    }
+
+    std::string dev_id = getBlockDeviceId(data_path);
+    if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
+#endif
+
+    try
+    {
+        if (getAvailableMemoryAmount() < (2l << 30))
+            server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (!enoughSpaceInDirectory(data_path, 1ull << 30))
+            server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        if (!logs_path.empty())
+        {
+            auto logs_parent = fs::path(logs_path).parent_path();
+            if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
+                server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
+        }
+    }
+    catch (...)
+    {
+    }
+
+    if (server.context()->getMergeTreeSettings().allow_remote_fs_zero_copy_replication)
+    {
+        server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
+            " But the feature of 'zero-copy replication' is under development and is not ready for production."
+            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
+    }
+}
 
 int Server::main(const std::vector<std::string> & /*args*/)
+try
 {
+    Stopwatch startup_watch;
+
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
 
+    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
+
+#if USE_HDFS
+    /// This will point libhdfs3 to the right location for its config.
+    /// Note: this has to be done once at server initialization, because 'setenv' is not thread-safe.
+
+    String libhdfs3_conf = config().getString("hdfs.libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
+    {
+        if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+        {
+            const String config_path = config().getString("config-file", "config.xml");
+            const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+            if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+        }
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), true /* overwrite */); // NOLINT
+    }
+#endif
+
+#if USE_OPENSSL_INTREE
+    /// When building openssl into clickhouse, clickhouse owns the configuration
+    /// Therefore, the clickhouse openssl configuration should be kept separate from
+    /// the OS. Default to the one in the standard config directory, unless overridden
+    /// by a key in the config.
+    if (config().has("opensslconf"))
+    {
+        std::string opensslconf_path = config().getString("opensslconf");
+        setenv("OPENSSL_CONF", opensslconf_path.c_str(), true);
+    }
+    else
+    {
+        const String config_path = config().getString("config-file", "config.xml");
+        const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
+        setenv("OPENSSL_CONF", config_dir.string(), true);
+    }
+#endif
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
+    registerRemoteFileMetadatas();
+    registerSchedulerNodes();
+    registerResourceManagers();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -491,18 +728,86 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
 #endif
 
-if (ThreadFuzzer::instance().isEffective())
-    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
+    if (ThreadFuzzer::instance().isEffective())
+        global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+    const auto memory_amount = getMemoryAmount();
+
+    LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+        formatReadableSizeWithBinarySuffix(memory_amount),
+        getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
+        std::thread::hardware_concurrency());
+
+    sanityChecks(*this);
 
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 10000),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000));
+
+#if USE_AZURE_BLOB_STORAGE
+    /// It makes sense to deinitialize libxml after joining of all threads
+    /// in global pool because libxml uses thread-local memory allocations via
+    /// 'pthread_key_create' and 'pthread_setspecific' which should be deallocated
+    /// at 'pthread_exit'. Deinitialization of libxml leads to call of 'pthread_key_delete'
+    /// and if it is done before joining of threads, allocated memory will not be freed
+    /// and there may be memory leaks in threads that used libxml.
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
+
+    IOThreadPool::initialize(
+        config().getUInt("max_io_thread_pool_size", 100),
+        config().getUInt("max_io_thread_pool_free_size", 0),
+        config().getUInt("io_thread_pool_queue_size", 10000));
+
+    NamedCollectionUtils::loadFromConfig(config());
+
+    /// Initialize global local cache for remote filesystem.
+    if (config().has("local_cache_for_remote_fs"))
+    {
+        bool enable = config().getBool("local_cache_for_remote_fs.enable", false);
+        if (enable)
+        {
+            String root_dir = config().getString("local_cache_for_remote_fs.root_dir");
+            UInt64 limit_size = config().getUInt64("local_cache_for_remote_fs.limit_size");
+            UInt64 bytes_read_before_flush
+                = config().getUInt64("local_cache_for_remote_fs.bytes_read_before_flush", DBMS_DEFAULT_BUFFER_SIZE);
+            ExternalDataSourceCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
+        }
+    }
+
+    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    std::mutex servers_lock;
+    std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+    /// This object will periodically calculate some metrics.
+    ServerAsynchronousMetrics async_metrics(
+        global_context,
+        config().getUInt("asynchronous_metrics_update_period_s", 1),
+        config().getUInt("asynchronous_heavy_metrics_update_period_s", 120),
+        [&]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> metrics;
+            metrics.reserve(servers_to_start_before_tables.size());
+            for (const auto & server : servers_to_start_before_tables)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+
+            std::lock_guard lock(servers_lock);
+            for (const auto & server : servers)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+            return metrics;
+        }
+    );
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
@@ -523,8 +828,6 @@ if (ThreadFuzzer::instance().isEffective())
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
-    const auto memory_amount = getMemoryAmount();
-
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
@@ -539,40 +842,44 @@ if (ThreadFuzzer::instance().isEffective())
         /// But there are other sections of the binary (e.g. exception handling tables)
         /// that are interpreted (not executed) but can alter the behaviour of the program as well.
 
-        String calculated_binary_hash = getHashOfLoadedBinaryHex();
-
+        /// Please keep the below log messages in-sync with the ones in daemon/BaseDaemon.cpp
         if (stored_binary_hash.empty())
         {
-            LOG_WARNING(log, "Calculated checksum of the binary: {}."
-                " There is no information about the reference checksum.", calculated_binary_hash);
-        }
-        else if (calculated_binary_hash == stored_binary_hash)
-        {
-            LOG_INFO(log, "Calculated checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+            LOG_WARNING(log, "Integrity check of the executable skipped because the reference checksum could not be read.");
         }
         else
         {
-            /// If program is run under debugger, ptrace will fail.
-            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+            String calculated_binary_hash = getHashOfLoadedBinaryHex();
+            if (calculated_binary_hash == stored_binary_hash)
             {
-                /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                global_context->addWarningMessage(
-                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                    calculated_binary_hash)
-                );
+                LOG_INFO(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
             }
             else
             {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
-                    " to the reference checksum stored in the binary ({1})."
-                    " It may indicate one of the following:"
-                    " - the file {2} was changed just after startup;"
-                    " - the file {2} is damaged on disk due to faulty hardware;"
-                    " - the loaded executable is damaged in memory due to faulty hardware;"
-                    " - the file {2} was intentionally modified;"
-                    " - logical error in code."
-                    , calculated_binary_hash, stored_binary_hash, executable_path);
+                /// If program is run under debugger, ptrace will fail.
+                if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
+                {
+                    /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
+                    global_context->addWarningMessage(fmt::format(
+                        "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                        calculated_binary_hash));
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Calculated checksum of the executable ({0}) does not correspond"
+                        " to the reference checksum stored in the executable ({1})."
+                        " This may indicate one of the following:"
+                        " - the executable {2} was changed just after startup;"
+                        " - the executable {2} was corrupted on disk due to faulty hardware;"
+                        " - the loaded executable was corrupted in memory due to faulty hardware;"
+                        " - the file {2} was intentionally modified;"
+                        " - a logical error in the code.",
+                        calculated_binary_hash,
+                        stored_binary_hash,
+                        executable_path);
+                }
             }
         }
     }
@@ -584,8 +891,8 @@ if (ThreadFuzzer::instance().isEffective())
         if (config().getBool("remap_executable", false))
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
-            remapExecutable();
-            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
+            size_t size = remapExecutable();
+            LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 
         if (config().getBool("mlock_executable", false))
@@ -601,7 +908,7 @@ if (ThreadFuzzer::instance().isEffective())
 
                     LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
                     if (0 != mlock(addr, len))
-                        LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
                     else
                         LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
                 }
@@ -619,17 +926,33 @@ if (ThreadFuzzer::instance().isEffective())
             }
         }
     }
+
+    int default_oom_score = 0;
+
+#if !defined(NDEBUG)
+    /// In debug version on Linux, increase oom score so that clickhouse is killed
+    /// first, instead of some service. Use a carefully chosen random score of 555:
+    /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+    /// whatever errors that occur, because it's just a debugging aid and we don't
+    /// care if it breaks.
+    default_oom_score = 555;
+#endif
+
+    int oom_score = config().getInt("oom_score", default_oom_score);
+    if (oom_score)
+        setOOMScore(oom_score, log);
 #endif
 
     global_context->setRemoteHostFilter(config());
 
-    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    fs::path path = path_str;
     std::string default_database = config().getString("default_database", "default");
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
-    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    if (stat(path_str.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         const auto effective_user = getUserName(effective_user_id);
         const auto data_owner = getUserName(statbuf.st_uid);
@@ -638,7 +961,7 @@ if (ThreadFuzzer::instance().isEffective())
         if (effective_user_id == 0)
         {
             message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
         }
         else
         {
@@ -646,9 +969,11 @@ if (ThreadFuzzer::instance().isEffective())
         }
     }
 
-    global_context->setPath(path);
+    global_context->setPath(path_str);
 
-    StatusFile status{path + "status", StatusFile::write_full_info};
+    StatusFile status{path / "status", StatusFile::write_full_info};
+
+    DB::ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -663,12 +988,44 @@ if (ThreadFuzzer::instance().isEffective())
         else
         {
             rlim_t old = rlim.rlim_cur;
-            rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
-                LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, strerror(errno));
+                LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString());
             else
                 LOG_DEBUG(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
+        }
+    }
+
+    /// Try to increase limit on number of threads.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NPROC, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur == rlim.rlim_max)
+        {
+            LOG_DEBUG(log, "rlimit on number of threads is {}", rlim.rlim_cur);
+        }
+        else
+        {
+            rlim_t old = rlim.rlim_cur;
+            rlim.rlim_cur = rlim.rlim_max;
+            int rc = setrlimit(RLIMIT_NPROC, &rlim);
+            if (rc != 0)
+            {
+                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, errnoToString());
+                rlim.rlim_cur = old;
+            }
+            else
+            {
+                LOG_DEBUG(log, "Set max number of threads to {} (was {}).", rlim.rlim_cur, old);
+            }
+        }
+
+        if (rlim.rlim_cur < 30000)
+        {
+            global_context->addWarningMessage("Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
         }
     }
 
@@ -681,12 +1038,21 @@ if (ThreadFuzzer::instance().isEffective())
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
+    if (auto temporary_policy = config().getString("tmp_policy", ""); !temporary_policy.empty())
     {
-        std::string tmp_path = config().getString("tmp_path", path + "tmp/");
-        std::string tmp_policy = config().getString("tmp_policy", "");
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
-        for (const DiskPtr & disk : volume->getDisks())
-            setupTmpPath(log, disk->getPath());
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStoragePolicy(temporary_policy, max_size);
+    }
+    else if (auto temporary_cache = config().getString("temporary_data_in_cache", ""); !temporary_cache.empty())
+    {
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStorageInCache(temporary_cache, max_size);
+    }
+    else
+    {
+        std::string temporary_path = config().getString("tmp_path", path / "tmp/");
+        size_t max_size = config().getUInt64("max_temporary_data_on_disk_size", 0);
+        global_context->setTemporaryStoragePath(temporary_path, max_size);
     }
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
@@ -694,7 +1060,7 @@ if (ThreadFuzzer::instance().isEffective())
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        auto flags_path = fs::path(path) / "flags/";
+        auto flags_path = path / "flags/";
         fs::create_directories(flags_path);
         global_context->setFlagsPath(flags_path);
     }
@@ -703,33 +1069,69 @@ if (ThreadFuzzer::instance().isEffective())
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
+        std::string user_files_path = config().getString("user_files_path", path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         fs::create_directories(dictionaries_lib_path);
     }
 
+    {
+        std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
+        global_context->setUserScriptsPath(user_scripts_path);
+        fs::create_directories(user_scripts_path);
+    }
+
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
     {
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
+        fs::create_directories(path / "data/");
+        fs::create_directories(path / "metadata/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(fs::path(path) / "metadata_dropped/");
+        fs::create_directories(path / "metadata_dropped/");
     }
 
+#if USE_ROCKSDB
+    /// Initialize merge tree metadata cache
+    if (config().has("merge_tree_metadata_cache"))
+    {
+        fs::create_directories(path / "rocksdb/");
+        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
+        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
+        try
+        {
+            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
+                ReadableSize(size), continue_if_corrupted);
+            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+        }
+        catch (...)
+        {
+            if (continue_if_corrupted)
+            {
+                /// Rename rocksdb directory and reinitialize merge tree metadata cache
+                time_t now = time(nullptr);
+                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
+                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
+#endif
+
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
-        throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
     static const auto interserver_tags =
     {
@@ -754,14 +1156,14 @@ if (ThreadFuzzer::instance().isEffective())
             int port = parse<int>(port_str);
 
             if (port < 0 || port > 0xFFFF)
-                throw Exception("Out of range '" + String(port_tag) + "': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
             global_context->setInterserverIOAddress(this_host, port);
             global_context->setInterserverScheme(scheme);
         }
     }
 
-    LOG_DEBUG(log, "Initiailizing interserver credentials.");
+    LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
     if (config().has("macros"))
@@ -774,6 +1176,8 @@ if (ThreadFuzzer::instance().isEffective())
     {
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
+
+    NamedCollectionUtils::loadFromSQL(global_context);
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
@@ -789,7 +1193,7 @@ if (ThreadFuzzer::instance().isEffective())
             size_t max_server_memory_usage = config->getUInt64("max_server_memory_usage", 0);
 
             double max_server_memory_usage_to_ram_ratio = config->getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
-            size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+            size_t default_max_server_memory_usage = static_cast<size_t>(memory_amount * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
@@ -816,14 +1220,24 @@ if (ThreadFuzzer::instance().isEffective())
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
+            bool allow_use_jemalloc_memory = config->getBool("allow_use_jemalloc_memory", true);
+            total_memory_tracker.setAllowUseJemallocMemory(allow_use_jemalloc_memory);
+
+            auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
+            total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
+
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            //buildLoggers(*config, logger());
-            global_context->setClustersConfig(config);
+            updateLevels(*config, logger());
+            global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
-            global_context->setExternalModelsConfig(config);
+
+            global_context->loadOrReloadDictionaries(*config);
+            global_context->loadOrReloadUserDefinedExecutableFunctions(*config);
+
+            global_context->setRemoteHostFilter(*config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -831,6 +1245,93 @@ if (ThreadFuzzer::instance().isEffective())
 
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
+
+            ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
+            if (config->has("concurrent_threads_soft_limit_num"))
+            {
+                auto value = config->getUInt64("concurrent_threads_soft_limit_num", 0);
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
+            }
+            if (config->has("concurrent_threads_soft_limit_ratio_to_cores"))
+            {
+                auto value = config->getUInt64("concurrent_threads_soft_limit_ratio_to_cores", 0) * std::thread::hardware_concurrency();
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
+            }
+            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
+
+            if (config->has("max_concurrent_queries"))
+                global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
+
+            if (config->has("max_concurrent_insert_queries"))
+                global_context->getProcessList().setMaxInsertQueriesAmount(config->getInt("max_concurrent_insert_queries", 0));
+
+            if (config->has("max_concurrent_select_queries"))
+                global_context->getProcessList().setMaxSelectQueriesAmount(config->getInt("max_concurrent_select_queries", 0));
+
+            if (config->has("keeper_server"))
+                global_context->updateKeeperConfiguration(*config);
+
+            /// Reload the number of threads for global pools.
+            /// Note: If you specified it in the top level config (not it config of default profile)
+            /// then ClickHouse will use it exactly.
+            /// This is done for backward compatibility.
+            if (global_context->areBackgroundExecutorsInitialized() && (config->has("background_pool_size") || config->has("background_merges_mutations_concurrency_ratio")))
+            {
+                auto new_pool_size = config->getUInt64("background_pool_size", 16);
+                auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+                auto new_scheduling_policy = config->getString("background_merges_mutations_scheduling_policy", "round_robin");
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_scheduling_policy);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_move_pool_size");
+                global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_fetches_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_fetches_pool_size");
+                global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (global_context->areBackgroundExecutorsInitialized() && config->has("background_common_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_common_pool_size");
+                global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
+            }
+
+            if (config->has("background_buffer_flush_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_buffer_flush_schedule_pool_size");
+                global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_schedule_pool_size");
+                global_context->getSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_message_broker_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_message_broker_schedule_pool_size");
+                global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("background_distributed_schedule_pool_size"))
+            {
+                auto new_pool_size = config->getUInt64("background_distributed_schedule_pool_size");
+                global_context->getDistributedSchedulePool().increaseThreadsCount(new_pool_size);
+            }
+
+            if (config->has("resources"))
+            {
+                global_context->getResourceManager()->updateConfiguration(*config);
+            }
 
             if (!initial_loading)
             {
@@ -840,25 +1341,133 @@ if (ThreadFuzzer::instance().isEffective())
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+
+                std::lock_guard lock(servers_lock);
+                updateServers(*config, server_pool, async_metrics, servers);
             }
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+            global_context->updateQueryCacheConfiguration(*config);
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
+#if USE_SSL
+            CertificateReloader::instance().tryLoad(*config);
+#endif
+            NamedCollectionUtils::reloadFromConfig(*config);
+
+            ProfileEvents::increment(ProfileEvents::MainConfigLoads);
+
+            /// Must be the last.
+            latest_config = config;
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
-    auto & access_control = global_context->getAccessControlManager();
-    if (config().has("custom_settings_prefixes"))
-        access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
+    const auto listen_hosts = getListenHosts(config());
+    const auto interserver_listen_hosts = getInterserverListenHosts(config());
+    const auto listen_try = getListenTry(config());
+
+    if (config().has("keeper_server"))
+    {
+#if USE_NURAFT
+        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
+        //// of clickhouse-keeper, so start synchronously.
+        bool can_initialize_keeper_async = false;
+
+        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
+        {
+            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
+            /// synchronously.
+            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
+        }
+        /// Initialize keeper RAFT.
+        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+        FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
+
+        auto config_getter = [this] () -> const Poco::Util::AbstractConfiguration &
+        {
+            return global_context->getConfigRef();
+        };
+
+        for (const auto & listen_host : listen_hosts)
+        {
+            /// TCP Keeper
+            const char * port_name = "keeper_server.tcp_port";
+            createServer(
+                config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(config(), socket, listen_host, port);
+                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "Keeper (tcp): " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(),
+                                false), server_pool, socket));
+                });
+
+            const char * secure_port_name = "keeper_server.tcp_port_secure";
+            createServer(
+                config(), listen_host, secure_port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(config(), socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        secure_port_name,
+                        "Keeper with secure protocol (tcp_secure): " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new KeeperTCPHandlerFactory(
+                                config_getter, global_context->getKeeperDispatcher(),
+                                global_context->getSettingsRef().receive_timeout.totalSeconds(),
+                                global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
+#else
+                    UNUSED(port);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+                });
+        }
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
+#endif
+
+    }
+
+    for (auto & server : servers_to_start_before_tables)
+    {
+        server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
 
     /// Initialize access storages.
-    access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+    auto & access_control = global_context->getAccessControl();
+    try
+    {
+        access_control.setUpFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while setting up access control.");
+        throw;
+    }
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
-        access_control.reloadUsersConfigs();
+        access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
 
     /// Limit on total number of concurrently executed queries.
@@ -868,9 +1477,11 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Lower cache size on low-memory systems.
     double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
-    size_t max_cache_size = memory_amount * cache_size_to_ram_max_ratio;
+    size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "SLRU");
+    LOG_INFO(log, "Uncompressed cache policy name {}", uncompressed_cache_policy);
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size > max_cache_size)
     {
@@ -878,14 +1489,24 @@ if (ThreadFuzzer::instance().isEffective())
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
-    size_t mark_cache_size = config().getUInt64("mark_cache_size");
+    /// Initialize background executors after we load default_profile config.
+    /// This is needed to load proper values of background_pool_size etc.
+    global_context->initializeBackgroundExecutorsIfNeeded();
+
+    if (settings.async_insert_threads)
+        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
+            global_context,
+            settings.async_insert_threads));
+
+    /// Size of cache for marks (index of MergeTree family of tables).
+    size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
+    String mark_cache_policy = config().getString("mark_cache_policy", "SLRU");
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -894,100 +1515,54 @@ if (ThreadFuzzer::instance().isEffective())
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size);
+    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+
+    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
+    if (index_uncompressed_cache_size)
+        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+
+    /// Size of cache for index marks (index of MergeTree skip indices).
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
+    if (index_mark_cache_size)
+        global_context->setIndexMarkCache(index_mark_cache_size);
 
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
+    /// A cache for query results.
+    global_context->setQueryCache(config());
+
 #if USE_EMBEDDED_COMPILER
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
+    /// 128 MB
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+
+    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+    size_t compiled_expression_cache_elements_size = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
 #endif
 
     /// Set path for format schema files
-    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
+    fs::path format_schema_path(config().getString("format_schema_path", path / "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
-    global_context->getMergeTreeSettings().sanityCheck(settings);
-    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
-
-    Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
-
-    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
-    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(settings.http_receive_timeout);
-    http_params->setKeepAliveTimeout(keep_alive_timeout);
-
-    auto servers_to_start_before_tables = std::make_shared<std::vector<ProtocolServerAdapter>>();
-
-    std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
-
-    bool listen_try = config().getBool("listen_try", false);
-    if (listen_hosts.empty())
     {
-        listen_hosts.emplace_back("::1");
-        listen_hosts.emplace_back("127.0.0.1");
-        listen_try = true;
+        size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
     }
-
-    if (config().has("keeper_server"))
-    {
-#if USE_NURAFT
-        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
-        for (const auto & listen_host : listen_hosts)
-        {
-            /// TCP Keeper
-            const char * port_name = "keeper_server.tcp_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers_to_start_before_tables->emplace_back(
-                    port_name,
-                    std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
-
-                LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
-            });
-
-            const char * secure_port_name = "keeper_server.tcp_port_secure";
-            createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
-            {
-#if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers_to_start_before_tables->emplace_back(
-                    secure_port_name,
-                    std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
-                LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                    ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-            });
-        }
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
-#endif
-
-    }
-
-    for (auto & server : *servers_to_start_before_tables)
-        server.start();
+    /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
+    CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
     SCOPE_EXIT({
+        async_metrics.stop();
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -999,11 +1574,11 @@ if (ThreadFuzzer::instance().isEffective())
 
         LOG_DEBUG(log, "Shut down storages.");
 
-        if (!servers_to_start_before_tables->empty())
+        if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            int current_connections = 0;
-            for (auto & server : *servers_to_start_before_tables)
+            size_t current_connections = 0;
+            for (auto & server : servers_to_start_before_tables)
             {
                 server.stop();
                 current_connections += server.currentConnections();
@@ -1015,14 +1590,14 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed all listening sockets.");
 
             if (current_connections > 0)
-                current_connections = waitServersToFinish(*servers_to_start_before_tables, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers_to_start_before_tables, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperStorageDispatcher();
+            global_context->shutdownKeeperDispatcher();
         }
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
@@ -1036,27 +1611,61 @@ if (ThreadFuzzer::instance().isEffective())
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
+    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
+    /// and thus this object must be created after the SCOPE_EXIT object where shared
+    /// context is destroyed.
+    /// In addition this object has to be created before the loading of the tables.
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
+    }
+
+    if (dns_cache_updater)
+        dns_cache_updater->start();
+
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading metadata from {}", path);
+    LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
     {
-        loadMetadataSystem(global_context);
-        /// After attaching system databases we can initialize system log.
-        global_context->initializeSystemLogs();
         auto & database_catalog = DatabaseCatalog::instance();
-        /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
+        loadMetadataSystem(global_context);
+        maybeConvertSystemDatabase(global_context);
+        /// After attaching system databases we can initialize system log.
+        global_context->initializeSystemLogs();
+        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+        /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
+        attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
+        attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
+        /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
+        /// that may execute DROP before loadMarkedAsDroppedTables() in background,
+        /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
+        database_catalog.loadMarkedAsDroppedTables();
+        database_catalog.createBackgroundTasks();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
-        database_catalog.loadDatabases();
+        convertDatabasesEnginesIfNeed(global_context);
+        startupSystemTables();
+        database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
+        /// Load user-defined SQL functions.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
     }
     catch (...)
     {
@@ -1067,18 +1676,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
-    ///
-    /// It also cannot work with sanitizers.
-    /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
-    /// And they do unwinding frequently (on every malloc/free, thread/mutex operations, etc).
-    /// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwinding
-    ///  and query profiler decide to unwind stack with libunwind at this moment.
-    ///
-    /// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
-    ///
-    /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
-    ///
-#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER) && defined(__x86_64__)
+#if USE_UNWIND && !WITH_COVERAGE
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1088,12 +1686,11 @@ if (ThreadFuzzer::instance().isEffective())
         UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
         if (total_memory_profiler_step)
         {
-            total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
         }
 
         double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
-        if (total_memory_tracker_sample_probability)
+        if (total_memory_tracker_sample_probability > 0.0)
         {
             total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
         }
@@ -1111,33 +1708,21 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
 #if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
+    LOG_INFO(log, "Query Profiler disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
 #endif
 
 #if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
+    LOG_INFO(log, "Query Profiler and TraceCollector is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
-    }
-
 #if defined(OS_LINUX)
-    if (!TasksStatsCounters::checkIfAvailable())
+    auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
+    if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)
     {
         LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
             " neither clickhouse-server process has CAP_NET_ADMIN capability."
@@ -1147,6 +1732,10 @@ if (ThreadFuzzer::instance().isEffective())
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
             executable_path);
+    }
+    else
+    {
+        LOG_INFO(log, "Tasks stats provider: {}", TasksStatsCounters::metricsProviderString(tasks_stats_provider));
     }
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
@@ -1161,225 +1750,30 @@ if (ThreadFuzzer::instance().isEffective())
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
 #endif
 
-    auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
     {
-        /// This object will periodically calculate some metrics.
-        AsynchronousMetrics async_metrics(
-            global_context, config().getUInt("asynchronous_metrics_update_period_s", 1), servers_to_start_before_tables, servers);
-        attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
+        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
-        for (const auto & listen_host : listen_hosts)
         {
-            /// HTTP
-            const char * port_name = "http_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
-
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(), createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
-
-                LOG_INFO(log, "Listening for http://{}", address.toString());
-            });
-
-            /// HTTPS
-            port_name = "https_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-#if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(), createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
-
-                LOG_INFO(log, "Listening for https://{}", address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
-                    ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-            });
-
-            /// TCP
-            port_name = "tcp_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
-                    server_pool,
-                    socket,
-                    new Poco::Net::TCPServerParams));
-
-                LOG_INFO(log, "Listening for connections with native protocol (tcp): {}", address.toString());
-            });
-
-            /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
-            port_name = "tcp_with_proxy_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
-                    server_pool,
-                    socket,
-                    new Poco::Net::TCPServerParams));
-
-                LOG_INFO(log, "Listening for connections with native protocol (tcp) with PROXY: {}", address.toString());
-            });
-
-            /// TCP with SSL
-            port_name = "tcp_port_secure";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-#if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
-                    server_pool,
-                    socket,
-                    new Poco::Net::TCPServerParams));
-                LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): {}", address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                    ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-            });
-
-            /// Interserver IO HTTP
-            port_name = "interserver_http_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(),
-                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-
-                LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
-            });
-
-            port_name = "interserver_https_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-#if USE_SSL
-                Poco::Net::SecureServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(),
-                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-
-                LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
-#else
-                UNUSED(port);
-                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-            });
-
-            port_name = "mysql_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings.send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
-                    new MySQLHandlerFactory(*this),
-                    server_pool,
-                    socket,
-                    new Poco::Net::TCPServerParams));
-
-                LOG_INFO(log, "Listening for MySQL compatibility protocol: {}", address.toString());
-            });
-
-            port_name = "postgresql_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                socket.setReceiveTimeout(Poco::Timespan());
-                socket.setSendTimeout(settings.send_timeout);
-                servers->emplace_back(port_name, std::make_unique<Poco::Net::TCPServer>(
-                    new PostgreSQLHandlerFactory(*this),
-                    server_pool,
-                    socket,
-                    new Poco::Net::TCPServerParams));
-
-                LOG_INFO(log, "Listening for PostgreSQL compatibility protocol: " + address.toString());
-            });
-
-#if USE_GRPC
-            port_name = "grpc_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::SocketAddress server_address(listen_host, port);
-                servers->emplace_back(port_name, std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, log)));
-                LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
-            });
-#endif
-
-            /// Prometheus (if defined and not setup yet with http_port)
-            port_name = "prometheus.port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(),
-                        createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-
-                LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
-            });
+            std::lock_guard lock(servers_lock);
+            createServers(config(), listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers);
+            if (servers.empty())
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                                "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
+                                "to configuration file.)");
         }
 
-        if (servers->empty())
-             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
-                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        if (servers.empty())
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                             "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
+                             "to configuration file.)");
+
+#if USE_SSL
+        CertificateReloader::instance().tryLoad(config());
+#endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
+
         async_metrics.start();
-        global_context->enableNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -1390,25 +1784,38 @@ if (ThreadFuzzer::instance().isEffective())
         buildLoggers(config(), logger());
 
         main_config_reloader->start();
-        access_control.startPeriodicReloadingUsersConfigs();
-        if (dns_cache_updater)
-            dns_cache_updater->start();
-
-        {
-            LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
-                formatReadableSizeWithBinarySuffix(memory_amount),
-                getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
-                std::thread::hardware_concurrency());
-        }
+        access_control.startPeriodicReloading();
 
         /// try to load dictionaries immediately, throw on error and die
         try
         {
-            global_context->loadDictionaries(config());
+            global_context->loadOrReloadDictionaries(config());
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            tryLogCurrentException(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        /// try to load embedded dictionaries immediately, throw on error and die
+        try
+        {
+            global_context->tryCreateEmbeddedDictionaries(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading embedded dictionaries.");
+            throw;
+        }
+
+        /// try to load user defined executable functions, throw on error and die
+        try
+        {
+            global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while loading user defined executable functions.");
             throw;
         }
 
@@ -1418,26 +1825,64 @@ if (ThreadFuzzer::instance().isEffective())
             String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
-                throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+                                                                     "distributed_ddl", "DDLWorker",
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
         }
 
-        for (auto & server : *servers)
-            server.start();
-        LOG_INFO(log, "Ready for connections.");
+        {
+            std::lock_guard lock(servers_lock);
+            for (auto & server : servers)
+            {
+                server.start();
+                LOG_INFO(log, "Listening for {}", server.getDescription());
+            }
 
-        SCOPE_EXIT({
+            global_context->setServerCompletelyStarted();
+            LOG_INFO(log, "Ready for connections.");
+        }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
+
+        try
+        {
+            global_context->startClusterDiscovery();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
+        }
+
+#if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
+        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
+        /// the child process notifies 'READY=1'.
+        systemdNotify("READY=1\n");
+#endif
+
+        SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
-            LOG_DEBUG(log, "Waiting for current connections to close.");
+
+            /// Stop reloading of the main config. This must be done before everything else because it
+            /// can try to access/modify already deleted objects.
+            /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
+            main_config_reloader.reset();
+            access_control.stopPeriodicReloading();
 
             is_cancelled = true;
 
-            int current_connections = 0;
-            for (auto & server : *servers)
+            LOG_DEBUG(log, "Waiting for current connections to close.");
+
+            size_t current_connections = 0;
             {
-                server.stop();
-                current_connections += server.currentConnections();
+                std::lock_guard lock(servers_lock);
+                for (auto & server : servers)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
             }
 
             if (current_connections)
@@ -1446,10 +1891,11 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            global_context->getProcessList().killAllQueries();
+            if (!config().getBool("shutdown_wait_unfinished_queries", false))
+                global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-                current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers, config().getInt("shutdown_wait_unfinished", 5));
 
             if (current_connections)
                 LOG_INFO(log, "Closed connections. But {} remain."
@@ -1458,7 +1904,6 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
-            main_config_reloader.reset();
 
             if (current_connections)
             {
@@ -1470,7 +1915,7 @@ if (ThreadFuzzer::instance().isEffective())
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_INFO(log, "Will shutdown forcefully.");
-                forceShutdown();
+                safeExit(0);
             }
         });
 
@@ -1486,4 +1931,463 @@ if (ThreadFuzzer::instance().isEffective())
 
     return Application::EXIT_OK;
 }
+catch (...)
+{
+    /// Poco does not provide stacktrace.
+    tryLogCurrentException("Application");
+    throw;
+}
+
+std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & protocol,
+    Poco::Net::HTTPServerParams::Ptr http_params,
+    AsynchronousMetrics & async_metrics,
+    bool & is_secure)
+{
+    auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
+    {
+        if (type == "tcp")
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
+
+        if (type == "tls")
+#if USE_SSL
+            return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this, conf_name));
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+
+        if (type == "proxy1")
+            return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
+        if (type == "mysql")
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
+        if (type == "postgres")
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
+        if (type == "http")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
+            );
+        if (type == "prometheus")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
+            );
+        if (type == "interserver")
+            return TCPServerConnectionFactory::Ptr(
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
+            );
+
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
+    };
+
+    std::string conf_name = "protocols." + protocol;
+    std::string prefix = conf_name + ".";
+    std::unordered_set<std::string> pset {conf_name};
+
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+
+    while (true)
+    {
+        // if there is no "type" - it's a reference to another protocol and this is just an endpoint
+        if (config.has(prefix + "type"))
+        {
+            std::string type = config.getString(prefix + "type");
+            if (type == "tls")
+            {
+                if (is_secure)
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
+                is_secure = true;
+            }
+
+            stack->append(create_factory(type, conf_name));
+        }
+
+        if (!config.has(prefix + "impl"))
+            break;
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        if (!pset.insert(conf_name).second)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+    }
+
+    return stack;
+}
+
+HTTPContextPtr Server::httpContext() const
+{
+    return std::make_shared<HTTPContext>(context());
+}
+
+void Server::createServers(
+    Poco::Util::AbstractConfiguration & config,
+    const Strings & listen_hosts,
+    const Strings & interserver_listen_hosts,
+    bool listen_try,
+    Poco::ThreadPool & server_pool,
+    AsynchronousMetrics & async_metrics,
+    std::vector<ProtocolServerAdapter> & servers,
+    bool start_servers)
+{
+    const Settings & settings = global_context->getSettingsRef();
+
+    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+    http_params->setTimeout(settings.http_receive_timeout);
+    http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+
+    for (const auto & protocol : protocols)
+    {
+        std::vector<std::string> hosts;
+        if (config.has("protocols." + protocol + ".host"))
+            hosts.push_back(config.getString("protocols." + protocol + ".host"));
+        else
+            hosts = listen_hosts;
+
+        for (const auto & host : hosts)
+        {
+            std::string conf_name = "protocols." + protocol;
+            std::string prefix = conf_name + ".";
+
+            if (!config.has(prefix + "port"))
+                continue;
+
+            std::string description {"<undefined> protocol"};
+            if (config.has(prefix + "description"))
+                description = config.getString(prefix + "description");
+            std::string port_name = prefix + "port";
+            bool is_secure = false;
+            auto stack = buildProtocolStackFromConfig(config, protocol, http_params, async_metrics, is_secure);
+
+            if (stack->empty())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
+
+            createServer(config, host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, host, port, is_secure);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+
+                return ProtocolServerAdapter(
+                    host,
+                    port_name.c_str(),
+                    description + ": " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        stack.release(),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
+            });
+        }
+    }
+
+    for (const auto & listen_host : listen_hosts)
+    {
+        /// HTTP
+        const char * port_name = "http_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+        });
+
+        /// HTTPS
+        port_name = "https_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+#if USE_SSL
+            Poco::Net::SecureServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "https://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+#else
+            UNUSED(port);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+        });
+
+        /// TCP
+        port_name = "tcp_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "native protocol (tcp): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+        });
+
+        /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
+        port_name = "tcp_with_proxy_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "native protocol (tcp) with PROXY: " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+        });
+
+        /// TCP with SSL
+        port_name = "tcp_port_secure";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+#if USE_SSL
+            Poco::Net::SecureServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "secure native protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+#else
+            UNUSED(port);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+        });
+
+        port_name = "mysql_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+            socket.setReceiveTimeout(Poco::Timespan());
+            socket.setSendTimeout(settings.send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "MySQL compatibility protocol: " + address.toString(),
+                std::make_unique<TCPServer>(new MySQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+        });
+
+        port_name = "postgresql_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
+            socket.setReceiveTimeout(Poco::Timespan());
+            socket.setSendTimeout(settings.send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "PostgreSQL compatibility protocol: " + address.toString(),
+                std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+        });
+
+#if USE_GRPC
+        port_name = "grpc_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::SocketAddress server_address(listen_host, port);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "gRPC protocol: " + server_address.toString(),
+                std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())));
+        });
+#endif
+
+        /// Prometheus (if defined and not setup yet with http_port)
+        port_name = "prometheus.port";
+        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "Prometheus: http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+        });
+    }
+
+    /// Now iterate over interserver_listen_hosts
+    for (const auto & interserver_listen_host : interserver_listen_hosts)
+    {
+         /// Interserver IO HTTP
+        const char * port_name = "interserver_http_port";
+        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, interserver_listen_host, port);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                interserver_listen_host,
+                port_name,
+                "replica communication (interserver): http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    httpContext(),
+                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+        });
+
+        port_name = "interserver_https_port";
+        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+#if USE_SSL
+            Poco::Net::SecureServerSocket socket;
+            auto address = socketBindListen(config, socket, interserver_listen_host, port, /* secure = */ true);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                interserver_listen_host,
+                port_name,
+                "secure replica communication (interserver): https://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    httpContext(),
+                    createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+#else
+            UNUSED(port);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+        });
+    }
+
+}
+
+void Server::updateServers(
+    Poco::Util::AbstractConfiguration & config,
+    Poco::ThreadPool & server_pool,
+    AsynchronousMetrics & async_metrics,
+    std::vector<ProtocolServerAdapter> & servers)
+{
+    Poco::Logger * log = &logger();
+
+    const auto listen_hosts = getListenHosts(config);
+    const auto interserver_listen_hosts = getInterserverListenHosts(config);
+    const auto listen_try = getListenTry(config);
+
+    /// Remove servers once all their connections are closed
+    auto check_server = [&log](const char prefix[], auto & server)
+    {
+        if (!server.isStopping())
+            return false;
+        size_t current_connections = server.currentConnections();
+        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
+            server.getDescription(),
+            prefix,
+            !current_connections ? "finished" : "waiting",
+            current_connections);
+        return !current_connections;
+    };
+
+    std::erase_if(servers, std::bind_front(check_server, " (from one of previous reload)"));
+
+    Poco::Util::AbstractConfiguration & previous_config = latest_config ? *latest_config : this->config();
+
+    for (auto & server : servers)
+    {
+        if (!server.isStopping())
+        {
+            std::string port_name = server.getPortName();
+            bool has_host = false;
+            bool is_http = false;
+            if (port_name.starts_with("protocols."))
+            {
+                std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
+                has_host = config.has(protocol + ".host");
+
+                std::string conf_name = protocol;
+                std::string prefix = protocol + ".";
+                std::unordered_set<std::string> pset {conf_name};
+                while (true)
+                {
+                    if (config.has(prefix + "type"))
+                    {
+                        std::string type = config.getString(prefix + "type");
+                        if (type == "http")
+                        {
+                            is_http = true;
+                            break;
+                        }
+                    }
+
+                    if (!config.has(prefix + "impl"))
+                        break;
+
+                    conf_name = "protocols." + config.getString(prefix + "impl");
+                    prefix = conf_name + ".";
+
+                    if (!pset.insert(conf_name).second)
+                        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
+                }
+            }
+            else
+            {
+                /// NOTE: better to compare using getPortName() over using
+                /// dynamic_cast<> since HTTPServer is also used for prometheus and
+                /// internal replication communications.
+                is_http = server.getPortName() == "http_port" || server.getPortName() == "https_port";
+            }
+
+            if (!has_host)
+                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server.getListenHost()) != listen_hosts.end();
+            bool has_port = !config.getString(port_name, "").empty();
+            bool force_restart = is_http && !isSameConfiguration(previous_config, config, "http_handlers");
+            if (force_restart)
+                LOG_TRACE(log, "<http_handlers> had been changed, will reload {}", server.getDescription());
+
+            if (!has_host || !has_port || config.getInt(server.getPortName()) != server.portNumber() || force_restart)
+            {
+                server.stop();
+                LOG_INFO(log, "Stopped listening for {}", server.getDescription());
+            }
+        }
+    }
+
+    createServers(config, listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+
+    std::erase_if(servers, std::bind_front(check_server, ""));
+}
+
 }

@@ -52,9 +52,8 @@ namespace DB
             }
             else
             {
-                 throw Exception("Illegal column " + col_from->getName()
-                                 + " of first argument of function " + Name::name,
-                                 ErrorCodes::ILLEGAL_COLUMN);
+                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                                 col_from->getName(), Name::name);
             }
 
             using ColVecTo = typename ToDataType::ColumnType;
@@ -138,6 +137,8 @@ namespace DB
             return return_type;
         }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
         {
             return std::make_unique<ExecutableFunctionToModifiedJulianDay<Name, ToDataType, nullOnErrors>>();
@@ -155,10 +156,7 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return Monotonicity(
-                true,  // is_monotonic
-                true,  // is_positive
-                true); // is_always_monotonic
+            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
     private:
@@ -193,8 +191,8 @@ namespace DB
         {
             if (!isStringOrFixedString(arguments[0]))
             {
-                throw Exception(
-                    "The argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
+                    getName());
             }
 
             DataTypePtr base_type = std::make_shared<ToDataType>();
@@ -229,7 +227,7 @@ namespace DB
         static constexpr auto name = "toModifiedJulianDayOrNull";
     };
 
-    void registerFunctionToModifiedJulianDay(FunctionFactory & factory)
+    REGISTER_FUNCTION(ToModifiedJulianDay)
     {
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>();
         factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>();

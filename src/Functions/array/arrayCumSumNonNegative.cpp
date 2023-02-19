@@ -1,10 +1,10 @@
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include "FunctionArrayMapped.h"
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
+#include "FunctionArrayMapped.h"
 
 namespace DB
 {
@@ -19,7 +19,9 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
+    using column_type = ColumnArray;
+    using data_type = DataTypeArray;
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -44,7 +46,8 @@ struct ArrayCumSumNonNegativeImpl
             return std::make_shared<DataTypeArray>(nested);
         }
 
-        throw Exception("arrayCumSumNonNegativeImpl cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "arrayCumSumNonNegativeImpl cannot add values of type {}", expression_return->getName());
     }
 
 
@@ -71,8 +74,8 @@ struct ArrayCumSumNonNegativeImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
-        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
+        using ColVecType = ColumnVectorOrDecimal<Element>;
+        using ColVecResult = ColumnVectorOrDecimal<Result>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -83,8 +86,8 @@ struct ArrayCumSumNonNegativeImpl
         const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (IsDecimalNumber<Element>)
-            res_nested = ColVecResult::create(0, data.getScale());
+        if constexpr (is_decimal<Element>)
+            res_nested = ColVecResult::create(0, column->getScale());
         else
             res_nested = ColVecResult::create();
 
@@ -100,6 +103,7 @@ struct ArrayCumSumNonNegativeImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (executeType< UInt8 , UInt64>(mapped, array, res) ||
             executeType< UInt16, UInt64>(mapped, array, res) ||
             executeType< UInt32, UInt64>(mapped, array, res) ||
@@ -115,7 +119,7 @@ struct ArrayCumSumNonNegativeImpl
             executeType<Decimal128, Decimal128>(mapped, array, res))
             return res;
         else
-            throw Exception("Unexpected column for arrayCumSumNonNegativeImpl: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSumNonNegativeImpl: {}", mapped->getName());
     }
 
 };
@@ -123,7 +127,7 @@ struct ArrayCumSumNonNegativeImpl
 struct NameArrayCumSumNonNegative { static constexpr auto name = "arrayCumSumNonNegative"; };
 using FunctionArrayCumSumNonNegative = FunctionArrayMapped<ArrayCumSumNonNegativeImpl, NameArrayCumSumNonNegative>;
 
-void registerFunctionArrayCumSumNonNegative(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayCumSumNonNegative)
 {
     factory.registerFunction<FunctionArrayCumSumNonNegative>();
 }

@@ -1,5 +1,6 @@
 ---
-toc_priority: 221
+slug: /ru/sql-reference/aggregate-functions/reference/stochasticlinearregression
+sidebar_position: 221
 ---
 
 # stochasticLinearRegression {#agg_functions-stochasticlinearregression}
@@ -50,7 +51,7 @@ AS state FROM train_data;
 
 После сохранения состояния в таблице мы можем использовать его несколько раз для прогнозирования или смёржить с другими состояниями и создать новые, улучшенные модели.
 
-``` sql
+```sql
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, param1, param2) FROM test_data
 ```
@@ -65,9 +66,9 @@ evalMLMethod(model, param1, param2) FROM test_data
 
 <!-- -->
 
-    ``` sql
-    SELECT state1 + state2 FROM your_models
-    ```
+```sql
+SELECT state1 + state2 FROM your_models
+```
 
 где таблица `your_models` содержит обе модели. Запрос вернёт новый объект `AggregateFunctionState`.
 
@@ -75,9 +76,9 @@ evalMLMethod(model, param1, param2) FROM test_data
 
 <!-- -->
 
-    ``` sql
-    SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
-    ```
+```sql
+SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data
+```
 
 Подобный запрос строит модель и возвращает её веса, отвечающие параметрам моделей и смещение. Таким образом, в приведенном выше примере запрос вернет столбец с тремя значениями.
 
@@ -85,4 +86,3 @@ evalMLMethod(model, param1, param2) FROM test_data
 
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlogisticregression)
 -   [Отличие линейной от логистической регрессии.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
-

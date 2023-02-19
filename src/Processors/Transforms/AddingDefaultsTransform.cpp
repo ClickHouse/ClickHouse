@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 
@@ -41,13 +42,13 @@ static void checkCalculated(const ColumnWithTypeAndName & col_read,
     size_t column_size = col_read.column->size();
 
     if (column_size != col_defaults.column->size())
-        throw Exception("Mismatch column sizes while adding defaults", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Mismatch column sizes while adding defaults");
 
     if (column_size < defaults_needed)
-        throw Exception("Unexpected defaults count", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Unexpected defaults count");
 
     if (!col_read.type->equals(*col_defaults.type))
-        throw Exception("Mismatch column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Mismatch column types while adding defaults");
 }
 
 static void mixNumberColumns(
@@ -64,7 +65,7 @@ static void mixNumberColumns(
         if constexpr (!std::is_same_v<DataType, DataTypeString> && !std::is_same_v<DataType, DataTypeFixedString>)
         {
             using FieldType = typename DataType::FieldType;
-            using ColVecType = std::conditional_t<IsDecimalNumber<FieldType>, ColumnDecimal<FieldType>, ColumnVector<FieldType>>;
+            using ColVecType = ColumnVectorOrDecimal<FieldType>;
 
             auto col_read = typeid_cast<ColVecType *>(column_mixed.get());
             if (!col_read)
@@ -97,7 +98,7 @@ static void mixNumberColumns(
     };
 
     if (!callOnIndexAndDataType<void>(type_idx, call))
-        throw Exception("Unexpected type on mixNumberColumns", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type on mixNumberColumns");
 }
 
 static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
@@ -187,7 +188,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     {
         const String & column_name = column_def.name;
 
-        if (column_defaults.count(column_name) == 0)
+        if (!column_defaults.contains(column_name) || !res.has(column_name))
             continue;
 
         size_t block_column_position = res.getPositionByName(column_name);

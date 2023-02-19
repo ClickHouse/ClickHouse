@@ -6,6 +6,8 @@
 #include <Interpreters/StorageID.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
@@ -54,7 +56,7 @@ std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std
     if ((best_match != ColumnMatch::NoMatch) && same_match)
     {
         if (!allow_ambiguous)
-            throw Exception("Ambiguous column '" + identifier.name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+            throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Ambiguous column '{}'", identifier.name());
         best_match = ColumnMatch::Ambiguous;
         return {};
     }
@@ -140,6 +142,33 @@ std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier 
     return {};
 }
 
+String IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & table)
+{
+    auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
+    size_t to_strip = 0;
+    switch (match)
+    {
+        case IdentifierSemantic::ColumnMatch::TableName:
+        case IdentifierSemantic::ColumnMatch::AliasedTableName:
+        case IdentifierSemantic::ColumnMatch::TableAlias:
+            to_strip = 1;
+            break;
+        case IdentifierSemantic::ColumnMatch::DBAndTable:
+            to_strip = 2;
+            break;
+        default:
+            break;
+    }
+    String res;
+    for (size_t i = to_strip, sz = identifier.name_parts.size(); i < sz; ++i)
+    {
+        if (!res.empty())
+            res += ".";
+        res += identifier.name_parts[i];
+    }
+    return res;
+}
+
 bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
 {
     size_t num_components = identifier.name_parts.size();
@@ -162,7 +191,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
 {
     /// database.table.column
     if (doesIdentifierBelongTo(identifier, db_and_table.database, db_and_table.table))
-        return ColumnMatch::DbAndTable;
+        return ColumnMatch::DBAndTable;
 
     /// alias.column
     if (doesIdentifierBelongTo(identifier, db_and_table.alias))
@@ -199,7 +228,7 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
         case ColumnMatch::TableAlias:
             to_strip = 1;
             break;
-        case ColumnMatch::DbAndTable:
+        case ColumnMatch::DBAndTable:
             to_strip = 2;
             break;
         default:
@@ -243,7 +272,7 @@ IdentifierSemantic::getIdentsMembership(ASTPtr ast, const std::vector<TableWithC
     for (const auto * ident : idents)
     {
         /// short name clashes with alias, ambiguous
-        if (ident->isShort() && aliases.count(ident->shortName()))
+        if (ident->isShort() && aliases.contains(ident->shortName()))
             return {};
         const auto pos = getIdentMembership(*ident, tables);
         if (!pos)
@@ -293,22 +322,35 @@ std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr 
     return IdentifierSemantic::getIdentsMembership(ast, tables, aliases);
 }
 
-static void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
+void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
 {
-    if (const auto * func = node->as<ASTFunction>(); func && func->name == "and")
-    {
-        for (const auto & child : func->arguments->children)
-            collectConjunctions(child, members);
+    if (!node)
         return;
+
+    result.emplace_back(node);
+
+    for (size_t idx = 0; idx < result.size();)
+    {
+        ASTPtr expression = result.at(idx);
+
+        if (const auto * function = expression->as<ASTFunction>(); function && function->name == "and")
+        {
+            result.erase(result.begin() + idx);
+
+            for (auto & child : function->arguments->children)
+                result.emplace_back(child);
+
+            continue;
+        }
+        ++idx;
     }
-    members.push_back(node);
 }
 
-std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
+ASTs splitConjunctionsAst(const ASTPtr & node)
 {
-    std::vector<ASTPtr> members;
-    collectConjunctions(node, members);
-    return members;
+    ASTs result;
+    splitConjunctionsAst(node, result);
+    return result;
 }
 
 }

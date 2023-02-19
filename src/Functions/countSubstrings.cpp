@@ -13,12 +13,12 @@ struct NameCountSubstrings
     static constexpr auto name = "countSubstrings";
 };
 
-using FunctionCountSubstrings = FunctionsStringSearch<CountSubstringsImpl<PositionCaseSensitiveASCII>, NameCountSubstrings>;
+using FunctionCountSubstrings = FunctionsStringSearch<CountSubstringsImpl<NameCountSubstrings, PositionCaseSensitiveASCII>>;
 
 }
 
-void registerFunctionCountSubstrings(FunctionFactory & factory)
+REGISTER_FUNCTION(CountSubstrings)
 {
-    factory.registerFunction<FunctionCountSubstrings>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionCountSubstrings>({}, FunctionFactory::CaseInsensitive);
 }
 }

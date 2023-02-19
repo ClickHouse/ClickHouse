@@ -18,7 +18,7 @@ public:
 
     String getName() const override { return "Limit"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
@@ -31,12 +31,14 @@ public:
         return limit + offset;
     }
 
-    /// Change input stream when limit is pushed up. TODO: add clone() for steps.
-    void updateInputStream(DataStream input_stream);
-
     bool withTies() const { return with_ties; }
 
 private:
+    void updateOutputStream() override
+    {
+        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    }
+
     size_t limit;
     size_t offset;
     bool always_read_till_end;

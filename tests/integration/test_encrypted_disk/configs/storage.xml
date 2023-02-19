@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <disk_s3>
@@ -8,9 +7,6 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </disk_s3>
-            <disk_memory>
-                <type>memory</type>
-            </disk_memory>
             <disk_local>
                 <type>local</type>
                 <path>/disk/</path>
@@ -80,4 +76,4 @@
             </s3_policy>
          </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>

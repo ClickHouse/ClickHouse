@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <users>
         <default>
             <networks replace="replace">
@@ -8,4 +7,4 @@
             </networks>
         </default>
     </users>
-</yandex>
+</clickhouse>

@@ -29,7 +29,7 @@ private:
     void fillMaps();
 
 public:
-    EnumValues(const Values & values_);
+    explicit EnumValues(const Values & values_);
 
     const Values & getValues() const { return values; }
 
@@ -37,7 +37,7 @@ public:
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            throw Exception{"Unexpected value " + toString(value) + " in enum", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(value));
 
         return it;
     }
@@ -80,6 +80,10 @@ public:
     }
 
     Names getAllRegisteredNames() const override;
+
+    std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
+
+    std::unordered_set<T> getSetOfAllValues() const;
 };
 
 }

@@ -1,2 +1,3 @@
 [libfuzzer]
-dict = datatypes.dict
+dict = all.dict
+jobs = 8

@@ -1,7 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Core/Field.h>
 
 
@@ -24,6 +24,8 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -42,9 +44,9 @@ public:
 };
 
 
-void registerFunctionFQDN(FunctionFactory & factory)
+REGISTER_FUNCTION(FQDN)
 {
-    factory.registerFunction<FunctionFQDN>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionFQDN>({}, FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionFQDN>("fullHostName");
 }
 

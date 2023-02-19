@@ -3,8 +3,6 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -12,13 +10,14 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -34,15 +33,41 @@ namespace ErrorCodes
 }
 
 
-std::string DataTypeAggregateFunction::doGetName() const
+String DataTypeAggregateFunction::doGetName() const
+{
+    return getNameImpl(true);
+}
+
+
+String DataTypeAggregateFunction::getNameWithoutVersion() const
+{
+    return getNameImpl(false);
+}
+
+
+size_t DataTypeAggregateFunction::getVersion() const
+{
+    if (version)
+        return *version;
+    return function->getDefaultVersion();
+}
+
+
+String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << function->getName();
+    stream << "AggregateFunction(";
+
+    /// If aggregate function does not support versioning its version is 0 and is not printed.
+    auto data_type_version = getVersion();
+    if (with_version && data_type_version)
+        stream << data_type_version << ", ";
+    stream << function->getName();
 
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0; i < parameters.size(); ++i)
+        for (size_t i = 0, size = parameters.size(); i < size; ++i)
         {
             if (i)
                 stream << ", ";
@@ -58,9 +83,10 @@ std::string DataTypeAggregateFunction::doGetName() const
     return stream.str();
 }
 
+
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    return ColumnAggregateFunction::create(function);
+    return ColumnAggregateFunction::create(function, getVersion());
 }
 
 
@@ -78,7 +104,7 @@ Field DataTypeAggregateFunction::getDefault() const
     try
     {
         WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
-        function->serialize(place, buffer_from_field);
+        function->serialize(place, buffer_from_field, version);
     }
     catch (...)
     {
@@ -94,12 +120,46 @@ Field DataTypeAggregateFunction::getDefault() const
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
-    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    auto lhs_state_type = function->getNormalizedStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
+
+    if (typeid(lhs_state_type.get()) != typeid(rhs_state_type.get()))
+        return false;
+
+    if (const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get()))
+    {
+        const auto & rhs_state = typeid_cast<const DataTypeAggregateFunction &>(*rhs_state_type);
+
+        if (lhs_state->function->getName() != rhs_state.function->getName())
+            return false;
+
+        if (lhs_state->parameters.size() != rhs_state.parameters.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_state->parameters.size(); ++i)
+            if (lhs_state->parameters[i] != rhs_state.parameters[i])
+                return false;
+
+        if (lhs_state->argument_types.size() != rhs_state.argument_types.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
+            if (!lhs_state->argument_types[i]->equals(*rhs_state.argument_types[i]))
+                return false;
+
+        return true;
+    }
+
+    return lhs_state_type->equals(*rhs_state_type);
 }
+
 
 SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationAggregateFunction>(function, getName());
+    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
 }
 
 
@@ -109,15 +169,35 @@ static DataTypePtr create(const ASTPtr & arguments)
     AggregateFunctionPtr function;
     DataTypes argument_types;
     Array params_row;
+    std::optional<size_t> version;
 
     if (!arguments || arguments->children.empty())
-        throw Exception("Data type AggregateFunction requires parameters: "
-            "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Data type AggregateFunction requires parameters: "
+                        "version(optionally), name of aggregate function and list of data types for arguments");
 
-    if (const auto * parametric = arguments->children[0]->as<ASTFunction>())
+    ASTPtr data_type_ast = arguments->children[0];
+    size_t argument_types_start_idx = 1;
+
+    /* If aggregate function definition doesn't have version, it will have in AST children args [ASTFunction, types...] - in case
+     * it is parametric, or [ASTIdentifier, types...] - otherwise. If aggregate function has version in AST, then it will be:
+     * [ASTLiteral, ASTFunction (or ASTIdentifier), types...].
+     */
+    if (auto * version_ast = arguments->children[0]->as<ASTLiteral>())
+    {
+        if (arguments->children.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Data type AggregateFunction has version, but it requires at least one more parameter - name of aggregate function");
+        version = version_ast->value.safeGet<UInt64>();
+        data_type_ast = arguments->children[1];
+        argument_types_start_idx = 2;
+    }
+
+    if (const auto * parametric = data_type_ast->as<ASTFunction>())
     {
         if (parametric->parameters)
-            throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
+
         function_name = parametric->name;
 
         if (parametric->arguments)
@@ -139,34 +219,53 @@ static DataTypePtr create(const ASTPtr & arguments)
             }
         }
     }
-    else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
+    else if (auto opt_name = tryGetIdentifierName(data_type_ast))
     {
         function_name = *opt_name;
     }
-    else if (arguments->children[0]->as<ASTLiteral>())
+    else if (data_type_ast->as<ASTLiteral>())
     {
-        throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
-            ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Aggregate function name for data type AggregateFunction must "
+                        "be passed as identifier (without quotes) or function");
     }
     else
-        throw Exception("Unexpected AST element passed as aggregate function name for data type AggregateFunction. Must be identifier or function.",
-            ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unexpected AST element passed as aggregate function name for data type AggregateFunction. "
+                        "Must be identifier or function.");
 
-    for (size_t i = 1; i < arguments->children.size(); ++i)
+    for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
 
     if (function_name.empty())
-        throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty name of aggregate function passed");
 
     AggregateFunctionProperties properties;
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row, properties);
-    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row);
+    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
+
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+{
+    auto callback = [revision, if_empty](DataTypePtr & column_type)
+    {
+        const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+        if (aggregate_function_type && aggregate_function_type->isVersioned())
+        {
+            if (revision)
+                aggregate_function_type->updateVersionFromRevision(*revision, if_empty);
+            else
+                aggregate_function_type->setVersion(0, if_empty);
+        }
+    };
+
+    callOnNestedSimpleTypes(type, callback);
+}
+
 
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataType("AggregateFunction", create);
 }
-
 
 }

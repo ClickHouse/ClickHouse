@@ -26,9 +26,17 @@ public:
         return name;
     }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
 
     bool isDeterministicInScopeOfQuery() const override
+    {
+        return false;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
         return false;
     }
@@ -51,7 +59,7 @@ public:
 
 }
 
-void registerFunctionBlockSize(FunctionFactory & factory)
+REGISTER_FUNCTION(BlockSize)
 {
     factory.registerFunction<FunctionBlockSize>();
 }

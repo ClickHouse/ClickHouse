@@ -6,6 +6,7 @@
 
 #    include <sys/syscall.h>
 #    include <unistd.h>
+#    include <utility>
 
 
 /** Small wrappers for asynchronous I/O.
@@ -22,22 +23,22 @@ namespace DB
 
 int io_setup(unsigned nr, aio_context_t * ctxp)
 {
-    return syscall(__NR_io_setup, nr, ctxp);
+    return static_cast<int>(syscall(__NR_io_setup, nr, ctxp));
 }
 
 int io_destroy(aio_context_t ctx)
 {
-    return syscall(__NR_io_destroy, ctx);
+    return static_cast<int>(syscall(__NR_io_destroy, ctx));
 }
 
 int io_submit(aio_context_t ctx, long nr, struct iocb * iocbpp[]) // NOLINT
 {
-    return syscall(__NR_io_submit, ctx, nr, iocbpp);
+    return static_cast<int>(syscall(__NR_io_submit, ctx, nr, iocbpp));
 }
 
 int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events, struct timespec * timeout) // NOLINT
 {
-    return syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout);
+    return static_cast<int>(syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout));
 }
 
 
@@ -50,7 +51,19 @@ AIOContext::AIOContext(unsigned int nr_events)
 
 AIOContext::~AIOContext()
 {
-    io_destroy(ctx);
+    if (ctx)
+        io_destroy(ctx);
+}
+
+AIOContext::AIOContext(AIOContext && rhs) noexcept
+{
+    *this = std::move(rhs);
+}
+
+AIOContext & AIOContext::operator=(AIOContext && rhs) noexcept
+{
+    std::swap(ctx, rhs.ctx);
+    return *this;
 }
 
 #elif defined(OS_FREEBSD)
@@ -82,7 +95,7 @@ int io_destroy(int ctx)
 
 int io_submit(int ctx, long nr, struct iocb * iocbpp[])
 {
-    for (long i = 0; i < nr; i++)
+    for (long i = 0; i < nr; ++i)
     {
         struct aiocb * iocb = &iocbpp[i]->aio;
 
@@ -111,12 +124,12 @@ int io_submit(int ctx, long nr, struct iocb * iocbpp[])
         }
     }
 
-    return nr;
+    return static_cast<int>(nr);
 }
 
 int io_getevents(int ctx, long, long max_nr, struct kevent * events, struct timespec * timeout)
 {
-    return kevent(ctx, nullptr, 0, events, max_nr, timeout);
+    return kevent(ctx, nullptr, 0, events, static_cast<int>(max_nr), timeout);
 }
 
 

@@ -1,6 +1,7 @@
 ---
-toc_priority: 63
-toc_title: "Функции для работы с Nullable-аргументами"
+slug: /ru/sql-reference/functions/functions-for-nulls
+sidebar_position: 63
+sidebar_label: "Функции для работы с Nullable-аргументами"
 ---
 
 # Функции для работы с Nullable-аргументами {#funktsii-dlia-raboty-s-nullable-argumentami}
@@ -308,4 +309,3 @@ SELECT toTypeName(toNullable(10));
 │ Nullable(UInt8)            │
 └────────────────────────────┘
 ```
-

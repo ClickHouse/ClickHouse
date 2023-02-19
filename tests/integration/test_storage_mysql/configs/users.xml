@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <max_block_size>2</max_block_size>
@@ -15,4 +14,4 @@
             <profile>default</profile>
         </default>
     </users>
-</yandex>
+</clickhouse>

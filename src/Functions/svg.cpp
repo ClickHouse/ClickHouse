@@ -44,19 +44,21 @@ public:
         return 2;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > 2)
         {
-            throw Exception("Too many arguments", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Too many arguments");
         }
         else if (arguments.empty())
         {
-            throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Too few arguments");
         }
         else if (arguments.size() == 2 && checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr)
         {
-            throw Exception("Second argument should be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument should be String");
         }
 
         return std::make_shared<DataTypeString>();
@@ -77,7 +79,7 @@ public:
 
             auto figures = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-            for (size_t i = 0; i < input_rows_count; i++)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::stringstream str; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 boost::geometry::correct(figures[i]);
@@ -97,9 +99,10 @@ public:
     }
 };
 
-void registerFunctionSvg(FunctionFactory & factory)
+REGISTER_FUNCTION(Svg)
 {
     factory.registerFunction<FunctionSvg>();
+    factory.registerAlias("SVG", "svg");
 }
 
 }

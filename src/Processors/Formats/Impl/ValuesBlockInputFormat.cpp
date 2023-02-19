@@ -1,21 +1,20 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Core/Block.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/ObjectUtils.h>
 
 
 namespace DB
@@ -32,17 +31,26 @@ namespace ErrorCodes
 }
 
 
-ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
-                                               const FormatSettings & format_settings_)
-        : IInputFormat(header_, buf), buf(in_), params(params_),
-          format_settings(format_settings_), num_columns(header_.columns()),
-          parser_type_for_column(num_columns, ParserType::Streaming),
-          attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-          rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
+ValuesBlockInputFormat::ValuesBlockInputFormat(
+    ReadBuffer & in_,
+    const Block & header_,
+    const RowInputFormatParams & params_,
+    const FormatSettings & format_settings_)
+    : ValuesBlockInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
-    serializations.resize(types.size());
-    for (size_t i = 0; i < types.size(); ++i)
-        serializations[i] = types[i]->getDefaultSerialization();
+}
+
+ValuesBlockInputFormat::ValuesBlockInputFormat(
+    std::unique_ptr<PeekableReadBuffer> buf_,
+    const Block & header_,
+    const RowInputFormatParams & params_,
+    const FormatSettings & format_settings_)
+    : IInputFormat(header_, *buf_), buf(std::move(buf_)),
+        params(params_), format_settings(format_settings_), num_columns(header_.columns()),
+        parser_type_for_column(num_columns, ParserType::Streaming),
+        attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
+{
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -58,8 +66,8 @@ Chunk ValuesBlockInputFormat::generate()
     {
         try
         {
-            skipWhitespaceIfAny(buf);
-            if (buf.eof() || *buf.position() == ';')
+            skipWhitespaceIfAny(*buf);
+            if (buf->eof() || *buf->position() == ';')
                 break;
             readRow(columns, rows_in_block);
         }
@@ -93,19 +101,104 @@ Chunk ValuesBlockInputFormat::generate()
         return {};
     }
 
+    for (const auto & column : columns)
+        column->finalize();
+
     size_t rows_in_block = columns[0]->size();
     return Chunk{std::move(columns), rows_in_block};
 }
 
+/// Can be used in fileSegmentationEngine for parallel parsing of Values
+static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int balance)
+{
+    skipWhitespaceIfAny(*buf);
+    if (buf->eof() || *buf->position() == ';')
+        return false;
+    bool quoted = false;
+
+    size_t chunk_begin_buf_count = buf->count();
+    while (!buf->eof() && (balance || buf->count() - chunk_begin_buf_count < min_chunk_bytes))
+    {
+        buf->position() = find_first_symbols<'\\', '\'', ')', '('>(buf->position(), buf->buffer().end());
+        if (buf->position() == buf->buffer().end())
+            continue;
+        if (*buf->position() == '\\')
+        {
+            ++buf->position();
+            if (!buf->eof())
+                ++buf->position();
+        }
+        else if (*buf->position() == '\'')
+        {
+            quoted ^= true;
+            ++buf->position();
+        }
+        else if (*buf->position() == ')')
+        {
+            ++buf->position();
+            if (!quoted)
+                --balance;
+        }
+        else if (*buf->position() == '(')
+        {
+            ++buf->position();
+            if (!quoted)
+                ++balance;
+        }
+    }
+
+    if (!buf->eof() && *buf->position() == ',')
+        ++buf->position();
+    return true;
+}
+
+/// We need continuous memory containing the expression to use Lexer
+/// Note that this is both reading and tokenizing until the end of the row
+/// This is doing unnecessary work if the rest of the columns can be read with tryReadValue (which doesn't require tokens)
+/// and it's more efficient if they don't (as everything is already tokenized)
+void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_column_idx)
+{
+    if (tokens && token_iterator &&
+        /// Make sure the underlying memory hasn't changed because of next() calls in the buffer
+        ((*token_iterator)->begin >= buf->buffer().begin() && (*token_iterator)->begin <= buf->buffer().end()))
+    {
+        while ((*token_iterator)->begin < buf->position() && !(*token_iterator)->isError() && !(*token_iterator)->isEnd())
+            ++(*token_iterator);
+
+        if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
+            return;
+    }
+
+    skipToNextRow(buf.get(), 0, 1);
+    buf->makeContinuousMemoryFromCheckpointToPos();
+    auto * row_end = buf->position();
+    buf->rollbackToCheckpoint();
+    tokens.emplace(buf->position(), row_end);
+    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth));
+    auto const & first = (*token_iterator).get();
+    if (first.isError() || first.isEnd())
+    {
+        const Block & header = getPort().getHeader();
+        const IDataType & type = *header.getByPosition(current_column_idx).type;
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Cannot parse expression of type {} here: {}",
+            type.getName(),
+            std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
+    }
+}
+
 void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 {
-    assertChar('(', buf);
+    tokens.reset();
+    token_iterator.reset();
+    assertChar('(', *buf);
 
     for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
     {
-        skipWhitespaceIfAny(buf);
-        PeekableReadBufferCheckpoint checkpoint{buf};
-        bool read;
+        skipWhitespaceIfAny(*buf);
+        PeekableReadBufferCheckpoint checkpoint{*buf};
+        bool read = false;
 
         /// Parse value using fast streaming parser for literals and slow SQL parser for expressions.
         /// If there is SQL expression in some row, template of this expression will be deduced,
@@ -115,7 +208,7 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
             read = tryReadValue(*columns[column_idx], column_idx);
         else if (parser_type_for_column[column_idx] == ParserType::BatchTemplate)
             read = tryParseExpressionUsingTemplate(columns[column_idx], column_idx);
-        else /// if (parser_type_for_column[column_idx] == ParserType::SingleExpressionEvaluation)
+        else
             read = parseExpression(*columns[column_idx], column_idx);
 
         if (!read)
@@ -123,18 +216,21 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
         /// If read is true, value still may be missing. Bit mask for these values will be copied from ConstantExpressionTemplate later.
     }
 
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() == ',')
-        ++buf.position();
+    skipWhitespaceIfAny(*buf);
+    if (!buf->eof() && *buf->position() == ',')
+        ++buf->position();
 
     ++total_rows;
 }
 
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
+    readUntilTheEndOfRowAndReTokenize(column_idx);
+    IParser::Pos start = *token_iterator;
+
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
-    auto settings = context->getSettingsRef();
-    if (templates[column_idx]->parseExpression(buf, format_settings, settings))
+    const auto & settings = context->getSettingsRef();
+    if (templates[column_idx]->parseExpression(*buf, *token_iterator, format_settings, settings))
     {
         ++rows_parsed_using_template[column_idx];
         return true;
@@ -154,7 +250,8 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
     }
     /// Do not use this template anymore
     templates[column_idx].reset();
-    buf.rollbackToCheckpoint();
+    buf->rollbackToCheckpoint();
+    *token_iterator = start;
 
     /// It will deduce new template or fallback to slow SQL parser
     return parseExpression(*column, column_idx);
@@ -166,16 +263,24 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     try
     {
         bool read = true;
-        const auto & type = types[column_idx];
-        const auto & serialization = serializations[column_idx];
-        if (format_settings.null_as_default && !type->isNullable())
-            read = SerializationNullable::deserializeTextQuotedImpl(column, buf, format_settings, serialization);
+        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
+        {
+            column.insertDefault();
+            read = false;
+        }
         else
-            serialization->deserializeTextQuoted(column, buf, format_settings);
+        {
+            const auto & type = types[column_idx];
+            const auto & serialization = serializations[column_idx];
+            if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
+            else
+                serialization->deserializeTextQuoted(column, *buf, format_settings);
+        }
 
         rollback_on_exception = true;
 
-        skipWhitespaceIfAny(buf);
+        skipWhitespaceIfAny(*buf);
         assertDelimiterAfterValue(column_idx);
         return read;
     }
@@ -190,7 +295,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
         /// Switch to SQL parser and don't try to use streaming parser for complex expressions
         /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
-        buf.rollbackToCheckpoint();
+        buf->rollbackToCheckpoint();
         return parseExpression(column, column_idx);
     }
 }
@@ -213,8 +318,8 @@ namespace
             size_t dst_tuple_size = type_tuple.getElements().size();
 
             if (src_tuple_size != dst_tuple_size)
-                throw Exception(fmt::format("Bad size of tuple. Expected size: {}, actual size: {}.",
-                    std::to_string(src_tuple_size), std::to_string(dst_tuple_size)), ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple. Expected size: {}, actual size: {}.",
+                    src_tuple_size, dst_tuple_size);
 
             for (size_t i = 0; i < src_tuple_size; ++i)
             {
@@ -282,29 +387,35 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     const IDataType & type = *header.getByPosition(column_idx).type;
     auto settings = context->getSettingsRef();
 
-    /// We need continuous memory containing the expression to use Lexer
-    skipToNextRow(0, 1);
-    buf.makeContinuousMemoryFromCheckpointToPos();
-    buf.rollbackToCheckpoint();
+    /// Advance the token iterator until the start of the column expression
+    readUntilTheEndOfRowAndReTokenize(column_idx);
 
-    Expected expected;
-    Tokens tokens(buf.position(), buf.buffer().end());
-    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
+    bool parsed = false;
     ASTPtr ast;
+    std::optional<IParser::Pos> ti_start;
 
-    bool parsed = parser.parse(token_iterator, ast, expected);
+    if (!(*token_iterator)->isError() && !(*token_iterator)->isEnd())
+    {
+        Expected expected;
+        /// Keep a copy to the start of the column tokens to use if later if necessary
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth));
 
-    /// Consider delimiter after value (',' or ')') as part of expression
-    if (column_idx + 1 != num_columns)
-        parsed &= token_iterator->type == TokenType::Comma;
-    else
-        parsed &= token_iterator->type == TokenType::ClosingRoundBracket;
+        parsed = parser.parse(*token_iterator, ast, expected);
+
+        /// Consider delimiter after value (',' or ')') as part of expression
+        if (column_idx + 1 != num_columns)
+            parsed &= (*token_iterator)->type == TokenType::Comma;
+        else
+            parsed &= (*token_iterator)->type == TokenType::ClosingRoundBracket;
+    }
 
     if (!parsed)
-        throw Exception("Cannot parse expression of type " + type.getName() + " here: "
-                        + String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
-                        ErrorCodes::SYNTAX_ERROR);
-    ++token_iterator;
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Cannot parse expression of type {} here: {}",
+            type.getName(),
+            std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
+    ++(*token_iterator);
 
     if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
     {
@@ -316,9 +427,9 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         try
         {
             const auto & serialization = serializations[column_idx];
-            serialization->deserializeTextQuoted(column, buf, format_settings);
+            serialization->deserializeTextQuoted(column, *buf, format_settings);
             rollback_on_exception = true;
-            skipWhitespaceIfAny(buf);
+            skipWhitespaceIfAny(*buf);
             if (checkDelimiterAfterValue(column_idx))
                 ok = true;
         }
@@ -343,8 +454,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
-            throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
-                                ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Template for column {} already exists and it was not evaluated yet",
+                                std::to_string(column_idx));
         std::exception_ptr exception;
         try
         {
@@ -354,8 +465,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             auto structure = templates_cache.getFromCacheOrConstruct(
                 result_type,
                 !result_type->isNullable() && format_settings.null_as_default,
-                TokenIterator(tokens),
-                token_iterator,
+                *ti_start,
+                *token_iterator,
                 ast,
                 context,
                 &found_in_cache,
@@ -366,8 +477,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             else
                 ++attempts_to_deduce_template[column_idx];
 
-            buf.rollbackToCheckpoint();
-            if (templates[column_idx]->parseExpression(buf, format_settings, settings))
+            buf->rollbackToCheckpoint();
+            if (templates[column_idx]->parseExpression(*buf, *ti_start, format_settings, settings))
             {
                 ++rows_parsed_using_template[column_idx];
                 parser_type_for_column[column_idx] = ParserType::BatchTemplate;
@@ -384,9 +495,9 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 std::rethrow_exception(exception);
             else
             {
-                buf.rollbackToCheckpoint();
-                size_t len = const_cast<char *>(token_iterator->begin) - buf.position();
-                throw Exception("Cannot deduce template of expression: " + std::string(buf.position(), len), ErrorCodes::SYNTAX_ERROR);
+                buf->rollbackToCheckpoint();
+                size_t len = const_cast<char *>((*token_iterator)->begin) - buf->position();
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot deduce template of expression: {}", std::string(buf->position(), len));
             }
         }
         /// Continue parsing without template
@@ -394,10 +505,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
 
     if (!format_settings.values.interpret_expressions)
-        throw Exception("Interpreting expressions is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Interpreting expressions is disabled");
 
     /// Try to evaluate single expression if other parsers don't work
-    buf.position() = const_cast<char *>(token_iterator->begin);
+    buf->position() = const_cast<char *>((*token_iterator)->begin);
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
 
@@ -409,82 +520,37 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     Field value = convertFieldToType(expression_value, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !type.isNullable())
+    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
     {
         if (format_settings.null_as_default)
         {
             type.insertDefaultInto(column);
             return false;
         }
-        buf.rollbackToCheckpoint();
-        throw Exception{"Cannot insert NULL value into a column of type '" + type.getName() + "'"
-                        + " at: " +
-                        String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())),
-                        ErrorCodes::TYPE_MISMATCH};
+        buf->rollbackToCheckpoint();
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column of type '{}' at: {}",
+                        type.getName(), String(buf->position(),
+                        std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
     column.insert(value);
     return true;
 }
 
-/// Can be used in fileSegmentationEngine for parallel parsing of Values
-bool ValuesBlockInputFormat::skipToNextRow(size_t min_chunk_bytes, int balance)
-{
-    skipWhitespaceIfAny(buf);
-    if (buf.eof() || *buf.position() == ';')
-        return false;
-    bool quoted = false;
-
-    size_t chunk_begin_buf_count = buf.count();
-    while (!buf.eof() && (balance || buf.count() - chunk_begin_buf_count < min_chunk_bytes))
-    {
-        buf.position() = find_first_symbols<'\\', '\'', ')', '('>(buf.position(), buf.buffer().end());
-        if (buf.position() == buf.buffer().end())
-            continue;
-        if (*buf.position() == '\\')
-        {
-            ++buf.position();
-            if (!buf.eof())
-                ++buf.position();
-        }
-        else if (*buf.position() == '\'')
-        {
-            quoted ^= true;
-            ++buf.position();
-        }
-        else if (*buf.position() == ')')
-        {
-            ++buf.position();
-            if (!quoted)
-                --balance;
-        }
-        else if (*buf.position() == '(')
-        {
-            ++buf.position();
-            if (!quoted)
-                ++balance;
-        }
-    }
-
-    if (!buf.eof() && *buf.position() == ',')
-        ++buf.position();
-    return true;
-}
-
 void ValuesBlockInputFormat::assertDelimiterAfterValue(size_t column_idx)
 {
     if (unlikely(!checkDelimiterAfterValue(column_idx)))
-        throwAtAssertionFailed((column_idx + 1 == num_columns) ? ")" : ",", buf);
+        throwAtAssertionFailed((column_idx + 1 == num_columns) ? ")" : ",", *buf);
 }
 
 bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
 {
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceIfAny(*buf);
 
     if (likely(column_idx + 1 != num_columns))
-        return checkChar(',', buf);
+        return checkChar(',', *buf);
     else
-        return checkChar(')', buf);
+        return checkChar(')', *buf);
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
@@ -496,7 +562,7 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 
     /// Using template from cache is approx 2x faster, than evaluating single expression
     /// Construction of new template is approx 1.5x slower, than evaluating single expression
-    float attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
+    double attempts_weighted = 1.5 * attempts_to_deduce_template[column_idx] +  0.5 * attempts_to_deduce_template_cached[column_idx];
 
     constexpr size_t max_attempts = 100;
     if (attempts_weighted < max_attempts)
@@ -516,42 +582,120 @@ bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
 void ValuesBlockInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(buf);
+    skipBOMIfExists(*buf);
 }
 
 void ValuesBlockInputFormat::readSuffix()
 {
-    if (!buf.eof() && *buf.position() == ';')
+    if (!buf->eof() && *buf->position() == ';')
     {
-        ++buf.position();
-        skipWhitespaceIfAny(buf);
-        if (buf.hasUnreadData())
-            throw Exception("Cannot read data after semicolon", ErrorCodes::CANNOT_READ_ALL_DATA);
+        ++buf->position();
+        skipWhitespaceIfAny(*buf);
+        if (buf->hasUnreadData())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
         return;
     }
 
-    if (buf.hasUnreadData())
-        throw Exception("Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+    if (buf->hasUnreadData())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
 void ValuesBlockInputFormat::resetParser()
 {
+    if (got_exception)
+    {
+        /// In case of exception always reset the templates and parser type,
+        /// because they may be in the invalid state.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            templates[i].reset();
+            parser_type_for_column[i] = ParserType::Streaming;
+        }
+    }
+
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
-    buf.reset();
+    buf->reset();
     total_rows = 0;
 }
 
-void registerInputFormatProcessorValues(FormatFactory & factory)
+void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    factory.registerInputFormatProcessor("Values", [](
+    buf->setSubBuffer(in_);
+}
+
+ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_)
+{
+}
+
+DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
+{
+    if (first_row)
+    {
+        skipBOMIfExists(buf);
+        first_row = false;
+    }
+
+    skipWhitespaceIfAny(buf);
+    if (buf.eof() || end_of_data)
+        return {};
+
+    assertChar('(', buf);
+    skipWhitespaceIfAny(buf);
+    DataTypes data_types;
+    String value;
+    while (!buf.eof() && *buf.position() != ')')
+    {
+        if (!data_types.empty())
+        {
+            assertChar(',', buf);
+            skipWhitespaceIfAny(buf);
+        }
+
+        readQuotedField(value, buf);
+        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        data_types.push_back(std::move(type));
+        skipWhitespaceIfAny(buf);
+    }
+
+    assertChar(')', buf);
+
+    skipWhitespaceIfAny(buf);
+    if (!buf.eof() && *buf.position() == ',')
+        ++buf.position();
+
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        end_of_data = true;
+    }
+
+    return data_types;
+}
+
+void registerInputFormatValues(FormatFactory & factory)
+{
+    factory.registerInputFormat("Values", [](
         ReadBuffer & buf,
         const Block & header,
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, header, params, settings);
+    });
+}
+
+void registerValuesSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
+    {
+        return std::make_shared<ValuesSchemaReader>(buf, settings);
+    });
+    factory.registerAdditionalInfoForSchemaCacheGetter("Values", [](const FormatSettings & settings)
+    {
+        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Quoted);
     });
 }
 

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS 01754_dictionary_db;
 CREATE DATABASE 01754_dictionary_db;
 

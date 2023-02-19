@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
    <quotas>
         <myQuota>
             <interval>
@@ -16,4 +15,4 @@
             </interval>
         </myQuota>
     </quotas>
-</yandex>
+</clickhouse>

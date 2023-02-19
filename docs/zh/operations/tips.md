@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/tips
+---
 # 使用建议 {#usage-recommendations}
 
 ## CPU频率调节器 {#cpu-scaling-governor}
@@ -71,7 +74,7 @@ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 ## 文件系统 {#file-system}
 
-Ext4是最可靠的选择。 设置挂载选项 `noatime, nobarrier`.
+Ext4是最可靠的选择。 设置挂载选项 `noatime`.
 XFS也是合适的，但它还没有经过ClickHouse的全面测试。
 大多数其他文件系统也应该可以正常工作。 具有延迟分配的文件系统工作得更好。
 
@@ -253,5 +256,3 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
             -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
             -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
     end script
-
-[原始文章](https://clickhouse.tech/docs/en/operations/tips/) <!--hide-->

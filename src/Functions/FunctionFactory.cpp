@@ -26,25 +26,25 @@ const String & getFunctionCanonicalNameIfAny(const String & name)
     return FunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-void FunctionFactory::registerFunction(const
-    std::string & name,
-    Value creator,
+void FunctionFactory::registerFunction(
+    const std::string & name,
+    FunctionCreator creator,
+    Documentation doc,
     CaseSensitiveness case_sensitiveness)
 {
-    if (!functions.emplace(name, creator).second)
-        throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
-                        ErrorCodes::LOGICAL_ERROR);
+    if (!functions.emplace(name, FunctionFactoryData{creator, doc}).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is not unique", name);
 
     String function_name_lowercase = Poco::toLower(name);
     if (isAlias(name) || isAlias(function_name_lowercase))
-        throw Exception("FunctionFactory: the function name '" + name + "' is already registered as alias",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the function name '{}' is already registered as alias",
+                        name);
 
     if (case_sensitiveness == CaseInsensitive)
     {
-        if (!case_insensitive_functions.emplace(function_name_lowercase, creator).second)
-            throw Exception("FunctionFactory: the case insensitive function name '" + name + "' is not unique",
-                ErrorCodes::LOGICAL_ERROR);
+        if (!case_insensitive_functions.emplace(function_name_lowercase, FunctionFactoryData{creator, doc}).second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionFactory: the case insensitive function name '{}' is not unique",
+                name);
         case_insensitive_name_mapping[function_name_lowercase] = name;
     }
 }
@@ -87,6 +87,15 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     return getImpl(name, context);
 }
 
+bool FunctionFactory::has(const std::string & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+    if (functions.contains(canonical_name))
+        return true;
+    canonical_name = Poco::toLower(canonical_name);
+    return case_insensitive_functions.contains(canonical_name);
+}
+
 FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextPtr context) const
@@ -96,13 +105,13 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
     auto it = functions.find(name);
     if (functions.end() != it)
-        res = it->second(context);
+        res = it->second.first(context);
     else
     {
         name = Poco::toLower(name);
         it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
-            res = it->second(context);
+            res = it->second.first(context);
     }
 
     if (!res)
@@ -119,8 +128,8 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 }
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
-        const std::string & name,
-        ContextPtr context) const
+    const std::string & name,
+    ContextPtr context) const
 {
     auto impl = tryGetImpl(name, context);
     return impl ? std::move(impl) : nullptr;
@@ -130,6 +139,15 @@ FunctionFactory & FunctionFactory::instance()
 {
     static FunctionFactory ret;
     return ret;
+}
+
+Documentation FunctionFactory::getDocumentation(const std::string & name) const
+{
+    auto it = functions.find(name);
+    if (it == functions.end())
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
+
+    return it->second.second;
 }
 
 }

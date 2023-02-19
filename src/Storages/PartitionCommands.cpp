@@ -2,11 +2,10 @@
 #include <Storages/IStorage.h>
 #include <Storages/DataDestinationType.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Chunk.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 
@@ -68,7 +67,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
                 res.move_destination_type = PartitionCommand::MoveDestinationType::SHARD;
                 break;
             case DataDestinationType::DELETE:
-                throw Exception("ALTER with this destination type is not handled. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ALTER with this destination type is not handled. This is a bug.");
         }
         if (res.move_destination_type != PartitionCommand::MoveDestinationType::TABLE)
             res.move_destination_name = command_ast->move_destination_name;
@@ -164,7 +163,7 @@ std::string PartitionCommand::typeToString() const
     case PartitionCommand::Type::REPLACE_PARTITION:
         return "REPLACE PARTITION";
     default:
-        throw Exception("Uninitialized partition command", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uninitialized partition command");
     }
 }
 

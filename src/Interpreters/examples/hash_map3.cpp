@@ -1,21 +1,17 @@
-#include <iostream>
-
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 
-
-#include <string.h>
-
+#include <iostream>
+#include <cstring>
 #include <cstdlib>
-
 #include <utility>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadHelpers.h>
 
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 #include <Common/HashTable/HashMap.h>
 

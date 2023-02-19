@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -53,7 +53,7 @@
   *
   * Usage example:
   *
-  * SELECT extractTextFromHTML(html) FROM url('https://yandex.ru/', RawBLOB, 'html String')
+  * SELECT extractTextFromHTML(html) FROM url('https://github.com/ClickHouse/ClickHouse', RawBLOB, 'html String')
   *
   * - ClickHouse has embedded web browser.
   */
@@ -300,12 +300,13 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
         return arguments[0];
     }
 
@@ -313,7 +314,7 @@ public:
     {
         const ColumnString * src = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!src)
-             throw Exception("First argument for function " + getName() + " must be string.", ErrorCodes::ILLEGAL_COLUMN);
+             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be string.", getName());
 
         const ColumnString::Chars & src_chars = src->getChars();
         const ColumnString::Offsets & src_offsets = src->getOffsets();
@@ -350,7 +351,7 @@ public:
     }
 };
 
-void registerFunctionExtractTextFromHTML(FunctionFactory & factory)
+REGISTER_FUNCTION(ExtractTextFromHTML)
 {
     factory.registerFunction<FunctionExtractTextFromHTML>();
 }

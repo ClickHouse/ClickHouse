@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
-#include <common/sort.h>
+#include <base/sort.h>
 
 
 namespace DB
@@ -90,7 +90,7 @@ namespace detail
         /** This function must be called before get-functions. */
         void prepare() const
         {
-            std::sort(elems, elems + count);
+            ::sort(elems, elems + count);
         }
 
         UInt16 get(double level) const
@@ -178,12 +178,12 @@ namespace detail
             if (!elems.empty())
             {
                 size_t n = level < 1
-                    ? level * elems.size()
+                    ? static_cast<size_t>(level * elems.size())
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
                 auto & array = elems;
-                nth_element(array.begin(), array.begin() + n, array.end());
+                ::nth_element(array.begin(), array.begin() + n, array.end());
                 quantile = array[n];
             }
 
@@ -201,10 +201,10 @@ namespace detail
                 auto level = levels[level_index];
 
                 size_t n = level < 1
-                    ? level * elems.size()
+                    ? static_cast<size_t>(level * elems.size())
                     : (elems.size() - 1);
 
-                nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
 
                 result[level_index] = array[n];
                 prev_n = n;
@@ -563,8 +563,11 @@ public:
         }
     }
 
-    void add(UInt64 x)
+    template <typename T>
+    void add(T x_)
     {
+        UInt64 x = static_cast<UInt64>(x_);
+
         if (tiny.count < TINY_MAX_ELEMS)
         {
             tiny.insert(x);
@@ -589,8 +592,11 @@ public:
         }
     }
 
-    void add(UInt64 x, size_t weight)
+    template <typename T>
+    void add(T x_, size_t weight)
     {
+        UInt64 x = static_cast<UInt64>(x_);
+
         /// NOTE: First condition is to avoid overflow.
         if (weight < TINY_MAX_ELEMS && tiny.count + weight <= TINY_MAX_ELEMS)
         {
@@ -664,7 +670,7 @@ public:
                     large->insert(elem);
             }
             else
-                throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
 
             /// For determinism, we should always convert to `large` when size condition is reached
             ///  - regardless of merge order.

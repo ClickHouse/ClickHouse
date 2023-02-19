@@ -37,6 +37,8 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         WhichDataType which(arguments[0]);
@@ -46,7 +48,7 @@ public:
         else if (which.isEnum16())
             return std::make_shared<DataTypeUInt16>();
 
-        throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -74,7 +76,7 @@ private:
 
 }
 
-void registerFunctionGetSizeOfEnumType(FunctionFactory & factory)
+REGISTER_FUNCTION(GetSizeOfEnumType)
 {
     factory.registerFunction<FunctionGetSizeOfEnumType>();
 }

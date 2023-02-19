@@ -1,8 +1,14 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/Settings.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <IO/AsyncReadCounters.h>
+#include <Parsers/IAST.h>
+
 
 namespace ProfileEvents
 {
@@ -51,13 +57,15 @@ struct QueryLogElement
 
     String current_database;
     String query;
+    String formatted_query;
     UInt64 normalized_query_hash{};
 
-    String query_kind;
+    IAST::QueryKind query_kind{};
     std::set<String> query_databases;
     std::set<String> query_tables;
     std::set<String> query_columns;
     std::set<String> query_projections;
+    std::set<String> query_views;
 
     std::unordered_set<String> used_aggregate_functions;
     std::unordered_set<String> used_aggregate_function_combinators;
@@ -68,24 +76,30 @@ struct QueryLogElement
     std::unordered_set<String> used_functions;
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
+    std::set<String> used_row_policies;
 
     Int32 exception_code{}; // because ErrorCodes are int
     String exception;
     String stack_trace;
+    std::string_view exception_format_string{};
 
     ClientInfo client_info;
 
     String log_comment;
 
     std::vector<UInt64> thread_ids;
-    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
+
+    TransactionID tid;
 
     static std::string name() { return "QueryLog"; }
 
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };

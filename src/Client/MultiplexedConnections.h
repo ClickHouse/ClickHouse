@@ -22,6 +22,8 @@ class MultiplexedConnections final : public IConnections
 public:
     /// Accepts ready connection.
     MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
+    /// Accepts ready connection and keep it alive before drain
+    MultiplexedConnections(std::shared_ptr<Connection> connection_, const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Accepts a vector of connections to replicas of one shard already taken from pool.
     MultiplexedConnections(
@@ -36,10 +38,11 @@ public:
         const String & query,
         const String & query_id,
         UInt64 stage,
-        const ClientInfo & client_info,
+        ClientInfo & client_info,
         bool with_pending_data) override;
 
     void sendReadTaskResponse(const String &) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     Packet receivePacket() override;
 
@@ -60,6 +63,7 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
+    void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
 private:
     Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
 
@@ -79,7 +83,6 @@ private:
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
 
-private:
     const Settings & settings;
 
     /// The following two fields are from settings but can be referenced outside the lifetime of
@@ -95,9 +98,14 @@ private:
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;
+    /// Shared connection, may be empty. Used to keep object alive before draining.
+    std::shared_ptr<Connection> connection_ptr;
 
     bool sent_query = false;
     bool cancelled = false;
+
+    /// std::nullopt if parallel reading from replicas is not used
+    std::optional<ReplicaInfo> replica_info;
 
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.

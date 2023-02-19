@@ -15,11 +15,11 @@ struct NameMultiSearchFirstPositionCaseInsensitive
 };
 
 using FunctionMultiSearchFirstPositionCaseInsensitive
-    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstPositionCaseInsensitive>;
+    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<NameMultiSearchFirstPositionCaseInsensitive, PositionCaseInsensitiveASCII>>;
 
 }
 
-void registerFunctionMultiSearchFirstPositionCaseInsensitive(FunctionFactory & factory)
+REGISTER_FUNCTION(MultiSearchFirstPositionCaseInsensitive)
 {
     factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitive>();
 }

@@ -10,7 +10,12 @@ namespace DB
 void RewriteSumIfFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
+    {
+        if (func->is_window_function)
+            return;
+
         visit(*func, ast, data);
+    }
 }
 
 void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
@@ -20,21 +25,32 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
     auto lower_name = Poco::toLower(func.name);
 
-    if (lower_name != "sum" && lower_name != "sumif")
+    /// sumIf, SumIf or sUMIf are valid function names, but sumIF or sumiF are not
+    if (lower_name != "sum" && (lower_name != "sumif" || !endsWith(func.name, "If")))
         return;
 
     const auto & func_arguments = func.arguments->children;
 
     if (lower_name == "sumif")
     {
-        /// sumIf(1, cond) -> countIf(cond)
         const auto * literal = func_arguments[0]->as<ASTLiteral>();
         if (!literal || !DB::isInt64OrUInt64FieldType(literal->value.getType()))
             return;
 
-        if (func_arguments.size() == 2 && literal->value.get<UInt64>() == 1)
+        if (func_arguments.size() == 2)
         {
-            auto new_func = makeASTFunction("countIf", func_arguments[1]);
+            std::shared_ptr<ASTFunction> new_func;
+            if (literal->value.get<UInt64>() == 1)
+            {
+                /// sumIf(1, cond) -> countIf(cond)
+                new_func = makeASTFunction("countIf", func_arguments[1]);
+            }
+            else
+            {
+                /// sumIf(123, cond) -> 123 * countIf(cond)
+                auto count_if_func = makeASTFunction("countIf", func_arguments[1]);
+                new_func = makeASTFunction("multiply", func_arguments[0], std::move(count_if_func));
+            }
             new_func->setAlias(func.alias);
             ast = std::move(new_func);
             return;
@@ -59,19 +75,40 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
 
             auto first_value = first_literal->value.get<UInt64>();
             auto second_value = second_literal->value.get<UInt64>();
-            /// sum(if(cond, 1, 0)) -> countIf(cond)
-            if (first_value == 1 && second_value == 0)
+
+            std::shared_ptr<ASTFunction> new_func;
+            if (second_value == 0)
             {
-                auto new_func = makeASTFunction("countIf", if_arguments[0]);
+                if (first_value == 1)
+                {
+                    /// sum(if(cond, 1, 0)) -> countIf(cond)
+                    new_func = makeASTFunction("countIf", if_arguments[0]);
+                }
+                else
+                {
+                    /// sum(if(cond, 123, 0)) -> 123 * countIf(cond)
+                    auto count_if_func = makeASTFunction("countIf", if_arguments[0]);
+                    new_func = makeASTFunction("multiply", if_arguments[1], std::move(count_if_func));
+                }
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);
                 return;
             }
-            /// sum(if(cond, 0, 1)) -> countIf(not(cond))
-            if (first_value == 0 && second_value == 1)
+
+            if (first_value == 0)
             {
                 auto not_func = makeASTFunction("not", if_arguments[0]);
-                auto new_func = makeASTFunction("countIf", not_func);
+                if (second_value == 1)
+                {
+                    /// sum(if(cond, 0, 1)) -> countIf(not(cond))
+                    new_func = makeASTFunction("countIf", std::move(not_func));
+                }
+                else
+                {
+                    /// sum(if(cond, 0, 123)) -> 123 * countIf(not(cond))
+                    auto count_if_func = makeASTFunction("countIf", std::move(not_func));
+                    new_func = makeASTFunction("multiply", if_arguments[2], std::move(count_if_func));
+                }
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);
                 return;

@@ -1,27 +1,52 @@
 #include <Common/StackTrace.h>
 
-#include <Core/Defines.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <common/SimpleCache.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 
+#include <atomic>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <map>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config.h"
 
 #if USE_UNWIND
 #    include <libunwind.h>
 #endif
 
-std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
+
+namespace
+{
+    /// Currently this variable is set up once on server startup.
+    /// But we use atomic just in case, so it is possible to be modified at runtime.
+    std::atomic<bool> show_addresses = true;
+
+    bool shouldShowAddress(const void * addr)
+    {
+        /// If the address is less than 4096, most likely it is a nullptr dereference with offset,
+        /// and showing this offset is secure nevertheless.
+        /// NOTE: 4096 is the page size on x86 and it can be different on other systems,
+        /// but for the purpose of this branch, it does not matter.
+        if (reinterpret_cast<uintptr_t>(addr) < 4096)
+            return true;
+
+        return show_addresses.load(std::memory_order_relaxed);
+    }
+}
+
+void StackTrace::setShowAddresses(bool show)
+{
+    show_addresses.store(show, std::memory_order_relaxed);
+}
+
+
+std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     error.exceptions(std::ios::failbit);
@@ -32,17 +57,15 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             /// Print info about address and reason.
             if (nullptr == info.si_addr)
                 error << "Address: NULL pointer.";
-            else
+            else if (shouldShowAddress(info.si_addr))
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__) && !defined(__powerpc__)
+#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
             else
                 error << " Access: read.";
-#else
-            UNUSED(context);
 #endif
 
             switch (info.si_code)
@@ -177,29 +200,39 @@ static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
-#    if defined(__FreeBSD__)
+#    if defined(OS_FREEBSD)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
-#    elif defined(__APPLE__)
+#    elif defined(OS_DARWIN)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
 
-#elif defined(__APPLE__) && defined(__aarch64__)
+#elif defined(OS_DARWIN) && defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
 
+#elif defined(OS_FREEBSD) && defined(__aarch64__)
+    return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#elif defined(__powerpc64__)
+#elif defined(__powerpc64__) && defined(__linux__)
     return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
+#elif defined(__powerpc64__) && defined(__FreeBSD__)
+    return reinterpret_cast<void *>(context.uc_mcontext.mc_srr0);
+#elif defined(__riscv)
+    return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
+#elif defined(__s390x__)
+    return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #else
     return nullptr;
 #endif
 }
 
-void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
+void StackTrace::symbolize(
+    const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset,
+    size_t size, StackTrace::Frames & frames)
 {
-#if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
@@ -256,7 +289,6 @@ void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, siz
     {
         frames[i].virtual_addr = frame_pointers[i];
     }
-    UNUSED(offset);
 #endif
 }
 
@@ -322,7 +354,7 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
 }
 
 static void toStringEveryLineImpl(
-    bool fatal,
+    [[maybe_unused]] bool fatal,
     const StackTrace::FramePointers & frame_pointers,
     size_t offset,
     size_t size,
@@ -331,7 +363,7 @@ static void toStringEveryLineImpl(
     if (size == 0)
         return callback("<Empty trace>");
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
@@ -371,7 +403,9 @@ static void toStringEveryLineImpl(
         else
             out << "?";
 
-        out << " @ " << physical_addr;
+        if (shouldShowAddress(physical_addr))
+            out << " @ " << physical_addr;
+
         out << " in " << (object ? object->name : "?");
 
         for (size_t j = 0; j < inline_frames.size(); ++j)
@@ -386,17 +420,19 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
-    UNUSED(fatal);
     std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
 
     for (size_t i = offset; i < size; ++i)
     {
         const void * addr = frame_pointers[i];
-        out << i << ". " << addr;
+        if (shouldShowAddress(addr))
+        {
+            out << i << ". " << addr;
 
-        callback(out.str());
-        out.str({});
+            callback(out.str());
+            out.str({});
+        }
     }
 #endif
 }
@@ -417,11 +453,7 @@ void StackTrace::toStringEveryLine(std::function<void(const std::string &)> call
 
 std::string StackTrace::toString() const
 {
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers, offset, size);
+    return toStringStatic(frame_pointers, offset, size);
 }
 
 std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
@@ -432,6 +464,39 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     for (size_t i = 0; i < size; ++i)
         frame_pointers_copy[i] = frame_pointers_[i];
 
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers_copy, offset, size);
+    return toStringStatic(frame_pointers_copy, offset, size);
+}
+
+using StackTraceRepresentation = std::tuple<StackTrace::FramePointers, size_t, size_t>;
+using StackTraceCache = std::map<StackTraceRepresentation, std::string>;
+
+static StackTraceCache & cacheInstance()
+{
+    static StackTraceCache cache;
+    return cache;
+}
+
+static std::mutex stacktrace_cache_mutex;
+
+std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
+{
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+    std::lock_guard lock{stacktrace_cache_mutex};
+
+    StackTraceRepresentation key{frame_pointers, offset, size};
+    auto & cache = cacheInstance();
+    if (cache.contains(key))
+        return cache[key];
+
+    auto result = toStringImpl(frame_pointers, offset, size);
+    cache[key] = result;
+    return result;
+}
+
+void StackTrace::dropCache()
+{
+    std::lock_guard lock{stacktrace_cache_mutex};
+    cacheInstance().clear();
 }

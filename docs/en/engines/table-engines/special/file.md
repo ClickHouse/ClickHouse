@@ -1,9 +1,10 @@
 ---
-toc_priority: 37
-toc_title: File
+slug: /en/engines/table-engines/special/file
+sidebar_position: 40
+sidebar_label:  File
 ---
 
-# File Table Engine {#table_engines-file}
+# File Table Engine
 
 The File table engine keeps the data in a file in one of the supported [file formats](../../../interfaces/formats.md#formats) (`TabSeparated`, `Native`, etc.).
 
@@ -24,14 +25,15 @@ The `Format` parameter specifies one of the available file formats. To perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
 
-ClickHouse does not allow specifying filesystem path for`File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
+ClickHouse does not allow specifying filesystem path for `File`. It will use folder defined by [path](../../../operations/server-configuration-parameters/settings.md) setting in server configuration.
 
 When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it’s put into `data.Format` file in that subdirectory.
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../../sql-reference/statements/attach.md) it to table information with matching name, so you can query data from that file.
 
-!!! warning "Warning"
-    Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+:::warning
+Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
+:::
 
 ## Example {#example}
 
@@ -85,4 +87,8 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   Indices
     -   Replication
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->
+## PARTITION BY
+
+`PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/en/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.

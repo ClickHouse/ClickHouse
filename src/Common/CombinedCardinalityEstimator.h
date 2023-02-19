@@ -65,7 +65,7 @@ public:
 private:
     using Small = SmallSet<Key, small_set_size_max>;
     using Medium = HashContainer;
-    using Large = HyperLogLogCounter<K, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
+    using Large = HyperLogLogCounter<K, Key, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
 
 public:
     CombinedCardinalityEstimator()
@@ -314,7 +314,6 @@ private:
         address &= mask;
     }
 
-private:
     Small small;
     union
     {
@@ -323,7 +322,7 @@ private:
         UInt64 address = 0;
     };
     static const UInt64 mask = 0xFFFFFFFFFFFFFFFC;
-    static const UInt32 medium_set_size_max = 1UL << medium_set_power2_max;
+    static const UInt32 medium_set_size_max = 1ULL << medium_set_power2_max;
 };
 
 }

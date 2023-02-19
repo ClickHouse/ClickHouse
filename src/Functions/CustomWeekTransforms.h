@@ -2,14 +2,14 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/IFunction.h>
 #include <Common/Exception.h>
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 
 /// The default mode value to use for the WEEK() function
 #define DEFAULT_WEEK_MODE 0
@@ -63,18 +63,24 @@ struct ToStartOfWeekImpl
     static inline UInt16 execute(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-//        return time_zone.toFirstDayNumOfWeek(t, week_mode);
     }
     static inline UInt16 execute(UInt32 t, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
-//        return time_zone.toFirstDayNumOfWeek(t, week_mode);
     }
     static inline UInt16 execute(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
+    }
+    static inline Int64 executeExtendedResult(Int64 t, UInt8 week_mode, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t), week_mode);
+    }
+    static inline Int32 executeExtendedResult(Int32 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
     }
@@ -111,7 +117,7 @@ struct ToWeekImpl
     using FactorTransform = ToStartOfYearImpl;
 };
 
-template <typename FromType, typename ToType, typename Transform>
+template <typename FromType, typename ToType, typename Transform, bool is_extended_result = false>
 struct WeekTransformer
 {
     explicit WeekTransformer(Transform transform_)
@@ -122,11 +128,17 @@ struct WeekTransformer
     void
     vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
+        using ValueType = typename ToVectorType::value_type;
         size_t size = vec_from.size();
         vec_to.resize(size);
 
         for (size_t i = 0; i < size; ++i)
-            vec_to[i] = transform.execute(vec_from[i], week_mode, time_zone);
+        {
+            if constexpr (is_extended_result)
+                vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], week_mode, time_zone));
+            else
+                vec_to[i] = static_cast<ValueType>(transform.execute(vec_from[i], week_mode, time_zone));
+        }
     }
 
 private:
@@ -134,13 +146,13 @@ private:
 };
 
 
-template <typename FromDataType, typename ToDataType>
+template <typename FromDataType, typename ToDataType, bool is_extended_result = false>
 struct CustomWeekTransformImpl
 {
     template <typename Transform>
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
     {
-        const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform>{std::move(transform)};
+        const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>{std::move(transform)};
 
         UInt8 week_mode = DEFAULT_WEEK_MODE;
         if (arguments.size() > 1)
@@ -159,10 +171,9 @@ struct CustomWeekTransformImpl
         }
         else
         {
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function "
-                    + Transform::name,
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), Transform::name);
         }
     }
 };

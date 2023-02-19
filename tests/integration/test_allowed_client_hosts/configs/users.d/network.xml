@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <users>
         <default>
             <!-- List of networks with open access.
@@ -26,10 +25,7 @@
                 <ip>127.0.0.1</ip>
                 <host>clientA1.com</host>
                 <host>clientA3.com</host>
-                <host_regexp>clientB\d+\.ru</host_regexp>
-                <host_regexp>clientC\d+\.ru$</host_regexp>
-                <host_regexp>^clientD\d+\.ru$</host_regexp>
             </networks>
         </default>
     </users>
-</yandex>
+</clickhouse>

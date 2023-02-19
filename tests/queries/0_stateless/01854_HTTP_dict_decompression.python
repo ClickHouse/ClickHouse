@@ -13,12 +13,25 @@ import urllib.request
 import subprocess
 import lzma
 
-def get_local_port(host):
-    with socket.socket() as fd:
+
+def is_ipv6(host):
+    try:
+        socket.inet_aton(host)
+        return False
+    except:
+        return True
+
+def get_local_port(host, ipv6):
+    if ipv6:
+        family = socket.AF_INET6
+    else:
+        family = socket.AF_INET
+
+    with socket.socket(family) as fd:
         fd.bind((host, 0))
         return fd.getsockname()[1]
 
-CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
+CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'localhost')
 CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 
 #####################################################################################
@@ -28,26 +41,34 @@ CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 # accessible from clickhouse server.
 #####################################################################################
 
-# IP-address of this host accessible from outside world.
-HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip()
-HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST)
+# IP-address of this host accessible from the outside world. Get the first one
+HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip().split()[0]
+IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
+HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 
 # IP address and port of the HTTP server started from this script.
 HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
-HTTP_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in HTTP_SERVER_ADDRESS) + "/"
+if IS_IPV6:
+    HTTP_SERVER_URL_STR = 'http://' + f'[{str(HTTP_SERVER_ADDRESS[0])}]:{str(HTTP_SERVER_ADDRESS[1])}' + "/"
+else:
+    HTTP_SERVER_URL_STR = 'http://' + f'{str(HTTP_SERVER_ADDRESS[0])}:{str(HTTP_SERVER_ADDRESS[1])}' + "/"
 
-# Because we need to check content of file.csv we can create this content and avoid reading csv 
+# Because we need to check the content of file.csv we can create this content and avoid reading csv
 CSV_DATA = "Hello, 1\nWorld, 2\nThis, 152\nis, 9283\ntesting, 2313213\ndata, 555\n"
 
 
-# Choose compression method 
-# (Will change during test, need to check standart data sending, to make sure that nothing broke)
+# Choose compression method
+# (Will change during test, need to check standard data sending, to make sure that nothing broke)
 COMPRESS_METHOD = 'none'
 ADDING_ENDING = ''
 ENDINGS = ['.gz', '.xz']
 SEND_ENCODING = True
 
 def get_ch_answer(query):
+    host = CLICKHOUSE_HOST
+    if IS_IPV6:
+        host = f'[{host}]'
+
     url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))
     return urllib.request.urlopen(url, data=query.encode()).read().decode()
 
@@ -88,7 +109,7 @@ class HttpProcessor(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         self._set_headers()
-    
+
         if COMPRESS_METHOD == 'none':
             self.wfile.write(CSV_DATA.encode())
         else:
@@ -98,8 +119,14 @@ class HttpProcessor(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
+class HTTPServerV6(HTTPServer):
+    address_family = socket.AF_INET6
+
 def start_server(requests_amount):
-    httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
+    if IS_IPV6:
+        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
+    else:
+        httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
 
     def real_func():
         for i in range(requests_amount):
@@ -120,18 +147,18 @@ def test_select(dict_name="", schema="word String, counter UInt32", requests=[],
         if i > 2:
             ADDING_ENDING = ENDINGS[i-3]
             SEND_ENCODING = False
-        
+
         if dict_name:
             get_ch_answer("drop dictionary if exists {}".format(dict_name))
             get_ch_answer('''CREATE DICTIONARY {} ({})
             PRIMARY KEY word
             SOURCE(HTTP(url '{}' format 'CSV'))
             LAYOUT(complex_key_hashed())
-            LIFETIME(0)'''.format(dict_name, schema, HTTP_SERVER_URL_STR+'/test.csv' + ADDING_ENDING))
+            LIFETIME(0)'''.format(dict_name, schema, HTTP_SERVER_URL_STR + '/test.csv' + ADDING_ENDING))
 
         COMPRESS_METHOD = requests[i]
         print(i, COMPRESS_METHOD, ADDING_ENDING, SEND_ENCODING)
-        check_answers("select * from {}".format(dict_name), answers[i])
+        check_answers("SELECT * FROM {} ORDER BY word".format(dict_name), answers[i])
 
 def main():
     # first three for encoding, second three for url
@@ -144,7 +171,7 @@ def main():
     ]
 
     # This answers got experemently in non compressed mode and they are correct
-    answers = ['''This	152\nHello	1\nis	9283\ndata	555\nWorld	2\ntesting	2313213'''] * 5
+    answers = ['''Hello	1\nThis	152\nWorld	2\ndata	555\nis	9283\ntesting	2313213'''] * 5
 
     t = start_server(len(insert_requests))
     t.start()

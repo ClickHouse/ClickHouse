@@ -1,0 +1,36 @@
+CREATE USER test_user_01999
+A
+B
+GRANT SELECT ON db1.* TO test_user_01999
+GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES ON db2.tb2 TO test_user_01999
+C
+GRANT SELECT(col1) ON db3.table TO test_user_01999
+D
+GRANT SELECT(col3) ON db3.table3 TO test_user_01999
+GRANT SELECT(col1, col2) ON db4.table4 TO test_user_01999
+E
+GRANT SELECT(cola) ON db5.table TO test_user_01999
+GRANT INSERT(colb) ON db6.tb61 TO test_user_01999
+GRANT SHOW ON db7.* TO test_user_01999
+F
+GRANT SELECT ON `all`.* TO test_user_01999
+G
+H
+GRANT SELECT ON db1.tb1 TO test_user_01999
+GRANT test_role_01999 TO test_user_01999
+I
+GRANT test_role_01999 TO test_user_01999
+J
+GRANT SHOW ON db8.* TO test_user_01999
+GRANT test_role_01999 TO test_user_01999
+K
+GRANT SHOW ON db8.* TO test_user_01999
+L
+GRANT SELECT ON db9.tb3 TO test_user_01999
+M
+GRANT SELECT ON db9.tb3 TO test_user_01999
+GRANT test_role_01999 TO test_user_01999
+N
+GRANT SELECT ON db9.tb3 TO test_user_01999
+GRANT test_role_01999_1 TO test_user_01999
+O

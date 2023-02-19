@@ -1,5 +1,9 @@
 #pragma once
+
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
+#include <Poco/Message.h>
 
 namespace DB
 {
@@ -24,10 +28,13 @@ struct TextLogElement
     String source_file;
     UInt64 source_line{};
 
+    std::string_view message_format_string;
+
     static std::string name() { return "TextLog"; }
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class TextLog : public SystemLog<TextLogElement>

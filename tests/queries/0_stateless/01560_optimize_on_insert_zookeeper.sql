@@ -1,14 +1,16 @@
+-- Tags: zookeeper
+
 DROP TABLE IF EXISTS empty1;
 DROP TABLE IF EXISTS empty2;
 
 SELECT 'Check creating empty parts';
 
 CREATE TABLE empty1 (key UInt32, val UInt32, date Datetime)
-ENGINE=ReplicatedSummingMergeTree('/clickhouse/01560_optimize_on_insert', '1', val)
+ENGINE=ReplicatedSummingMergeTree('/clickhouse/tables/{database}/test_01560_optimize_on_insert', '1', val)
 PARTITION BY date ORDER BY key;
 
 CREATE TABLE empty2 (key UInt32, val UInt32, date Datetime)
-ENGINE=ReplicatedSummingMergeTree('/clickhouse/01560_optimize_on_insert', '2', val)
+ENGINE=ReplicatedSummingMergeTree('/clickhouse/tables/{database}/test_01560_optimize_on_insert', '2', val)
 PARTITION BY date ORDER BY key;
 
 INSERT INTO empty2 VALUES (1, 1, '2020-01-01'), (1, 1, '2020-01-01'), (1, -2, '2020-01-01');

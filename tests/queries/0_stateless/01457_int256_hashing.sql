@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SELECT toUInt256(123) IN (NULL);
 SELECT toUInt256(123) AS k GROUP BY k;
 SELECT toUInt256(123) AS k FROM system.one INNER JOIN (SELECT toUInt256(123) AS k) t USING k;

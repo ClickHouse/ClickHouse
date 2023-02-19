@@ -2,12 +2,15 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISource.h>
 
 namespace DB
 {
@@ -27,7 +30,7 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
     , source_ptr{std::move(source_ptr_)}
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", full_name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -38,7 +41,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     const DataTypes & key_types [[maybe_unused]],
     const Columns & default_values_columns) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -66,12 +69,15 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
+    QueryPipeline pipeline(getSourcePipe(key_columns, requested_keys));
 
-    stream->readPrefix();
+    PullingPipelineExecutor executor(pipeline);
 
-    while (const auto block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
+        convertToFullIfSparse(block);
+
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
             block_key_columns.emplace_back(block.safeGetByPosition(i).column);
@@ -97,8 +103,6 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
         block_key_columns.clear();
     }
-
-    stream->readSuffix();
 
     Field value_to_insert;
 
@@ -159,7 +163,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     const Columns & key_columns,
     const DataTypes & key_types [[maybe_unused]]) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -167,13 +171,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     auto requested_keys = requested_keys_extractor.extractAllKeys();
     size_t requested_keys_size = requested_keys.size();
 
-    HashMap<KeyType, size_t> requested_key_to_index;
+    HashMap<KeyType, PaddedPODArray<size_t>> requested_key_to_index;
     requested_key_to_index.reserve(requested_keys_size);
 
     for (size_t i = 0; i < requested_keys.size(); ++i)
     {
         auto requested_key = requested_keys[i];
-        requested_key_to_index[requested_key] = i;
+        requested_key_to_index[requested_key].push_back(i);
     }
 
     auto result = ColumnUInt8::create(requested_keys_size, false);
@@ -183,13 +187,12 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
-
-    stream->readPrefix();
+    QueryPipeline pipeline(getSourcePipe(key_columns, requested_keys));
+    PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
-
-    while (const auto block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
@@ -205,18 +208,19 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
             const auto * it = requested_key_to_index.find(block_key);
             assert(it);
 
-            size_t result_data_found_index = it->getMapped();
-            /// block_keys_size cannot be used, due to duplicates.
-            keys_found += !result_data[result_data_found_index];
-            result_data[result_data_found_index] = true;
+            auto & result_data_found_indexes = it->getMapped();
+            for (size_t result_data_found_index : result_data_found_indexes)
+            {
+                /// block_keys_size cannot be used, due to duplicates.
+                keys_found += !result_data[result_data_found_index];
+                result_data[result_data_found_index] = true;
+            }
 
             block_keys_extractor.rollbackCurrentKey();
         }
 
         block_key_columns.clear();
     }
-
-    stream->readSuffix();
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -229,7 +233,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
     ColumnPtr key_column,
     const DataTypePtr & key_type) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
         size_t keys_found;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
@@ -247,7 +251,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
     ColumnPtr in_key_column,
     const DataTypePtr & key_type) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
         size_t keys_found = 0;
         auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
@@ -259,16 +263,45 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
         return nullptr;
 }
 
+class SourceFromQueryPipeline : public ISource
+{
+public:
+    explicit SourceFromQueryPipeline(QueryPipeline pipeline_)
+        : ISource(pipeline_.getHeader())
+        , pipeline(std::move(pipeline_))
+        , executor(pipeline)
+    {}
+
+    std::string getName() const override { return "SourceFromQueryPipeline"; }
+
+    Chunk generate() override
+    {
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            if (chunk)
+                return chunk;
+        }
+
+        return {};
+    }
+
+
+private:
+    QueryPipeline pipeline;
+    PullingPipelineExecutor executor;
+};
+
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
+Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
     size_t requested_keys_size = requested_keys.size();
 
-    BlockInputStreamPtr stream;
+    Pipe pipe;
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         std::vector<UInt64> ids;
         ids.reserve(requested_keys_size);
@@ -276,7 +309,7 @@ BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputSt
         for (auto key : requested_keys)
             ids.emplace_back(key);
 
-        stream = source_ptr->loadIds(ids);
+        pipe = Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadIds(ids)));
     }
     else
     {
@@ -285,16 +318,16 @@ BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputSt
         for (size_t i = 0; i < requested_keys_size; ++i)
             requested_rows.emplace_back(i);
 
-        stream = source_ptr->loadKeys(key_columns, requested_rows);
+        pipe = Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadKeys(key_columns, requested_rows)));
     }
 
-    return stream;
+    return pipe;
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getBlockInputStream(const Names & /* column_names */, size_t /* max_block_size */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
-    return source_ptr->loadAll();
+    return Pipe(std::make_shared<SourceFromQueryPipeline>(source_ptr->loadAll()));
 }
 
 namespace
@@ -306,12 +339,12 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         DictionarySourcePtr source_ptr,
-        ContextPtr /* context */,
+        ContextPtr /* global_context */,
         bool /* created_from_ddl */)
     {
-        const auto * layout_name = dictionary_key_type == DictionaryKeyType::simple ? "direct" : "complex_key_direct";
+        const auto * layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "direct" : "complex_key_direct";
 
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (dict_struct.key)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -343,13 +376,13 @@ namespace
     }
 }
 
-template class DirectDictionary<DictionaryKeyType::simple>;
-template class DirectDictionary<DictionaryKeyType::complex>;
+template class DirectDictionary<DictionaryKeyType::Simple>;
+template class DirectDictionary<DictionaryKeyType::Complex>;
 
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
-    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::simple>, false);
-    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::complex>, true);
+    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false);
+    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true);
 }
 
 

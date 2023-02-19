@@ -1,13 +1,19 @@
 #include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Common/typeid_cast.h>
 
 #include <deque>
+#include <vector>
+
+#include <base/sort.h>
 
 
 namespace DB
@@ -30,8 +36,9 @@ bool LogicalExpressionsOptimizer::OrWithExpression::operator<(const OrWithExpres
     return std::tie(this->or_function, this->expression) < std::tie(rhs.or_function, rhs.expression);
 }
 
-LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, UInt64 optimize_min_equality_disjunction_chain_length)
-    : select_query(select_query_), settings(optimize_min_equality_disjunction_chain_length)
+LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_,
+    const TablesWithColumns & tables_with_columns_, UInt64 optimize_min_equality_disjunction_chain_length)
+    : select_query(select_query_), tables_with_columns(tables_with_columns_), settings(optimize_min_equality_disjunction_chain_length)
 {
 }
 
@@ -39,7 +46,7 @@ void LogicalExpressionsOptimizer::perform()
 {
     if (select_query == nullptr)
         return;
-    if (visited_nodes.count(select_query))
+    if (visited_nodes.contains(select_query))
         return;
 
     size_t position = 0;
@@ -94,7 +101,7 @@ void LogicalExpressionsOptimizer::reorderColumns()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
-    if (visited_nodes.count(select_query))
+    if (visited_nodes.contains(select_query))
         return;
 
     using Edge = std::pair<IAST *, IAST *>;
@@ -149,8 +156,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
             {
                 auto res = or_parent_map.insert(std::make_pair(function, ParentNodes{from_node}));
                 if (!res.second)
-                    throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
-                        ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: parent node information is corrupted");
             }
         }
         else
@@ -159,7 +165,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
             {
                 if (!child->as<ASTSelectQuery>())
                 {
-                    if (!visited_nodes.count(child.get()))
+                    if (!visited_nodes.contains(child.get()))
                         to_visit.push_back(Edge(to_node, &*child));
                     else
                     {
@@ -180,7 +186,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
     {
         auto & equalities = chain.second;
         auto & equality_functions = equalities.functions;
-        std::sort(equality_functions.begin(), equality_functions.end());
+        ::sort(equality_functions.begin(), equality_functions.end());
     }
 }
 
@@ -194,13 +200,41 @@ inline ASTs & getFunctionOperands(const ASTFunction * or_function)
 
 }
 
+bool LogicalExpressionsOptimizer::isLowCardinalityEqualityChain(const std::vector<ASTFunction *> & functions) const
+{
+    if (functions.size() > 1)
+    {
+        /// Check if identifier is LowCardinality type
+        auto & first_operands = getFunctionOperands(functions[0]);
+        const auto * identifier = first_operands[0]->as<ASTIdentifier>();
+        if (identifier)
+        {
+            auto pos = IdentifierSemantic::getMembership(*identifier);
+            if (!pos)
+                pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables_with_columns, true);
+            if (pos)
+            {
+                if (auto data_type_and_name = tables_with_columns[*pos].columns.tryGetByName(identifier->shortName()))
+                {
+                    if (typeid_cast<const DataTypeLowCardinality *>(data_type_and_name->type.get()))
+                        return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
     const auto & equalities = chain.second;
     const auto & equality_functions = equalities.functions;
 
-    /// We eliminate too short chains.
-    if (equality_functions.size() < settings.optimize_min_equality_disjunction_chain_length)
+    /// For LowCardinality column, the dict is usually smaller and the index is relatively large.
+    /// In most cases, merging OR-chain as IN is better than converting each LowCardinality into full column individually.
+    /// For non-LowCardinality, we need to eliminate too short chains.
+    if (equality_functions.size() < settings.optimize_min_equality_disjunction_chain_length &&
+            !isLowCardinalityEqualityChain(equality_functions))
         return false;
 
     /// We check that the right-hand sides of all equalities have the same type.
@@ -225,22 +259,19 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     /// 1. Create a new IN expression based on information from the OR-chain.
 
-    /// Construct a list of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
-    ASTPtr value_list = std::make_shared<ASTExpressionList>();
+    /// Construct a tuple of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
+
+    Tuple tuple;
+    tuple.reserve(equality_functions.size());
+
     for (const auto * function : equality_functions)
     {
         const auto & operands = getFunctionOperands(function);
-        value_list->children.push_back(operands[1]);
+        tuple.push_back(operands[1]->as<ASTLiteral>()->value);
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
-    /// Otherwise, they would be specified in the order of the ASTLiteral addresses, which is nondeterministic.
-    std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
-    {
-        const auto * val_lhs = lhs->as<ASTLiteral>();
-        const auto * val_rhs = rhs->as<ASTLiteral>();
-        return val_lhs->value < val_rhs->value;
-    });
+    ::sort(tuple.begin(), tuple.end());
 
     /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
     ASTPtr equals_expr_lhs;
@@ -250,14 +281,11 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
         equals_expr_lhs = operands[0];
     }
 
-    auto tuple_function = std::make_shared<ASTFunction>();
-    tuple_function->name = "tuple";
-    tuple_function->arguments = value_list;
-    tuple_function->children.push_back(tuple_function->arguments);
+    auto tuple_literal = std::make_shared<ASTLiteral>(std::move(tuple));
 
     ASTPtr expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.push_back(equals_expr_lhs);
-    expression_list->children.push_back(tuple_function);
+    expression_list->children.push_back(tuple_literal);
 
     /// Construct the expression `expr IN (x1, ..., xN)`
     auto in_function = std::make_shared<ASTFunction>();
@@ -303,8 +331,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 
         auto it = garbage_map.find(or_with_expression.or_function);
         if (it == garbage_map.end())
-            throw Exception("LogicalExpressionsOptimizer: garbage map is corrupted",
-                ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: garbage map is corrupted");
 
         auto & first_erased = it->second;
         first_erased = std::remove_if(operands.begin(), first_erased, [&](const ASTPtr & operand)
@@ -317,7 +344,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
     for (const auto & entry : garbage_map)
     {
         const auto * function = entry.first;
-        auto first_erased = entry.second;
+        auto * first_erased = entry.second;
 
         auto & operands = getFunctionOperands(function);
         operands.erase(first_erased, operands.end());
@@ -340,8 +367,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
         {
             auto it = or_parent_map.find(or_function);
             if (it == or_parent_map.end())
-                throw Exception("LogicalExpressionsOptimizer: parent node information is corrupted",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: parent node information is corrupted");
             auto & parents = it->second;
 
             auto it2 = column_to_position.find(or_function);
@@ -350,7 +376,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
                 size_t position = it2->second;
                 bool inserted = column_to_position.emplace(operands[0].get(), position).second;
                 if (!inserted)
-                    throw Exception("LogicalExpressionsOptimizer: internal error", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "LogicalExpressionsOptimizer: internal error");
                 column_to_position.erase(it2);
             }
 

@@ -6,7 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <common/map.h>
+#include <base/map.h>
 
 
 namespace DB
@@ -37,11 +37,12 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.empty())
-            throw Exception("Function " + getName() + " cannot be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
         return getLeastSupertype(types);
     }
@@ -106,6 +107,8 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
+        for (const auto & argument : arguments)
+            argument_types.push_back(argument.type);
 
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))
@@ -118,7 +121,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {
         if (types.empty())
-            throw Exception("Function " + getName() + " cannot be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
         if (types.size() == 2 && isNumber(types[0]) && isNumber(types[1]))
             return SpecializedFunction::create(context)->getReturnTypeImpl(types);

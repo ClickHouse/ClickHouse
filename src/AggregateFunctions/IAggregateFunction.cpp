@@ -50,4 +50,27 @@ String IAggregateFunction::getDescription() const
 
     return description;
 }
+
+bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) const
+{
+    return std::equal(
+        argument_types.begin(),
+        argument_types.end(),
+        rhs.argument_types.begin(),
+        rhs.argument_types.end(),
+        [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
+}
+
+bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & rhs) const
+{
+    const auto & lhs_base = getBaseAggregateFunctionWithSameStateRepresentation();
+    const auto & rhs_base = rhs.getBaseAggregateFunctionWithSameStateRepresentation();
+    return lhs_base.haveSameStateRepresentationImpl(rhs_base);
+}
+
+bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const
+{
+    return getStateType()->equals(*rhs.getStateType());
+}
+
 }

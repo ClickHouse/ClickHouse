@@ -2,16 +2,7 @@
 
 #if USE_PARQUET
 
-// TODO: clean includes
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <Common/assert_cast.h>
-#include <Core/callOnTypeIndex.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WriteHelpers.h>
-#include <arrow/api.h>
-#include <arrow/util/memory.h>
 #include <parquet/arrow/writer.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
@@ -19,6 +10,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
@@ -37,7 +29,12 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     if (!ch_column_to_arrow_column)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet");
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
+            header,
+            "Parquet",
+            false,
+            format_settings.parquet.output_string_as_string,
+            format_settings.parquet.output_fixed_string_as_fixed_byte_array);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
@@ -58,17 +55,17 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             props, /*parquet::default_writer_properties(),*/
             &file_writer);
         if (!status.ok())
-            throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table: {}", status.ToString());
     }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto status = file_writer->WriteTable(*arrow_table, format_settings.parquet.row_group_size);
 
     if (!status.ok())
-        throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while writing a table: {}", status.ToString());
 }
 
-void ParquetBlockOutputFormat::finalize()
+void ParquetBlockOutputFormat::finalizeImpl()
 {
     if (!file_writer)
     {
@@ -79,24 +76,25 @@ void ParquetBlockOutputFormat::finalize()
 
     auto status = file_writer->Close();
     if (!status.ok())
-        throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table: {}", status.ToString());
 }
 
-void registerOutputFormatProcessorParquet(FormatFactory & factory)
+void ParquetBlockOutputFormat::resetFormatterImpl()
 {
-    factory.registerOutputFormatProcessor(
+    file_writer.reset();
+}
+
+void registerOutputFormatParquet(FormatFactory & factory)
+{
+    factory.registerOutputFormat(
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
-            auto impl = std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
-            /// TODO
-            // auto res = std::make_shared<SquashingBlockOutputStream>(impl, impl->getHeader(), format_settings.parquet.row_group_size, 0);
-            // res->disableFlush();
-            return impl;
+            return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("Parquet");
 }
 
 }
@@ -106,7 +104,7 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProcessorParquet(FormatFactory &)
+void registerOutputFormatParquet(FormatFactory &)
 {
 }
 }

@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/SymbolIndex.h>
 #include <Columns/ColumnString.h>
@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -44,17 +44,19 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception("Function " + getName() + " needs exactly one argument; passed "
-                + toString(arguments.size()) + ".", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
+                getName(), arguments.size());
 
         const auto & type = arguments[0].type;
 
         if (!WhichDataType(type.get()).isUInt64())
-            throw Exception("The only argument for function " + getName() + " must be UInt64. Found "
-                + type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be UInt64. "
+                "Found {} instead.", getName(), type->getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -73,7 +75,7 @@ public:
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
         if (!column_concrete)
-            throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", column->getName(), getName());
 
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
@@ -81,7 +83,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(data[i])))
-                result_column->insertDataWithTerminatingZero(symbol->name, strlen(symbol->name) + 1);
+                result_column->insertData(symbol->name, strlen(symbol->name));
             else
                 result_column->insertDefault();
         }
@@ -92,7 +94,7 @@ public:
 
 }
 
-void registerFunctionAddressToSymbol(FunctionFactory & factory)
+REGISTER_FUNCTION(AddressToSymbol)
 {
     factory.registerFunction<FunctionAddressToSymbol>();
 }

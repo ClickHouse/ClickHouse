@@ -1,9 +1,11 @@
 #pragma once
 
-#include <common/types.h>
-#include <unordered_map>
+#include <base/types.h>
+#include <unordered_set>
+#include <mutex>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Poco/Timestamp.h>
+
 
 namespace DB
 {
@@ -13,7 +15,7 @@ namespace DB
 class ExternalLoaderXMLConfigRepository : public IExternalLoaderConfigRepository
 {
 public:
-    ExternalLoaderXMLConfigRepository(const Poco::Util::AbstractConfiguration & main_config_, const std::string & config_key_);
+    ExternalLoaderXMLConfigRepository(const std::string & app_path_, const std::string & main_config_path_, const std::unordered_set<std::string> & patterns_);
 
     std::string getName() const override { return name; }
 
@@ -29,14 +31,20 @@ public:
     /// May contain definition about several entities (several dictionaries in one .xml file)
     LoadablesConfigurationPtr load(const std::string & config_file) override;
 
+    void updatePatterns(const std::unordered_set<std::string> & patterns_);
+
 private:
+
     const String name;
 
-    /// Main server config (config.xml).
-    const Poco::Util::AbstractConfiguration & main_config;
+    const std::string app_path;
 
-    /// Key which contains path to directory with .xml configs for entries
-    std::string config_key;
+    const std::string main_config_path;
+
+    std::unordered_set<std::string> patterns;
+
+    mutable std::mutex patterns_mutex;
+
 };
 
 }

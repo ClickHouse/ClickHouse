@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 set -e
 
@@ -11,7 +12,7 @@ CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLI
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE t (x Int8) ENGINE = MergeTree ORDER BY tuple()"
 
-for _ in {1..100}; do
+for _ in {1..70}; do
     ${CLICKHOUSE_CLIENT} --query="INSERT INTO t VALUES (0)"
     ${CLICKHOUSE_CLIENT} --query="INSERT INTO t VALUES (0)"
     ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t FINAL" 2>/dev/null &

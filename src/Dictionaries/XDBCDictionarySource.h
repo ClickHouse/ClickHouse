@@ -3,7 +3,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <BridgeHelper/XDBCBridgeHelper.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "IDictionarySource.h"
@@ -32,6 +32,7 @@ public:
         const std::string db;
         const std::string schema;
         const std::string table;
+        const std::string query;
         const std::string where;
         const std::string invalidate_query;
         const std::string update_field;
@@ -49,13 +50,13 @@ public:
     XDBCDictionarySource(const XDBCDictionarySource & other);
     XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockInputStreamPtr loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -73,7 +74,7 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
-    BlockInputStreamPtr loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const;
+    QueryPipeline loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const;
 
     Poco::Logger * log;
 
@@ -88,6 +89,7 @@ private:
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;
     ConnectionTimeouts timeouts;
+    Poco::Net::HTTPBasicCredentials credentials{};
 };
 
 }

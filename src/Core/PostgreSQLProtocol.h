@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Access/AccessControlManager.h>
-#include <Access/User.h>
 #include <functional>
-#include <Interpreters/Context.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
+#include <Interpreters/Session.h>
+#include <Common/logger_useful.h>
 #include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
@@ -154,7 +152,7 @@ private:
     WriteBuffer * out;
 
 public:
-    MessageTransport(WriteBuffer * out_) : in(nullptr), out(out_) {}
+    explicit MessageTransport(WriteBuffer * out_) : in(nullptr), out(out_) {}
 
     MessageTransport(ReadBuffer * in_, WriteBuffer * out_): in(in_), out(out_) {}
 
@@ -177,7 +175,7 @@ public:
     FrontMessageType receiveMessageType()
     {
         char type = 0;
-        in->read(type);
+        in->readStrict(type);
         return static_cast<FrontMessageType>(type);
     }
 
@@ -259,7 +257,7 @@ public:
     Int32 payload_size;
 
     FirstMessage() = delete;
-    FirstMessage(int payload_size_) : payload_size(payload_size_) {}
+    explicit FirstMessage(int payload_size_) : payload_size(payload_size_) {}
 };
 
 class CancelRequest : public FirstMessage
@@ -268,7 +266,7 @@ public:
     Int32 process_id = 0;
     Int32 secret_key = 0;
 
-    CancelRequest(int payload_size_) : FirstMessage(payload_size_) {}
+    explicit CancelRequest(int payload_size_) : FirstMessage(payload_size_) {}
 
     void deserialize(ReadBuffer & in) override
     {
@@ -309,7 +307,7 @@ private:
             case LOG:
                 return 'N';
         }
-        throw Exception("Unknown severity type " + std::to_string(severity), ErrorCodes::UNKNOWN_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown severity type {}", std::to_string(severity));
     }
 
 public:
@@ -338,7 +336,12 @@ public:
     Int32 size() const override
     {
         // message length part + (1 + sizes of other fields + 1) + null byte in the end of the message
-        return 4 + (1 + enum_to_string[severity].size() + 1) + (1 + sql_state.size() + 1) + (1 + message.size() + 1) + 1;
+        return static_cast<Int32>(
+            4 +
+            (1 + enum_to_string[severity].size() + 1) +
+            (1 + sql_state.size() + 1) +
+            (1 + message.size() + 1) +
+            1);
     }
 
     MessageType getMessageType() const override
@@ -393,7 +396,7 @@ public:
     // includes username, may also include database and other runtime parameters
     std::unordered_map<String, String> parameters;
 
-    StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
+    explicit StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
     void deserialize(ReadBuffer & in) override
     {
@@ -420,11 +423,9 @@ public:
 
             if (payload_size < 0)
             {
-                throw Exception(
-                        Poco::format(
-                                "Size of payload is larger than one declared in the message of type %d.",
-                                getMessageType()),
-                        ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                                "Size of payload is larger than one declared in the message of type {}.",
+                                static_cast<UInt64>(getMessageType()));
             }
         }
         in.ignore();
@@ -520,7 +521,7 @@ public:
 
     Int32 size() const override
     {
-        return 4 + name.size() + 1 + value.size() + 1;
+        return static_cast<Int32>(4 + name.size() + 1 + value.size() + 1);
     }
 
     MessageType getMessageType() const override
@@ -635,7 +636,7 @@ public:
         // + object ID of the table (Int32 and always zero) + attribute number of the column (Int16 and always zero)
         // + type object id (Int32) + data type size (Int16)
         // + type modifier (Int32 and always -1) + format code (Int16)
-        return (name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2;
+        return static_cast<Int32>((name.size() + 1) + 4 + 2 + 4 + 2 + 4 + 2);
     }
 };
 
@@ -645,7 +646,7 @@ private:
     const std::vector<FieldDescription> & fields_descr;
 
 public:
-    RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
+    explicit RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -675,7 +676,7 @@ class StringField : public ISerializable
 private:
     String str;
 public:
-    StringField(String str_) : str(str_) {}
+    explicit StringField(String str_) : str(str_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -684,7 +685,7 @@ public:
 
     Int32 size() const override
     {
-        return str.size();
+        return static_cast<Int32>(str.size());
     }
 };
 
@@ -705,7 +706,7 @@ private:
     const std::vector<std::shared_ptr<ISerializable>> & row;
 
 public:
-    DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
+    explicit DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -764,7 +765,7 @@ public:
 
     Int32 size() const override
     {
-        return 4 + value.size() + 1;
+        return static_cast<Int32>(4 + value.size() + 1);
     }
 
     MessageType getMessageType() const override
@@ -803,12 +804,13 @@ protected:
     static void setPassword(
         const String & user_name,
         const String & password,
-        ContextMutablePtr context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        try {
-            context->setUser(user_name, password, address);
+        try
+        {
+            session.authenticate(user_name, password, address);
         }
         catch (const Exception &)
         {
@@ -822,11 +824,11 @@ protected:
 public:
     virtual void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
-    virtual Authentication::Type getType() const = 0;
+    virtual AuthenticationType getType() const = 0;
 
     virtual ~AuthenticationMethod() = default;
 };
@@ -836,16 +838,16 @@ class NoPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
-        setPassword(user_name, "", context, mt, address);
+        return setPassword(user_name, "", session, mt, address);
     }
 
-    Authentication::Type getType() const override
+    AuthenticationType getType() const override
     {
-        return Authentication::Type::NO_PASSWORD;
+        return AuthenticationType::NO_PASSWORD;
     }
 };
 
@@ -854,7 +856,7 @@ class CleartextPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -864,19 +866,17 @@ public:
         if (type == Messaging::FrontMessageType::PASSWORD_MESSAGE)
         {
             std::unique_ptr<Messaging::PasswordMessage> password = mt.receive<Messaging::PasswordMessage>();
-            setPassword(user_name, password->password, context, mt, address);
+            return setPassword(user_name, password->password, session, mt, address);
         }
         else
-            throw Exception(
-                Poco::format(
-                    "Client sent wrong message or closed the connection. Message byte was %d.",
-                    static_cast<Int32>(type)),
-                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Client sent wrong message or closed the connection. Message byte was {}.",
+                    static_cast<Int32>(type));
     }
 
-    Authentication::Type getType() const override
+    AuthenticationType getType() const override
     {
-        return Authentication::Type::PLAINTEXT_PASSWORD;
+        return AuthenticationType::PLAINTEXT_PASSWORD;
     }
 };
 
@@ -884,10 +884,10 @@ class AuthenticationManager
 {
 private:
     Poco::Logger * log = &Poco::Logger::get("AuthenticationManager");
-    std::unordered_map<Authentication::Type, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
-    AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
+    explicit AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
     {
         for (const std::shared_ptr<AuthenticationMethod> & method : auth_methods)
         {
@@ -897,16 +897,14 @@ public:
 
     void authenticate(
         const String & user_name,
-        ContextMutablePtr context,
+        Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        auto user = context->getAccessControlManager().read<User>(user_name);
-        Authentication::Type user_auth_type = user->authentication.getType();
-
+        const AuthenticationType user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
         if (type_to_method.find(user_auth_type) != type_to_method.end())
         {
-            type_to_method[user_auth_type]->authenticate(user_name, context, mt, address);
+            type_to_method[user_auth_type]->authenticate(user_name, session, mt, address);
             mt.send(Messaging::AuthenticationOk(), true);
             LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
             return;
@@ -916,7 +914,7 @@ public:
             Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
             true);
 
-        throw Exception(Poco::format("Authentication type %d is not supported.", user_auth_type), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Authentication type {} is not supported.", user_auth_type);
     }
 };
 }

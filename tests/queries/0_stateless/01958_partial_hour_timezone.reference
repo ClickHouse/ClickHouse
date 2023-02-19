@@ -1,0 +1,20 @@
+Row 1:
+──────
+toUnixTimestamp(t):                            14459031
+timeZoneOffset(t):                             -2670
+formatDateTime(t, '%F %T', 'Africa/Monrovia'): 1970-06-17 07:39:21
+toString(t, 'Africa/Monrovia'):                1970-06-17 07:39:21
+toStartOfMinute(t):                            1970-06-17 07:39:00
+toStartOfFiveMinutes(t):                       1970-06-17 07:35:00
+toStartOfFifteenMinutes(t):                    1970-06-17 07:30:00
+toStartOfTenMinutes(t):                        1970-06-17 07:30:00
+toStartOfHour(t):                              1970-06-17 07:00:00
+toStartOfDay(t):                               1970-06-17 00:00:00
+toStartOfWeek(t):                              1970-06-14
+toStartOfInterval(t, toIntervalSecond(1)):     1970-06-17 07:39:21
+toStartOfInterval(t, toIntervalMinute(1)):     1970-06-17 07:39:00
+toStartOfInterval(t, toIntervalMinute(2)):     1970-06-17 07:38:00
+toStartOfInterval(t, toIntervalMinute(5)):     1970-06-17 07:35:00
+toStartOfInterval(t, toIntervalMinute(60)):    1970-06-17 07:00:00
+addMinutes(t, 1):                              1970-06-17 07:40:21
+addMinutes(t, 60):                             1970-06-17 08:39:21

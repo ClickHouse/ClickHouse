@@ -1,5 +1,4 @@
-<?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <users>
         <default>
             <databases>
@@ -27,4 +26,4 @@
             </databases>
         </default>
     </users>
-</yandex>
+</clickhouse>

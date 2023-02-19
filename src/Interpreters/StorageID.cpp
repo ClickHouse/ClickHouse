@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
 {
-    database_name = query.database;
-    table_name = query.table;
+    database_name = query.getDatabase();
+    table_name = query.getTable();
     uuid = query.uuid;
     assertNotEmpty();
 }
@@ -40,7 +40,7 @@ StorageID::StorageID(const ASTPtr & node)
     else if (const auto * simple_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(node.get()))
         *this = StorageID(*simple_query);
     else
-        throw Exception("Unexpected AST", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST");
 }
 
 String StorageID::getTableName() const
@@ -53,7 +53,7 @@ String StorageID::getDatabaseName() const
 {
     assertNotEmpty();
     if (database_name.empty())
-        throw Exception("Database name is empty", ErrorCodes::UNKNOWN_DATABASE);
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database name is empty");
     return database_name;
 }
 
@@ -64,21 +64,8 @@ String StorageID::getNameForLogs() const
            + (hasUUID() ? " (" + toString(uuid) + ")" : "");
 }
 
-bool StorageID::operator<(const StorageID & rhs) const
-{
-    assertNotEmpty();
-    /// It's needed for ViewDependencies
-    if (!hasUUID() && !rhs.hasUUID())
-        /// If both IDs don't have UUID, compare them like pair of strings
-        return std::tie(database_name, table_name) < std::tie(rhs.database_name, rhs.table_name);
-    else if (hasUUID() && rhs.hasUUID())
-        /// If both IDs have UUID, compare UUIDs and ignore database and table name
-        return uuid < rhs.uuid;
-    else
-        /// All IDs without UUID are less, then all IDs with UUID
-        return !hasUUID();
-}
-
+/// NOTE: This implementation doesn't allow to implement a good "operator <".
+/// Because "a != b" must be equivalent to "(a < b) || (b < a)", and we can't make "operator <" to meet that.
 bool StorageID::operator==(const StorageID & rhs) const
 {
     assertNotEmpty();
@@ -110,7 +97,7 @@ StorageID StorageID::fromDictionaryConfig(const Poco::Util::AbstractConfiguratio
     return res;
 }
 
-String StorageID::getInternalDictionaryName() const
+String StorageID::getShortName() const
 {
     assertNotEmpty();
     if (hasUUID())

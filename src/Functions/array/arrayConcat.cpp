@@ -7,7 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -32,18 +32,20 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
         for (auto i : collections::range(0, arguments.size()))
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
-                throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                                + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} for function {} must be an array but it has type {}.",
+                                i, getName(), arguments[i]->getName());
         }
 
         return getLeastSupertype(arguments);
@@ -85,7 +87,7 @@ public:
             if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
                 sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
             else
-                throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments for function {} must be arrays.", getName());
         }
 
         auto sink = GatherUtils::concat(sources);
@@ -97,7 +99,7 @@ public:
 };
 
 
-void registerFunctionArrayConcat(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayConcat)
 {
     factory.registerFunction<FunctionArrayConcat>();
 }

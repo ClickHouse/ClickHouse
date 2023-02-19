@@ -1,9 +1,10 @@
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeString.h>
@@ -34,6 +35,11 @@ template <> struct DataTypeToTimeTypeMap<DataTypeDate>
     using TimeType = UInt16;
 };
 
+template <> struct DataTypeToTimeTypeMap<DataTypeDate32>
+{
+    using TimeType = Int32;
+};
+
 template <> struct DataTypeToTimeTypeMap<DataTypeDateTime>
 {
     using TimeType = UInt32;
@@ -58,6 +64,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
     bool isVariadic() const override { return true; }
@@ -70,7 +78,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}",
                 getName(),
-                toString(arguments.size()));
+                arguments.size());
 
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
@@ -81,7 +89,7 @@ public:
 
         WhichDataType first_argument_type(arguments[1].type);
 
-        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDateTime64()))
+        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDate32() || first_argument_type.isDateTime64()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of 2 argument of function {}. Must be a date or a date with time",
@@ -106,11 +114,12 @@ public:
         ColumnPtr res;
 
         if (!((res = executeType<DataTypeDate>(arguments, result_type))
+            || (res = executeType<DataTypeDate32>(arguments, result_type))
             || (res = executeType<DataTypeDateTime>(arguments, result_type))
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of function {], must be Date or DateTime.",
+                "Illegal column {} of function {}, must be Date or DateTime.",
                 arguments[1].column->getName(),
                 getName());
 
@@ -146,7 +155,7 @@ public:
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
         {
-            scale = times_data.getScale();
+            scale = times->getScale();
         }
 
         auto result_column = ColumnString::create();
@@ -267,7 +276,7 @@ private:
     {
         static inline void write(WriteBuffer & buffer, Time source, const DateLUTImpl & timezone)
         {
-            const auto day = ToDayOfWeekImpl::execute(source, timezone);
+            const auto day = ToDayOfWeekImpl::execute(source, 0, timezone);
             static constexpr std::string_view day_names[] =
             {
                 "Monday",
@@ -341,9 +350,9 @@ private:
 
 }
 
-void registerFunctionDateName(FunctionFactory & factory)
+REGISTER_FUNCTION(DateName)
 {
-    factory.registerFunction<FunctionDateNameImpl>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionDateNameImpl>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

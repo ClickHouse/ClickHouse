@@ -10,7 +10,7 @@ import requests
 import tempfile
 
 
-DEFAULT_URL = 'https://clickhouse-datasets.s3.yandex.net'
+DEFAULT_URL = 'https://clickhouse-datasets.s3.amazonaws.com'
 
 AVAILABLE_DATASETS = {
     'hits': 'hits_v1.tar',
@@ -92,7 +92,7 @@ if __name__ == "__main__":
             logging.info("Some exception occured %s", str(ex))
             raise
         finally:
-            logging.info("Will remove dowloaded file %s from filesystem if it exists", temp_archive_path)
+            logging.info("Will remove downloaded file %s from filesystem if it exists", temp_archive_path)
             if os.path.exists(temp_archive_path):
                 os.remove(temp_archive_path)
         logging.info("Processing of %s finished", dataset)

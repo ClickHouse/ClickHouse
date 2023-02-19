@@ -1,6 +1,7 @@
 ---
-toc_priority: 39
-toc_title: EXPLAIN
+slug: /ru/sql-reference/statements/explain
+sidebar_position: 39
+sidebar_label: EXPLAIN
 ---
 
 # EXPLAIN {#explain}
@@ -133,9 +134,9 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-!!! note "Примечание"
+    :::note "Примечание"
     Оценка стоимости выполнения шага и запроса не поддерживается.
-	
+    :::
 При `json = 1` шаги выполнения запроса выводятся в формате JSON. Каждый узел — это словарь, в котором всегда есть ключи `Node Type` и `Plans`. `Node Type` — это строка с именем шага. `Plans` — это массив с описаниями дочерних шагов. Другие дополнительные ключи могут быть добавлены в зависимости от типа узла и настроек.
 
 Пример:
@@ -240,17 +241,15 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
   }
 ]
 ```
-  
+
 При `indexes` = 1 добавляется ключ `Indexes`. Он содержит массив используемых индексов. Каждый индекс описывается как строка в формате JSON с ключом `Type` (`MinMax`, `Partition`, `PrimaryKey` или `Skip`) и дополнительные ключи:
 
 -   `Name` — имя индекса (на данный момент используется только для индекса `Skip`).
 -   `Keys` — массив столбцов, используемых индексом.
 -   `Condition` — строка с используемым условием.
 -   `Description` — индекс (на данный момент используется только для индекса `Skip`).
--   `Initial Parts` — количество кусков до применения индекса.
--   `Selected Parts` — количество кусков после применения индекса.
--   `Initial Granules` — количество гранул до применения индекса.
--   `Selected Granulesis` — количество гранул после применения индекса.
+-   `Parts` — количество кусков до/после применения индекса.
+-   `Granules` — количество гранул до/после применения индекса.
 
 Пример:
 
@@ -261,46 +260,36 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
     "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
-    "Initial Parts": 5,
-    "Selected Parts": 4,
-    "Initial Granules": 12,
-    "Selected Granules": 11
+    "Parts": 5/4,
+    "Granules": 12/11
   },
   {
     "Type": "Partition",
     "Keys": ["y", "bitAnd(z, 3)"],
     "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
-    "Initial Parts": 4,
-    "Selected Parts": 3,
-    "Initial Granules": 11,
-    "Selected Granules": 10
+    "Parts": 4/3,
+    "Granules": 11/10
   },
   {
     "Type": "PrimaryKey",
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
-    "Initial Parts": 3,
-    "Selected Parts": 2,
-    "Initial Granules": 10,
-    "Selected Granules": 6
+    "Parts": 3/2,
+    "Granules": 10/6
   },
   {
     "Type": "Skip",
     "Name": "t_minmax",
     "Description": "minmax GRANULARITY 2",
-    "Initial Parts": 2,
-    "Selected Parts": 1,
-    "Initial Granules": 6,
-    "Selected Granules": 2
+    "Parts": 2/1,
+    "Granules": 6/2
   },
   {
     "Type": "Skip",
     "Name": "t_set",
     "Description": "set GRANULARITY 2",
-    "Initial Parts": 1,
-    "Selected Parts": 1,
-    "Initial Granules": 2,
-    "Selected Granules": 1
+    "": 1/1,
+    "Granules": 2/1
   }
 ]
 ```
@@ -385,4 +374,30 @@ ExpressionTransform
             NumbersMt × 2 0 → 1
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/explain/) <!--hide-->
+### EXPLAIN ESTIMATE {#explain-estimate}
+
+ Отображает оценки числа строк, засечек и кусков, которые будут прочитаны при выполнении запроса. Применяется для таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). 
+
+**Пример**
+
+Создадим таблицу:
+
+```sql
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+Запрос:
+
+```sql
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+Результат:
+
+```text
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```

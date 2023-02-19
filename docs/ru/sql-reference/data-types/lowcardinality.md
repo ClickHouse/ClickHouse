@@ -1,6 +1,7 @@
 ---
-toc_priority: 51
-toc_title: LowCardinality
+slug: /ru/sql-reference/data-types/lowcardinality
+sidebar_position: 51
+sidebar_label: LowCardinality
 ---
 
 # LowCardinality {#lowcardinality-data-type}
@@ -21,7 +22,7 @@ LowCardinality(data_type)
 
 `LowCardinality` — это надстройка, изменяющая способ хранения и правила обработки данных. ClickHouse применяет [словарное кодирование](https://en.wikipedia.org/wiki/Dictionary_coder) в столбцы типа `LowCardinality`. Работа с данными, представленными в словарном виде, может значительно увеличивать производительность запросов [SELECT](../statements/select/index.md) для многих приложений.
 
-Эффективность использования типа данных `LowCarditality` зависит от разнообразия данных. Если словарь содержит менее 10 000 различных значений, ClickHouse в основном показывает более высокую эффективность чтения и хранения данных. Если же словарь содержит более 100 000 различных значений, ClickHouse может работать хуже, чем при использовании обычных типов данных.
+Эффективность использования типа данных `LowCardinality` зависит от разнообразия данных. Если словарь содержит менее 10 000 различных значений, ClickHouse в основном показывает более высокую эффективность чтения и хранения данных. Если же словарь содержит более 100 000 различных значений, ClickHouse может работать хуже, чем при использовании обычных типов данных.
 
 При работе со строками использование `LowCardinality` вместо [Enum](enum.md) обеспечивает большую гибкость в использовании и часто показывает такую же или более высокую эффективность.
 
@@ -32,7 +33,7 @@ LowCardinality(data_type)
 ```sql
 CREATE TABLE lc_t
 (
-    `id` UInt16, 
+    `id` UInt16,
     `strings` LowCardinality(String)
 )
 ENGINE = MergeTree()
@@ -55,6 +56,5 @@ ORDER BY id
 
 ## Смотрите также
 
--   [A Magical Mystery Tour of the LowCardinality Data Type](https://www.altinity.com/blog/2019/3/27/low-cardinality).
--   [Reducing Clickhouse Storage Cost with the Low Cardinality Type – Lessons from an Instana Engineer](https://www.instana.com/blog/reducing-clickhouse-storage-cost-with-the-low-cardinality-type-lessons-from-an-instana-engineer/).
--   [String Optimization (video presentation in Russian)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [Slides in English](https://github.com/yandex/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf).
+-   [Reducing ClickHouse Storage Cost with the Low Cardinality Type – Lessons from an Instana Engineer](https://www.instana.com/blog/reducing-clickhouse-storage-cost-with-the-low-cardinality-type-lessons-from-an-instana-engineer/).
+-   [String Optimization (video presentation in Russian)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [Slides in English](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf).

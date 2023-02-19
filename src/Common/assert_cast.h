@@ -6,7 +6,7 @@
 #include <string>
 
 #include <Common/Exception.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 
 
 namespace DB
@@ -41,11 +41,11 @@ To assert_cast(From && from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception::createDeprecated(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
-                        DB::ErrorCodes::LOGICAL_ERROR);
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
+                        demangle(typeid(from).name()), demangle(typeid(To).name()));
 #else
     return static_cast<To>(from);
 #endif

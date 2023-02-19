@@ -18,13 +18,14 @@ struct IntExp10Impl
 {
     using ResultType = UInt64;
     static constexpr const bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline ResultType apply([[maybe_unused]] A a)
     {
         if constexpr (is_big_int_v<A> || std::is_same_v<A, Decimal256>)
-            throw DB::Exception("IntExp10 is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "IntExp10 is not implemented for big integers");
         else
-            return intExp10(a);
+            return intExp10(static_cast<int>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -54,11 +55,11 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
         if (left_float < 0 || right_float > 19)
             return {};
 
-        return { true };
+        return { .is_monotonic = true, .is_strict = true };
     }
 };
 
-void registerFunctionIntExp10(FunctionFactory & factory)
+REGISTER_FUNCTION(IntExp10)
 {
     factory.registerFunction<FunctionIntExp10>();
 }

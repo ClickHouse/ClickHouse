@@ -21,7 +21,6 @@ ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block &
     : IOutputFormat(header_, out_)
     , stream{stream_}
     , format_settings{format_settings_}
-    , arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
 {
 }
 
@@ -33,8 +32,12 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     if (!ch_column_to_arrow_column)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column
-            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
+            header,
+            "Arrow",
+            format_settings.arrow.low_cardinality_as_dictionary,
+            format_settings.arrow.output_string_as_string,
+            format_settings.arrow.output_fixed_string_as_fixed_byte_array);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
@@ -50,7 +53,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             "Error while writing a table: {}", status.ToString());
 }
 
-void ArrowBlockOutputFormat::finalize()
+void ArrowBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
     {
@@ -65,8 +68,15 @@ void ArrowBlockOutputFormat::finalize()
             "Error while closing a table: {}", status.ToString());
 }
 
+void ArrowBlockOutputFormat::resetFormatterImpl()
+{
+    writer.reset();
+    arrow_ostream.reset();
+}
+
 void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> & schema)
 {
+    arrow_ostream = std::make_shared<ArrowBufferedOutputStream>(out);
     arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
 
     // TODO: should we use arrow::ipc::IpcOptions::alignment?
@@ -82,27 +92,27 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
-void registerOutputFormatProcessorArrow(FormatFactory & factory)
+void registerOutputFormatArrow(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("Arrow");
 
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
-           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
+    factory.markFormatHasNoAppendSupport("ArrowStream");
 }
 
 }
@@ -112,7 +122,7 @@ void registerOutputFormatProcessorArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProcessorArrow(FormatFactory &)
+void registerOutputFormatArrow(FormatFactory &)
 {
 }
 }

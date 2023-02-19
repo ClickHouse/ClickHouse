@@ -1,0 +1,18 @@
+do not print any ProfileEvents packets
+0
+print only last (and also number of rows to provide more info in case of failures)
+[ 0 ] SelectedRows: 131010 (increment)
+regression test for incorrect filtering out snapshots
+0
+regression test for overlap profile events snapshots between queries
+[ 0 ] SelectedRows: 1 (increment)
+[ 0 ] SelectedRows: 1 (increment)
+regression test for overlap profile events snapshots between queries (clickhouse-local)
+[ 0 ] SelectedRows: 1 (increment)
+[ 0 ] SelectedRows: 1 (increment)
+print everything
+OK
+print each 100 ms
+OK
+check that ProfileEvents is new for each query
+OK

@@ -7,9 +7,7 @@
 
 #include <variant>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config.h"
 
 
 namespace DB
@@ -56,6 +54,10 @@ public:
         Arguments arguments;
         size_t result_position;
 
+        /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
+        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
+        bool is_lazy_executed;
+
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
     };
@@ -68,7 +70,6 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-
     ActionsDAGPtr actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -82,7 +83,6 @@ private:
 
 public:
     ExpressionActions() = delete;
-    ~ExpressionActions();
     explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
@@ -111,7 +111,7 @@ public:
     std::string dumpActions() const;
     JSONBuilder::ItemPtr toTree() const;
 
-    static std::string getSmallestColumn(const NamesAndTypesList & columns);
+    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
 
     /// Check if column is always zero. True if it's definite, false if we can't say for sure.
     /// Call it only after subqueries for sets were executed.
@@ -122,7 +122,7 @@ public:
 private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions();
+    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
 
@@ -232,7 +232,7 @@ struct ExpressionActionsChain : WithContext
         NamesAndTypesList required_columns;
         ColumnsWithTypeAndName result_columns;
 
-        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
+        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, const ColumnsWithTypeAndName & required_columns_);
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
         void finalize(const NameSet & required_output_) override;
@@ -260,7 +260,7 @@ struct ExpressionActionsChain : WithContext
         {
             if (allow_empty)
                 return {};
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
         }
 
         return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_dag;
@@ -269,7 +269,7 @@ struct ExpressionActionsChain : WithContext
     Step & getLastStep()
     {
         if (steps.empty())
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
 
         return *steps.back();
     }

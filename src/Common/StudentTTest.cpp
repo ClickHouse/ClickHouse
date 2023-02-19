@@ -158,7 +158,7 @@ std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_le
 
     if (mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0001)) /// difference must be more than 0.0001, to take into account connection latency.
     {
-        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";
+        ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence: ";
         ss << std::fixed << std::setprecision(8) << "mean difference is " << mean_difference << ", but confidence interval is " << mean_confidence_interval;
         return {false, ss.str()};
     }

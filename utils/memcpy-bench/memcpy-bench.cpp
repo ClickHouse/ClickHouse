@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <memory>
 #include <cstddef>
 #include <stdexcept>
@@ -11,7 +15,7 @@
 
 #include <pcg_random.hpp>
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <Common/Stopwatch.h>
 
@@ -669,7 +673,7 @@ static uint8_t * memcpy_my2(uint8_t * __restrict dst, const uint8_t * __restrict
             size -= padding;
         }
 
-        while (size >= 512)
+        while (size >= 512) /// NOLINT
         {
             __asm__(
                 "vmovups    (%[s]), %%ymm0\n"
@@ -790,19 +794,19 @@ static uint8_t * memcpy_my2(uint8_t * __restrict dst, const uint8_t * __restrict
     return ret;
 }
 
-extern "C" void * __memcpy_erms(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_sse2_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_ssse3(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_ssse3_back(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_avx_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_avx_unaligned_erms(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_avx512_unaligned(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, const void * __restrict source, size_t size);
-extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size);
+extern "C" void * __memcpy_erms(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_sse2_unaligned(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_ssse3(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_ssse3_back(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_avx_unaligned(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_avx_unaligned_erms(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_avx512_unaligned(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_avx512_unaligned_erms(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
+extern "C" void * __memcpy_avx512_no_vzeroupper(void * __restrict destination, const void * __restrict source, size_t size); /// NOLINT
 
 
 #define VARIANT(N, NAME) \
-    if (memcpy_variant == N) \
+    if (memcpy_variant == (N)) \
         return test(dst, src, size, iterations, num_threads, std::forward<F>(generator), NAME, #NAME);
 
 template <typename F>

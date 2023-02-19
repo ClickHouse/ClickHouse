@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
@@ -12,9 +13,8 @@
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config.h"
+#include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -38,16 +38,35 @@ template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
-    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
-    using ColVecC = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
+    using ColVecA = ColumnVectorOrDecimal<A>;
+    using ColVecC = ColumnVectorOrDecimal<ResultType>;
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
+    }))
+
+    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
+            return;
+        }
+#endif
+
+        vectorImpl(a, c);
     }
 
     static void constant(A a, ResultType & c)
@@ -60,11 +79,31 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
+        ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
+    }))
+
+    static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
+            return;
+        }
+#endif
+
+        vectorImpl(a, c);
     }
 };
 
@@ -82,6 +121,8 @@ class FunctionUnaryArithmetic : public IFunction
     static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs || IsUnaryOperation<Op>::sign;
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
     static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
+
+    ContextPtr context;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -105,13 +146,33 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
             DataTypeDecimal<Decimal256>,
-            DataTypeFixedString
+            DataTypeFixedString,
+            DataTypeInterval
         >(type, std::forward<F>(f));
+    }
+
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
+    {
+        if (!isTuple(type))
+            return {};
+
+        /// Special case when the function is negate, argument is tuple.
+        /// We construct another function (example: tupleNegate) and call it.
+
+        if constexpr (!IsUnaryOperation<Op>::negate)
+            return {};
+
+        return FunctionFactory::instance().get("tupleNegate", context);
     }
 
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+
+    FunctionUnaryArithmetic() = default;
+
+    explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -120,11 +181,28 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        return getReturnTypeImplStatic(arguments, context);
+    }
+
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    {
+        /// Special case when the function is negate, argument is tuple.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
+        {
+            ColumnsWithTypeAndName new_arguments(1);
+
+            new_arguments[0].type = arguments[0];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
         DataTypePtr result;
         bool valid = castType(arguments[0].get(), [&](const auto & type)
         {
@@ -134,6 +212,12 @@ public:
                 if constexpr (!Op<DataTypeFixedString>::allow_fixed_string)
                     return false;
                 result = std::make_shared<DataType>(type.getN());
+            }
+            else if constexpr (std::is_same_v<DataTypeInterval, DataType>)
+            {
+                if constexpr (!IsUnaryOperation<Op>::negate)
+                    return false;
+                result = std::make_shared<DataTypeInterval>(type.getKind());
             }
             else
             {
@@ -151,13 +235,19 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), String(name));
         return result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Special case when the function is negate, argument is tuple.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
+        {
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+        }
+
         ColumnPtr result_column;
         bool valid = castType(arguments[0].type.get(), [&](const auto & type)
         {
@@ -223,7 +313,7 @@ public:
             return false;
         });
         if (!valid)
-            throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}'s argument does not match the expected data type", getName());
 
         return result_column;
     }
@@ -289,7 +379,7 @@ struct PositiveMonotonicity
     static bool has() { return true; }
     static IFunction::Monotonicity get(const Field &, const Field &)
     {
-        return { true };
+        return { .is_monotonic = true };
     }
 };
 

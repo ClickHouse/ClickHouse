@@ -1,6 +1,7 @@
 ---
-toc_priority: 54
-toc_title: Tuple(T1, T2, ...)
+slug: /ru/sql-reference/data-types/tuple
+sidebar_position: 54
+sidebar_label: Tuple(T1, T2, ...)
 ---
 
 # Tuple(T1, T2, …) {#tuplet1-t2}

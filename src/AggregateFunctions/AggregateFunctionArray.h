@@ -29,13 +29,14 @@ private:
     size_t num_arguments;
 
 public:
-    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, {})
+    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_, createResultType(nested_))
         , nested_func(nested_), num_arguments(arguments.size())
     {
+        assert(parameters == nested_func->getParameters());
         for (const auto & type : arguments)
             if (!isArray(type))
-                throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All arguments for aggregate function {} must be arrays", getName());
     }
 
     String getName() const override
@@ -43,9 +44,34 @@ public:
         return nested_func->getName() + "Array";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
     {
-        return nested_func->getReturnType();
+        return nested_->getResultType();
+    }
+
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return nested_func->getNormalizedStateType();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        return nested_func->getVersionFromRevision(revision);
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -56,6 +82,11 @@ public:
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         nested_func->destroy(place);
+    }
+
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_func->destroyUpToState(place);
     }
 
     bool hasTrivialDestructor() const override
@@ -98,7 +129,7 @@ public:
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
             if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
-                throw Exception("Arrays passed to " + getName() + " aggregate function have different sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
         for (size_t i = begin; i < end; ++i)
@@ -110,19 +141,24 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        nested_func->serialize(place, buf);
+        nested_func->serialize(place, buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        nested_func->deserialize(place, buf, arena);
+        nested_func->deserialize(place, buf, version, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        nested_func->insertMergeResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ namespace DB
 class DelayedSource : public IProcessor
 {
 public:
-    using Creator = std::function<Pipe()>;
+    using Creator = std::function<QueryPipelineBuilder()>;
 
     DelayedSource(const Block & header, Creator processors_creator, bool add_totals_port, bool add_extremes_port);
     String getName() const override { return "Delayed"; }
@@ -31,6 +31,7 @@ public:
     OutputPort * getExtremesPort() { return extremes; }
 
 private:
+    QueryPlanResourceHolder resources;
     Creator creator;
     Processors processors;
 

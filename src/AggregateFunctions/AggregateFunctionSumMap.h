@@ -16,7 +16,10 @@
 #include <Common/FieldVisitorSum.h>
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <map>
+#include <Common/logger_useful.h>
+#include <Common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -38,7 +41,7 @@ struct AggregateFunctionMapData
     std::map<T, Array> merged_maps;
 };
 
-/** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of of at least 2 arrays -
+/** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
   * ordered keys and variable number of argument values aggregated by corresponding keys.
   *
   * sumMap function is the most useful when using SummingMergeTree to sum Nested columns, which name ends in "Map".
@@ -64,10 +67,13 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionMapData<NearestFieldType<T>>, Derived>
 {
 private:
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
+
     DataTypePtr keys_type;
     SerializationPtr keys_serialization;
     DataTypes values_types;
     Serializations values_serializations;
+    Serializations promoted_values_serializations;
 
 public:
     using Base = IAggregateFunctionDataHelper<
@@ -75,29 +81,59 @@ public:
 
     AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
-        : Base(argument_types_, {} /* parameters */)
+        : Base(argument_types_, {} /* parameters */, createResultType(keys_type_, values_types_, getName()))
         , keys_type(keys_type_)
         , keys_serialization(keys_type->getDefaultSerialization())
         , values_types(values_types_)
     {
         values_serializations.reserve(values_types.size());
+        promoted_values_serializations.reserve(values_types.size());
         for (const auto & type : values_types)
+        {
             values_serializations.emplace_back(type->getDefaultSerialization());
+            if (type->canBePromoted())
+            {
+                if (type->isNullable())
+                    promoted_values_serializations.emplace_back(
+                         makeNullable(removeNullable(type)->promoteNumericType())->getDefaultSerialization());
+                else
+                    promoted_values_serializations.emplace_back(type->promoteNumericType()->getDefaultSerialization());
+            }
+            else
+            {
+                promoted_values_serializations.emplace_back(type->getDefaultSerialization());
+            }
+        }
     }
 
-    DataTypePtr getReturnType() const override
+    bool isVersioned() const override { return true; }
+
+    size_t getDefaultVersion() const override { return 1; }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (revision >= STATE_VERSION_1_MIN_REVISION)
+            return 1;
+        else
+            return 0;
+    }
+
+    static DataTypePtr createResultType(
+        const DataTypePtr & keys_type_,
+        const DataTypes & values_types_,
+        const String & name_)
     {
         DataTypes types;
-        types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
+        types.emplace_back(std::make_shared<DataTypeArray>(keys_type_));
 
-        for (const auto & value_type : values_types)
+        for (const auto & value_type : values_types_)
         {
             if constexpr (std::is_same_v<Visitor, FieldVisitorSum>)
             {
                 if (!value_type->isSummable())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Values for {} cannot be summed, passed type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
             }
 
             DataTypePtr result_type;
@@ -107,7 +143,7 @@ public:
                 if (value_type->onlyNull())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Cannot calculate {} of type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
 
                 // Overflow, meaning that the returned type is the same as
                 // the input type. Nulls are skipped.
@@ -121,9 +157,9 @@ public:
                 if (!value_type_without_nullable->canBePromoted())
                     throw Exception{ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Values for {} are expected to be Numeric, Float or Decimal, passed type {}",
-                        getName(), value_type->getName()};
+                        name_, value_type->getName()};
 
-                WhichDataType value_type_to_check(value_type);
+                WhichDataType value_type_to_check(value_type_without_nullable);
 
                 /// Do not promote decimal because of implementation issues of this function design
                 /// Currently we cannot get result column type in case of decimal we cannot get decimal scale
@@ -170,7 +206,7 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
         for (size_t col = 0, size = values_types.size(); col < size; ++col)
         {
-            const auto & array_column = assert_cast<const ColumnArray&>(*columns[col + 1]);
+            const auto & array_column = assert_cast<const ColumnArray &>(*columns[col + 1]);
             const IColumn & value_column = array_column.getData();
             const IColumn::Offsets & offsets = array_column.getOffsets();
             const size_t values_vec_offset = offsets[row_num - 1];
@@ -178,23 +214,23 @@ public:
 
             // Expect key and value arrays to be of same length
             if (keys_vec_size != values_vec_size)
-                throw Exception("Sizes of keys and values arrays do not match", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sizes of keys and values arrays do not match");
 
             // Insert column values for all keys
             for (size_t i = 0; i < keys_vec_size; ++i)
             {
                 auto value = value_column[values_vec_offset + i];
-                auto key = key_column[keys_vec_offset + i].get<T>();
+                T key = static_cast<T>(key_column[keys_vec_offset + i].get<T>());
 
                 if (!keepKey(key))
                     continue;
 
                 decltype(merged_maps.begin()) it;
-                if constexpr (IsDecimalNumber<T>)
+                if constexpr (is_decimal<T>)
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
-                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                     it = merged_maps.find(DecimalField<T>(key, scale));
                 }
                 else
@@ -217,9 +253,9 @@ public:
                     new_values.resize(size);
                     new_values[col] = value;
 
-                    if constexpr (IsDecimalNumber<T>)
+                    if constexpr (is_decimal<T>)
                     {
-                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
                     }
                     else
@@ -250,37 +286,74 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
+        if (!version)
+            version = getDefaultVersion();
+
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
         writeVarUInt(size, buf);
 
+        std::function<void(size_t, const Array &)> serialize;
+        switch (*version)
+        {
+            case 0:
+            {
+                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
+                break;
+            }
+            case 1:
+            {
+                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {}); };
+                break;
+            }
+        }
+
         for (const auto & elem : merged_maps)
         {
-            keys_serialization->serializeBinary(elem.first, buf);
+            keys_serialization->serializeBinary(elem.first, buf, {});
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->serializeBinary(elem.second[col], buf);
+                serialize(col, elem.second);
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
+        if (!version)
+            version = getDefaultVersion();
+
         auto & merged_maps = this->data(place).merged_maps;
         size_t size = 0;
         readVarUInt(size, buf);
 
+        std::function<void(size_t, Array &)> deserialize;
+        switch (*version)
+        {
+            case 0:
+            {
+                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
+                break;
+            }
+            case 1:
+            {
+                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf, {}); };
+                break;
+            }
+        }
+
         for (size_t i = 0; i < size; ++i)
         {
             Field key;
-            keys_serialization->deserializeBinary(key, buf);
+            keys_serialization->deserializeBinary(key, buf, {});
 
             Array values;
             values.resize(values_types.size());
-            for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->deserializeBinary(values[col], buf);
 
-            if constexpr (IsDecimalNumber<T>)
+            for (size_t col = 0; col < values_types.size(); ++col)
+                deserialize(col, values);
+
+            if constexpr (is_decimal<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;
             else
                 merged_maps[key.get<T>()] = values;
@@ -355,7 +428,7 @@ public:
     }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
-    String getName() const override { return static_cast<const Derived &>(*this).getName(); }
+    String getName() const override { return Derived::getNameImpl(); }
 };
 
 template <typename T, bool overflow, bool tuple_argument>
@@ -374,13 +447,24 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override { return "sumMap"; }
+    static String getNameImpl()
+    {
+        if constexpr (overflow)
+        {
+            return "sumMapWithOverflow";
+        }
+        else
+        {
+            return "sumMap";
+        }
+    }
 
     bool keepKey(const T &) const { return true; }
 };
+
 
 template <typename T, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMapFiltered final :
@@ -395,9 +479,7 @@ private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
-    static constexpr const bool allow_hash = !OverBigInt<T>;
-    using ContainerT = std::conditional_t<allow_hash, std::unordered_set<T>, std::set<T>>;
+    using ContainerT = std::unordered_set<T>;
 
     ContainerT keys_to_keep;
 
@@ -410,25 +492,33 @@ public:
         if (params_.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Aggregate function '{}' requires exactly one parameter "
-                "of Array type", getName());
+                "of Array type", getNameImpl());
 
-        Array keys_to_keep_;
-        if (!params_.front().tryGet<Array>(keys_to_keep_))
+        Array keys_to_keep_values;
+        if (!params_.front().tryGet<Array>(keys_to_keep_values))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
-                getName());
+                getNameImpl());
 
-        if constexpr (allow_hash)
-            keys_to_keep.reserve(keys_to_keep_.size());
+        this->parameters = params_;
 
-        for (const Field & f : keys_to_keep_)
-        {
+        keys_to_keep.reserve(keys_to_keep_values.size());
+
+        for (const Field & f : keys_to_keep_values)
             keys_to_keep.emplace(f.safeGet<T>());
-        }
     }
 
-    String getName() const override
-    { return overflow ? "sumMapFilteredWithOverflow" : "sumMapFiltered"; }
+    static String getNameImpl()
+    {
+        if constexpr (overflow)
+        {
+            return "sumMapFilteredWithOverflow";
+        }
+        else
+        {
+            return "sumMapFiltered";
+        }
+    }
 
     bool keepKey(const T & key) const { return keys_to_keep.count(key); }
 };
@@ -445,7 +535,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val > x)
         {
             x = val;
@@ -458,10 +548,13 @@ private:
 public:
     explicit FieldVisitorMax(const Field & rhs_) : rhs(rhs_) {}
 
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (NegativeInfinity &) const { throw Exception("Cannot compare -Inf", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (PositiveInfinity &) const { throw Exception("Cannot compare +Inf", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Null &) const
+    {
+        /// Do not update current value, skip nulls
+        return false;
+    }
+
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compare AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }
@@ -482,7 +575,7 @@ private:
     template <typename FieldType>
     bool compareImpl(FieldType & x) const
     {
-        auto val = get<FieldType>(rhs);
+        auto val = rhs.get<FieldType>();
         if (val < x)
         {
             x = val;
@@ -495,10 +588,14 @@ private:
 public:
     explicit FieldVisitorMin(const Field & rhs_) : rhs(rhs_) {}
 
-    bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (NegativeInfinity &) const { throw Exception("Cannot compare -Inf", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (PositiveInfinity &) const { throw Exception("Cannot compare +Inf", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+
+    bool operator() (Null &) const
+    {
+        /// Do not update current value, skip nulls
+        return false;
+    }
+
+    bool operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum AggregateFunctionStates"); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
     bool operator() (Tuple & x) const { return compareImpl<Tuple>(x); }
@@ -525,10 +622,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override { return "minMap"; }
+    static String getNameImpl() { return "minMap"; }
 
     bool keepKey(const T &) const { return true; }
 };
@@ -549,10 +646,10 @@ public:
     {
         // The constructor accepts parameters to have a uniform interface with
         // sumMapFiltered, but this function doesn't have any parameters.
-        assertNoParameters(getName(), params_);
+        assertNoParameters(getNameImpl(), params_);
     }
 
-    String getName() const override { return "maxMap"; }
+    static String getNameImpl() { return "maxMap"; }
 
     bool keepKey(const T &) const { return true; }
 };

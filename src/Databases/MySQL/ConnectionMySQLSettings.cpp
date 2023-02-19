@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_CONNECTION_MYSQL_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_MYSQL_DATABASE_SETTINGS)
 
 void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {
@@ -27,7 +27,7 @@ void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-                throw Exception(e.message() + " for database " + storage_def.engine->name, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} for database {}", e.message(), storage_def.engine->name);
             else
                 e.rethrow();
         }

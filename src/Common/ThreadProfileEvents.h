@@ -1,14 +1,15 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
+#include <base/getThreadId.h>
 #include <Common/ProfileEvents.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #include <linux/taskstats.h>
 #else
 struct taskstats {};
@@ -24,44 +25,6 @@ namespace ProfileEvents
     extern const Event SystemTimeMicroseconds;
     extern const Event SoftPageFaults;
     extern const Event HardPageFaults;
-    extern const Event VoluntaryContextSwitches;
-    extern const Event InvoluntaryContextSwitches;
-
-#if defined(__linux__)
-    extern const Event OSIOWaitMicroseconds;
-    extern const Event OSCPUWaitMicroseconds;
-    extern const Event OSCPUVirtualTimeMicroseconds;
-    extern const Event OSReadChars;
-    extern const Event OSWriteChars;
-    extern const Event OSReadBytes;
-    extern const Event OSWriteBytes;
-
-    extern const Event PerfCpuCycles;
-    extern const Event PerfInstructions;
-    extern const Event PerfCacheReferences;
-    extern const Event PerfCacheMisses;
-    extern const Event PerfBranchInstructions;
-    extern const Event PerfBranchMisses;
-    extern const Event PerfBusCycles;
-    extern const Event PerfStalledCyclesFrontend;
-    extern const Event PerfStalledCyclesBackend;
-    extern const Event PerfRefCpuCycles;
-
-    extern const Event PerfCpuClock;
-    extern const Event PerfTaskClock;
-    extern const Event PerfContextSwitches;
-    extern const Event PerfCpuMigrations;
-    extern const Event PerfAlignmentFaults;
-    extern const Event PerfEmulationFaults;
-    extern const Event PerfMinEnabledTime;
-    extern const Event PerfMinEnabledRunningTime;
-    extern const Event PerfDataTLBReferences;
-    extern const Event PerfDataTLBMisses;
-    extern const Event PerfInstructionTLBReferences;
-    extern const Event PerfInstructionTLBMisses;
-    extern const Event PerfLocalMemoryReferences;
-    extern const Event PerfLocalMemoryMisses;
-#endif
 }
 
 namespace DB
@@ -85,6 +48,8 @@ struct RUsageCounters
     UInt64 soft_page_faults = 0;
     UInt64 hard_page_faults = 0;
 
+    UInt64 thread_id = 0;
+
     RUsageCounters() = default;
     RUsageCounters(const ::rusage & rusage_, UInt64 real_time_)
     {
@@ -99,12 +64,14 @@ struct RUsageCounters
 
         soft_page_faults = static_cast<UInt64>(rusage.ru_minflt);
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
+
+        thread_id = getThreadId();
     }
 
     static RUsageCounters current()
     {
         ::rusage rusage {};
-#if !defined(__APPLE__)
+#if !defined(OS_DARWIN)
 #if defined(OS_SUNOS)
         ::getrusage(RUSAGE_LWP, &rusage);
 #else
@@ -116,6 +83,12 @@ struct RUsageCounters
 
     static void incrementProfileEvents(const RUsageCounters & prev, const RUsageCounters & curr, ProfileEvents::Counters & profile_events)
     {
+        chassert(prev.thread_id == curr.thread_id);
+        /// LONG_MAX is ~106751 days
+        chassert(curr.real_time - prev.real_time < LONG_MAX);
+        chassert(curr.user_time - prev.user_time < LONG_MAX);
+        chassert(curr.sys_time - prev.sys_time < LONG_MAX);
+
         profile_events.increment(ProfileEvents::RealTimeMicroseconds,   (curr.real_time - prev.real_time) / 1000U);
         profile_events.increment(ProfileEvents::UserTimeMicroseconds,   (curr.user_time - prev.user_time) / 1000U);
         profile_events.increment(ProfileEvents::SystemTimeMicroseconds, (curr.sys_time - prev.sys_time) / 1000U);
@@ -140,7 +113,7 @@ private:
     }
 };
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 struct PerfEventInfo
 {
@@ -209,13 +182,23 @@ extern PerfEventsCounters current_thread_counters;
 
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 class TasksStatsCounters
 {
 public:
+    enum class MetricsProvider
+    {
+        None,
+        Procfs,
+        Netlink,
+    };
+
+    static const char * metricsProviderString(MetricsProvider provider);
     static bool checkIfAvailable();
-    static std::unique_ptr<TasksStatsCounters> create(const UInt64 tid);
+    static MetricsProvider findBestAvailableProvider();
+
+    static std::unique_ptr<TasksStatsCounters> create(UInt64 tid);
 
     void reset();
     void updateCounters(ProfileEvents::Counters & profile_events);
@@ -224,17 +207,8 @@ private:
     ::taskstats stats;  //-V730_NOINIT
     std::function<::taskstats()> stats_getter;
 
-    enum class MetricsProvider
-    {
-        None,
-        Procfs,
-        Netlink
-    };
+    explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);
 
-private:
-    explicit TasksStatsCounters(const UInt64 tid, const MetricsProvider provider);
-
-    static MetricsProvider findBestAvailableProvider();
     static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);
 };
 

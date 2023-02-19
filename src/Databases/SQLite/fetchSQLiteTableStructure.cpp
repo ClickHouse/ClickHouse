@@ -13,6 +13,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/String.h>
 
+#include <string_view>
+
+
+using namespace std::literals;
 
 namespace DB
 {
@@ -31,9 +35,9 @@ static DataTypePtr convertSQLiteDataType(String type)
         res = std::make_shared<DataTypeInt8>();
     else if (type == "smallint")
         res = std::make_shared<DataTypeInt16>();
-    else if (type.starts_with("int") || type == "mediumint")
+    else if ((type.starts_with("int") && type != "int8") || type == "mediumint")
         res = std::make_shared<DataTypeInt32>();
-    else if (type == "bigint")
+    else if (type == "bigint" || type == "int8")
         res = std::make_shared<DataTypeInt64>();
     else if (type == "float")
         res = std::make_shared<DataTypeFloat32>();
@@ -58,15 +62,15 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
 
         for (int i = 0; i < col_num; ++i)
         {
-            if (strcmp(col_names[i], "name") == 0)
+            if (col_names[i] == "name"sv)
             {
                 name_and_type.name = data_by_col[i];
             }
-            else if (strcmp(col_names[i], "type") == 0)
+            else if (col_names[i] == "type"sv)
             {
                 name_and_type.type = convertSQLiteDataType(data_by_col[i]);
             }
-            else if (strcmp(col_names[i], "notnull") == 0)
+            else if (col_names[i] == "notnull"sv)
             {
                 is_nullable = (data_by_col[i][0] == '0');
             }

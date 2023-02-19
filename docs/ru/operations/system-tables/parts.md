@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/parts
+---
 # system.parts {#system_tables-parts}
 
 Содержит информацию о кусках данных таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
@@ -19,10 +22,10 @@
 
     Возможные значения:
 
-    -   `Wide` — каждая колонка хранится в отдельном файле. 
-    -   `Compact` — все колонки хранятся в одном файле. 
+    -   `Wide` — каждая колонка хранится в отдельном файле.
+    -   `Compact` — все колонки хранятся в одном файле.
 
-    Формат хранения данных определяется настройками `min_bytes_for_wide_part` и `min_rows_for_wide_part` таблицы [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). 
+    Формат хранения данных определяется настройками `min_bytes_for_wide_part` и `min_rows_for_wide_part` таблицы [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 -   `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) – признак активности. Если кусок активен, то он используется таблицей, в противном случает он будет удален. Неактивные куски остаются после слияний.
 
@@ -37,6 +40,12 @@
 -   `data_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер распакованной информации куска данных. Размер всех дополнительных файлов (например, файлов с засечками) не учитывается.
 
 -   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – размер файла с засечками.
+
+-   `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер сжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с засечками) не включены.
+
+-   `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер несжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с засечками) не включены.
+
+- `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – размер файла с засечками для вторичных индексов.
 
 -   `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – время модификации директории с куском данных. Обычно соответствует времени создания куска.
 
@@ -88,11 +97,11 @@
 
 -   `delete_ttl_info_max` ([DateTime](../../sql-reference/data-types/datetime.md)) — Максимальное значение ключа даты и времени для правила [TTL DELETE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
--   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Массив выражений. Каждое выражение задаёт правило [TTL MOVE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl). 
+-   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Массив выражений. Каждое выражение задаёт правило [TTL MOVE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-    !!! note "Предупреждение"
+        :::note "Предупреждение"
         Массив выражений `move_ttl_info.expression` используется, в основном, для обратной совместимости. Для работы с правилами `TTL MOVE` лучше использовать поля `move_ttl_info.min` и `move_ttl_info.max`.
-
+        :::
 -   `move_ttl_info.min` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Массив значений. Каждый элемент массива задаёт минимальное значение ключа даты и времени для правила [TTL MOVE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 -   `move_ttl_info.max` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Массив значений. Каждый элемент массива задаёт максимальное значение ключа даты и времени для правила [TTL MOVE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
@@ -119,6 +128,9 @@ rows:                                  6
 bytes_on_disk:                         310
 data_compressed_bytes:                 157
 data_uncompressed_bytes:               91
+secondary_indices_compressed_bytes:    58
+secondary_indices_uncompressed_bytes:  6
+secondary_indices_marks_bytes:         48
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
 remove_time:                           0000-00-00 00:00:00
@@ -154,4 +166,3 @@ move_ttl_info.max:                     []
 
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [TTL для столбцов и таблиц](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
-

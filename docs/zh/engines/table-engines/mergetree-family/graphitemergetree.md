@@ -1,6 +1,7 @@
 ---
-toc_priority: 38
-toc_title: GraphiteMergeTree
+slug: /zh/engines/table-engines/mergetree-family/graphitemergetree
+sidebar_position: 38
+sidebar_label: GraphiteMergeTree
 ---
 
 # GraphiteMergeTree {#graphitemergetree}
@@ -70,7 +71,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 除了`config_section`，其它所有参数和`MergeTree`的相应参数一样.
 
--   `config_section` —配置文件中设置汇总规则的节点 
+-   `config_section` —配置文件中设置汇总规则的节点
 
 </details>
 
@@ -163,5 +164,3 @@ CH在处理行记录时，会检查 `pattern`节点的规则。每个 `pattern`�
     </default>
 </graphite_rollup>
 ```
-
-[原始文档](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

@@ -39,6 +39,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
@@ -100,7 +101,7 @@ private:
     void processNotNullable(const InputData & input_data, ColumnUInt8::Container & result_data, size_t input_rows_count) const
     {
         for (size_t i = 0; i < input_rows_count; ++i)
-            result_data[i] = !input_data[i];
+            result_data[i] = input_data[i] == 0;
     }
 
     template <typename InputData>
@@ -108,16 +109,15 @@ private:
         ColumnUInt8::Container & result_data, size_t input_rows_count) const
     {
         for (size_t i = 0; i < input_rows_count; ++i)
-            result_data[i] = input_null_map[i] || !input_data[i];
+            result_data[i] = input_null_map[i] || input_data[i] == 0;
     }
 };
 
 }
 
-void registerFunctionIsZeroOrNull(FunctionFactory & factory)
+REGISTER_FUNCTION(IsZeroOrNull)
 {
     factory.registerFunction<FunctionIsZeroOrNull>();
 }
 
 }
-

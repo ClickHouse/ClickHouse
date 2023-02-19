@@ -1,17 +1,16 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 
 #include <unordered_map>
 #include <atomic>
+#include <mutex>
 
-#include <llvm/IR/LLVMContext.h> // Y_IGNORE
-#include <llvm/IR/Module.h> // Y_IGNORE
-#include <llvm/Target/TargetMachine.h> // Y_IGNORE
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Target/TargetMachine.h>
 
 namespace DB
 {

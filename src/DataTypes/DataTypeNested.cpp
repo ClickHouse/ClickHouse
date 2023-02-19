@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -36,7 +35,7 @@ String DataTypeNestedCustomName::getName() const
 static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
-        throw Exception("Nested cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Nested cannot be empty");
 
     DataTypes nested_types;
     Strings nested_names;

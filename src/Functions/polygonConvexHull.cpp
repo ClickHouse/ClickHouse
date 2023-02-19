@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -48,6 +48,8 @@ public:
         return false;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override
     {
         return 1;
@@ -68,12 +70,12 @@ public:
             using Converter = typename TypeConverter::Type;
 
             if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<Point>>)
-                throw Exception(fmt::format("The argument of function {} must not be a Point", getName()), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must not be a Point", getName());
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-                for (size_t i = 0; i < input_rows_count; i++)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     Polygon<Point> convex_hull{};
                     boost::geometry::convex_hull(geometries[i], convex_hull);
@@ -97,7 +99,7 @@ template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
 
-void registerFunctionPolygonConvexHull(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonConvexHull)
 {
     factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
 }

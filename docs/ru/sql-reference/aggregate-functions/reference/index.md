@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Справочник"
-toc_priority: 36
-toc_hidden: true
+slug: /ru/sql-reference/aggregate-functions/reference/
+sidebar_label: "Справочник"
+sidebar_position: 36
 ---
 
 # Перечень агрегатных функций {#aggregate-functions-list}
@@ -9,8 +9,8 @@ toc_hidden: true
 Стандартные агрегатные функции:
 
 -   [count](../../../sql-reference/aggregate-functions/reference/count.md)
--   [min](../../../sql-reference/aggregate-functions/reference/min.md)
--   [max](../../../sql-reference/aggregate-functions/reference/max.md)
+-   [min](../../../sql-reference/aggregate-functions/reference/min.mdx)
+-   [max](../../../sql-reference/aggregate-functions/reference/max.mdx)
 -   [sum](../../../sql-reference/aggregate-functions/reference/sum.md)
 -   [avg](../../../sql-reference/aggregate-functions/reference/avg.md)
 -   [any](../../../sql-reference/aggregate-functions/reference/any.md)
@@ -61,7 +61,8 @@ toc_hidden: true
 -   [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md)
 -   [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md)
 -   [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
+-   [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
+-   [quantileBFloat16Weighted](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
-

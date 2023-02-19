@@ -12,6 +12,7 @@ struct ModuloOrZeroImpl
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -40,7 +41,7 @@ using FunctionModuloOrZero = BinaryArithmeticOverloadResolver<ModuloOrZeroImpl, 
 
 }
 
-void registerFunctionModuloOrZero(FunctionFactory & factory)
+REGISTER_FUNCTION(ModuloOrZero)
 {
     factory.registerFunction<FunctionModuloOrZero>();
 }

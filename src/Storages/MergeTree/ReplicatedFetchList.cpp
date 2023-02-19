@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Common/CurrentMetrics.h>
-#include <common/getThreadId.h>
+#include <base/getThreadId.h>
 
 namespace DB
 {

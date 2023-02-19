@@ -5,15 +5,20 @@
 namespace DB
 {
 HTTPServerConnectionFactory::HTTPServerConnectionFactory(
-    ContextPtr context_, Poco::Net::HTTPServerParams::Ptr params_, HTTPRequestHandlerFactoryPtr factory_)
-    : context(Context::createCopy(context_)), params(params_), factory(factory_)
+    HTTPContextPtr context_, Poco::Net::HTTPServerParams::Ptr params_, HTTPRequestHandlerFactoryPtr factory_)
+    : context(std::move(context_)), params(params_), factory(factory_)
 {
     poco_check_ptr(factory);
 }
 
-Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket)
+Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
 {
-    return new HTTPServerConnection(context, socket, params, factory);
+    return new HTTPServerConnection(context, tcp_server, socket, params, factory);
+}
+
+Poco::Net::TCPServerConnection * HTTPServerConnectionFactory::createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data)
+{
+    return new HTTPServerConnection(context, tcp_server, socket, params, factory, stack_data.forwarded_for);
 }
 
 }

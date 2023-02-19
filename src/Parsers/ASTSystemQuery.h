@@ -3,9 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config.h"
 
 
 namespace DB
@@ -15,7 +13,7 @@ class ASTSystemQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
 
-    enum class Type
+    enum class Type : UInt64
     {
         UNKNOWN,
         SHUTDOWN,
@@ -24,23 +22,39 @@ public:
         DROP_DNS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
+        DROP_INDEX_MARK_CACHE,
+        DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
+        DROP_QUERY_CACHE,
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
+#endif
+        DROP_FILESYSTEM_CACHE,
+        DROP_SCHEMA_CACHE,
+#if USE_AWS_S3
+        DROP_S3_CLIENT_CACHE,
 #endif
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
         RESTORE_REPLICA,
+        WAIT_LOADING_PARTS,
         DROP_REPLICA,
+        DROP_DATABASE_REPLICA,
         SYNC_REPLICA,
+        SYNC_DATABASE_REPLICA,
+        SYNC_TRANSACTION_LOG,
+        SYNC_FILE_CACHE,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
         RELOAD_MODEL,
         RELOAD_MODELS,
+        RELOAD_FUNCTION,
+        RELOAD_FUNCTIONS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
+        RELOAD_USERS,
         RELOAD_SYMBOLS,
         RESTART_DISK,
         STOP_MERGES,
@@ -59,6 +73,9 @@ public:
         FLUSH_DISTRIBUTED,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
+        START_THREAD_FUZZER,
+        STOP_THREAD_FUZZER,
+        UNFREEZE,
         END
     };
 
@@ -66,9 +83,17 @@ public:
 
     Type type = Type::UNKNOWN;
 
+    ASTPtr database;
+    ASTPtr table;
+
+    String getDatabase() const;
+    String getTable() const;
+
+    void setDatabase(const String & name);
+    void setTable(const String & name);
+
     String target_model;
-    String database;
-    String table;
+    String target_function;
     String replica;
     String replica_zk_path;
     bool is_drop_whole_replica{};
@@ -77,14 +102,31 @@ public:
     String disk;
     UInt64 seconds{};
 
+    String filesystem_cache_path;
+
+    String backup_name;
+
+    String schema_cache_storage;
+
     String getID(char) const override { return "SYSTEM query"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
-
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    ASTPtr clone() const override
     {
-        return removeOnCluster<ASTSystemQuery>(clone(), new_database);
+        auto res = std::make_shared<ASTSystemQuery>(*this);
+        res->children.clear();
+
+        if (database) { res->database = database->clone(); res->children.push_back(res->database); }
+        if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+
+        return res;
     }
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
+    {
+        return removeOnCluster<ASTSystemQuery>(clone(), params.default_database);
+    }
+
+    QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
 
