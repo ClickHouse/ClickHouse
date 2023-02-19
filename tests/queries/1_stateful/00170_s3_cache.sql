@@ -1,5 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-parallel-replicas
-
+-- Tags: no-parallel, no-random-settings, no-parallel-replicas, no-debug
+-- It is slow under debug.
 -- { echo }
 
 SET enable_filesystem_cache_on_write_operations=0;
@@ -7,11 +7,11 @@ SET max_memory_usage='20G';
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT count() FROM test.hits_s3;
 SELECT count() FROM test.hits_s3 WHERE AdvEngineID != 0;
-SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM test.hits_s3 ;
-SELECT sum(UserID) FROM test.hits_s3 ;
-SELECT uniq(UserID) FROM test.hits_s3 ;
-SELECT uniq(SearchPhrase) FROM test.hits_s3 ;
-SELECT min(EventDate), max(EventDate) FROM test.hits_s3 ;
+SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM test.hits_s3;
+SELECT sum(UserID) FROM test.hits_s3;
+SELECT uniq(UserID) FROM test.hits_s3;
+SELECT uniq(SearchPhrase) FROM test.hits_s3;
+SELECT min(EventDate), max(EventDate) FROM test.hits_s3;
 SELECT AdvEngineID, count() FROM test.hits_s3 WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY AdvEngineID DESC;
 SELECT RegionID, uniq(UserID) AS u FROM test.hits_s3 GROUP BY RegionID ORDER BY u DESC LIMIT 10;
 SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM test.hits_s3 GROUP BY RegionID ORDER BY c DESC LIMIT 10;
