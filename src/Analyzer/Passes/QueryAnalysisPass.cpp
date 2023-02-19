@@ -361,6 +361,12 @@ struct IdentifierResolveResult
     }
 };
 
+struct IdentifierResolveState
+{
+    IdentifierResolveResult resolve_result;
+    bool cyclic_identifier_resolve = false;
+};
+
 struct IdentifierResolveSettings
 {
     /// Allow to check join tree during identifier resolution
@@ -687,7 +693,7 @@ struct IdentifierResolveScope
     ContextPtr context;
 
     /// Identifier lookup to result
-    std::unordered_map<IdentifierLookup, IdentifierResolveResult, IdentifierLookupHash> identifier_lookup_to_result;
+    std::unordered_map<IdentifierLookup, IdentifierResolveState, IdentifierLookupHash> identifier_lookup_to_resolve_state;
 
     /// Lambda argument can be expression like constant, column, or it can be function
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
@@ -799,11 +805,11 @@ struct IdentifierResolveScope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
     {
         buffer << "Scope node " << scope_node->formatASTForErrorMessage() << '\n';
-        buffer << "Identifier lookup to result " << identifier_lookup_to_result.size() << '\n';
-        for (const auto & [identifier, result] : identifier_lookup_to_result)
+        buffer << "Identifier lookup to resolve state " << identifier_lookup_to_resolve_state.size() << '\n';
+        for (const auto & [identifier, state] : identifier_lookup_to_resolve_state)
         {
             buffer << "Identifier " << identifier.dump() << " resolve result ";
-            result.dump(buffer);
+            state.resolve_result.dump(buffer);
             buffer << '\n';
         }
 
@@ -3316,21 +3322,28 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveSettings identifier_resolve_settings)
 {
-    auto it = scope.identifier_lookup_to_result.find(identifier_lookup);
-    if (it != scope.identifier_lookup_to_result.end())
+    auto it = scope.identifier_lookup_to_resolve_state.find(identifier_lookup);
+    if (it != scope.identifier_lookup_to_resolve_state.end())
     {
-        if (!it->second.resolved_identifier)
+        if (it->second.cyclic_identifier_resolve)
             throw Exception(ErrorCodes::CYCLIC_ALIASES,
                 "Cyclic aliases for identifier '{}'. In scope {}",
                 identifier_lookup.identifier.getFullName(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        if (scope.use_identifier_lookup_to_result_cache && !scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup))
-            return it->second;
-    }
+        if (!it->second.resolve_result.isResolved())
+            it->second.cyclic_identifier_resolve = true;
 
-    auto [insert_it, _] = scope.identifier_lookup_to_result.insert({identifier_lookup, IdentifierResolveResult()});
-    it = insert_it;
+        if (it->second.resolve_result.isResolved() &&
+            scope.use_identifier_lookup_to_result_cache &&
+            !scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup))
+            return it->second.resolve_result;
+    }
+    else
+    {
+        auto [insert_it, _] = scope.identifier_lookup_to_resolve_state.insert({identifier_lookup, IdentifierResolveState()});
+        it = insert_it;
+    }
 
     /// Resolve identifier from current scope
 
@@ -3409,15 +3422,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             resolve_result.resolve_place = IdentifierResolvePlace::DATABASE_CATALOG;
     }
 
-    it->second = resolve_result;
+    bool was_cyclic_identifier_resolve = it->second.cyclic_identifier_resolve;
+    if (!was_cyclic_identifier_resolve)
+        it->second.resolve_result = resolve_result;
+    it->second.cyclic_identifier_resolve = false;
 
     /** If identifier was not resolved, or during expression resolution identifier was explicitly added into non cached set,
       * or identifier caching was disabled in resolve scope we remove identifier lookup result from identifier lookup to result table.
       */
-    if (!resolve_result.resolved_identifier ||
+    if (!was_cyclic_identifier_resolve && (!resolve_result.resolved_identifier ||
         scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup) ||
-        !scope.use_identifier_lookup_to_result_cache)
-        scope.identifier_lookup_to_result.erase(it);
+        !scope.use_identifier_lookup_to_result_cache))
+        scope.identifier_lookup_to_resolve_state.erase(it);
 
     return resolve_result;
 }
@@ -4987,6 +5003,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
   */
 ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression)
 {
+    checkStackSize();
+
     auto resolved_expression_it = resolved_expressions.find(node);
     if (resolved_expression_it != resolved_expressions.end())
     {
