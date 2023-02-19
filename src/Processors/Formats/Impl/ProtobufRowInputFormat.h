@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 
 #if USE_PROTOBUF
 #   include <Processors/Formats/IRowInputFormat.h>
@@ -38,6 +38,8 @@ public:
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
     bool allowSyncAfterError() const override;
@@ -57,6 +59,7 @@ public:
 
 private:
     const FormatSchemaInfo schema_info;
+    bool skip_unsupported_fields;
 };
 
 }

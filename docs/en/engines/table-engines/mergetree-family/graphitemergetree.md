@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/graphitemergetree
 sidebar_position: 90
 sidebar_label:  GraphiteMergeTree
 ---
@@ -18,7 +19,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     Path String,
     Time DateTime,
-    Value <Numeric_type>,
+    Value Float64,
     Version <Numeric_type>
     ...
 ) ENGINE = GraphiteMergeTree(config_section)
@@ -36,7 +37,7 @@ A table for the Graphite data should have the following columns for the followin
 
 -   Time of measuring the metric. Data type: `DateTime`.
 
--   Value of the metric. Data type: any numeric.
+-   Value of the metric. Data type: `Float64`.
 
 -   Version of the metric. Data type: any numeric (ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts).
 
@@ -64,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     EventDate Date,
     Path String,
     Time DateTime,
-    Value <Numeric_type>,
+    Value Float64,
     Version <Numeric_type>
     ...
 ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
@@ -87,10 +88,18 @@ Rollup configuration structure:
 
 ### Required Columns {#required-columns}
 
--   `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
--   `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
--   `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
--   `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
+#### path_column_name
+
+`path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
+
+#### time_column_name
+`time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
+
+#### value_column_name
+`value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
+
+#### version_column_name
+`version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}
 
@@ -253,7 +262,6 @@ Valid values:
     </default>
 </graphite_rollup>
 ```
-
 
 :::warning
 Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).

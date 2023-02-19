@@ -1,8 +1,8 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/quantilebfloat16
 sidebar_position: 209
+title: quantileBFloat16
 ---
-
-# quantileBFloat16
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. `bfloat16` is a floating-point data type with 1 sign bit, 8 exponent bits and 7 fraction bits.
 The function converts input values to 32-bit floats and takes the most significant 16 bits. Then it calculates `bfloat16` quantile value and converts the result to a 64-bit float by appending zero bits.

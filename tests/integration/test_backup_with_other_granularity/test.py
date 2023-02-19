@@ -54,7 +54,7 @@ def test_backup_from_old_version(started_cluster):
 
     node1.query("ALTER TABLE source_table FREEZE PARTITION tuple();")
 
-    node1.restart_with_latest_version()
+    node1.restart_with_latest_version(fix_metadata=True)
 
     node1.query(
         "CREATE TABLE dest_table (A Int64,  B String,  Y String) ENGINE = ReplicatedMergeTree('/test/dest_table1', '1')  ORDER BY tuple()"
@@ -107,7 +107,7 @@ def test_backup_from_old_version_setting(started_cluster):
 
     node2.query("ALTER TABLE source_table FREEZE PARTITION tuple();")
 
-    node2.restart_with_latest_version()
+    node2.restart_with_latest_version(fix_metadata=True)
 
     node2.query(
         "CREATE TABLE dest_table (A Int64,  B String,  Y String) ENGINE = ReplicatedMergeTree('/test/dest_table2', '1')  ORDER BY tuple() SETTINGS enable_mixed_granularity_parts = 1"
@@ -163,7 +163,7 @@ def test_backup_from_old_version_config(started_cluster):
             "<clickhouse><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></clickhouse>",
         )
 
-    node3.restart_with_latest_version(callback_onstop=callback)
+    node3.restart_with_latest_version(callback_onstop=callback, fix_metadata=True)
 
     node3.query(
         "CREATE TABLE dest_table (A Int64,  B String,  Y String) ENGINE = ReplicatedMergeTree('/test/dest_table3', '1')  ORDER BY tuple() SETTINGS enable_mixed_granularity_parts = 1"
@@ -202,7 +202,8 @@ def test_backup_from_old_version_config(started_cluster):
 
 def test_backup_and_alter(started_cluster):
     node4.query(
-        "CREATE DATABASE test ENGINE=Ordinary"
+        "CREATE DATABASE test ENGINE=Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
     )  # Different path in shadow/ with Atomic
 
     node4.query(

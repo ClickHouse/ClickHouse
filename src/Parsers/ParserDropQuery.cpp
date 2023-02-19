@@ -31,7 +31,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
-    bool no_delay = false;
+    bool sync = false;
     bool permanently = false;
 
     if (s_database.ignore(pos, expected))
@@ -83,7 +83,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 
     /// actually for TRUNCATE NO DELAY / SYNC means nothing
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
-        no_delay = true;
+        sync = true;
 
     auto query = std::make_shared<ASTDropQuery>();
     node = query;
@@ -93,7 +93,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
-    query->no_delay = no_delay;
+    query->sync = sync;
     query->permanently = permanently;
     query->database = database;
     query->table = table;

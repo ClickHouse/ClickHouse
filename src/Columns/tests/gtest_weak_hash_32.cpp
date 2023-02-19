@@ -164,7 +164,7 @@ TEST(WeakHash32, ColumnVectorU32)
 
     for (int idx [[maybe_unused]] : {1, 2})
     {
-        for (uint64_t i = 0; i < 65536; ++i)
+        for (uint32_t i = 0; i < 65536; ++i)
             data.push_back(i << 16u);
     }
 
@@ -181,7 +181,7 @@ TEST(WeakHash32, ColumnVectorI32)
 
     for (int idx [[maybe_unused]] : {1, 2})
     {
-        for (int64_t i = -32768; i < 32768; ++i)
+        for (int32_t i = -32768; i < 32768; ++i)
             data.push_back(i << 16); //-V610
     }
 
@@ -240,7 +240,7 @@ TEST(WeakHash32, ColumnVectorU128)
             val.items[0] = i << 32u;
             val.items[1] = i << 32u;
             data.push_back(val);
-            eq_data.push_back(i);
+            eq_data.push_back(static_cast<UInt32>(i));
         }
     }
 
@@ -274,7 +274,7 @@ TEST(WeakHash32, ColumnDecimal32)
 
     for (int idx [[maybe_unused]] : {1, 2})
     {
-        for (int64_t i = -32768; i < 32768; ++i)
+        for (int32_t i = -32768; i < 32768; ++i)
             data.push_back(i << 16); //-V610
     }
 
@@ -326,7 +326,7 @@ TEST(WeakHash32, ColumnString1)
 
     for (int idx [[maybe_unused]] : {1, 2})
     {
-        for (int64_t i = 0; i < 65536; ++i)
+        for (int32_t i = 0; i < 65536; ++i)
         {
             data.push_back(i);
             auto str = std::to_string(i);
@@ -359,7 +359,7 @@ TEST(WeakHash32, ColumnString2)
     {
         size_t max_size = 3000;
         char letter = 'a';
-        for (int64_t i = 0; i < 65536; ++i)
+        for (int32_t i = 0; i < 65536; ++i)
         {
             data.push_back(i);
             size_t s = (i % max_size) + 1;
@@ -401,7 +401,7 @@ TEST(WeakHash32, ColumnString3)
         char letter = 'a';
         for (int64_t i = 0; i < 65536; ++i)
         {
-            data.push_back(i);
+            data.push_back(static_cast<UInt32>(i));
             size_t s = (i % max_size) + 1;
             std::string str(s,'\0');
             str[0] = letter;
@@ -430,7 +430,7 @@ TEST(WeakHash32, ColumnFixedString)
         char letter = 'a';
         for (int64_t i = 0; i < 65536; ++i)
         {
-            data.push_back(i);
+            data.push_back(static_cast<UInt32>(i));
             size_t s = (i % max_size) + 1;
             std::string str(s, letter);
             col->insertData(str.data(), str.size());
@@ -471,7 +471,7 @@ TEST(WeakHash32, ColumnArray)
         UInt32 cur = 0;
         for (int64_t i = 0; i < 65536; ++i)
         {
-            eq_data.push_back(i);
+            eq_data.push_back(static_cast<UInt32>(i));
             size_t s = (i % max_size) + 1;
 
             cur_off += s;
@@ -505,9 +505,9 @@ TEST(WeakHash32, ColumnArray2)
     UInt64 cur_off = 0;
     for (int idx [[maybe_unused]] : {1, 2})
     {
-        for (int64_t i = 0; i < 1000; ++i)
+        for (int32_t i = 0; i < 1000; ++i)
         {
-            for (size_t j = 0; j < 1000; ++j)
+            for (uint32_t j = 0; j < 1000; ++j)
             {
                 eq_data.push_back(i * 1000 + j);
 
@@ -556,7 +556,7 @@ TEST(WeakHash32, ColumnArrayArray)
         UInt32 cur = 1;
         for (int64_t i = 0; i < 3000; ++i)
         {
-            eq_data.push_back(i);
+            eq_data.push_back(static_cast<UInt32>(i));
             size_t s = (i % max_size) + 1;
 
             cur_off2 += s;
@@ -667,7 +667,7 @@ TEST(WeakHash32, ColumnTupleUInt64UInt64)
         {
             data1.push_back(l);
             data2.push_back(i << 32u);
-            eq.push_back(l * 65536 + i);
+            eq.push_back(static_cast<UInt32>(l * 65536 + i));
         }
     }
 
@@ -695,7 +695,7 @@ TEST(WeakHash32, ColumnTupleUInt64String)
 
         size_t max_size = 3000;
         char letter = 'a';
-        for (int64_t i = 0; i < 65536; ++i)
+        for (int32_t i = 0; i < 65536; ++i)
         {
             data1.push_back(l);
             eq.push_back(l * 65536 + i);
@@ -737,7 +737,7 @@ TEST(WeakHash32, ColumnTupleUInt64FixedString)
         for (int64_t i = 0; i < 65536; ++i)
         {
             data1.push_back(l);
-            eq.push_back(l * 65536 + i);
+            eq.push_back(static_cast<Int32>(l * 65536 + i));
 
             size_t s = (i % max_size) + 1;
             std::string str(s, letter);
@@ -778,7 +778,7 @@ TEST(WeakHash32, ColumnTupleUInt64Array)
         auto l = idx % 2;
 
         UInt32 cur = 0;
-        for (int64_t i = 0; i < 65536; ++i)
+        for (int32_t i = 0; i < 65536; ++i)
         {
             data1.push_back(l);
             eq_data.push_back(l * 65536 + i);

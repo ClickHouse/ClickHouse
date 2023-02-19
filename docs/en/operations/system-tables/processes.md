@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/processes
+---
 # processes
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
@@ -17,10 +20,10 @@ Columns:
 -   `is_all_data_sent` (Int8) – Was all data sent to the client (in other words query had been finished on the server).
 
 ```sql
-:) SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
+SELECT * FROM system.processes LIMIT 10 FORMAT Vertical;
 ```
 
-```text
+```response
 Row 1:
 ──────
 is_initial_query:     1
@@ -60,5 +63,3 @@ Settings:             {'background_pool_size':'32','load_balancing':'random','al
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/processes) <!--hide-->

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StorageS3Cluster.h>
 
 
 namespace DB
@@ -50,7 +50,7 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr) const override;
     void parseArguments(const ASTPtr &, ContextPtr) override;
 
-    StorageS3ClusterConfiguration configuration;
+    mutable StorageS3Cluster::Configuration configuration;
     ColumnsDescription structure_hint;
 };
 

@@ -1,3 +1,6 @@
+---
+slug: /en/operations/system-tables/zookeeper
+---
 # zookeeper
 
 The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. The `system.zookeeper` table exposes data from the Keeper cluster defined in the config.
@@ -72,4 +75,3 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/zookeeper) <!--hide-->

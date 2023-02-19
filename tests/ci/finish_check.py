@@ -5,37 +5,26 @@ from github import Github
 from env_helper import GITHUB_RUN_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
-from commit_status_helper import get_commit
+from commit_status_helper import get_commit, get_commit_filtered_statuses
 
-NAME = "Run Check (actions)"
-
-
-def filter_statuses(statuses):
-    """
-    Squash statuses to latest state
-    1. context="first", state="success", update_time=1
-    2. context="second", state="success", update_time=2
-    3. context="first", stat="failure", update_time=3
-    =========>
-    1. context="second", state="success"
-    2. context="first", stat="failure"
-    """
-    filt = {}
-    for status in sorted(statuses, key=lambda x: x.updated_at):
-        filt[status.context] = status
-    return filt
+NAME = "Run Check"
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True)
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
     url = GITHUB_RUN_URL
-    statuses = filter_statuses(list(commit.get_statuses()))
-    if NAME in statuses and statuses[NAME].state == "pending":
+    statuses = get_commit_filtered_statuses(commit)
+    pending_status = any(  # find NAME status in pending state
+        True
+        for status in statuses
+        if status.context == NAME and status.state == "pending"
+    )
+    if pending_status:
         commit.create_status(
             context=NAME,
             description="All checks finished",

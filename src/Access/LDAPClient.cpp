@@ -2,10 +2,10 @@
 #include <Common/Exception.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/container_hash/hash.hpp>
 
 #include <mutex>
 #include <utility>
@@ -15,6 +15,22 @@
 
 #include <sys/time.h>
 
+namespace
+{
+
+template <typename T, typename = std::enable_if_t<std::is_fundamental_v<std::decay_t<T>>>>
+void updateHash(SipHash & hash, const T & value)
+{
+    hash.update(value);
+}
+
+void updateHash(SipHash & hash, const std::string & value)
+{
+    hash.update(value.size());
+    hash.update(value);
+}
+
+}
 
 namespace DB
 {
@@ -26,30 +42,30 @@ namespace ErrorCodes
     extern const int LDAP_ERROR;
 }
 
-void LDAPClient::SearchParams::combineHash(std::size_t & seed) const
+void LDAPClient::SearchParams::updateHash(SipHash & hash) const
 {
-    boost::hash_combine(seed, base_dn);
-    boost::hash_combine(seed, static_cast<int>(scope));
-    boost::hash_combine(seed, search_filter);
-    boost::hash_combine(seed, attribute);
+    ::updateHash(hash, base_dn);
+    ::updateHash(hash, static_cast<int>(scope));
+    ::updateHash(hash, search_filter);
+    ::updateHash(hash, attribute);
 }
 
-void LDAPClient::RoleSearchParams::combineHash(std::size_t & seed) const
+void LDAPClient::RoleSearchParams::updateHash(SipHash & hash) const
 {
-    SearchParams::combineHash(seed);
-    boost::hash_combine(seed, prefix);
+    SearchParams::updateHash(hash);
+    ::updateHash(hash, prefix);
 }
 
-void LDAPClient::Params::combineCoreHash(std::size_t & seed) const
+void LDAPClient::Params::updateHash(SipHash & hash) const
 {
-    boost::hash_combine(seed, host);
-    boost::hash_combine(seed, port);
-    boost::hash_combine(seed, bind_dn);
-    boost::hash_combine(seed, user);
-    boost::hash_combine(seed, password);
+    ::updateHash(hash, host);
+    ::updateHash(hash, port);
+    ::updateHash(hash, bind_dn);
+    ::updateHash(hash, user);
+    ::updateHash(hash, password);
 
     if (user_dn_detection)
-        user_dn_detection->combineHash(seed);
+        user_dn_detection->updateHash(hash);
 }
 
 LDAPClient::LDAPClient(const Params & params_)
@@ -153,13 +169,13 @@ namespace
 
 }
 
-void LDAPClient::diag(int rc, String text)
+void LDAPClient::handleError(int result_code, String text)
 {
     std::scoped_lock lock(ldap_global_mutex);
 
-    if (rc != LDAP_SUCCESS)
+    if (result_code != LDAP_SUCCESS)
     {
-        const char * raw_err_str = ldap_err2string(rc);
+        const char * raw_err_str = ldap_err2string(result_code);
         if (raw_err_str && *raw_err_str != '\0')
         {
             if (!text.empty())
@@ -189,7 +205,7 @@ void LDAPClient::diag(int rc, String text)
             }
         }
 
-        throw Exception(text, ErrorCodes::LDAP_ERROR);
+        throw Exception::createDeprecated(text, ErrorCodes::LDAP_ERROR);
     }
 }
 
@@ -210,13 +226,13 @@ bool LDAPClient::openConnection()
 
         auto * uri = ldap_url_desc2str(&url);
         if (!uri)
-            throw Exception("ldap_url_desc2str() failed", ErrorCodes::LDAP_ERROR);
+            throw Exception(ErrorCodes::LDAP_ERROR, "ldap_url_desc2str() failed");
 
         SCOPE_EXIT({ ldap_memfree(uri); });
 
-        diag(ldap_initialize(&handle, uri));
+        handleError(ldap_initialize(&handle, uri));
         if (!handle)
-            throw Exception("ldap_initialize() failed", ErrorCodes::LDAP_ERROR);
+            throw Exception(ErrorCodes::LDAP_ERROR, "ldap_initialize() failed");
     }
 
     {
@@ -226,13 +242,13 @@ bool LDAPClient::openConnection()
             case LDAPClient::Params::ProtocolVersion::V2: value = LDAP_VERSION2; break;
             case LDAPClient::Params::ProtocolVersion::V3: value = LDAP_VERSION3; break;
         }
-        diag(ldap_set_option(handle, LDAP_OPT_PROTOCOL_VERSION, &value));
+        handleError(ldap_set_option(handle, LDAP_OPT_PROTOCOL_VERSION, &value));
     }
 
-    diag(ldap_set_option(handle, LDAP_OPT_RESTART, LDAP_OPT_ON));
+    handleError(ldap_set_option(handle, LDAP_OPT_RESTART, LDAP_OPT_ON));
 
 #ifdef LDAP_OPT_KEEPCONN
-    diag(ldap_set_option(handle, LDAP_OPT_KEEPCONN, LDAP_OPT_ON));
+    handleError(ldap_set_option(handle, LDAP_OPT_KEEPCONN, LDAP_OPT_ON));
 #endif
 
 #ifdef LDAP_OPT_TIMEOUT
@@ -240,7 +256,7 @@ bool LDAPClient::openConnection()
         ::timeval operation_timeout;
         operation_timeout.tv_sec = params.operation_timeout.count();
         operation_timeout.tv_usec = 0;
-        diag(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
+        handleError(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
     }
 #endif
 
@@ -249,18 +265,18 @@ bool LDAPClient::openConnection()
         ::timeval network_timeout;
         network_timeout.tv_sec = params.network_timeout.count();
         network_timeout.tv_usec = 0;
-        diag(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
+        handleError(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
     }
 #endif
 
     {
-        const int search_timeout = params.search_timeout.count();
-        diag(ldap_set_option(handle, LDAP_OPT_TIMELIMIT, &search_timeout));
+        const int search_timeout = static_cast<int>(params.search_timeout.count());
+        handleError(ldap_set_option(handle, LDAP_OPT_TIMELIMIT, &search_timeout));
     }
 
     {
-        const int size_limit = params.search_limit;
-        diag(ldap_set_option(handle, LDAP_OPT_SIZELIMIT, &size_limit));
+        const int size_limit = static_cast<int>(params.search_limit);
+        handleError(ldap_set_option(handle, LDAP_OPT_SIZELIMIT, &size_limit));
     }
 
 #ifdef LDAP_OPT_X_TLS_PROTOCOL_MIN
@@ -274,7 +290,7 @@ bool LDAPClient::openConnection()
             case LDAPClient::Params::TLSProtocolVersion::TLS1_1: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_1; break;
             case LDAPClient::Params::TLSProtocolVersion::TLS1_2: value = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2; break;
         }
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_PROTOCOL_MIN, &value));
     }
 #endif
 
@@ -288,44 +304,44 @@ bool LDAPClient::openConnection()
             case LDAPClient::Params::TLSRequireCert::TRY:    value = LDAP_OPT_X_TLS_TRY;    break;
             case LDAPClient::Params::TLSRequireCert::DEMAND: value = LDAP_OPT_X_TLS_DEMAND; break;
         }
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_REQUIRE_CERT, &value));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_REQUIRE_CERT, &value));
     }
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CERTFILE
     if (!params.tls_cert_file.empty())
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CERTFILE, params.tls_cert_file.c_str()));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CERTFILE, params.tls_cert_file.c_str()));
 #endif
 
 #ifdef LDAP_OPT_X_TLS_KEYFILE
     if (!params.tls_key_file.empty())
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_KEYFILE, params.tls_key_file.c_str()));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_KEYFILE, params.tls_key_file.c_str()));
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CACERTFILE
     if (!params.tls_ca_cert_file.empty())
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTFILE, params.tls_ca_cert_file.c_str()));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTFILE, params.tls_ca_cert_file.c_str()));
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CACERTDIR
     if (!params.tls_ca_cert_dir.empty())
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTDIR, params.tls_ca_cert_dir.c_str()));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CACERTDIR, params.tls_ca_cert_dir.c_str()));
 #endif
 
 #ifdef LDAP_OPT_X_TLS_CIPHER_SUITE
     if (!params.tls_cipher_suite.empty())
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_CIPHER_SUITE, params.tls_cipher_suite.c_str()));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_CIPHER_SUITE, params.tls_cipher_suite.c_str()));
 #endif
 
 #ifdef LDAP_OPT_X_TLS_NEWCTX
     {
         const int i_am_a_server = 0;
-        diag(ldap_set_option(handle, LDAP_OPT_X_TLS_NEWCTX, &i_am_a_server));
+        handleError(ldap_set_option(handle, LDAP_OPT_X_TLS_NEWCTX, &i_am_a_server));
     }
 #endif
 
     if (params.enable_tls == LDAPClient::Params::TLSEnable::YES_STARTTLS)
-        diag(ldap_start_tls_s(handle, nullptr, nullptr));
+        handleError(ldap_start_tls_s(handle, nullptr, nullptr));
 
     final_user_name = escapeForDN(params.user);
     final_bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", final_user_name} });
@@ -346,7 +362,7 @@ bool LDAPClient::openConnection()
                 if (rc == LDAP_INVALID_CREDENTIALS)
                     return false;
 
-                diag(rc);
+                handleError(rc);
             }
 
             // Once bound, run the user DN search query and update the default value, if asked.
@@ -355,10 +371,10 @@ bool LDAPClient::openConnection()
                 const auto user_dn_search_results = search(*params.user_dn_detection);
 
                 if (user_dn_search_results.empty())
-                    throw Exception("Failed to detect user DN: empty search results", ErrorCodes::LDAP_ERROR);
+                    throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: empty search results");
 
                 if (user_dn_search_results.size() > 1)
-                    throw Exception("Failed to detect user DN: more than one entry in the search results", ErrorCodes::LDAP_ERROR);
+                    throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: more than one entry in the search results");
 
                 final_user_dn = *user_dn_search_results.begin();
             }
@@ -367,7 +383,7 @@ bool LDAPClient::openConnection()
         }
 
         default:
-            throw Exception("Unknown SASL mechanism", ErrorCodes::LDAP_ERROR);
+            throw Exception(ErrorCodes::LDAP_ERROR, "Unknown SASL mechanism");
     }
 }
 
@@ -425,7 +441,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
         }
     });
 
-    diag(ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
+    handleError(ldap_search_ext_s(handle, final_base_dn.c_str(), scope, final_search_filter.c_str(), attrs, 0, nullptr, nullptr, &timeout, params.search_limit, &msgs));
 
     for (
          auto * msg = ldap_first_message(handle, msgs);
@@ -452,7 +468,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 
                     ::berval bv;
 
-                    diag(ldap_get_dn_ber(handle, msg, &ber, &bv));
+                    handleError(ldap_get_dn_ber(handle, msg, &ber, &bv));
 
                     if (bv.bv_val && bv.bv_len > 0)
                         result.emplace(bv.bv_val, bv.bv_len);
@@ -504,12 +520,11 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
             case LDAP_RES_SEARCH_REFERENCE:
             {
                 char ** referrals = nullptr;
-                diag(ldap_parse_reference(handle, msg, &referrals, nullptr, 0));
+                handleError(ldap_parse_reference(handle, msg, &referrals, nullptr, 0));
 
                 if (referrals)
                 {
                     SCOPE_EXIT({
-//                      ldap_value_free(referrals);
                         ber_memvfree(reinterpret_cast<void **>(referrals));
                         referrals = nullptr;
                     });
@@ -529,7 +544,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                 char * matched_msg = nullptr;
                 char * error_msg = nullptr;
 
-                diag(ldap_parse_result(handle, msg, &rc, &matched_msg, &error_msg, nullptr, nullptr, 0));
+                handleError(ldap_parse_result(handle, msg, &rc, &matched_msg, &error_msg, nullptr, nullptr, 0));
 
                 if (rc != LDAP_SUCCESS)
                 {
@@ -554,14 +569,14 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         message += matched_msg;
                     }
 
-                    throw Exception(message, ErrorCodes::LDAP_ERROR);
+                    throw Exception::createDeprecated(message, ErrorCodes::LDAP_ERROR);
                 }
 
                 break;
             }
 
             case -1:
-                throw Exception("Failed to process LDAP search message", ErrorCodes::LDAP_ERROR);
+                throw Exception(ErrorCodes::LDAP_ERROR, "Failed to process LDAP search message");
         }
     }
 
@@ -571,10 +586,10 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results)
 {
     if (params.user.empty())
-        throw Exception("LDAP authentication of a user with empty name is not allowed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP authentication of a user with empty name is not allowed");
 
     if (!role_search_params != !role_search_results)
-        throw Exception("Cannot return LDAP search results", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot return LDAP search results");
 
     // Silently reject authentication attempt if the password is empty as if it didn't match.
     if (params.password.empty())
@@ -611,14 +626,14 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search
 
 #else // USE_LDAP
 
-void LDAPClient::diag(const int, String)
+void LDAPClient::handleError(const int, String)
 {
-    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
 bool LDAPClient::openConnection()
 {
-    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
 void LDAPClient::closeConnection() noexcept
@@ -627,12 +642,12 @@ void LDAPClient::closeConnection() noexcept
 
 LDAPClient::SearchResults LDAPClient::search(const SearchParams &)
 {
-    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList *, SearchResultsList *)
 {
-    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
 #endif // USE_LDAP

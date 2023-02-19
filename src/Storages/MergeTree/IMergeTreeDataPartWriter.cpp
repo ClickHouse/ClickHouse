@@ -38,7 +38,7 @@ Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * per
 }
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
-    const MergeTreeData::DataPartPtr & data_part_,
+    const MergeTreeMutableDataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeWriterSettings & settings_,

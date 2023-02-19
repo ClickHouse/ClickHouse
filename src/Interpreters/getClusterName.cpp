@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/getClusterName.h>
@@ -18,17 +19,30 @@ namespace ErrorCodes
 
 std::string getClusterName(const IAST & node)
 {
+    auto name = tryGetClusterName(node);
+    if (!name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal expression instead of cluster name.");
+    return std::move(name).value();
+}
+
+
+std::optional<std::string> tryGetClusterName(const IAST & node)
+{
     if (const auto * ast_id = node.as<ASTIdentifier>())
         return ast_id->name();
 
     if (const auto * ast_lit = node.as<ASTLiteral>())
+    {
+        if (ast_lit->value.getType() != Field::Types::String)
+            return {};
         return ast_lit->value.safeGet<String>();
+    }
 
     /// A hack to support hyphens in cluster names.
     if (const auto * ast_func = node.as<ASTFunction>())
     {
         if (ast_func->name != "minus" || !ast_func->arguments || ast_func->arguments->children.size() < 2)
-            throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);
+            return {};
 
         String name;
         for (const auto & arg : ast_func->arguments->children)
@@ -42,7 +56,7 @@ std::string getClusterName(const IAST & node)
         return name;
     }
 
-    throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);
+    return {};
 }
 
 
