@@ -7,7 +7,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <unistd.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 
 namespace DB
@@ -22,7 +22,7 @@ namespace ErrorCodes
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        throw Exception("Logical error: method ClientInfo::write is called for unsupported server revision", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: method ClientInfo::write is called for unsupported server revision");
 
     writeBinary(static_cast<UInt8>(query_kind), out);
     if (empty())
@@ -102,7 +102,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-        throw Exception("Logical error: method ClientInfo::read is called for unsupported client revision", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: method ClientInfo::read is called for unsupported client revision");
 
     UInt8 read_query_kind = 0;
     readBinary(read_query_kind, in);
@@ -203,7 +203,7 @@ void ClientInfo::setInitialQuery()
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
 {
     os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
         os_user.resize(strlen(os_user.c_str()));
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.

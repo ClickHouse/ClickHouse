@@ -25,9 +25,9 @@ void LazyPipeFDs::open()
 {
     for (int & fd : fds_rw)
         if (fd >= 0)
-            throw Exception("Pipe is already opened", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipe is already opened");
 
-#ifndef __APPLE__
+#ifndef OS_DARWIN
     if (0 != pipe2(fds_rw, O_CLOEXEC))
         throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_PIPE);
 #else
@@ -106,7 +106,7 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
     {
         if (errno == EINVAL)
         {
-            LOG_INFO(log, "Cannot get pipe capacity, {}. Very old Linux kernels have no support for this fcntl.", errnoToString(ErrorCodes::CANNOT_FCNTL));
+            LOG_INFO(log, "Cannot get pipe capacity, {}. Very old Linux kernels have no support for this fcntl.", errnoToString());
             /// It will work nevertheless.
         }
         else

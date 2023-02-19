@@ -24,7 +24,7 @@ FROM (
 -- single category
 
 SELECT
-    categoricalInformationValue(x.1, x.2)
+    arrayMap(x -> x = 0 ? 0 : x, categoricalInformationValue(x.1, x.2)) -- remove negative zeros
 FROM (
     SELECT
         arrayJoin([(1, 0), (1, 0), (1, 0), (1, 1), (1, 1)]) as x

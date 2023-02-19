@@ -67,7 +67,7 @@ MeiliSearchSource::MeiliSearchSource(
     UInt64 max_block_size_,
     QueryRoute route_,
     std::unordered_map<String, String> query_params_)
-    : SourceWithProgress(sample_block.cloneEmpty())
+    : ISource(sample_block.cloneEmpty())
     , connection(config)
     , max_block_size{max_block_size_}
     , route{route_}
@@ -152,8 +152,7 @@ Field getField(JSON value, DataTypePtr type_ptr)
     else
     {
         const std::string_view type_name = magic_enum::enum_name(type_id);
-        const String err_msg = "MeiliSearch storage doesn't support type: ";
-        throw Exception(ErrorCodes::UNSUPPORTED_MEILISEARCH_TYPE, err_msg + type_name.data());
+        throw Exception(ErrorCodes::UNSUPPORTED_MEILISEARCH_TYPE, "MeiliSearch storage doesn't support type: {}", type_name);
     }
 }
 
@@ -174,14 +173,14 @@ size_t MeiliSearchSource::parseJSON(MutableColumns & columns, const JSON & jres)
         {
             ++cnt_fields;
             const auto & name = kv_pair.getName();
-            int pos = description.sample_block.getPositionByName(name);
+            size_t pos = description.sample_block.getPositionByName(name);
             MutableColumnPtr & col = columns[pos];
             DataTypePtr type_ptr = description.sample_block.getByPosition(pos).type;
             insertWithTypeId(col, kv_pair.getValue(), type_ptr);
         }
         if (cnt_fields != columns.size())
             throw Exception(
-                ErrorCodes::MEILISEARCH_MISSING_SOME_COLUMNS, "Some columns were not found in the table, json = " + json.toString());
+                ErrorCodes::MEILISEARCH_MISSING_SOME_COLUMNS, "Some columns were not found in the table, json = {}", json.toString());
     }
     return cnt_match;
 }
@@ -201,7 +200,7 @@ Chunk MeiliSearchSource::generate()
         auto response = connection.searchQuery(query_params);
         JSON jres = JSON(response).begin();
         if (jres.getName() == "message")
-            throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.toString());
+            throw Exception::createRuntime(ErrorCodes::MEILISEARCH_EXCEPTION, jres.toString());
 
         cnt_match = parseJSON(columns, jres.getValue());
     }
@@ -212,7 +211,7 @@ Chunk MeiliSearchSource::generate()
         if (!jres.isArray())
         {
             auto error = jres.getWithDefault<String>("message");
-            throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, error);
+            throw Exception::createRuntime(ErrorCodes::MEILISEARCH_EXCEPTION, error);
         }
         cnt_match = parseJSON(columns, jres);
     }

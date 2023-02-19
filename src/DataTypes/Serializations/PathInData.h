@@ -7,9 +7,6 @@
 namespace DB
 {
 
-class ReadBuffer;
-class WriteBuffer;
-
 /// Class that represents path in document, e.g. JSON.
 class PathInData
 {
@@ -47,7 +44,7 @@ public:
     PathInData(const PathInData & other);
     PathInData & operator=(const PathInData & other);
 
-    static UInt128 getPartsHash(const Parts & parts_);
+    static UInt128 getPartsHash(const Parts::const_iterator & begin, const Parts::const_iterator & end);
 
     bool empty() const { return parts.empty(); }
 
@@ -56,9 +53,6 @@ public:
 
     bool isNested(size_t i) const { return parts[i].is_nested; }
     bool hasNested() const { return has_nested; }
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
 
     bool operator==(const PathInData & other) const { return parts == other.parts; }
     struct Hash { size_t operator()(const PathInData & value) const; };

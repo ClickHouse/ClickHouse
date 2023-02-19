@@ -24,17 +24,17 @@ ProxyResolverConfiguration::ProxyResolverConfiguration(const Poco::URI & endpoin
 {
 }
 
-Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
+ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
 {
     LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
-    std::unique_lock lock(cache_mutex);
+    std::lock_guard lock(cache_mutex);
 
     std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 
     if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
     {
-        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use cached proxy: {}://{}:{}", Aws::Http::SchemeMapper::ToString(cached_config.proxyScheme), cached_config.proxyHost, cached_config.proxyPort);
+        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use cached proxy: {}://{}:{}", Aws::Http::SchemeMapper::ToString(cached_config.proxy_scheme), cached_config.proxy_host, cached_config.proxy_port);
         return cached_config;
     }
 
@@ -54,9 +54,6 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
         const auto & host = endpoint.getHost();
         auto resolved_hosts = DNSResolver::instance().resolveHostAll(host);
 
-        if (resolved_hosts.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver cannot resolve host {}", host);
-
         HTTPSessionPtr session;
 
         for (size_t i = 0; i < resolved_hosts.size(); ++i)
@@ -68,6 +65,7 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
             try
             {
                 session->sendRequest(request);
+                break;
             }
             catch (...)
             {
@@ -80,7 +78,7 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
         auto & response_body_stream = session->receiveResponse(response);
 
         if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-            throw Exception("Proxy resolver returned not OK status: " + response.getReason(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver returned not OK status: {}", response.getReason());
 
         String proxy_host;
         /// Read proxy host as string from response body.
@@ -88,9 +86,9 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
 
         LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}://{}:{}", proxy_scheme, proxy_host, proxy_port);
 
-        cached_config.proxyScheme = Aws::Http::SchemeMapper::FromString(proxy_scheme.c_str());
-        cached_config.proxyHost = proxy_host;
-        cached_config.proxyPort = proxy_port;
+        cached_config.proxy_scheme = Aws::Http::SchemeMapper::FromString(proxy_scheme.c_str());
+        cached_config.proxy_host = proxy_host;
+        cached_config.proxy_port = proxy_port;
         cache_timestamp = std::chrono::system_clock::now();
         cache_valid = true;
 
@@ -100,23 +98,23 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
     {
         tryLogCurrentException("AWSClient", "Failed to obtain proxy");
         /// Don't use proxy if it can't be obtained.
-        Aws::Client::ClientConfigurationPerRequest cfg;
+        ClientConfigurationPerRequest cfg;
         return cfg;
     }
 }
 
-void ProxyResolverConfiguration::errorReport(const Aws::Client::ClientConfigurationPerRequest & config)
+void ProxyResolverConfiguration::errorReport(const ClientConfigurationPerRequest & config)
 {
-    if (config.proxyHost.empty())
+    if (config.proxy_host.empty())
         return;
 
-    std::unique_lock lock(cache_mutex);
+    std::lock_guard lock(cache_mutex);
 
     if (!cache_ttl.count() || !cache_valid)
         return;
 
-    if (cached_config.proxyScheme != config.proxyScheme || cached_config.proxyHost != config.proxyHost
-            || cached_config.proxyPort != config.proxyPort)
+    if (std::tie(cached_config.proxy_scheme, cached_config.proxy_host, cached_config.proxy_port)
+            != std::tie(config.proxy_scheme, config.proxy_host, config.proxy_port))
         return;
 
     /// Invalidate cached proxy when got error with this proxy

@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/quantileexactweighted
 sidebar_position: 203
 ---
 
-# quantileExactWeighted {#quantileexactweighted}
+# quantileExactWeighted
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
 

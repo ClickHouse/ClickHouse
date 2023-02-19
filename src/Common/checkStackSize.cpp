@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include <cstdint>
 
-#if defined(__FreeBSD__)
+#if defined(OS_FREEBSD)
 #   include <pthread_np.h>
 #endif
 
@@ -48,7 +48,7 @@ size_t getStackSize(void ** out_address)
     address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - size);
 #else
     pthread_attr_t attr;
-#   if defined(__FreeBSD__) || defined(OS_SUNOS)
+#   if defined(OS_FREEBSD) || defined(OS_SUNOS)
     pthread_attr_init(&attr);
     if (0 != pthread_attr_get_np(pthread_self(), &attr))
         throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
@@ -98,10 +98,10 @@ __attribute__((__weak__)) void checkStackSize()
 
     /// We assume that stack grows towards lower addresses. And that it starts to grow from the end of a chunk of memory of max_stack_size.
     if (int_frame_address > int_stack_address + max_stack_size)
-        throw Exception("Logical error: frame address is greater than stack begin address", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: frame address is greater than stack begin address");
 
     size_t stack_size = int_stack_address + max_stack_size - int_frame_address;
-    size_t max_stack_size_allowed = max_stack_size * STACK_SIZE_FREE_RATIO;
+    size_t max_stack_size_allowed = static_cast<size_t>(max_stack_size * STACK_SIZE_FREE_RATIO);
 
     /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
     if (stack_size > max_stack_size_allowed)

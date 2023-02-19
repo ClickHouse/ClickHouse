@@ -78,6 +78,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                               : std::nullopt;
         if (named_collection)
         {
+            if (created_from_ddl)
+                global_context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
+
             mysql_settings.applyChanges(named_collection->settings_changes);
             configuration.set(named_collection->configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
@@ -90,6 +93,12 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         }
         else
         {
+            if (created_from_ddl)
+            {
+                for (auto & address : configuration.addresses)
+                    global_context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+            }
+
             configuration.database = config.getString(settings_config_prefix + ".db", "");
             configuration.table = config.getString(settings_config_prefix + ".table", "");
             pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
@@ -180,13 +189,13 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-Pipe MySQLDictionarySource::loadFromQuery(const String & query)
+QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
 {
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(
+    return QueryPipeline(std::make_shared<MySQLWithFailoverSource>(
             pool, query, sample_block, settings));
 }
 
-Pipe MySQLDictionarySource::loadAll()
+QueryPipeline MySQLDictionarySource::loadAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -195,7 +204,7 @@ Pipe MySQLDictionarySource::loadAll()
     return loadFromQuery(load_all_query);
 }
 
-Pipe MySQLDictionarySource::loadUpdatedAll()
+QueryPipeline MySQLDictionarySource::loadUpdatedAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -205,14 +214,14 @@ Pipe MySQLDictionarySource::loadUpdatedAll()
     return loadFromQuery(load_update_query);
 }
 
-Pipe MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadFromQuery(query);
 }
 
-Pipe MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);

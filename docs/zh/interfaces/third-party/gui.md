@@ -1,3 +1,6 @@
+---
+slug: /zh/interfaces/third-party/gui
+---
 # 第三方开发的可视化界面 {#di-san-fang-kai-fa-de-ke-shi-hua-jie-mian}
 
 ## 开源 {#kai-yuan}
@@ -88,6 +91,18 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   支持监控（处理进程、连接、查询）
 -   支持迁移数据
 
+### ClickVisual {#clickvisual}
+
+[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual是一款轻量级的开源日志查询、分析、报警的可视化平台！
+
+特征：
+
+- 支持分析日志库一键创建
+- 支持日志采集配置管理
+- 支持自定义索引配置
+- 支持报警配置
+- 支持权限粒度到库和表的权限配置
+
 ## 商业 {#shang-ye}
 
 ### Holistics {#holistics-software}
@@ -114,5 +129,3 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   数据编辑器。
 -   重构。
 -   搜索和导航。
-
-[来源文章](https://clickhouse.com/docs/zh/interfaces/third-party/gui/) <!--hide-->

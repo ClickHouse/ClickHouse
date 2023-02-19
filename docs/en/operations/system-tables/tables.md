@@ -1,4 +1,7 @@
-# tables {#system-tables}
+---
+slug: /en/operations/system-tables/tables
+---
+# tables
 
 Contains metadata of each table that the server knows about.
 

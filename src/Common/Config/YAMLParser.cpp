@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_YAML_CPP
 #include "YAMLParser.h"
@@ -26,114 +26,109 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_YAML;
 }
 
-/// A prefix symbol in yaml key
-/// We add attributes to nodes by using a prefix symbol in the key part.
-/// Currently we use @ as a prefix symbol. Note, that @ is reserved
-/// by YAML standard, so we need to write a key-value pair like this: "@attribute": attr_value
-const char YAML_ATTRIBUTE_PREFIX = '@';
-
 namespace
 {
+    /// A prefix symbol in yaml key
+    /// We add attributes to nodes by using a prefix symbol in the key part.
+    /// Currently we use @ as a prefix symbol. Note, that @ is reserved
+    /// by YAML standard, so we need to write a key-value pair like this: "@attribute": attr_value
+    const char YAML_ATTRIBUTE_PREFIX = '@';
 
-Poco::AutoPtr<Poco::XML::Element> createCloneNode(Poco::XML::Element & original_node)
-{
-    Poco::AutoPtr<Poco::XML::Element> clone_node = original_node.ownerDocument()->createElement(original_node.nodeName());
-    original_node.parentNode()->appendChild(clone_node);
-    return clone_node;
-}
-
-void processNode(const YAML::Node & node, Poco::XML::Element & parent_xml_element)
-{
-    auto * xml_document = parent_xml_element.ownerDocument();
-    switch (node.Type())
+    Poco::AutoPtr<Poco::XML::Element> cloneXMLNode(const Poco::XML::Element & original_node)
     {
-        case YAML::NodeType::Scalar:
-        {
-            std::string value = node.as<std::string>();
-            Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
-            parent_xml_element.appendChild(xml_value);
-            break;
-        }
+        Poco::AutoPtr<Poco::XML::Element> clone_node = original_node.ownerDocument()->createElement(original_node.nodeName());
+        original_node.parentNode()->appendChild(clone_node);
+        return clone_node;
+    }
 
-        /// We process YAML Sequences as a
-        /// list of <key>value</key> tags with same key and different values.
-        /// For example, we translate this sequence
-        /// seq:
-        ///     - val1
-        ///     - val2
-        ///
-        /// into this:
-        /// <seq>val1</seq>
-        /// <seq>val2</seq>
-        case YAML::NodeType::Sequence:
+    void processNode(const YAML::Node & node, Poco::XML::Element & parent_xml_node)
+    {
+        auto * xml_document = parent_xml_node.ownerDocument();
+        switch (node.Type())
         {
-            for (const auto & child_node : node)
-                /// For sequences it depends how we want to process them.
-                /// Sequences of key-value pairs such as:
-                /// seq:
-                ///     - k1: val1
-                ///     - k2: val2
-                /// into xml like this:
-                /// <seq>
-                ///     <k1>val1</k1>
-                ///     <k2>val2</k2>
-                /// </seq>
-                ///
-                /// But, if the sequence is just a list, the root-node needs to be repeated, such as:
-                /// seq:
-                ///     - val1
-                ///     - val2
-                /// into xml like this:
-                /// <seq>val1</seq>
-                /// <seq>val2</seq>
-                ///
-                /// Therefore check what type the child is, for further processing.
-                /// Mixing types (values list or map) will lead to strange results but should not happen.
-                if (parent_xml_element.hasChildNodes() && !child_node.IsMap())
-                {
-                    /// Create a new parent node with same tag for each child node
-                    processNode(child_node, *createCloneNode(parent_xml_element));
-                }
-                else
-                {
-                    /// Map, so don't recreate the parent node but add directly
-                    processNode(child_node, parent_xml_element);
-                }
-            break;
-        }
-        case YAML::NodeType::Map:
-        {
-            for (const auto & key_value_pair : node)
+            case YAML::NodeType::Scalar:
             {
-                const auto & key_node = key_value_pair.first;
-                const auto & value_node = key_value_pair.second;
-                std::string key = key_node.as<std::string>();
-                bool is_attribute = (key.starts_with(YAML_ATTRIBUTE_PREFIX) && value_node.IsScalar());
-                if (is_attribute)
-                {
-                    /// we use substr(1) here to remove YAML_ATTRIBUTE_PREFIX from key
-                    auto attribute_name = key.substr(1);
-                    std::string value = value_node.as<std::string>();
-                    parent_xml_element.setAttribute(attribute_name, value);
-                }
-                else
-                {
-                    Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
-                    parent_xml_element.appendChild(xml_key);
-                    processNode(value_node, *xml_key);
-                }
+                std::string value = node.as<std::string>();
+                Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
+                parent_xml_node.appendChild(xml_value);
+                break;
             }
-            break;
-        }
-        case YAML::NodeType::Null: break;
-        case YAML::NodeType::Undefined:
-        {
-            throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with undefined type and cannot continue parsing of the file");
+
+            /// For sequences we repeat the parent xml node. For example,
+            /// seq:
+            ///     - val1
+            ///     - val2
+            /// is converted into the following xml:
+            /// <seq>val1</seq>
+            /// <seq>val2</seq>
+            ///
+            /// A sequence of mappings is converted in the same way:
+            /// seq:
+            ///     - k1: val1
+            ///       k2: val2
+            ///     - k3: val3
+            /// is converted into the following xml:
+            /// <seq><k1>val1</k1><k2>val2</k2></seq>
+            /// <seq><k3>val3</k3></seq>
+            case YAML::NodeType::Sequence:
+            {
+                size_t i = 0;
+                for (auto it = node.begin(); it != node.end(); ++it, ++i)
+                {
+                    const auto & child_node = *it;
+
+                    bool need_clone_parent_xml_node = (i > 0);
+
+                    if (need_clone_parent_xml_node)
+                    {
+                        /// Create a new parent node with same tag for each child node
+                        processNode(child_node, *cloneXMLNode(parent_xml_node));
+                    }
+                    else
+                    {
+                        /// Map, so don't recreate the parent node but add directly
+                        processNode(child_node, parent_xml_node);
+                    }
+                }
+                break;
+            }
+
+            case YAML::NodeType::Map:
+            {
+                for (const auto & key_value_pair : node)
+                {
+                    const auto & key_node = key_value_pair.first;
+                    const auto & value_node = key_value_pair.second;
+                    std::string key = key_node.as<std::string>();
+                    bool is_attribute = (key.starts_with(YAML_ATTRIBUTE_PREFIX) && value_node.IsScalar());
+                    if (is_attribute)
+                    {
+                        /// we use substr(1) here to remove YAML_ATTRIBUTE_PREFIX from key
+                        auto attribute_name = key.substr(1);
+                        std::string value = value_node.as<std::string>();
+                        parent_xml_node.setAttribute(attribute_name, value);
+                    }
+                    else
+                    {
+                        Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
+                        parent_xml_node.appendChild(xml_key);
+                        processNode(value_node, *xml_key);
+                    }
+                }
+                break;
+            }
+
+            case YAML::NodeType::Null: break;
+            case YAML::NodeType::Undefined:
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                                "YAMLParser has encountered node with undefined type and cannot continue parsing "
+                                "of the file");
+            }
         }
     }
 }
 
-}
 
 Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
 {
@@ -161,7 +156,9 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
     }
     catch (const YAML::TypedBadConversion<std::string>&)
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with key or value which cannot be represented as string and cannot continue parsing of the file");
+        throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                        "YAMLParser has encountered node with key "
+                        "or value which cannot be represented as string and cannot continue parsing of the file");
     }
     return xml;
 }

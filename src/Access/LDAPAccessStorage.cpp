@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 
 LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl & access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
-    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier())
+    : IAccessStorage(storage_name_), access_control(access_control_), memory_storage(storage_name_, access_control.getChangesNotifier(), false)
 {
     setConfiguration(config, prefix);
 }
@@ -36,6 +36,7 @@ LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl
 
 String LDAPAccessStorage::getLDAPServerName() const
 {
+    std::scoped_lock lock(mutex);
     return ldap_server_name;
 }
 
@@ -52,11 +53,11 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     const bool has_role_mapping = config.has(prefix_str + "role_mapping");
 
     if (!has_server)
-        throw Exception("Missing 'server' field for LDAP user directory", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'server' field for LDAP user directory");
 
     const auto ldap_server_name_cfg = config.getString(prefix_str + "server");
     if (ldap_server_name_cfg.empty())
-        throw Exception("Empty 'server' field for LDAP user directory", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'server' field for LDAP user directory");
 
     std::set<String> common_roles_cfg;
     if (has_roles)
@@ -320,7 +321,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
     std::set<String> role_names;
 
     if (external_roles.size() != role_search_params.size())
-        throw Exception("Unable to map external roles", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to map external roles");
 
     for (std::size_t i = 0; i < external_roles.size(); ++i)
     {
@@ -442,10 +443,10 @@ AccessEntityPtr LDAPAccessStorage::readImpl(const UUID & id, bool throw_if_not_e
 }
 
 
-std::optional<String> LDAPAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+std::optional<std::pair<String, AccessEntityType>> LDAPAccessStorage::readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const
 {
     std::scoped_lock lock(mutex);
-    return memory_storage.readName(id, throw_if_not_exists);
+    return memory_storage.readNameWithType(id, throw_if_not_exists);
 }
 
 
@@ -504,4 +505,5 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
 
     return id;
 }
+
 }

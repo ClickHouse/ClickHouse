@@ -21,7 +21,6 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     , encryptor(header_.algorithm, key_, header_.init_vector)
 {
     offset = offset_;
-    encryptor.setOffset(offset_);
     need_seek = true;
 }
 
@@ -31,17 +30,17 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
     if (whence == SEEK_SET)
     {
         if (off < 0)
-            throw Exception("SEEK_SET underflow: off = " + std::to_string(off), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", off);
         new_pos = off;
     }
     else if (whence == SEEK_CUR)
     {
         if (off < 0 && -off > getPosition())
-            throw Exception("SEEK_CUR shift out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_CUR shift out of bounds");
         new_pos = getPosition() + off;
     }
     else
-        throw Exception("ReadBufferFromFileEncrypted::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileEncrypted::seek expects SEEK_SET or SEEK_CUR as whence");
 
     if ((offset - static_cast<off_t>(working_buffer.size()) <= new_pos) && (new_pos <= offset) && !need_seek)
     {
@@ -59,9 +58,6 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
         resetWorkingBuffer();
         assert(!hasPendingData());
     }
-
-    /// The encryptor always needs to know what the current offset is.
-    encryptor.setOffset(new_pos);
 
     return new_pos;
 }
@@ -94,6 +90,10 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
     /// so after deciphering the numbers of bytes will be still `bytes_read`.
     working_buffer.resize(bytes_read);
+
+    /// The decryptor needs to know what the current offset is (because it's used in the decryption algorithm).
+    encryptor.setOffset(offset);
+
     encryptor.decrypt(encrypted_buffer.data(), bytes_read, working_buffer.begin());
 
     offset += bytes_read;
