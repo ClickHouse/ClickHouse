@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
@@ -428,11 +429,12 @@ bool StorageWindowView::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool cleanup,
     ContextPtr local_context)
 {
     auto storage_ptr = getInnerTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
+    return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
 void StorageWindowView::alter(

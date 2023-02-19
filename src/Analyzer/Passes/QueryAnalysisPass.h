@@ -51,6 +51,8 @@ namespace DB
   * Function `untuple` is handled properly.
   * Function `arrayJoin` is handled properly.
   * For functions `dictGet` and its variations and for function `joinGet` identifier as first argument is handled properly.
+  * Replace `countDistinct` and `countIfDistinct` aggregate functions using setting count_distinct_implementation.
+  * Add -OrNull suffix to aggregate functions if setting aggregate_functions_null_for_empty is true.
   * Function `exists` is converted into `in`.
   *
   * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function

@@ -50,7 +50,7 @@ SELECT * FROM (SELECT [1] AS id) AS subquery_1 ARRAY JOIN id INNER JOIN (SELECT 
 SELECT '--';
 --
 SELECT * FROM (SELECT [5] AS id) AS subquery_1 ARRAY JOIN [1,2,3] AS id INNER JOIN (SELECT 1 AS id) AS subquery_2 USING (id);
-[5]
+1
 SELECT '--';
 --
 SELECT * FROM (SELECT [0] AS id) AS subquery ARRAY JOIN id INNER JOIN test_table USING (id);
@@ -61,68 +61,68 @@ SELECT * FROM (SELECT [1] AS id) AS subquery ARRAY JOIN id INNER JOIN test_table
 SELECT '--';
 --
 SELECT * FROM (SELECT [0] AS id) AS subquery ARRAY JOIN id AS id INNER JOIN test_table USING (id);
-[0]	Value_0	[1,2,3]
+0	Value_0	[1,2,3]
 SELECT '--';
 --
 SELECT * FROM (SELECT [1] AS id) AS subquery ARRAY JOIN id AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [0] AS id) AS subquery ARRAY JOIN id AS id INNER JOIN test_table USING (id);
-[0]	Value_0	[1,2,3]	0
+0	Value_0	[1,2,3]	0
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [1] AS id) AS subquery ARRAY JOIN id AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT * FROM (SELECT [0] AS value) AS subquery ARRAY JOIN value AS id INNER JOIN test_table USING (id);
-[0]	Value_0	[1,2,3]
+0	[0]	Value_0	[1,2,3]
 SELECT '--';
 --
 SELECT * FROM (SELECT [1] AS value) AS subquery ARRAY JOIN value AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [0] AS value) AS subquery ARRAY JOIN value AS id INNER JOIN test_table USING (id);
-[0]	Value_0	[1,2,3]	0
+0	[0]	Value_0	[1,2,3]	0
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [1] AS value) AS subquery ARRAY JOIN value AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT * FROM (SELECT [0] AS id) AS subquery ARRAY JOIN [0] AS id INNER JOIN test_table USING (id);
-[0]	Value_0	[1,2,3]
+0	Value_0	[1,2,3]
 SELECT '--';
 --
 SELECT * FROM (SELECT [0] AS id) AS subquery ARRAY JOIN [1] AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [0] AS id) AS subquery ARRAY JOIN [0] AS id INNER JOIN test_table USING (id);
-[0]	Value_0	[1,2,3]	0
+0	Value_0	[1,2,3]	0
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [0] AS id) AS subquery ARRAY JOIN [1] AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT * FROM (SELECT [5] AS id) AS subquery ARRAY JOIN [0] AS id INNER JOIN test_table USING (id);
-[5]	Value_0	[1,2,3]
+0	Value_0	[1,2,3]
 SELECT '--';
 --
 SELECT * FROM (SELECT [5] AS id) AS subquery ARRAY JOIN [1] AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [5] AS id) AS subquery ARRAY JOIN [0] AS id INNER JOIN test_table USING (id);
-[5]	Value_0	[1,2,3]	0
+0	Value_0	[1,2,3]	0
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [5] AS id) AS subquery ARRAY JOIN [1] AS id INNER JOIN test_table USING (id);
 SELECT '--';
 --
 SELECT * FROM (SELECT [5] AS id_array) AS subquery ARRAY JOIN id_array, [0] AS id INNER JOIN test_table USING (id);
-5	Value_0	[1,2,3]
+0	5	Value_0	[1,2,3]
 SELECT '--';
 --
 SELECT * FROM (SELECT [[0]] AS id) AS subquery ARRAY JOIN id AS id_nested_array ARRAY JOIN id_nested_array AS id INNER JOIN test_table USING (id);
-[[0]]	Value_0	[1,2,3]
+0	Value_0	[1,2,3]
 SELECT '--';
 --
 SELECT *, id FROM (SELECT [[0]] AS id) AS subquery ARRAY JOIN id AS id_nested_array ARRAY JOIN id_nested_array AS id INNER JOIN test_table USING (id);
-[[0]]	Value_0	[1,2,3]	0
+0	Value_0	[1,2,3]	0

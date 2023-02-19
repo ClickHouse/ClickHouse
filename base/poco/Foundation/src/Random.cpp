@@ -47,9 +47,6 @@
 #include "Poco/Random.h"
 #include "Poco/RandomStream.h"
 #include <ctime>
-#if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-#include "wce_time.h"
-#endif
 
 
 /*
@@ -153,11 +150,7 @@ Random::Random(int stateSize)
 	poco_assert (BREAK_0 <= stateSize && stateSize <= BREAK_4);
 
 	_pBuffer = new char[stateSize];
-#if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-	initState((UInt32) wceex_time(NULL), _pBuffer, stateSize);
-#else
 	initState((UInt32) std::time(NULL), _pBuffer, stateSize);
-#endif
 }
 
 

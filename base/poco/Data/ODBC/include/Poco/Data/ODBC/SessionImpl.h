@@ -27,9 +27,6 @@
 #include "Poco/Data/ODBC/TypeInfo.h"
 #include "Poco/Mutex.h"
 #include "Poco/SharedPtr.h"
-#ifdef POCO_OS_FAMILY_WINDOWS
-#    include <windows.h>
-#endif
 #include <sqltypes.h>
 
 
