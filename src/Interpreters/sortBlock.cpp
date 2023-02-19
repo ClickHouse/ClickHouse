@@ -194,6 +194,14 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
+    if (isAlreadySorted(block, description, limit))
+    {
+        if (limit && block.rows() > limit)
+            for (auto & elem : block)
+                elem.column = elem.column->cut(0, limit);
+        return;
+    }
+
     IColumn::Permutation permutation;
     getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation);
 
@@ -208,25 +216,6 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     }
 }
 
-void stableSortBlock(Block & block, const SortDescription & description)
-{
-    if (!block)
-        return;
-
-    IColumn::Permutation permutation;
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, permutation);
-
-    if (permutation.empty())
-        return;
-
-    size_t columns = block.columns();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        auto & column_to_sort = block.getByPosition(i).column;
-        column_to_sort = column_to_sort->permute(permutation, 0);
-    }
-}
-
 void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation)
 {
     if (!block)
@@ -235,34 +224,37 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
     getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, out_permutation);
 }
 
-bool isAlreadySorted(const Block & block, const SortDescription & description)
+bool isAlreadySorted(const Block & block, const SortDescription & description, UInt64 limit)
 {
     if (!block)
         return true;
 
     size_t rows = block.rows();
 
+    if (limit == 0 || limit > rows)
+        limit = rows;
+
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
 
     PartialSortingLess less(columns_with_sort_desc);
 
     /** If the rows are not too few, then let's make a quick attempt to verify that the block is not sorted.
-     * Constants - at random.
-     */
+      * Constants - arbitrary choice.
+      */
     static constexpr size_t num_rows_to_try = 10;
-    if (rows > num_rows_to_try * 5)
+    if (limit > num_rows_to_try * 5)
     {
         for (size_t i = 1; i < num_rows_to_try; ++i)
         {
-            size_t prev_position = rows * (i - 1) / num_rows_to_try;
-            size_t curr_position = rows * i / num_rows_to_try;
+            size_t prev_position = limit * (i - 1) / num_rows_to_try;
+            size_t curr_position = limit * i / num_rows_to_try;
 
             if (less(curr_position, prev_position))
                 return false;
         }
     }
 
-    for (size_t i = 1; i < rows; ++i)
+    for (size_t i = 1; i < limit; ++i)
         if (less(i, i - 1))
             return false;
 
