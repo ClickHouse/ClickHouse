@@ -1269,7 +1269,7 @@ try
             /// Note: If you specified it in the top level config (not it config of default profile)
             /// then ClickHouse will use it exactly.
             /// This is done for backward compatibility.
-            if (global_context->areBackgroundExecutorsInitialized() && (server_settings.background_pool_size.changed || server_settings.background_merges_mutations_concurrency_ratio.changed))
+            if (global_context->areBackgroundExecutorsInitialized() && (server_settings.background_pool_size.changed || server_settings.background_merges_mutations_concurrency_ratio.changed || server_settings.background_merges_mutations_scheduling_policy.changed))
             {
                 auto new_pool_size = server_settings.background_pool_size;
                 auto new_ratio = server_settings.background_merges_mutations_concurrency_ratio;
