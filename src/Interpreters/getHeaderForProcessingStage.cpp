@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 bool hasJoin(const ASTSelectQuery & select)
@@ -57,7 +58,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
         const size_t left_table_pos = 0;
         /// Test each argument of `and` function and select ones related to only left table
         std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
-        for (auto && node : collectConjunctions(where))
+        for (auto && node : splitConjunctionsAst(where))
         {
             if (membership_collector.getIdentsMembership(node) == left_table_pos)
                 new_conj->arguments->children.push_back(std::move(node));
@@ -118,6 +119,10 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit:
         case QueryProcessingStage::MAX:
         {
+            /// TODO: Analyzer syntax analyzer result
+            if (!query_info.syntax_analyzer_result)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getHeaderForProcessingStage is unsupported");
+
             auto query = query_info.query->clone();
             TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
             removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
@@ -127,7 +132,7 @@ Block getHeaderForProcessingStage(
             return InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
     }
-    throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
 }
 
 }

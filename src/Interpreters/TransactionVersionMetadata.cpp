@@ -20,26 +20,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
 }
 
-inline static CSN getCSNAndAssert(TIDHash tid_hash, std::atomic<CSN> & csn, const TransactionID * tid = nullptr)
-{
-    CSN maybe_csn = TransactionLog::getCSN(tid_hash);
-    if (maybe_csn)
-        return maybe_csn;
-
-    /// Either transaction is not committed (yet) or it was committed and then the CSN entry was cleaned up from the log.
-    /// We should load CSN again to distinguish the second case.
-    /// If entry was cleaned up, then CSN is already stored in VersionMetadata and we will get it.
-    /// And for the first case we will get UnknownCSN again.
-    maybe_csn = csn.load();
-    if (maybe_csn)
-        return maybe_csn;
-
-    if (tid)
-        TransactionLog::assertTIDIsNotOutdated(*tid);
-
-    return Tx::UnknownCSN;
-}
-
 VersionMetadata::VersionMetadata()
 {
     /// It would be better to make it static, but static loggers do not work for some reason (initialization order?)
@@ -95,12 +75,8 @@ bool VersionMetadata::tryLockRemovalTID(const TransactionID & tid, const Transac
     bool locked = removal_tid_lock.compare_exchange_strong(expected_removal_lock_value, removal_lock_value);
     if (!locked)
     {
-        if (tid == Tx::PrehistoricTID && expected_removal_lock_value == Tx::PrehistoricTID.getHash())
-        {
-            /// Don't need to lock part for queries without transaction
-            LOG_TEST(log, "Assuming removal_tid is locked by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
-            return true;
-        }
+        if (expected_removal_lock_value == removal_lock_value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to lock part {} for removal second time by {}", context.part_name, tid);
 
         if (locked_by_id)
             *locked_by_id = expected_removal_lock_value;
@@ -221,7 +197,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     /// so we can determine their visibility through fast path.
     /// But for long-running writing transactions we will always do
     /// CNS lookup and get 0 (UnknownCSN) until the transaction is committed/rolled back.
-    creation = getCSNAndAssert(creation_tid.getHash(), creation_csn, &creation_tid);
+    creation = TransactionLog::getCSNAndAssert(creation_tid, creation_csn);
     if (!creation)
     {
         return false;   /// Part creation is not committed yet
@@ -233,7 +209,7 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
 
     if (removal_lock)
     {
-        removal = getCSNAndAssert(removal_lock, removal_csn);
+        removal = TransactionLog::getCSN(removal_lock, &removal_csn);
         if (removal)
             removal_csn.store(removal, std::memory_order_relaxed);
     }
@@ -246,6 +222,9 @@ bool VersionMetadata::canBeRemoved()
     if (creation_tid == Tx::PrehistoricTID)
     {
         /// Avoid access to Transaction log if transactions are not involved
+
+        if (creation_csn.load(std::memory_order_relaxed) == Tx::RolledBackCSN)
+            return true;
 
         TIDHash removal_lock = removal_tid_lock.load(std::memory_order_relaxed);
         if (!removal_lock)
@@ -268,7 +247,7 @@ bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
     if (!creation)
     {
         /// Cannot remove part if its creation not committed yet
-        creation = getCSNAndAssert(creation_tid.getHash(), creation_csn, &creation_tid);
+        creation = TransactionLog::getCSNAndAssert(creation_tid, creation_csn);
         if (creation)
             creation_csn.store(creation, std::memory_order_relaxed);
         else
@@ -288,7 +267,7 @@ bool VersionMetadata::canBeRemovedImpl(CSN oldest_snapshot_version)
     if (!removal)
     {
         /// Part removal is not committed yet
-        removal = getCSNAndAssert(removal_lock, removal_csn);
+        removal = TransactionLog::getCSN(removal_lock, &removal_csn);
         if (removal)
             removal_csn.store(removal, std::memory_order_relaxed);
         else
@@ -384,8 +363,9 @@ void VersionMetadata::read(ReadBuffer & buf)
 
         if (name == CREATION_CSN_STR)
         {
-            chassert(!creation_csn);
-            creation_csn = read_csn();
+            auto new_val = read_csn();
+            chassert(!creation_csn || (creation_csn == new_val && creation_csn == Tx::PrehistoricCSN));
+            creation_csn = new_val;
         }
         else if (name == REMOVAL_TID_STR)
         {

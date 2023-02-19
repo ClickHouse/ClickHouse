@@ -1,6 +1,5 @@
-#pragma once
-
 #include "ICommand.h"
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -10,42 +9,44 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandLink : public ICommand
+class CommandLink final : public ICommand
 {
 public:
     CommandLink()
     {
         command_name = "link";
-        command_option_description.emplace(createOptionsDescription("Help Message for link", getTerminalWidth()));
         description = "Create hardlink from `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
-        usage = "Usage: link [OPTION]... <FROM_PATH> <TO_PATH>";
+        usage = "link [OPTION]... <FROM_PATH> <TO_PATH>";
     }
 
     void processOptions(
         Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override{}
-
-    void executeImpl(
-        const DB::ContextMutablePtr & global_context,
-        const Poco::Util::LayeredConfiguration & config) const override
+        po::variables_map &) const override
     {
-        if (pos_arguments.size() != 2)
+    }
+
+    void execute(
+        const std::vector<String> & command_arguments,
+        DB::ContextMutablePtr & global_context,
+        Poco::Util::LayeredConfiguration & config) override
+    {
+        if (command_arguments.size() != 2)
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         String disk_name = config.getString("disk", "default");
 
-        String path_from = pos_arguments[0];
-        String path_to = pos_arguments[1];
+        const String & path_from = command_arguments[0];
+        const String & path_to = command_arguments[1];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 
-        String full_path_from = fullPathWithValidate(disk, path_from);
-        String full_path_to = fullPathWithValidate(disk, path_to);
+        String relative_path_from = validatePathAndGetAsRelative(path_from);
+        String relative_path_to = validatePathAndGetAsRelative(path_to);
 
-        disk->createHardLink(full_path_from, full_path_to);
+        disk->createHardLink(relative_path_from, relative_path_to);
     }
 };
 }

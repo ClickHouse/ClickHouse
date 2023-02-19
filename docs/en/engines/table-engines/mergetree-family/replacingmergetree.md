@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/mergetree-family/replacingmergetree
 sidebar_position: 40
 sidebar_label:  ReplacingMergeTree
 ---
@@ -33,16 +34,61 @@ For a description of request parameters, see [statement description](../../../sq
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 :::
 
-**ReplacingMergeTree Parameters**
+## ReplacingMergeTree Parameters
 
--   `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
+### ver
 
-    When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
+`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
-    -   The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
-    -   With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
+When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
-**Query clauses**
+   - The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
+   - With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
+
+Example: 
+
+```sql
+-- without ver - the last inserted 'wins'
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO myFirstReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO myFirstReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM myFirstReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ second  │ 2020-01-01 00:00:00 │
+└─────┴─────────┴─────────────────────┘
+
+
+-- with ver - the row with the biggest ver 'wins'
+CREATE TABLE mySecondReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree(eventTime)
+ORDER BY key;
+
+INSERT INTO mySecondReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO mySecondReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM mySecondReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ first   │ 2020-01-01 01:01:01 │
+└─────┴─────────┴─────────────────────┘
+```
+
+## Query clauses
 
 When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 

@@ -1,9 +1,12 @@
 ---
+slug: /en/operations/tips
 sidebar_position: 58
 sidebar_label: Usage Recommendations
+title: "Usage Recommendations"
 ---
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
 
-# Usage Recommendations
+<SelfManaged />
 
 ## CPU Scaling Governor
 
@@ -74,12 +77,15 @@ Make sure that [`fstrim`](https://en.wikipedia.org/wiki/Trim_(computing)) is ena
 
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime`.
-XFS should be avoided. It works mostly fine but there are some reports about lower performance.
+Ext4 is the most reliable option. Set the mount options `noatime`. XFS works well too.
 Most other file systems should also work fine.
+
+FAT-32 and exFAT are not supported due to lack of hard links.
 
 Do not use compressed filesystems, because ClickHouse does compression on its own and better.
 It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
+
+While ClickHouse can work over NFS, it is not the best idea.
 
 ## Linux Kernel {#linux-kernel}
 
@@ -128,7 +134,8 @@ You should never use manually written scripts to transfer data between different
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
 
-You can run ClickHouse Keeper on the same server as ClickHouse, but do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
+You can run ClickHouse Keeper on the same server as ClickHouse in test environments, or in environments with low ingestion rate. 
+For production environments we suggest to use separate servers for ClickHouse and ZooKeeper/Keeper, or place ClickHouse files and Keeper files on to separate disks. Because ZooKeeper/Keeper are very sensitive for disk latency and ClickHouse may utilize all available system resources.
 
 You can have ZooKeeper observers in an ensemble but ClickHouse servers should not interact with observers.
 
@@ -182,10 +189,12 @@ preAllocSize=131072
 # especially if there are a lot of clients. To prevent ZooKeeper from running
 # out of memory due to queued requests, ZooKeeper will throttle clients so that
 # there is no more than globalOutstandingLimit outstanding requests in the
-# system. The default limit is 1,000.ZooKeeper logs transactions to a
-# transaction log. After snapCount transactions are written to a log file a
-# snapshot is started and a new transaction log file is started. The default
-# snapCount is 10,000.
+# system. The default limit is 1000.
+# globalOutstandingLimit=1000
+
+# ZooKeeper logs transactions to a transaction log. After snapCount transactions
+# are written to a log file a snapshot is started and a new transaction log file
+# is started. The default snapCount is 100000.
 snapCount=3000000
 
 # If this option is defined, requests will be will logged to a trace file named
@@ -277,3 +286,7 @@ end script
 If you use antivirus software configure it to skip folders with ClickHouse datafiles (`/var/lib/clickhouse`) otherwise performance may be reduced and you may experience unexpected errors during data ingestion and background merges.
 
 [Original article](https://clickhouse.com/docs/en/operations/tips/)
+
+## Related Content
+
+- [Getting started with ClickHouse? Here are 13 "Deadly Sins" and how to avoid them](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)

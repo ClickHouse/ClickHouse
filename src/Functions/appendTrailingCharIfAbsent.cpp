@@ -46,10 +46,10 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         if (!isString(arguments[1]))
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -63,12 +63,12 @@ private:
         const auto & column_char = arguments[1].column;
 
         if (!checkColumnConst<ColumnString>(column_char.get()))
-            throw Exception{"Second argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be a constant string", getName());
 
         String trailing_char_str = assert_cast<const ColumnConst &>(*column_char).getValue<String>();
 
         if (trailing_char_str.size() != 1)
-            throw Exception{"Second argument of function " + getName() + " must be a one-character string", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must be a one-character string", getName());
 
         if (const auto * col = checkAndGetColumn<ColumnString>(column.get()))
         {
@@ -108,14 +108,14 @@ private:
             return col_res;
         }
         else
-            throw Exception{"Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 
 }
 
-void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory & factory)
+REGISTER_FUNCTION(AppendTrailingCharIfAbsent)
 {
     factory.registerFunction<FunctionAppendTrailingCharIfAbsent>();
 }

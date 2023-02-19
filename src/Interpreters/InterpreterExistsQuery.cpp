@@ -69,7 +69,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {
         if (exists_query->temporary)
-            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->getTable());
         result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});

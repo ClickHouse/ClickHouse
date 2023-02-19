@@ -61,20 +61,17 @@ public:
         size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(number_of_arguments)
-                    + ", should be from 2 to 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be from 2 to 3",
+                getName(), number_of_arguments);
 
         // second argument must be an integer
         if (!isInteger(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - should be an integer",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {} - should be an integer", arguments[1]->getName(), getName());
         else if (arguments[1]->isNullable())
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + " - can not be Nullable",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {} - can not be Nullable", arguments[1]->getName(), getName());
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
@@ -203,7 +200,7 @@ public:
 
 }
 
-void registerFunctionNeighbor(FunctionFactory & factory)
+REGISTER_FUNCTION(Neighbor)
 {
     factory.registerFunction<FunctionNeighbor>();
 }

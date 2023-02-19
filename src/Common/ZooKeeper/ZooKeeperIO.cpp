@@ -28,6 +28,11 @@ void write(int32_t x, WriteBuffer & out)
     writeBinary(x, out);
 }
 
+void write(uint8_t x, WriteBuffer & out)
+{
+    writeBinary(x, out);
+}
+
 void write(OpNum x, WriteBuffer & out)
 {
     write(static_cast<int32_t>(x), out);
@@ -91,6 +96,11 @@ void read(int64_t & x, ReadBuffer & in)
     x = __builtin_bswap64(x);
 }
 
+void read(uint8_t & x, ReadBuffer & in)
+{
+    readBinary(x, in);
+}
+
 void read(int32_t & x, ReadBuffer & in)
 {
     readBinary(x, in);
@@ -133,7 +143,10 @@ void read(std::string & s, ReadBuffer & in)
         throw Exception("Too large string size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
 
     s.resize(size);
-    in.read(s.data(), size);
+    size_t read_bytes = in.read(s.data(), size);
+    if (read_bytes != static_cast<size_t>(size))
+        throw Exception(
+            Error::ZMARSHALLINGERROR, "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}", size, read_bytes);
 }
 
 void read(ACL & acl, ReadBuffer & in)

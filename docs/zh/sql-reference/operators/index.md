@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/operators/
+---
 # 操作符 {#cao-zuo-fu}
 
 所有的操作符（运算符）都会在查询时依据他们的优先级及其结合顺序在被解析时转换为对应的函数。下面按优先级从高到低列出各组运算符及其对应的函数：
@@ -140,7 +143,7 @@ SELECT
 FROM test.Orders;
 ```
 
-``` text
+``` response
 ┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
 │      2008 │         10 │       11 │        13 │          23 │          44 │
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
@@ -158,7 +161,7 @@ FROM test.Orders;
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
 ```
 
-``` text
+``` response
 ┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
 │ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
 └─────────────────────┴────────────────────────────────────────────────────────┘
@@ -223,18 +226,14 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 。
 
 <!-- -->
 
-``` bash
-:) SELECT x+100 FROM t_null WHERE y IS NULL
+``` sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
 
-SELECT x + 100
-FROM t_null
-WHERE isNull(y)
-
+``` response
 ┌─plus(x, 100)─┐
 │          101 │
 └──────────────┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
 
 ### IS NOT NULL {#is-not-null}
@@ -246,18 +245,12 @@ WHERE isNull(y)
 
 <!-- -->
 
-``` bash
-:) SELECT * FROM t_null WHERE y IS NOT NULL
+``` sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
 
-SELECT *
-FROM t_null
-WHERE isNotNull(y)
-
+``` response
 ┌─x─┬─y─┐
 │ 2 │ 3 │
 └───┴───┘
-
-1 rows in set. Elapsed: 0.002 sec.
 ```
-
-[来源文章](https://clickhouse.com/docs/en/query_language/operators/) <!--hide-->

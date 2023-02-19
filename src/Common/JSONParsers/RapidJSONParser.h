@@ -1,12 +1,12 @@
 #pragma once
 
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_RAPIDJSON
 #    include <base/types.h>
 #    include <base/defines.h>
 #    include <rapidjson/document.h>
-
+#    include "ElementTypes.h"
 
 namespace DB
 {
@@ -25,6 +25,20 @@ struct RapidJSONParser
     public:
         ALWAYS_INLINE Element() = default;
         ALWAYS_INLINE Element(const rapidjson::Value & value_) : ptr(&value_) {} /// NOLINT
+
+        ALWAYS_INLINE ElementType type() const
+        {
+            switch (ptr->GetType())
+            {
+                case rapidjson::kNumberType: return ptr->IsDouble() ? ElementType::DOUBLE : (ptr->IsUint64() ? ElementType::UINT64 : ElementType::INT64);
+                case rapidjson::kStringType: return ElementType::STRING;
+                case rapidjson::kArrayType: return ElementType::ARRAY;
+                case rapidjson::kObjectType: return ElementType::OBJECT;
+                case rapidjson::kTrueType: return ElementType::BOOL;
+                case rapidjson::kFalseType: return ElementType::BOOL;
+                case rapidjson::kNullType: return ElementType::NULL_VALUE;
+            }
+        }
 
         ALWAYS_INLINE bool isInt64() const { return ptr->IsInt64(); }
         ALWAYS_INLINE bool isUInt64() const { return ptr->IsUint64(); }
@@ -98,7 +112,7 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
         ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
 
-        bool find(const std::string_view & key, Element & result) const
+        bool find(std::string_view key, Element & result) const
         {
             auto it = ptr->FindMember(rapidjson::StringRef(key.data(), key.length()));
             if (it == ptr->MemberEnd())
@@ -122,7 +136,7 @@ struct RapidJSONParser
     };
 
     /// Parses a JSON document, returns the reference to its root element if succeeded.
-    bool parse(const std::string_view & json, Element & result)
+    bool parse(std::string_view json, Element & result)
     {
         rapidjson::MemoryStream ms(json.data(), json.size());
         rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);

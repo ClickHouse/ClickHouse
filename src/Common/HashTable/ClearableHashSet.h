@@ -48,14 +48,37 @@ struct ClearableHashTableCell : public BaseCell
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
-template
-<
+using StringRefBaseCell = HashSetCellWithSavedHash<StringRef, DefaultHash<StringRef>, ClearableHashSetState>;
+
+/// specialization for StringRef to allow zero size key (empty string)
+template <>
+struct ClearableHashTableCell<StringRef, StringRefBaseCell> : public StringRefBaseCell
+{
+    using State = ClearableHashSetState;
+    using value_type = typename StringRefBaseCell::value_type;
+
+    UInt32 version;
+
+    bool isZero(const State & state) const { return version != state.version; }
+    static bool isZero(const StringRef & key_, const State & state_) { return StringRefBaseCell::isZero(key_, state_); }
+
+    /// Set the key value to zero.
+    void setZero() { version = 0; }
+
+    /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
+    static constexpr bool need_zero_value_storage = true;
+
+    ClearableHashTableCell() { } //-V730 /// NOLINT
+    ClearableHashTableCell(const StringRef & key_, const State & state) : StringRefBaseCell(key_, state), version(state.version) { }
+};
+
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
-class ClearableHashSet : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
+class ClearableHashSet
+    : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
 public:
     using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
@@ -68,14 +91,17 @@ public:
     }
 };
 
-template
-<
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
-class ClearableHashSetWithSavedHash: public HashTable<Key, ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
+class ClearableHashSetWithSavedHash : public HashTable<
+                                          Key,
+                                          ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>,
+                                          Hash,
+                                          Grower,
+                                          Allocator>
 {
 public:
     void clear()
@@ -91,8 +117,4 @@ using ClearableHashSetWithStackMemory = ClearableHashSet<
     Hash,
     HashTableGrower<initial_size_degree>,
     HashTableAllocatorWithStackMemory<
-        (1ULL << initial_size_degree)
-        * sizeof(
-            ClearableHashTableCell<
-                Key,
-                HashTableCell<Key, Hash, ClearableHashSetState>>)>>;
+        (1ULL << initial_size_degree) * sizeof(ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>)>>;

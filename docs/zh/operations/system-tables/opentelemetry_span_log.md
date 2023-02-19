@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/opentelemetry_span_log
+---
 # system.opentelemetry_span_log {#system_tables-opentelemetry_span_log}
 
 包含已执行查询的[跟踪范围](https://opentracing.io/docs/overview/spans/)的信息.
@@ -48,6 +51,4 @@ attribute.values: []
 
 **另请参阅**
 
--   [OpenTelemetry](../../operations/opentelemetry.md)
-
-[原始文章](https://clickhouse.com/docs/en/operations/system_tables/opentelemetry_span_log) <!--hide-->
+-   [OpenTelemetry](../../operations/opentelemetry.mdx)

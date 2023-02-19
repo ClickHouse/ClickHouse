@@ -5,6 +5,7 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -14,6 +15,7 @@ class AggregatedChunkInfo : public ChunkInfo
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
+    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
 
 using AggregatorList = std::list<Aggregator>;
@@ -34,20 +36,20 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
-    bool only_merge = false;
 
-    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
         , final(final_)
     {
     }
 
-    AggregatingTransformParams(const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+    AggregatingTransformParams(
+        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
         , final(final_)
     {
     }
@@ -96,6 +98,10 @@ struct ManyAggregatedData
                     pool->trySchedule(
                         [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachQueryIfNotDetached();
+                            );
                             if (thread_group)
                                 CurrentThread::attachToIfDetached(thread_group);
 

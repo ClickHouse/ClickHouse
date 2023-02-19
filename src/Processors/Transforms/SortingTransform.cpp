@@ -26,8 +26,11 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
     : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(header, description)
 {
     Chunks nonempty_chunks;
-    for (auto & chunk : chunks)
+    size_t chunks_size = chunks.size();
+
+    for (size_t chunk_index = 0; chunk_index < chunks_size; ++chunk_index)
     {
+        auto & chunk = chunks[chunk_index];
         if (chunk.getNumRows() == 0)
             continue;
 
@@ -36,7 +39,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         /// which can be inefficient.
         convertToFullIfSparse(chunk);
 
-        cursors.emplace_back(header, chunk.getColumns(), description);
+        cursors.emplace_back(header, chunk.getColumns(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
@@ -44,7 +47,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
 
     chunks.swap(nonempty_chunks);
 
-    queue_variants.callOnVariant([&](auto & queue)
+    queue_variants.callOnBatchVariant([&](auto & queue)
     {
         using QueueType = std::decay_t<decltype(queue)>;
         queue = QueueType(cursors);
@@ -64,17 +67,17 @@ Chunk MergeSorter::read()
         return res;
     }
 
-    Chunk result = queue_variants.callOnVariant([&](auto & queue)
+    Chunk result = queue_variants.callOnBatchVariant([&](auto & queue)
     {
-        return mergeImpl(queue);
+        return mergeBatchImpl(queue);
     });
 
     return result;
 }
 
 
-template <typename TSortingHeap>
-Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
+template <typename TSortingQueue>
+Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
@@ -89,32 +92,46 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
             column->reserve(size_to_reserve);
     }
 
-    /// TODO: Optimization when a single block left.
-
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
     while (queue.isValid())
     {
-        auto current = queue.current();
+        auto [current_ptr, batch_size] = queue.current();
+        auto & current = *current_ptr;
 
-        /// Append a row from queue.
+        if (merged_rows + batch_size > max_merged_block_size)
+            batch_size -= merged_rows + batch_size - max_merged_block_size;
+
+        bool limit_reached = false;
+        if (limit && total_merged_rows + batch_size > limit)
+        {
+            batch_size -= total_merged_rows + batch_size - limit;
+            limit_reached = true;
+        }
+
+        /// Append rows from queue.
         for (size_t i = 0; i < num_columns; ++i)
-            merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
+        {
+            if (batch_size == 1)
+                merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
+            else
+                merged_columns[i]->insertRangeFrom(*current->all_columns[i], current->getRow(), batch_size);
+        }
 
-        ++total_merged_rows;
-        ++merged_rows;
+        total_merged_rows += batch_size;
+        merged_rows += batch_size;
 
         /// We don't need more rows because of limit has reached.
-        if (limit && total_merged_rows == limit)
+        if (limit_reached)
         {
             chunks.clear();
             break;
         }
 
-        queue.next();
+        queue.next(batch_size);
 
         /// It's enough for current output block but we will continue.
-        if (merged_rows == max_merged_block_size)
+        if (merged_rows >= max_merged_block_size)
             break;
     }
 
@@ -342,8 +359,8 @@ void SortingTransform::removeConstColumns(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
 
     if (num_columns != const_columns_to_remove.size())
-        throw Exception("Block has different number of columns with header: " + toString(num_columns)
-                        + " vs " + toString(const_columns_to_remove.size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Block has different number of columns with header: {} vs {}",
+                        num_columns, const_columns_to_remove.size());
 
     auto columns = chunk.detachColumns();
     Columns column_without_constants;
@@ -377,8 +394,7 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
         else
         {
             if (next_non_const_column >= columns.size())
-                throw Exception("Can't enrich chunk with constants because run out of non-constant columns.",
-                        ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't enrich chunk with constants because run out of non-constant columns.");
 
             column_with_constants.emplace_back(std::move(columns[next_non_const_column]));
             ++next_non_const_column;
@@ -390,7 +406,7 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
 
 void SortingTransform::serialize()
 {
-    throw Exception("Method 'serialize' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'serialize' is not implemented for {} processor", getName());
 }
 
 }

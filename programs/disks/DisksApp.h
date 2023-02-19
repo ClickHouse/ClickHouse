@@ -1,26 +1,21 @@
 #pragma once
 
-#include "CommandCopy.cpp"
-#include "CommandLink.cpp"
-#include "CommandList.cpp"
-#include "CommandListDisks.cpp"
-#include "CommandMove.cpp"
-#include "CommandRead.cpp"
-#include "CommandRemove.cpp"
-#include "CommandWrite.cpp"
-
 #include <Loggers/Loggers.h>
 
-#include <Common/ProgressIndication.h>
-#include <Common/StatusFile.h>
-#include <Common/InterruptListener.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Poco/Util/Application.h>
+
+#include <boost/program_options.hpp>
 
 namespace DB
 {
 
+class ICommand;
 using CommandPtr = std::unique_ptr<ICommand>;
+
+namespace po = boost::program_options;
+using ProgramOptionsDescription = boost::program_options::options_description;
+using CommandLineOptions = boost::program_options::variables_map;
 
 class DisksApp : public Poco::Util::Application, public Loggers
 {
@@ -35,17 +30,17 @@ protected:
     static String getDefaultConfigFileName();
 
     void addOptions(
-        std::optional<ProgramOptionsDescription> & options_description,
+        ProgramOptionsDescription & options_description,
         boost::program_options::positional_options_description & positional_options_description);
     void processOptions();
 
-    void printHelpMessage(std::optional<ProgramOptionsDescription> & command_option_description);
+    void printHelpMessage(ProgramOptionsDescription & command_option_description);
 
     size_t findCommandPos(std::vector<String> & common_arguments);
 
 private:
     void parseAndCheckOptions(
-        std::optional<ProgramOptionsDescription> & options_description,
+        ProgramOptionsDescription & options_description,
         boost::program_options::positional_options_description & positional_options_description,
         std::vector<String> & arguments);
 
@@ -54,7 +49,7 @@ protected:
     SharedContextHolder shared_context;
 
     String command_name;
-    std::vector<String> command_flags;
+    std::vector<String> command_arguments;
 
     std::unordered_set<String> supported_commands;
 

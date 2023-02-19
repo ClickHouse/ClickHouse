@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/functions/encryption-functions
 sidebar_position: 67
 sidebar_label: "Функции для шифрования"
 ---
@@ -19,7 +20,6 @@ sidebar_label: "Функции для шифрования"
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 -   aes-128-gcm, aes-192-gcm, aes-256-gcm
 -   aes-128-ctr, aes-192-ctr, aes-256-ctr
@@ -115,7 +115,6 @@ SELECT comment, hex(secret) FROM encryption_test WHERE comment LIKE '%gcm%';
 
 -   aes-128-ecb, aes-192-ecb, aes-256-ecb
 -   aes-128-cbc, aes-192-cbc, aes-256-cbc
--   aes-128-cfb128
 -   aes-128-ofb, aes-192-ofb, aes-256-ofb
 
 **Синтаксис**
@@ -358,4 +357,3 @@ SELECT aes_decrypt_mysql('aes-256-ofb', unhex('24E9E4966469'), '1234567891012131
 │ Secret    │
 └───────────┘
 ```
-[Original article](https://clickhouse.com/docs/ru/sql-reference/functions/encryption_functions/) <!--hide-->

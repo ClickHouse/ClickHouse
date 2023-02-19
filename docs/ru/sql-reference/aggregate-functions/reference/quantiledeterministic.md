@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/quantiledeterministic
 sidebar_position: 206
 ---
 
@@ -64,4 +65,3 @@ SELECT quantileDeterministic(val, 1) FROM t
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
-

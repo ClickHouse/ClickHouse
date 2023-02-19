@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/groupbitmap
 sidebar_position: 128
 ---
 
@@ -42,4 +43,3 @@ SELECT groupBitmap(UserID) as num FROM t
 num
 3
 ```
-

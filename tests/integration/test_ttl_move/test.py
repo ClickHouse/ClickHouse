@@ -1284,19 +1284,6 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
 def test_alter_multiple_ttls(started_cluster, name, engine, positive):
     name = unique_table_name(name)
 
-    """Copyright 2019, Altinity LTD
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License."""
     """Check that when multiple TTL expressions are set
     and before any parts are inserted the TTL expressions
     are changed with ALTER command then all old
@@ -1664,16 +1651,6 @@ def test_double_move_while_select(started_cluster, name, positive):
 def test_alter_with_merge_work(started_cluster, name, engine, positive):
     name = unique_table_name(name)
 
-    """Copyright 2019, Altinity LTD
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License."""
     """Check that TTL expressions are re-evaluated for
     existing parts after ALTER command changes TTL expressions
     and parts are merged.

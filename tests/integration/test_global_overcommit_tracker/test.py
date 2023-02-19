@@ -5,7 +5,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
-    "node", main_configs=["configs/global_overcommit_tracker.xml"]
+    "node",
+    main_configs=["configs/global_overcommit_tracker.xml"],
+    user_configs=[
+        "configs/users.xml",
+    ],
 )
 
 
@@ -18,21 +22,31 @@ def start_cluster():
         cluster.shutdown()
 
 
-TEST_QUERY_A = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=1, memory_usage_overcommit_max_wait_microseconds=500"
-TEST_QUERY_B = "SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=2, memory_usage_overcommit_max_wait_microseconds=500"
+GLOBAL_TEST_QUERY_A = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS memory_overcommit_ratio_denominator_for_user=1"
+GLOBAL_TEST_QUERY_B = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS memory_overcommit_ratio_denominator_for_user=80000000"
 
 
-def test_overcommited_is_killed():
-    node.query("CREATE USER A")
+def test_global_overcommit():
+    # NOTE: another option is to increase waiting time.
+    if (
+        node.is_built_with_thread_sanitizer()
+        or node.is_built_with_address_sanitizer()
+        or node.is_built_with_memory_sanitizer()
+    ):
+        pytest.skip("doesn't fit in memory limits")
+
+    node.query("CREATE USER IF NOT EXISTS A")
     node.query("GRANT ALL ON *.* TO A")
-    node.query("CREATE USER B")
+    node.query("CREATE USER IF NOT EXISTS B")
     node.query("GRANT ALL ON *.* TO B")
 
     responses_A = list()
     responses_B = list()
-    for _ in range(500):
-        responses_A.append(node.get_query_request(TEST_QUERY_A, user="A"))
-        responses_B.append(node.get_query_request(TEST_QUERY_B, user="B"))
+    for i in range(100):
+        if i % 2 == 0:
+            responses_A.append(node.get_query_request(GLOBAL_TEST_QUERY_A, user="A"))
+        else:
+            responses_B.append(node.get_query_request(GLOBAL_TEST_QUERY_B, user="B"))
 
     overcommited_killed = False
     for response in responses_A:

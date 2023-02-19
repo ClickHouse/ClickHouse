@@ -1,8 +1,7 @@
 #pragma once
 
-#include <shared_mutex>
-
-#include <Common/LRUCache.h>
+#include <Common/SharedMutex.h>
+#include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
@@ -29,14 +28,15 @@ public:
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
 
     void setTotals(const Block &) override;
-    const Block & getTotals() const override { return totals; }
 
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
     /// Has to be called only after setTotals()/mergeRightBlocks()
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+
+    static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
 private:
     friend class NotJoinedMerge;
@@ -44,6 +44,7 @@ private:
     struct NotProcessed : public ExtraBlock
     {
         size_t left_position;
+        size_t left_key_tail;
         size_t right_position;
         size_t right_block;
     };
@@ -68,9 +69,9 @@ private:
         size_t operator()(const Block & block) const { return block.bytes(); }
     };
 
-    using Cache = LRUCache<size_t, Block, std::hash<size_t>, BlockByteWeight>;
+    using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
     std::shared_ptr<TableJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;
@@ -100,7 +101,6 @@ private:
     std::unique_ptr<SortedBlocksWriter> disk_writer;
     /// Set of files with sorted blocks
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
-    Block totals;
     std::atomic<bool> is_in_memory{true};
     const bool is_any_join;
     const bool is_all_join;
@@ -123,7 +123,8 @@ private:
 
     template <bool is_all>
     ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
-                             size_t left_position, size_t right_position, size_t right_block_number);
+                             size_t left_position, size_t left_key_tail, size_t right_position,
+                             size_t right_block_number);
 
     void mergeRightBlocks();
 

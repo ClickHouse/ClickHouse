@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/in-functions
 sidebar_position: 60
 sidebar_label: IN Operator
 ---
@@ -8,4 +9,3 @@ sidebar_label: IN Operator
 ## in, notIn, globalIn, globalNotIn
 
 See the section [IN operators](../../sql-reference/operators/in.md#select-in-operators).
-

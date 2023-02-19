@@ -29,11 +29,11 @@ struct EnabledQuota::Impl
         std::chrono::system_clock::time_point end_of_interval)
     {
         const auto & type_info = QuotaTypeInfo::get(quota_type);
-        throw Exception(
-            "Quota for user " + backQuote(user_name) + " for " + to_string(duration) + " has been exceeded: "
-                + type_info.valueToStringWithName(used) + "/" + type_info.valueToString(max) + ". "
-                + "Interval will end at " + to_string(end_of_interval) + ". " + "Name of quota template: " + backQuote(quota_name),
-            ErrorCodes::QUOTA_EXCEEDED);
+        throw Exception(ErrorCodes::QUOTA_EXCEEDED, "Quota for user {} for {} has been exceeded: {}/{}. "
+                        "Interval will end at {}. Name of quota template: {}",
+                        backQuote(user_name), to_string(duration),
+                        type_info.valueToStringWithName(used),
+                        type_info.valueToString(max), to_string(end_of_interval), backQuote(quota_name));
     }
 
 
