@@ -1156,7 +1156,7 @@ private:
 
     static void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
-    static void validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
+    static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
@@ -2091,7 +2091,7 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     }
 }
 
-void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
+void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope)
 {
     const auto * limit_offset_constant_node = expression_node->as<ConstantNode>();
     if (!limit_offset_constant_node || !isNativeNumber(removeNullable(limit_offset_constant_node->getResultType())))
@@ -2101,11 +2101,17 @@ void QueryAnalyzer::validateLimitOffsetExpression(QueryTreeNodePtr & expression_
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    Field converted = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
-    if (converted.isNull())
+    Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
+    if (converted_value.isNull())
         throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
             "{} numeric constant expression is not representable as UInt64",
             expression_description);
+
+    auto constant_value = std::make_shared<ConstantValue>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
+    auto result_constant_node = std::make_shared<ConstantNode>(std::move(constant_value));
+    result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
+    expression_node = std::move(result_constant_node);
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
@@ -6473,13 +6479,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimitByLimit())
     {
         resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        validateLimitOffsetExpression(query_node_typed.getLimitByLimit(), "LIMIT BY LIMIT", scope);
+        convertLimitOffsetExpression(query_node_typed.getLimitByLimit(), "LIMIT BY LIMIT", scope);
     }
 
     if (query_node_typed.hasLimitByOffset())
     {
         resolveExpressionNode(query_node_typed.getLimitByOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        validateLimitOffsetExpression(query_node_typed.getLimitByOffset(), "LIMIT BY OFFSET", scope);
+        convertLimitOffsetExpression(query_node_typed.getLimitByOffset(), "LIMIT BY OFFSET", scope);
     }
 
     if (query_node_typed.hasLimitBy())
@@ -6493,13 +6499,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimit())
     {
         resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        validateLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
+        convertLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
     }
 
     if (query_node_typed.hasOffset())
     {
         resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        validateLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
+        convertLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
     }
 
     /** Resolve nodes with duplicate aliases.
