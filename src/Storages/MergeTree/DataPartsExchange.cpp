@@ -814,7 +814,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     }
 
     /// We will remove directory if it's already exists. Make precautions.
-    if (tmp_prefix.empty() //-V560
+    if (tmp_prefix.empty()
         || part_name.empty()
         || std::string::npos != tmp_prefix.find_first_of("/.")
         || std::string::npos != part_name.find_first_of("/."))

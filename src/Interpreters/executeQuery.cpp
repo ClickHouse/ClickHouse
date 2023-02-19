@@ -691,7 +691,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (!interpreter->ignoreLimits())
             {
-                limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+                limits.mode = LimitsMode::LIMITS_CURRENT;
                 limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
             }
 
@@ -795,7 +795,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             QueryLogElement elem;
 
-            elem.type = QueryLogElementType::QUERY_START; //-V1048
+            elem.type = QueryLogElementType::QUERY_START;
 
             elem.event_time = timeInSeconds(query_start_time);
             elem.event_time_microseconds = timeInMicroseconds(query_start_time);

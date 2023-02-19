@@ -129,7 +129,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
         size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
 
         /// If unsigned is not covered by signed.
-        if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
+        if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
         {
             // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
             // But if we already have wide numbers, promotion is necessary.

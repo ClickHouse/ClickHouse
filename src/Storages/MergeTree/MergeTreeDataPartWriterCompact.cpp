@@ -139,8 +139,8 @@ void writeColumnSingleGranule(
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
 
     serialize_settings.getter = stream_getter;
-    serialize_settings.position_independent_encoding = true; //-V1048
-    serialize_settings.low_cardinality_max_dictionary_size = 0; //-V1048
+    serialize_settings.position_independent_encoding = true;
+    serialize_settings.low_cardinality_max_dictionary_size = 0;
 
     serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
     serialization->serializeBinaryBulkWithMultipleStreams(*column.column, from_row, number_of_rows, serialize_settings, state);
@@ -236,7 +236,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream
-            prev_stream->hashing_buf.next(); //-V522
+            prev_stream->hashing_buf.next();
         }
 
         writeIntBinary(granule.rows_to_write, marks_out);
