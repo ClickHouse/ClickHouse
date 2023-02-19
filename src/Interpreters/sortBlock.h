@@ -18,6 +18,6 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
 /** Quickly check whether the block is already sorted. If the block is not sorted - returns false as fast as possible.
   * Collations are not supported.
   */
-bool isAlreadySorted(const Block & block, const SortDescription & description, UInt64 limit = 0);
+bool isAlreadySorted(const Block & block, const SortDescription & description);
 
 }
