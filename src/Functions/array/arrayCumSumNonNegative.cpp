@@ -46,7 +46,8 @@ struct ArrayCumSumNonNegativeImpl
             return std::make_shared<DataTypeArray>(nested);
         }
 
-        throw Exception("arrayCumSumNonNegativeImpl cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "arrayCumSumNonNegativeImpl cannot add values of type {}", expression_return->getName());
     }
 
 
@@ -118,7 +119,7 @@ struct ArrayCumSumNonNegativeImpl
             executeType<Decimal128, Decimal128>(mapped, array, res))
             return res;
         else
-            throw Exception("Unexpected column for arrayCumSumNonNegativeImpl: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSumNonNegativeImpl: {}", mapped->getName());
     }
 
 };
@@ -126,7 +127,7 @@ struct ArrayCumSumNonNegativeImpl
 struct NameArrayCumSumNonNegative { static constexpr auto name = "arrayCumSumNonNegative"; };
 using FunctionArrayCumSumNonNegative = FunctionArrayMapped<ArrayCumSumNonNegativeImpl, NameArrayCumSumNonNegative>;
 
-void registerFunctionArrayCumSumNonNegative(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayCumSumNonNegative)
 {
     factory.registerFunction<FunctionArrayCumSumNonNegative>();
 }

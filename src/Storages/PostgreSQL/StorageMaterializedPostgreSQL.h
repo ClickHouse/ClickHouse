@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 #include "PostgreSQLReplicationHandler.h"
@@ -84,7 +84,7 @@ public:
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
-    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
+    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -98,7 +98,7 @@ public:
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_

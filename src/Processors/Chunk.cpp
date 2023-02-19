@@ -70,8 +70,8 @@ void Chunk::checkNumRowsIsConsistent()
     {
         auto & column = columns[i];
         if (column->size() != num_rows)
-            throw Exception("Invalid number of rows in Chunk column " + column->getName()+ " position " + toString(i) + ": expected " +
-                            toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}: expected {}, got {}",
+                            column->getName()+ " position " + toString(i), toString(num_rows), toString(column->size()));
     }
 }
 
@@ -108,8 +108,8 @@ void Chunk::addColumn(ColumnPtr column)
     if (empty())
         num_rows = column->size();
     else if (column->size() != num_rows)
-        throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
-                        toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}, got {}",
+                        column->getName()+ ": expected " + toString(num_rows), toString(column->size()));
 
     columns.emplace_back(std::move(column));
 }
@@ -133,11 +133,11 @@ void Chunk::addColumn(size_t position, ColumnPtr column)
 void Chunk::erase(size_t position)
 {
     if (columns.empty())
-        throw Exception("Chunk is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Chunk is empty");
 
     if (position >= columns.size())
-        throw Exception("Position " + toString(position) + " out of bound in Chunk::erase(), max position = "
-                        + toString(columns.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Chunk::erase(), max position = {}",
+                        toString(position), toString(columns.size() - 1));
 
     columns.erase(columns.begin() + position);
 }

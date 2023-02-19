@@ -38,7 +38,7 @@ struct ArrayExistsImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
             if (column_filter_const->getValue<UInt8>())
             {
@@ -87,7 +87,7 @@ struct ArrayExistsImpl
 struct NameArrayExists { static constexpr auto name = "arrayExists"; };
 using FunctionArrayExists = FunctionArrayMapped<ArrayExistsImpl, NameArrayExists>;
 
-void registerFunctionArrayExists(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayExists)
 {
     factory.registerFunction<FunctionArrayExists>();
 }

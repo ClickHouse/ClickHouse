@@ -1,9 +1,13 @@
 ---
+slug: /en/sql-reference/dictionaries/internal-dicts
 sidebar_position: 39
-sidebar_label: Internal Dictionaries
+sidebar_label: Embedded Dictionaries
 ---
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
-# Internal Dictionaries
+# Embedded Dictionaries
+
+<SelfManaged />
 
 ClickHouse contains a built-in feature for working with a geobase.
 
@@ -49,4 +53,3 @@ Dictionary updates (other than loading at first use) do not block queries. Durin
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
 
 There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
-

@@ -8,8 +8,6 @@ if [ "$GIT_DOCS_BRANCH" ] && ! [ "$GIT_DOCS_BRANCH" == "$GIT_BRANCH" ]; then
   git fetch origin --depth=1 -- "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
   git checkout "$GIT_DOCS_BRANCH"
 else
-  # Untracked yarn.lock could cause pull to fail
-  git clean -fdx
   # Update docs repo
   git pull
 fi
@@ -27,6 +25,8 @@ done
 sed -i '/onBrokenMarkdownLinks:/ s/ignore/error/g' docusaurus.config.js
 
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
+  export CI=true
+  yarn install
   exec yarn build "$@"
 fi
 

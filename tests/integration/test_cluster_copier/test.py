@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 COPYING_FAIL_PROBABILITY = 0.2
 MOVING_FAIL_PROBABILITY = 0.2
 
-cluster = ClickHouseCluster(__file__, name="copier_test")
+cluster = ClickHouseCluster(__file__)
 
 
 def generateRandomString(count):

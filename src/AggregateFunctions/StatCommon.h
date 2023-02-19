@@ -21,20 +21,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-template <typename F>
-static Float64 integrateSimpson(Float64 a, Float64 b, F && func)
-{
-    const size_t iterations = std::max(1e6, 1e4 * std::abs(std::round(b) - std::round(a)));
-    const long double h = (b - a) / iterations;
-    Float64 sum_odds = 0.0;
-    for (size_t i = 1; i < iterations; i += 2)
-        sum_odds += func(a + i * h);
-    Float64 sum_evens = 0.0;
-    for (size_t i = 2; i < iterations; i += 2)
-        sum_evens += func(a + i * h);
-    return (func(a) + func(b) + 2 * sum_evens + 4 * sum_odds) * h / 3;
-}
-
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = std::vector<Float64>;
 
@@ -45,8 +31,8 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
     /// Save initial positions, than sort indices according to the values.
     std::vector<size_t> indexes(size);
     std::iota(indexes.begin(), indexes.end(), 0);
-    ::sort(indexes.begin(), indexes.end(),
-                [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
+    std::sort(indexes.begin(), indexes.end(),
+        [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
 
     size_t left = 0;
     Float64 tie_numenator = 0;
@@ -61,7 +47,7 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
 
         /// Scipy implementation throws exception in this case too.
         if (count_equal == size)
-            throw Exception("All numbers in both samples are identical", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All numbers in both samples are identical");
 
         tie_numenator += std::pow(count_equal, 3) - count_equal;
         for (size_t iter = left; iter < right; ++iter)
@@ -88,12 +74,18 @@ struct StatisticalSample
 
     void addX(X value, Arena * arena)
     {
+        if (isNaN(value))
+            return;
+
         ++size_x;
         x.push_back(value, arena);
     }
 
     void addY(Y value, Arena * arena)
     {
+        if (isNaN(value))
+            return;
+
         ++size_y;
         y.push_back(value, arena);
     }
@@ -120,10 +112,9 @@ struct StatisticalSample
         readVarUInt(size_y, buf);
         x.resize(size_x, arena);
         y.resize(size_y, arena);
-        buf.read(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
-        buf.read(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
+        buf.readStrict(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
+        buf.readStrict(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
     }
 };
 
 }
-

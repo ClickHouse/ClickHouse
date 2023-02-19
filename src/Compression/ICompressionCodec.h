@@ -11,13 +11,6 @@
 namespace DB
 {
 
-class ICompressionCodec;
-
-using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = std::vector<CompressionCodecPtr>;
-
-class IDataType;
-
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 /**
@@ -45,8 +38,36 @@ public:
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
-    /// Decompress bytes from compressed source to dest. Dest should preallocate memory
+    /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
+
+    /// Three kinds of codec mode:
+    /// Synchronous mode which is commonly used by default;
+    /// --- For the codec with HW decompressor, it means submit request to HW and busy wait till complete.
+    /// Asynchronous mode which required HW decompressor support;
+    /// --- For the codec with HW decompressor, it means submit request to HW and return immediately.
+    /// --- Must be used in pair with flushAsynchronousDecompressRequests.
+    /// SoftwareFallback mode is exclusively defined for the codec with HW decompressor, enable its capability of "fallback to SW codec".
+    enum class CodecMode
+    {
+        Synchronous,
+        Asynchronous,
+        SoftwareFallback
+    };
+
+    /// Get current decompression mode
+    CodecMode getDecompressMode() const{ return decompressMode; }
+
+    /// if set mode to CodecMode::Asynchronous, must be followed with flushAsynchronousDecompressRequests
+    void setDecompressMode(CodecMode mode){ decompressMode = mode; }
+
+    /// Flush result for previous asynchronous decompression requests.
+    /// This function must be called following several requests offload to HW.
+    /// To make sure asynchronous results have been flushed into target buffer completely.
+    /// Meanwhile, source and target buffer for decompression can not be overwritten until this function execute completely.
+    /// Otherwise it would conflict with HW offloading and cause exception.
+    /// For QPL deflate, it support the maximum number of requests equal to DeflateQplJobHWPool::jobPoolSize
+    virtual void flushAsynchronousDecompressRequests(){}
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
     virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const
@@ -78,6 +99,12 @@ public:
     /// If it is a post-processing codec such as encryption. Usually it does not make sense to apply non-post-processing codecs after this.
     virtual bool isEncryption() const { return false; }
 
+    /// If it is a specialized codec for floating-point time series. Applying it to non-floating point data is suspicious.
+    virtual bool isFloatingPointTimeSeriesCodec() const { return false; }
+
+    /// If the codec's purpose is to calculate deltas between consecutive values.
+    virtual bool isDeltaCompression() const { return false; }
+
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
@@ -92,7 +119,7 @@ protected:
     /// Return size of compressed data without header
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
-    /// Actually compress data, without header
+    /// Actually compress data without header
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
 
     /// Actually decompress data without header
@@ -103,6 +130,10 @@ protected:
 
 private:
     ASTPtr full_codec_desc;
+    CodecMode decompressMode{CodecMode::Synchronous};
 };
+
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+using Codecs = std::vector<CompressionCodecPtr>;
 
 }

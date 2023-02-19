@@ -263,3 +263,25 @@ def test_executable_function_input_nullable_python(started_cluster):
         )
         == "Key 0\nKey Nullable\nKey 2\n"
     )
+
+
+def test_executable_function_parameter_python(started_cluster):
+    skip_test_msan(node)
+
+    assert node.query_and_get_error(
+        "SELECT test_function_parameter_python(2,2)(toUInt64(1))"
+    )
+    assert node.query_and_get_error("SELECT test_function_parameter_python(2,2)(1)")
+    assert node.query_and_get_error("SELECT test_function_parameter_python(1)")
+    assert node.query_and_get_error(
+        "SELECT test_function_parameter_python('test')(toUInt64(1))"
+    )
+
+    assert (
+        node.query("SELECT test_function_parameter_python('2')(toUInt64(1))")
+        == "Parameter 2 key 1\n"
+    )
+    assert (
+        node.query("SELECT test_function_parameter_python(2)(toUInt64(1))")
+        == "Parameter 2 key 1\n"
+    )

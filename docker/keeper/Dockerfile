@@ -29,7 +29,7 @@ RUN arch=${TARGETARCH:-amd64} \
     esac
 
 ARG REPOSITORY="https://s3.amazonaws.com/clickhouse-builds/22.4/31c367d3cd3aefd316778601ff6565119fe36682/package_release"
-ARG VERSION="22.4.1.917"
+ARG VERSION="23.1.3.5"
 ARG PACKAGES="clickhouse-keeper"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
@@ -67,7 +67,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
 
-EXPOSE 2181 10181 44444
+EXPOSE 2181 10181 44444 9181
 
 VOLUME /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 

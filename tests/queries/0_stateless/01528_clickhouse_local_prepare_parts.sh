@@ -8,7 +8,7 @@ WORKING_FOLDER_01528="${CLICKHOUSE_TMP}/01528_clickhouse_local_prepare_parts"
 rm -rf "${WORKING_FOLDER_01528}"
 
 mkdir -p "${WORKING_FOLDER_01528}/metadata/local"
-
+echo "ATTACH DATABASE local ENGINE=Ordinary" > "${WORKING_FOLDER_01528}/metadata/local.sql"
 ## Checks scenario of preparing parts offline by clickhouse-local
 
 ## that is the metadata for the table we want to fill

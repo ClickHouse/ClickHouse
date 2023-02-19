@@ -63,8 +63,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         Settings cmd_settings;
         for (const auto & field : cmd_settings.all())
         {
-            if (field.getName() == "max_parser_depth" || field.getName() == "max_query_size")
-                cmd_settings.addProgramOption(desc, field);
+            std::string_view name = field.getName();
+            if (name == "max_parser_depth" || name == "max_query_size")
+                cmd_settings.addProgramOption(desc, name, field);
         }
 
         boost::program_options::variables_map options;
@@ -165,9 +166,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 /// should throw exception early and make exception message more readable.
                 if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
-                    throw Exception(
-                        "Can't format ASTInsertQuery with data, since data will be lost",
-                        DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA);
+                    throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
+                        "Can't format ASTInsertQuery with data, since data will be lost");
                 }
                 if (!quiet)
                 {

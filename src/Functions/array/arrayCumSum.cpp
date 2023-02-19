@@ -45,7 +45,7 @@ struct ArrayCumSumImpl
             return std::make_shared<DataTypeArray>(nested);
         }
 
-        throw Exception("arrayCumSum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "arrayCumSum cannot add values of type {}", expression_return->getName());
     }
 
 
@@ -154,7 +154,7 @@ struct ArrayCumSumImpl
             executeType<Decimal128, Decimal128>(mapped, array, res))
             return res;
         else
-            throw Exception("Unexpected column for arrayCumSum: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSum: {}", mapped->getName());
     }
 
 };
@@ -162,7 +162,7 @@ struct ArrayCumSumImpl
 struct NameArrayCumSum { static constexpr auto name = "arrayCumSum"; };
 using FunctionArrayCumSum = FunctionArrayMapped<ArrayCumSumImpl, NameArrayCumSum>;
 
-void registerFunctionArrayCumSum(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayCumSum)
 {
     factory.registerFunction<FunctionArrayCumSum>();
 }

@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/jdbc
 sidebar_position: 22
 sidebar_label: JDBC Driver
 ---
@@ -10,5 +11,3 @@ Use the [official JDBC driver](https://github.com/ClickHouse/clickhouse-jdbc) (a
 -   Third-party drivers:
     -   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
     -   [clickhouse4j](https://github.com/blynkkk/clickhouse4j)
-
-[Original article](https://clickhouse.com/docs/en/interfaces/jdbc/) <!--hide-->

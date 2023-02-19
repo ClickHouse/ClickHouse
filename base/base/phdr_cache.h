@@ -8,6 +8,7 @@
   * As a drawback, this only works if no dynamic object unloading happens after this point.
   * This function is thread-safe. You should call it to update cache after loading new shared libraries.
   * Otherwise exception handling from dlopened libraries won't work (will call std::terminate immediately).
+  * NOTE: dlopen is forbidden in our code.
   *
   * NOTE: It is disabled with Thread Sanitizer because TSan can only use original "dl_iterate_phdr" function.
   */

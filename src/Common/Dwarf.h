@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -19,6 +19,7 @@
  */
 
 /** This file was edited for ClickHouse.
+ *  Original is from folly library.
   */
 
 #include <functional>
@@ -113,8 +114,8 @@ public:
         // seems as the same path can be represented in multiple ways
     private:
         std::string_view baseDir_; /// NOLINT
-        std::string_view subDir_; /// NOLINT
-        std::string_view file_; /// NOLINT
+        std::string_view subDir_;  /// NOLINT
+        std::string_view file_;    /// NOLINT
     };
 
     // Indicates inline function `name` is called  at `line@file`.
@@ -171,8 +172,6 @@ public:
 private:
     static bool findDebugInfoOffset(uintptr_t address, std::string_view aranges, uint64_t & offset);
 
-    void init();
-
     std::shared_ptr<const Elf> elf_; /// NOLINT
 
     // DWARF section made up of chunks, each prefixed with a length header.
@@ -219,7 +218,7 @@ private:
         // Offset from start to first attribute
         uint8_t attr_offset;
         // Offset within debug info.
-        uint32_t offset;
+        uint64_t offset;
         uint64_t code;
         DIEAbbreviation abbr;
     };
@@ -228,6 +227,7 @@ private:
     {
         uint64_t name = 0;
         uint64_t form = 0;
+        int64_t implicitConst = 0; // only set when form=DW_FORM_implicit_const
 
         explicit operator bool() const { return name != 0 || form != 0; }
     };
@@ -239,25 +239,43 @@ private:
         std::variant<uint64_t, std::string_view> attr_value;
     };
 
+    enum
+    {
+        DW_UT_compile = 0x01,
+        DW_UT_skeleton = 0x04,
+    };
+
     struct CompilationUnit
     {
-        bool is64Bit; /// NOLINT
-        uint8_t version;
-        uint8_t addr_size;
+        bool is64Bit = false; /// NOLINT
+        uint8_t version = 0;
+        uint8_t unit_type = DW_UT_compile; // DW_UT_compile or DW_UT_skeleton
+        uint8_t addr_size = 0;
         // Offset in .debug_info of this compilation unit.
-        uint32_t offset;
-        uint32_t size;
+        uint64_t offset = 0;
+        uint64_t size = 0;
         // Offset in .debug_info for the first DIE in this compilation unit.
-        uint32_t first_die;
-        uint64_t abbrev_offset;
+        uint64_t first_die = 0;
+        uint64_t abbrev_offset = 0;
+
+        // The beginning of the CU's contribution to .debug_addr
+        std::optional<uint64_t> addr_base; // DW_AT_addr_base (DWARF 5)
+        // The beginning of the offsets table (immediately following the
+        // header) of the CU's contribution to .debug_loclists
+        std::optional<uint64_t> loclists_base; // DW_AT_loclists_base (DWARF 5)
+        // The beginning of the offsets table (immediately following the
+        // header) of the CU's contribution to .debug_rnglists
+        std::optional<uint64_t> rnglists_base; // DW_AT_rnglists_base (DWARF 5)
+        // Points to the first string offset of the compilation unit’s
+        // contribution to the .debug_str_offsets (or .debug_str_offsets.dwo) section.
+        std::optional<uint64_t> str_offsets_base; // DW_AT_str_offsets_base (DWARF 5)
+
         // Only the CompilationUnit that contains the caller functions needs this cache.
         // Indexed by (abbr.code - 1) if (abbr.code - 1) < abbrCache.size();
         std::vector<DIEAbbreviation> abbr_cache;
     };
 
-    static CompilationUnit getCompilationUnit(std::string_view info, uint64_t offset);
-
-    /** cu must exist during the life cycle of created detail::Die. */
+    /** cu must exist during the life cycle of created Die. */
     Die getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const;
 
     bool findLocation(
@@ -278,16 +296,16 @@ private:
     class LineNumberVM
     {
     public:
-        LineNumberVM(std::string_view data, std::string_view compilationDirectory);
+        LineNumberVM(
+            std::string_view data,
+            std::string_view compilationDirectory,
+            std::string_view debugStr,
+            std::string_view debugLineStr);
 
         bool findAddress(uintptr_t target, Path & file, uint64_t & line);
 
         /** Gets full file name at given index including directory. */
-        Path getFullFileName(uint64_t index) const
-        {
-            auto fn = getFileName(index);
-            return Path({}, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
-        }
+        Path getFullFileName(uint64_t index) const;
 
     private:
         void init();
@@ -327,24 +345,42 @@ private:
         bool nextDefineFile(std::string_view & program, FileName & fn) const;
 
         // Initialization
-        bool is64Bit_; /// NOLINT
-        std::string_view data_; /// NOLINT
-        std::string_view compilationDirectory_; /// NOLINT
+        bool is64Bit_;                                    /// NOLINT
+        std::string_view data_;                           /// NOLINT
+        std::string_view compilationDirectory_;           /// NOLINT
+        std::string_view debugStr_; // needed for DWARF 5 /// NOLINT
+        std::string_view debugLineStr_; // DWARF 5        /// NOLINT
 
         // Header
-        uint16_t version_; /// NOLINT
-        uint8_t minLength_; /// NOLINT
+        uint16_t version_;   /// NOLINT
+        uint8_t minLength_;  /// NOLINT
         bool defaultIsStmt_; /// NOLINT
-        int8_t lineBase_; /// NOLINT
-        uint8_t lineRange_; /// NOLINT
+        int8_t lineBase_;    /// NOLINT
+        uint8_t lineRange_;  /// NOLINT
         uint8_t opcodeBase_; /// NOLINT
         const uint8_t * standardOpcodeLengths_; /// NOLINT
 
-        std::string_view includeDirectories_; /// NOLINT
-        size_t includeDirectoryCount_; /// NOLINT
+        // 6.2.4 The Line Number Program Header.
+        struct
+        {
+            size_t includeDirectoryCount;
+            std::string_view includeDirectories;
+            size_t fileNameCount;
+            std::string_view fileNames;
+        } v4_;
 
-        std::string_view fileNames_; /// NOLINT
-        size_t fileNameCount_; /// NOLINT
+        struct
+        {
+            uint8_t directoryEntryFormatCount;
+            std::string_view directoryEntryFormat;
+            uint64_t directoriesCount;
+            std::string_view directories;
+
+            uint8_t fileNameEntryFormatCount;
+            std::string_view fileNameEntryFormat;
+            uint64_t fileNamesCount;
+            std::string_view fileNames;
+        } v5_;
 
         // State machine registers
         uint64_t address_; /// NOLINT
@@ -397,20 +433,26 @@ private:
      */
     size_t forEachAttribute(const CompilationUnit & cu, const Die & die, std::function<bool(const Attribute & die)> f) const;
 
-    Attribute readAttribute(const Die & die, AttributeSpec spec, std::string_view & info) const;
+    Attribute readAttribute(
+        const CompilationUnit & cu,
+        const Die & die,
+        AttributeSpec spec,
+        std::string_view & info) const;
 
     // Read one attribute <name, form> pair, remove_prefix sp; returns <0, 0> at end.
     static AttributeSpec readAttributeSpec(std::string_view & sp);
 
     // Read one attribute value, remove_prefix sp
     using AttributeValue = std::variant<uint64_t, std::string_view>;
-    AttributeValue readAttributeValue(std::string_view & sp, uint64_t form, bool is64Bit) const;
+    AttributeValue readAttributeValue(std::string_view & sp, uint64_t form, bool is64_bit) const;
 
     // Get an ELF section by name, return true if found
-    bool getSection(const char * name, std::string_view * section) const;
+    std::string_view getSection(const char * name) const;
 
-    // Get a string from the .debug_str section
-    std::string_view getStringFromStringSection(uint64_t offset) const;
+    CompilationUnit getCompilationUnit(uint64_t offset) const;
+    // Finds the Compilation Unit starting at offset.
+    CompilationUnit findCompilationUnit(uint64_t targetOffset) const;
+
 
     template <class T>
     std::optional<T> getAttribute(const CompilationUnit & cu, const Die & die, uint64_t attr_name) const
@@ -429,17 +471,24 @@ private:
     }
 
     // Check if the given address is in the range list at the given offset in .debug_ranges.
-    bool isAddrInRangeList(uint64_t address, std::optional<uint64_t> base_addr, size_t offset, uint8_t addr_size) const;
+    bool isAddrInRangeList(
+        const CompilationUnit & cu,
+        uint64_t address,
+        std::optional<uint64_t> base_addr,
+        size_t offset,
+        uint8_t addr_size) const;
 
-    // Finds the Compilation Unit starting at offset.
-    static CompilationUnit findCompilationUnit(std::string_view info, uint64_t targetOffset);
-
-    std::string_view info_; // .debug_info /// NOLINT
-    std::string_view abbrev_; // .debug_abbrev /// NOLINT
-    std::string_view aranges_; // .debug_aranges /// NOLINT
-    std::string_view line_; // .debug_line /// NOLINT
-    std::string_view strings_; // .debug_str /// NOLINT
-    std::string_view ranges_; // .debug_ranges /// NOLINT
+    std::string_view abbrev_; // .debug_abbrev                     /// NOLINT
+    std::string_view addr_; // .debug_addr (DWARF 5)               /// NOLINT
+    std::string_view aranges_; // .debug_aranges                   /// NOLINT
+    std::string_view info_; // .debug_info                         /// NOLINT
+    std::string_view line_; // .debug_line                         /// NOLINT
+    std::string_view line_str_; // .debug_line_str (DWARF 5)       /// NOLINT
+    std::string_view loclists_; // .debug_loclists (DWARF 5)       /// NOLINT
+    std::string_view ranges_; // .debug_ranges                     /// NOLINT
+    std::string_view rnglists_; // .debug_rnglists (DWARF 5)       /// NOLINT
+    std::string_view str_; // .debug_str                           /// NOLINT
+    std::string_view str_offsets_; // .debug_str_offsets (DWARF 5) /// NOLINT
 };
 
 }

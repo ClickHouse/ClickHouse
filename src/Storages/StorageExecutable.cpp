@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -29,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -110,7 +112,7 @@ void StorageExecutable::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*threads*/)
+    size_t /*threads*/)
 {
     auto & script_name = settings.script_name;
 
@@ -179,22 +181,27 @@ void registerStorageExecutable(StorageFactory & factory)
         for (size_t i = 0; i < 2; ++i)
             args.engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[i], local_context);
 
-        auto scipt_name_with_arguments_value = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args.engine_args[0], "script_name_with_arguments_value");
 
         std::vector<String> script_name_with_arguments;
-        boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c) { return c == ' '; });
+        boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c) { return c == ' '; });
 
         auto script_name = script_name_with_arguments[0];
         script_name_with_arguments.erase(script_name_with_arguments.begin());
-        auto format = args.engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
 
         std::vector<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
+            if (args.engine_args[i]->children.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "StorageExecutable argument \"{}\" is invalid query",
+                    args.engine_args[i]->formatForErrorMessage());
+
             ASTPtr query = args.engine_args[i]->children.at(0);
             if (!query->as<ASTSelectWithUnionQuery>())
                 throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument is invalid input query {}",
+                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument \"{}\" is invalid input query",
                     query->formatForErrorMessage());
 
             input_queries.emplace_back(std::move(query));

@@ -25,7 +25,9 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
 {
     size_t size = config.getUInt64(dictionary_layout_prefix + ".size_in_cells");
     if (size == 0)
-        throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE, "{}: dictionary of layout '{}' setting 'size_in_cells' must be greater than 0", full_name, layout_type);
+        throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
+                        "{}: dictionary of layout '{}' setting 'size_in_cells' must be greater than 0",
+                        full_name, layout_type);
 
     size_t dict_lifetime_seconds = static_cast<size_t>(dict_lifetime.max_sec);
     size_t strict_max_lifetime_seconds = config.getUInt64(dictionary_layout_prefix + ".strict_max_lifetime_seconds", dict_lifetime_seconds);
@@ -41,7 +43,7 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     return storage_configuration;
 }
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
 SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
@@ -209,7 +211,7 @@ DictionaryPtr createCacheDictionaryLayout(
         auto storage_configuration = parseCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
         storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(dict_struct, storage_configuration);
     }
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
@@ -261,7 +263,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
 
-#if defined(OS_LINUX) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
     auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
                                               const DictionaryStructure & dict_struct,

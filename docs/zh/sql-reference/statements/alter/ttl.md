@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/statements/alter/ttl
 sidebar_position: 44
 sidebar_label: TTL
 ---
@@ -81,5 +82,5 @@ SELECT * FROM table_with_ttl FORMAT PrettyCompact;
 
 **更多参考**
 
-- 关于 [TTL 表达式](../../../sql-reference/statements/create/table.md#ttl-expression).
-- 修改列 [with TTL](../../../sql-reference/statements/alter/column.md#alter_modify-column).
+- 关于 [TTL 表达式](../../../sql-reference/statements/create/table.mdx#ttl-expression).
+- 修改列 [with TTL](../../../sql-reference/statements/alter/column.mdx#alter_modify-column).
