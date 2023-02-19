@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/stddevsamp
 sidebar_position: 31
 ---
 
-# stddevSamp {#stddevsamp}
+# stddevSamp
 
 The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varsamp.md).
 

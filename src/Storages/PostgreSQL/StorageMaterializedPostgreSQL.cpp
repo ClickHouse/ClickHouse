@@ -19,6 +19,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -238,7 +240,7 @@ void StorageMaterializedPostgreSQL::shutdown()
 }
 
 
-void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     /// If it is a table with database engine MaterializedPostgreSQL - return, because delition of
     /// internal tables is managed there.
@@ -250,7 +252,7 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPt
 
     auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync);
 }
 
 
@@ -269,25 +271,24 @@ bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & colu
 }
 
 
-Pipe StorageMaterializedPostgreSQL::read(
+void StorageMaterializedPostgreSQL::read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams)
+        size_t num_streams)
 {
     auto nested_table = getNested();
 
-    auto pipe = readFinalFromNestedStorage(nested_table, column_names,
+    readFinalFromNestedStorage(query_plan, nested_table, column_names,
             query_info, context_, processed_stage, max_block_size, num_streams);
 
     auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
-    pipe.addTableLock(lock);
-    pipe.addStorageHolder(shared_from_this());
-
-    return pipe;
+    query_plan.addTableLock(lock);
+    query_plan.addStorageHolder(shared_from_this());
 }
 
 
@@ -551,7 +552,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
-            throw Exception("Storage MaterializedPostgreSQL needs order by key or primary key", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL needs order by key or primary key");
 
         if (args.storage_def->primary_key)
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());

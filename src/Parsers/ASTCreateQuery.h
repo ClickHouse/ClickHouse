@@ -25,12 +25,13 @@ public:
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
 
-
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    bool isExtendedStorageDefinition() const;
 };
 
 
@@ -70,6 +71,7 @@ public:
     bool is_live_view{false};
     bool is_window_view{false};
     bool is_populate{false};
+    bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
 
     ASTColumns * columns_list = nullptr;
@@ -82,7 +84,7 @@ public:
     ASTPtr lateness_function;
     String as_database;
     String as_table;
-    ASTPtr as_table_function;
+    IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     IAST * comment = nullptr;
 
@@ -92,7 +94,6 @@ public:
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
-    std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
     std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
 
     bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
@@ -119,7 +120,9 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
+    bool isParameterizedView() const;
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

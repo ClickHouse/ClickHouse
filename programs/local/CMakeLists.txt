@@ -14,9 +14,17 @@ set (CLICKHOUSE_LOCAL_LINK
 
 clickhouse_program_add(local)
 
-if(NOT CLICKHOUSE_ONE_SHARED)
-    target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
+target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
+
+if (TARGET ch_rust::skim)
+    target_link_libraries(clickhouse-local-lib PRIVATE ch_rust::skim)
 endif()
+if (TARGET ch_contrib::azure_sdk)
+    target_link_libraries(clickhouse-local-lib PRIVATE ch_contrib::azure_sdk)
+endif()
+
+# Always use internal readpassphrase
+target_link_libraries(clickhouse-local-lib PRIVATE readpassphrase)
 
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)

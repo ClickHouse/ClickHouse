@@ -10,7 +10,10 @@ node1 = cluster.add_instance(
     "node1", main_configs=["configs/named_collections.xml"], with_postgres=True
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/named_collections.xml"], with_postgres_cluster=True
+    "node2",
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/settings.xml"],
+    with_postgres_cluster=True,
 )
 
 
@@ -19,6 +22,7 @@ def started_cluster():
     try:
         cluster.start()
         node1.query("CREATE DATABASE test")
+        node2.query("CREATE DATABASE test")
         yield cluster
 
     finally:
@@ -433,6 +437,7 @@ def test_datetime_with_timezone(started_cluster):
 
 def test_postgres_ndim(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
+
     cursor.execute("DROP TABLE IF EXISTS arr1, arr2")
 
     cursor.execute("CREATE TABLE arr1 (a Integer[])")
@@ -451,6 +456,20 @@ def test_postgres_ndim(started_cluster):
     )
     assert result.strip() == "Array(Array(Nullable(Int32)))"
     cursor.execute("DROP TABLE arr1, arr2")
+
+    cursor.execute("DROP SCHEMA IF EXISTS ndim_schema CASCADE")
+    cursor.execute("CREATE SCHEMA ndim_schema")
+    cursor.execute("CREATE TABLE ndim_schema.arr1 (a integer[])")
+    cursor.execute("INSERT INTO ndim_schema.arr1 SELECT '{{1}, {2}}'")
+    # The point is in creating a table via 'as select *', in postgres att_ndim will not be correct in this case.
+    cursor.execute("CREATE TABLE ndim_schema.arr2 AS SELECT * FROM ndim_schema.arr1")
+    result = node1.query(
+        """SELECT toTypeName(a) FROM postgresql(postgres1, schema='ndim_schema', table='arr2')"""
+    )
+    assert result.strip() == "Array(Array(Nullable(Int32)))"
+
+    cursor.execute("DROP TABLE ndim_schema.arr1, ndim_schema.arr2")
+    cursor.execute("DROP SCHEMA ndim_schema CASCADE")
 
 
 def test_postgres_on_conflict(started_cluster):
@@ -623,6 +642,55 @@ def test_uuid(started_cluster):
         "select toTypeName(u) from postgresql(postgres1, table='test')"
     )
     assert result.strip() == "Nullable(UUID)"
+
+
+def test_auto_close_connection(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=False
+    )
+    cursor = conn.cursor()
+    database_name = "auto_close_connection_test"
+
+    cursor.execute(f"DROP DATABASE IF EXISTS {database_name}")
+    cursor.execute(f"CREATE DATABASE {database_name}")
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip,
+        started_cluster.postgres_port,
+        database=True,
+        database_name=database_name,
+    )
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE test_table (key integer, value integer)")
+
+    node2.query(
+        f"""
+        CREATE TABLE test.test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='test_table')
+    """
+    )
+
+    result = node2.query(
+        "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
+        user="default",
+    )
+
+    result = node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
+
+    node2.query(
+        f"""
+        CREATE TABLE test.stat (numbackends UInt32, datname String)
+        ENGINE = PostgreSQL(postgres1, database='{database_name}', table='pg_stat_database')
+    """
+    )
+
+    count = int(
+        node2.query(
+            f"SELECT numbackends FROM test.stat WHERE datname = '{database_name}'"
+        )
+    )
+
+    # Connection from python + pg_stat table also has a connection at the moment of current query
+    assert count == 2
 
 
 if __name__ == "__main__":

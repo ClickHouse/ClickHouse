@@ -5,7 +5,7 @@ import string
 import time
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
 
 
 COMMON_CONFIGS = ["configs/config.d/clusters.xml"]
@@ -76,7 +76,8 @@ def create_table(node, table_name, schema, attach=False, db_atomic=False, uuid="
         "CREATE DATABASE IF NOT EXISTS s3 {on_cluster} ENGINE = {engine}".format(
             engine="Atomic" if db_atomic else "Ordinary",
             on_cluster="ON CLUSTER '{cluster}'",
-        )
+        ),
+        settings={"allow_deprecated_database_ordinary": 1},
     )
 
     create_table_statement = """
@@ -130,24 +131,29 @@ def create_restore_file(node, revision=None, bucket=None, path=None, detached=No
         ["bash", "-c", "touch /var/lib/clickhouse/disks/s3/restore"], user="root"
     )
 
-    add_restore_option = 'echo -en "{}={}\n" >> /var/lib/clickhouse/disks/s3/restore'
-    if revision:
+    num_restore_options = 0
+
+    def add_restore_option(key, value):
+        nonlocal num_restore_options
+        to = ">>" if num_restore_options else ">"
         node.exec_in_container(
-            ["bash", "-c", add_restore_option.format("revision", revision)], user="root"
-        )
-    if bucket:
-        node.exec_in_container(
-            ["bash", "-c", add_restore_option.format("source_bucket", bucket)],
+            [
+                "bash",
+                "-c",
+                f'echo -en "{key}={value}\n" {to} /var/lib/clickhouse/disks/s3/restore',
+            ],
             user="root",
         )
+        num_restore_options += 1
+
+    if revision:
+        add_restore_option("revision", revision)
+    if bucket:
+        add_restore_option("source_bucket", bucket)
     if path:
-        node.exec_in_container(
-            ["bash", "-c", add_restore_option.format("source_path", path)], user="root"
-        )
+        add_restore_option("source_path", path)
     if detached:
-        node.exec_in_container(
-            ["bash", "-c", add_restore_option.format("detached", "true")], user="root"
-        )
+        add_restore_option("detached", "true")
 
 
 def get_revision_counter(node, backup_number):
@@ -176,10 +182,7 @@ def get_table_uuid(node, db_atomic, table):
     return uuid
 
 
-@pytest.fixture(autouse=True)
 def drop_table(cluster):
-    yield
-
     node_names = ["node1z", "node2z", "node1n", "node2n", "node_another_bucket"]
 
     for node_name in node_names:
@@ -248,7 +251,7 @@ def test_restore_another_bucket_path(cluster, db_atomic, zero_copy):
     node_another_bucket = cluster.instances["node_another_bucket"]
 
     create_restore_file(node_another_bucket, bucket="root")
-    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.restart_clickhouse(stop_start_wait_sec=120)
     create_table(
         node_another_bucket, "test", schema, attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -256,3 +259,5 @@ def test_restore_another_bucket_path(cluster, db_atomic, zero_copy):
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
     ) == "({})".format(size * (keys - dropped_keys))
+
+    drop_table(cluster)

@@ -6,21 +6,27 @@ import argparse
 import csv
 
 
+# TODO: add typing and log files to the fourth column, think about launching
+# everything from the python and not bash
 def process_result(result_folder):
     status = "success"
     description = ""
     test_results = []
     checks = (
-        ("header duplicates", "duplicate_output.txt"),
-        ("shellcheck", "shellcheck_output.txt"),
-        ("style", "style_output.txt"),
-        ("black", "black_output.txt"),
-        ("typos", "typos_output.txt"),
-        ("whitespaces", "whitespaces_output.txt"),
-        ("workflows", "workflows_output.txt"),
+        "duplicate includes",
+        "shellcheck",
+        "style",
+        "black",
+        "mypy",
+        "typos",
+        "whitespaces",
+        "workflows",
+        "submodules",
+        "docs spelling",
     )
 
-    for name, out_file in checks:
+    for name in checks:
+        out_file = name.replace(" ", "_") + "_output.txt"
         full_path = os.path.join(result_folder, out_file)
         if not os.path.exists(full_path):
             logging.info("No %s check log on path %s", name, full_path)
@@ -39,10 +45,10 @@ def process_result(result_folder):
 
 
 def write_results(results_file, status_file, results, status):
-    with open(results_file, "w") as f:
+    with open(results_file, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerows(results)
-    with open(status_file, "w") as f:
+    with open(status_file, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow(status)
 
@@ -52,9 +58,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="ClickHouse script for parsing results of style check"
     )
-    parser.add_argument("--in-results-dir", default="/test_output/")
-    parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
-    parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
+    default_dir = "/test_output"
+    parser.add_argument("--in-results-dir", default=default_dir)
+    parser.add_argument("--out-results-file", default=f"{default_dir}/test_results.tsv")
+    parser.add_argument("--out-status-file", default=f"{default_dir}/check_status.tsv")
     args = parser.parse_args()
 
     state, description, test_results = process_result(args.in_results_dir)

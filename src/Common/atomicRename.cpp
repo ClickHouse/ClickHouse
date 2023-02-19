@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -101,7 +101,7 @@ bool supportsAtomicRename()
 
 }
 
-#elif defined(__APPLE__)
+#elif defined(OS_DARWIN)
 
 // Includes
 #include <dlfcn.h>  // For dlsym
@@ -199,7 +199,7 @@ static void renameNoReplaceFallback(const std::string & old_path, const std::str
 #pragma GCC diagnostic ignored "-Wmissing-noreturn"
 static void renameExchangeFallback(const std::string &, const std::string &)
 {
-    throw Exception("System call renameat2() is not supported", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "System call renameat2() is not supported");
 }
 #pragma GCC diagnostic pop
 

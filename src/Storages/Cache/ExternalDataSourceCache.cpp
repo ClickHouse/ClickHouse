@@ -7,6 +7,7 @@
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <base/errnoToString.h>
+#include <base/sort.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <Poco/Logger.h>
@@ -229,7 +230,7 @@ void ExternalDataSourceCache::initOnce(ContextPtr context, const String & root_d
     LOG_INFO(
         log, "Initializing local cache for remote data sources. Local cache root path: {}, cache size limit: {}", root_dir_, limit_size_);
     splitInto<','>(root_dirs, root_dir_);
-    std::sort(root_dirs.begin(), root_dirs.end());
+    ::sort(root_dirs.begin(), root_dirs.end());
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
     lru_caches = std::make_unique<RemoteFileCacheType>(limit_size_);
 

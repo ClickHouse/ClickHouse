@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/uniqcombined
 sidebar_position: 192
 ---
 
-# uniqCombined {#agg_function-uniqcombined}
+# uniqCombined
 
 Calculates the approximate number of different argument values.
 

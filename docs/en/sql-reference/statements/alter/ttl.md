@@ -1,24 +1,29 @@
 ---
+slug: /en/sql-reference/statements/alter/ttl
 sidebar_position: 44
 sidebar_label: TTL
 ---
 
-# Manipulations with Table TTL {#manipulations-with-table-ttl}
+# Manipulations with Table TTL
 
-## MODIFY TTL {#modify-ttl}
+:::note
+If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/docs/en/guides/developer/ttl.md) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
+:::
+
+## MODIFY TTL
 
 You can change [table TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) with a request of the following form:
 
 ``` sql
-ALTER TABLE table_name MODIFY TTL ttl_expression;
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression;
 ```
 
-## REMOVE TTL {#remove-ttl}
+## REMOVE TTL
 
 TTL-property can be removed from table with the following query:
 
 ```sql
-ALTER TABLE table_name REMOVE TTL
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 ```
 
 **Example**
@@ -34,7 +39,7 @@ CREATE TABLE table_with_ttl
 )
 ENGINE MergeTree()
 ORDER BY tuple()
-TTL event_time + INTERVAL 3 MONTH;
+TTL event_time + INTERVAL 3 MONTH
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO table_with_ttl VALUES (now(), 1, 'username1');

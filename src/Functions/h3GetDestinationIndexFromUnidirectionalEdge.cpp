@@ -1,4 +1,4 @@
-#include "config_functions.h"
+#include "config.h"
 
 #if USE_H3
 
@@ -85,7 +85,7 @@ public:
 
 }
 
-void registerFunctionH3GetDestinationIndexFromUnidirectionalEdge(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetDestinationIndexFromUnidirectionalEdge)
 {
     factory.registerFunction<FunctionH3GetDestinationIndexFromUnidirectionalEdge>();
 }

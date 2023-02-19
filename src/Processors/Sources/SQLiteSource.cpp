@@ -27,7 +27,7 @@ SQLiteSource::SQLiteSource(
     const String & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
-    : SourceWithProgress(sample_block.cloneEmpty())
+    : ISource(sample_block.cloneEmpty())
     , query_str(query_str_)
     , max_block_size(max_block_size_)
     , sqlite_db(std::move(sqlite_db_))
@@ -35,11 +35,15 @@ SQLiteSource::SQLiteSource(
     description.init(sample_block);
 
     sqlite3_stmt * compiled_stmt = nullptr;
-    int status = sqlite3_prepare_v2(sqlite_db.get(), query_str.c_str(), query_str.size() + 1, &compiled_stmt, nullptr);
+    int status = sqlite3_prepare_v2(
+        sqlite_db.get(),
+        query_str.c_str(),
+        static_cast<int>(query_str.size() + 1),
+        &compiled_stmt, nullptr);
 
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot prepate sqlite statement. Status: {}. Message: {}",
+                        "Cannot prepare sqlite statement. Status: {}. Message: {}",
                         status, sqlite3_errstr(status));
 
     compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
@@ -109,7 +113,7 @@ Chunk SQLiteSource::generate()
     return Chunk(std::move(columns), num_rows);
 }
 
-void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::ValueType type, size_t idx)
+void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx)
 {
     switch (type)
     {
@@ -120,7 +124,7 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
             assert_cast<ColumnUInt16 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
             break;
         case ValueType::vtUInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(sqlite3_column_int64(compiled_statement.get(), idx)));
             break;
         case ValueType::vtUInt64:
             /// There is no uint64 in sqlite3, only int and int64
@@ -139,7 +143,7 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
             assert_cast<ColumnInt64 &>(column).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
             break;
         case ValueType::vtFloat32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(sqlite3_column_double(compiled_statement.get(), idx));
+            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(sqlite3_column_double(compiled_statement.get(), idx)));
             break;
         case ValueType::vtFloat64:
             assert_cast<ColumnFloat64 &>(column).insertValue(sqlite3_column_double(compiled_statement.get(), idx));

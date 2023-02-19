@@ -4,7 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include <Common/config.h>
+#include "config.h"
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -51,12 +51,12 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
         const String & client_name_,
         Protocol::Compression compression_,
-        Protocol::Secure secure_,
-        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
+        Protocol::Secure secure_);
 
     ~Connection() override;
 
@@ -93,9 +93,12 @@ public:
 
     Protocol::Compression getCompression() const { return compression; }
 
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return password_complexity_rules; }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
+        const NameToNameMap& query_parameters,
         const String & query_id_/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
@@ -107,7 +110,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -123,7 +126,7 @@ public:
 
     bool isConnected() const override { return connected; }
 
-    bool checkConnected() override { return connected && ping(); }
+    bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
 
     void disconnect() override;
 
@@ -159,6 +162,7 @@ private:
     String default_database;
     String user;
     String password;
+    String quota_key;
 
     /// For inter-server authorization
     String cluster;
@@ -205,7 +209,7 @@ private:
       */
     ThrottlerPtr throttler;
 
-    Poco::Timespan sync_request_timeout;
+    std::vector<std::pair<String, String>> password_complexity_rules;
 
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
@@ -245,12 +249,13 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+    void sendAddendum();
     void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();
 #endif
-    bool ping();
+    bool ping(const ConnectionTimeouts & timeouts);
 
     Block receiveData();
     Block receiveLogData();
@@ -260,7 +265,8 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    PartitionReadRequest receivePartitionReadRequest() const;
+    ParallelReadRequest receiveParallelReadRequest() const;
+    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

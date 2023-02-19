@@ -1,9 +1,9 @@
-<?xml version="1.0"?>
 <clickhouse>
     <profiles>
         <default>
             <max_memory_usage>10000000000</max_memory_usage>
             <force_index_by_date>0</force_index_by_date>
+            <replication_alter_partitions_sync>2</replication_alter_partitions_sync>
             <constraints>
                 <max_memory_usage>
                     <min>5000000000</min>
@@ -12,6 +12,9 @@
                <force_index_by_date>
                    <readonly/>
                </force_index_by_date>
+               <replication_alter_partitions_sync>
+                   <readonly/>
+               </replication_alter_partitions_sync>
             </constraints>
         </default>
 

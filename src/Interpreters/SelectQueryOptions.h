@@ -31,8 +31,6 @@ struct SelectQueryOptions
     bool only_analyze = false;
     bool modify_inplace = false;
     bool remove_duplicates = false;
-    /// This is required for UNION to match headers correctly.
-    bool reorder_columns_as_required_header = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
     /// This flag is needed to analyze query ignoring table projections.
@@ -52,6 +50,7 @@ struct SelectQueryOptions
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
     bool settings_limit_offset_done = false;
     bool is_explain = false; /// The value is true if it's explain statement.
+    bool is_create_parameterized_view = false;
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -79,6 +78,13 @@ struct SelectQueryOptions
         return out;
     }
 
+    SelectQueryOptions createParameterizedView() const
+    {
+        SelectQueryOptions out = *this;
+        out.is_create_parameterized_view = true;
+        return out;
+    }
+
     SelectQueryOptions & analyze(bool dry_run = true)
     {
         only_analyze = dry_run;
@@ -96,12 +102,6 @@ struct SelectQueryOptions
     SelectQueryOptions & removeDuplicates(bool value = true)
     {
         remove_duplicates = value;
-        return *this;
-    }
-
-    SelectQueryOptions & reorderColumns(bool value = true)
-    {
-        reorder_columns_as_required_header = value;
         return *this;
     }
 

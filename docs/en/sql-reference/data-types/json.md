@@ -1,9 +1,14 @@
 ---
+slug: /en/sql-reference/data-types/json
 sidebar_position: 54
 sidebar_label: JSON
 ---
 
-# JSON {#json-data-type}
+# JSON
+
+:::warning
+This feature is experimental and is not production ready. If you need to work with JSON documents, consider using [this guide](/docs/en/guides/developer/working-with-json/json-load-data.md) instead.
+:::
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
@@ -13,7 +18,7 @@ Stores JavaScript Object Notation (JSON) documents in a single column.
 The JSON data type is an experimental feature. To use it, set `allow_experimental_object_type = 1`.
 :::
 
-## Example {#usage-example}
+## Example
 
 **Example 1**
 
@@ -74,3 +79,7 @@ SELECT * FROM json FORMAT JSONEachRow
 ```text
 {"o":{"a":1,"b":{"c":2,"d":[1,2,3]}}}
 ```
+
+## Related Content
+
+- [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)

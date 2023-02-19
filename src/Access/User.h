@@ -28,6 +28,11 @@ struct User : public IAccessEntity
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
     static constexpr const auto TYPE = AccessEntityType::USER;
     AccessEntityType getType() const override { return TYPE; }
+    void setName(const String & name_) override;
+
+    std::vector<UUID> findDependencies() const override;
+    void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    bool isBackupAllowed() const override { return settings.isBackupAllowed(); }
 };
 
 using UserPtr = std::shared_ptr<const User>;

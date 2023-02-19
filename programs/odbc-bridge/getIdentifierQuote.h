@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_ODBC
 
@@ -8,7 +8,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Parsers/IdentifierQuotingStyle.h>
-#include "ODBCConnectionFactory.h"
+#include "ODBCPooledConnectionFactory.h"
 
 
 namespace DB

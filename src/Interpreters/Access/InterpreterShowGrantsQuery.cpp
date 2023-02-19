@@ -94,7 +94,7 @@ namespace
             return getGrantQueriesImpl(*user, access_control, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, access_control, attach_mode);
-        throw Exception(entity.formatTypeWithName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
     }
 
 }
@@ -160,7 +160,7 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 
         bool is_current_user = (id == access->getUserID());
         bool is_enabled_or_granted_role = entity->isTypeOf<Role>()
-            && ((current_user && current_user->granted_roles.isGranted(id)) || roles_info->enabled_roles.contains(id));
+            && (current_user->granted_roles.isGranted(id) || roles_info->enabled_roles.contains(id));
 
         if ((is_current_user /* Any user can see his own grants */)
             || (is_enabled_or_granted_role /* and grants from the granted roles */)

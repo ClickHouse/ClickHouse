@@ -15,19 +15,26 @@
     </openSSL>
     <!--
         It's a custom prompt settings for the clickhouse-client
+
         Possible macros:
             {host}
             {port}
             {user}
-            {database}
             {display_name}
-        Terminal colors: https://misc.flogisoft.com/bash/tip_colors_and_formatting
-        See also: https://wiki.hackzine.org/development/misc/readline-color-prompt.html
+
+        You can also use colored prompt, like in [1].
+
+          [1]: https://misc.flogisoft.com/bash/tip_colors_and_formatting
+
+        But note, that ClickHouse does not use readline anymore, instead it uses
+        replxx. This means that you don't need the following:
+        - RL_PROMPT_START_IGNORE (\001)
+        - RL_PROMPT_END_IGNORE   (\002)
     -->
     <prompt_by_server_display_name>
         <default>{display_name} :) </default>
-        <test>{display_name} \x01\e[1;32m\x02:)\x01\e[0m\x02 </test> <!-- if it matched to the substring "test" in the server display name - -->
-        <production>{display_name} \x01\e[1;31m\x02:)\x01\e[0m\x02 </production> <!-- if it matched to the substring "production" in the server display name -->
+        <test>{display_name} \e[1;32m:)\e[0m </test> <!-- if it matched to the substring "test" in the server display name - -->
+        <production>{display_name} \e[1;31m:)\e[0m </production> <!-- if it matched to the substring "production" in the server display name -->
     </prompt_by_server_display_name>
 
     <!-- 
@@ -50,4 +57,28 @@
 
         The same can be done on user-level configuration, just create & adjust: ~/.clickhouse-client/config.xml
     -->
+
+
+    <!-- Analog of .netrc -->
+    <![CDATA[
+    <connections_credentials>
+        <connection>
+            <!-- Name of the connection, host option for the client.
+                 "host" is not the same as "hostname" since you may want to have different settings for one host,
+                 and in this case you can add "prod" and "prod_readonly".
+
+                 Default: "hostname" will be used. -->
+            <name>default</name>
+            <!-- Host that will be used for connection. -->
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password></password>
+            <database></database>
+            <!-- '~' is expanded to HOME, like in any shell -->
+            <history_file></history_file>
+        </connection>
+    </connections_credentials>
+    ]]>
 </config>

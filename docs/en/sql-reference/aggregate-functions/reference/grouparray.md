@@ -1,8 +1,9 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/grouparray
 sidebar_position: 110
 ---
 
-# groupArray {#agg_function-grouparray}
+# groupArray
 
 Syntax: `groupArray(x)` or `groupArray(max_size)(x)`
 

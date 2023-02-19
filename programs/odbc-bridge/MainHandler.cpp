@@ -17,9 +17,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Common/config.h>
+#include "config.h"
 
 #include <mutex>
 #include <memory>
@@ -55,6 +56,28 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
+    size_t version;
+
+    if (!params.has("version"))
+        version = 0; /// assumed version for too old servers which do not send a version
+    else
+    {
+        String version_str = params.get("version");
+        if (!tryParse(version, version_str))
+        {
+            processError(response, "Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
+            return;
+        }
+    }
+
+    if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
+    {
+        /// backwards compatibility is considered unnecessary for now, just let the user know that the server and the bridge must be upgraded together
+        processError(response, "Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+        return;
+    }
+
+
     if (mode == "read")
         params.read(request.getStream());
 
@@ -79,7 +102,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     std::string format = params.get("format", "RowBinary");
     std::string connection_string = params.get("connection_string");
+    bool use_connection_pooling = params.getParsed<bool>("use_connection_pooling", true);
     LOG_TRACE(log, "Connection string: '{}'", connection_string);
+    LOG_TRACE(log, "Use pooling: {}", use_connection_pooling);
 
     UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
     if (params.has("max_block_size"))
@@ -110,9 +135,12 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
-        auto connection_handler = ODBCConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        nanodbc::ConnectionHolderPtr connection_handler;
+        if (use_connection_pooling)
+            connection_handler = ODBCPooledConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        else
+            connection_handler = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 
         if (mode == "write")
         {

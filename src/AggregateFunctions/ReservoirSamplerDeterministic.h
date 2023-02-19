@@ -84,7 +84,7 @@ public:
         if (isNaN(v))
             return;
 
-        UInt32 hash = intHash64(determinator);
+        UInt32 hash = static_cast<UInt32>(intHash64(determinator));
         insertImpl(v, hash);
         sorted = false;
         ++total_values;
@@ -93,6 +93,11 @@ public:
     size_t size() const
     {
         return total_values;
+    }
+
+    bool empty() const
+    {
+        return samples.empty();
     }
 
     T quantileNearest(double level)
@@ -165,11 +170,6 @@ public:
         sorted = false;
     }
 
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
-
     void write(DB::WriteBuffer & buf) const
     {
         size_t size = samples.size();
@@ -192,10 +192,6 @@ public:
             DB::writePODBinary(elem, buf);
         }
     }
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
@@ -239,7 +235,7 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);

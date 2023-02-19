@@ -92,7 +92,7 @@ struct ArrayFillImpl
             const auto * column_fill_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_fill_const)
-                throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of cut column");
 
             if (column_fill_const->getValue<UInt8>())
                 return ColumnArray::create(
@@ -129,7 +129,7 @@ struct NameArrayReverseFill { static constexpr auto name = "arrayReverseFill"; }
 using FunctionArrayFill = FunctionArrayMapped<ArrayFillImpl<false>, NameArrayFill>;
 using FunctionArrayReverseFill = FunctionArrayMapped<ArrayFillImpl<true>, NameArrayReverseFill>;
 
-void registerFunctionsArrayFill(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayFill)
 {
     factory.registerFunction<FunctionArrayFill>();
     factory.registerFunction<FunctionArrayReverseFill>();

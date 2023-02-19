@@ -1,0 +1,41 @@
+<test>
+    <settings>
+        <allow_experimental_object_type>1</allow_experimental_object_type>
+    </settings>
+
+    <!-- Looks like the only way to use json in test's queries is to put them to substitution.
+         Otherwise jsons are interpreted as substitutions themselves -->
+
+    <substitutions>
+        <substitution>
+            <name>json1</name>
+            <values>
+                <value>'{"k1":1, "k2": "some"}'</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>json2</name>
+            <values>
+                <value>'{"col' || toString(number % 100) || '":' || toString(number) || '}'</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>json3</name>
+            <values>
+                <value>'{"k1":[{"k2":"aaa","k3":[{"k4":"bbb"},{"k4":"ccc"}]},{"k2":"ddd","k3":[{"k4":"eee"},{"k4":"fff"}]}]}'</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE t_json_1(data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_json_2(data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_json_3(data JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <query>INSERT INTO t_json_1 SELECT materialize({json1}) FROM numbers(200000)</query>
+    <query>INSERT INTO t_json_2 SELECT {json2} FROM numbers(100000)</query>
+    <query>INSERT INTO t_json_3 SELECT materialize({json3}) FROM numbers_mt(100000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_json_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_json_3</drop_query>
+</test>

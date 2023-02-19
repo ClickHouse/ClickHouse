@@ -1,3 +1,6 @@
+---
+slug: /zh/development/style
+---
 # 如何编写 C++ 代码 {#ru-he-bian-xie-c-dai-ma}
 
 ## 一般建议 {#yi-ban-jian-yi}
@@ -822,5 +825,3 @@ function(
       const & RangesInDataParts ranges,
       size_t limit)
 ```
-
-[来源文章](https://clickhouse.com/docs/en/development/style/) <!--hide-->
