@@ -1,10 +1,5 @@
 #include <Interpreters/sortBlock.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <Functions/FunctionHelpers.h>
-
 
 namespace DB
 {
@@ -34,12 +29,11 @@ inline bool isCollationRequired(const SortColumnDescription & description)
     return description.collator != nullptr;
 }
 
-template <bool check_collation>
-struct PartialSortingLessImpl
+struct PartialSortingLess
 {
     const ColumnsWithSortDescriptions & columns;
 
-    explicit PartialSortingLessImpl(const ColumnsWithSortDescriptions & columns_) : columns(columns_) { }
+    explicit PartialSortingLess(const ColumnsWithSortDescriptions & columns_) : columns(columns_) { }
 
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
@@ -48,27 +42,9 @@ struct PartialSortingLessImpl
         for (const auto & elem : columns)
         {
             if (elem.column_const)
-            {
                 continue;
-            }
 
-            if constexpr (check_collation)
-            {
-                if (isCollationRequired(elem.description))
-                {
-                    res = elem.column->compareAtWithCollation(lhs, rhs, *elem.column, elem.description.nulls_direction, *elem.description.collator);
-                }
-                else
-                {
-                    res = elem.column->compareAt(lhs, rhs, *elem.column, elem.description.nulls_direction);
-                }
-            }
-            else
-            {
-                res = elem.column->compareAt(lhs, rhs, *elem.column, elem.description.nulls_direction);
-            }
-
-            res *= elem.description.direction;
+            res = elem.description.direction * elem.column->compareAt(lhs, rhs, *elem.column, elem.description.nulls_direction);
 
             if (res != 0)
                 break;
@@ -83,9 +59,6 @@ struct PartialSortingLessImpl
         return res < 0;
     }
 };
-
-using PartialSortingLess = PartialSortingLessImpl<false>;
-using PartialSortingLessWithCollation = PartialSortingLessImpl<true>;
 
 ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description)
 {
@@ -228,6 +201,12 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
 {
     if (!block)
         return true;
+
+    /// Don't bother checking the order if collations are required.
+    ColumnsWithSortDescriptions columns_with_sort_descriptions = getColumnsWithSortDescription(block, description);
+    for (const auto & column_with_sort_description : columns_with_sort_descriptions)
+        if (isCollationRequired(column_with_sort_description.description))
+            return false;
 
     size_t rows = block.rows();
 
