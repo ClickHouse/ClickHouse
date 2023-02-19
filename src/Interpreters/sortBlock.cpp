@@ -1,10 +1,5 @@
 #include <Interpreters/sortBlock.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <Functions/FunctionHelpers.h>
-
 
 namespace DB
 {
