@@ -33,6 +33,8 @@ struct QueryPlanOptimizationSettings
     /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
     bool remove_redundant_sorting = true;
 
+    bool aggregate_partitions_independently = false;
+
     /// If removing redundant distinct steps is enabled
     bool remove_redundant_distinct = true;
 
