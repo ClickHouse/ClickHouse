@@ -1,4 +1,6 @@
 #include <cerrno>
+#include <base/errnoToString.h>
+#include <base/defines.h>
 #include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -10,6 +12,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ProfileEvents.h>
 #include "Coordination/KeeperStorage.h"
+
 
 namespace ProfileEvents
 {
@@ -41,22 +44,24 @@ KeeperStateMachine::KeeperStateMachine(
     SnapshotsQueue & snapshots_queue_,
     const std::string & snapshots_path_,
     const CoordinationSettingsPtr & coordination_settings_,
-    const std::string & superdigest_,
-    const bool digest_enabled_)
+    const KeeperContextPtr & keeper_context_,
+    KeeperSnapshotManagerS3 * snapshot_manager_s3_,
+    const std::string & superdigest_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
           coordination_settings->snapshots_to_keep,
+          keeper_context_,
           coordination_settings->compress_snapshots_with_zstd_format,
           superdigest_,
-          coordination_settings->dead_session_check_period_ms.totalMilliseconds(),
-          digest_enabled_)
+          coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
-    , digest_enabled(digest_enabled_)
+    , keeper_context(keeper_context_)
+    , snapshot_manager_s3(snapshot_manager_s3_)
 {
 }
 
@@ -109,7 +114,7 @@ void KeeperStateMachine::init()
 
     if (!storage)
         storage = std::make_unique<KeeperStorage>(
-            coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, digest_enabled);
+            coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace
@@ -125,11 +130,10 @@ void assertDigest(
     {
         LOG_FATAL(
             &Poco::Logger::get("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest version "
-            "{}). Keeper will "
-            "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
+            "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
-            request.getOpNum(),
+            Coordination::toString(request.getOpNum()),
             first.value,
             second.value,
             first.version,
@@ -190,22 +194,36 @@ KeeperStorage::RequestForSession KeeperStateMachine::parseRequest(nuraft::buffer
     return request_for_session;
 }
 
-void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
+bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return;
+        return true;
 
     std::lock_guard lock(storage_and_responses_lock);
-    storage->preprocessRequest(
-        request_for_session.request,
-        request_for_session.session_id,
-        request_for_session.time,
-        request_for_session.zxid,
-        true /* check_acl */,
-        request_for_session.digest);
 
-    if (digest_enabled && request_for_session.digest)
+    if (storage->isFinalized())
+        return false;
+
+    try
+    {
+        storage->preprocessRequest(
+            request_for_session.request,
+            request_for_session.session_id,
+            request_for_session.time,
+            request_for_session.zxid,
+            true /* check_acl */,
+            request_for_session.digest);
+    }
+    catch (...)
+    {
+        rollbackRequest(request_for_session, true);
+        throw;
+    }
+
+    if (keeper_context->digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
+
+    return true;
 }
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
@@ -234,7 +252,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", session_id);
             }
         }
     }
@@ -247,16 +265,11 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                throw Exception(
-                    ErrorCodes::SYSTEM_ERROR,
-                    "Could not push response with session id {} into responses queue",
-                    response_for_session.session_id);
+                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
             }
 
-        if (digest_enabled && request_for_session.digest)
-        {
+        if (keeper_context->digest_enabled && request_for_session.digest)
             assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
-        }
     }
 
     ProfileEvents::increment(ProfileEvents::KeeperCommits);
@@ -313,11 +326,16 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     if (!request_for_session.zxid)
         request_for_session.zxid = log_idx;
 
+    rollbackRequest(request_for_session, false);
+}
+
+void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing)
+{
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
     std::lock_guard lock(storage_and_responses_lock);
-    storage->rollbackRequest(request_for_session.zxid);
+    storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
@@ -382,10 +400,26 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         }
 
         when_done(ret, exception);
+
+        return ret ? latest_snapshot_path : "";
     };
 
 
-    LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flash to disk", s.get_last_log_idx());
+    if (keeper_context->server_state == KeeperContext::Phase::SHUTDOWN)
+    {
+        LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
+        auto snapshot_path = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+
+        if (!snapshot_path.empty() && snapshot_manager_s3)
+        {
+            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_path);
+            snapshot_manager_s3->uploadSnapshot(snapshot_path, /* asnyc_upload */ false);
+        }
+
+        return;
+    }
+
+    LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flush to disk", s.get_last_log_idx());
     /// Flush snapshot to disk in a separate thread.
     if (!snapshots_queue.push(std::move(snapshot_task)))
         LOG_WARNING(log, "Cannot push snapshot task into queue");
@@ -429,7 +463,7 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     LOG_INFO(log, "Opening file {} for read_logical_snp_obj", path);
     if (fd < 0)
     {
-        LOG_WARNING(log, "Error opening {}, error: {}, errno: {}", path, std::strerror(errno), errno);
+        LOG_WARNING(log, "Error opening {}, error: {}, errno: {}", path, errnoToString(), errno);
         return errno;
     }
     auto file_size = ::lseek(fd, 0, SEEK_END);
@@ -437,14 +471,16 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     auto * chunk = reinterpret_cast<nuraft::byte *>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
     if (chunk == MAP_FAILED)
     {
-        LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, std::strerror(errno), errno);
-        ::close(fd);
+        LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
+        int err = ::close(fd);
+        chassert(!err || errno == EINTR);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    ::close(fd);
+    int err = ::close(fd);
+    chassert(!err || errno == EINTR);
     return 0;
 }
 
@@ -488,8 +524,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
         true /*is_local*/);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
-            throw Exception(
-                ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
+            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
 }
 
 void KeeperStateMachine::shutdownStorage()

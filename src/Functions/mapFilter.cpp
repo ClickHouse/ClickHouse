@@ -51,7 +51,7 @@ struct MapFilterImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
             if (column_filter_const->getValue<UInt8>())
                 return map_column.clone();
@@ -133,7 +133,7 @@ struct MapApplyImpl
     }
 };
 
-void registerFunctionMapApply(FunctionFactory & factory)
+REGISTER_FUNCTION(MapApply)
 {
     factory.registerFunction<FunctionArrayMapped<MapFilterImpl, MapFilterImpl>>();
     factory.registerFunction<FunctionArrayMapped<MapApplyImpl, MapApplyImpl>>();

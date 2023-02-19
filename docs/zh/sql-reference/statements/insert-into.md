@@ -1,3 +1,6 @@
+---
+slug: /zh/sql-reference/statements/insert-into
+---
 ## INSERT INTO 语句 {#insert}
 
 INSERT INTO 语句主要用于向系统中添加数据.
@@ -85,9 +88,9 @@ INSERT INTO t FORMAT TabSeparated
 
 ### 限制 {#constraints}
 
-如果表中有一些[限制](../../sql-reference/statements/create/table.md#constraints),，数据插入时会逐行进行数据校验，如果这里面包含了不符合限制条件的数据，服务将会抛出包含限制信息的异常，这个语句也会被停止执行。
+如果表中有一些[限制](../../sql-reference/statements/create/table.mdx#constraints),，数据插入时会逐行进行数据校验，如果这里面包含了不符合限制条件的数据，服务将会抛出包含限制信息的异常，这个语句也会被停止执行。
 
-### 使用`SELECT`的结果写入 {#insert_query_insert-select}
+### 使用`SELECT`的结果写入 {#inserting-the-results-of-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
@@ -173,5 +176,3 @@ SELECT * FROM simple_table;
 -   写入的数据已经按照时间排序。
 
 也可以异步的、小规模的插入数据，这些数据会被合并成多个批次，然后安全地写入到表中，通过设置[async_insert](../../operations/settings/settings.md#async-insert)，可以使用异步插入的方式，请注意，异步插入的方式只支持HTTP协议，并且不支持数据去重。
-
-[来源文章](https://clickhouse.com/docs/en/query_language/insert_into/) <!--hide-->

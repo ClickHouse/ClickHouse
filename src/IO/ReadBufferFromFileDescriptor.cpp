@@ -7,9 +7,9 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Progress.h>
 #include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
+#include <Interpreters/Context.h>
 
 
 #ifdef HAS_RESERVED_IDENTIFIER
@@ -56,7 +56,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
-        return false;
+         return false;
 
     size_t bytes_read = 0;
     while (!bytes_read)
@@ -80,8 +80,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throwFromErrnoWithPath("Cannot read from file " + getFileName(), getFileName(),
-                                   ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throwFromErrnoWithPath("Cannot read from file: " + getFileName(), getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -119,7 +118,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 }
 
 
-void ReadBufferFromFileDescriptor::prefetch()
+void ReadBufferFromFileDescriptor::prefetch(int64_t)
 {
 #if defined(POSIX_FADV_WILLNEED)
     /// For direct IO, loading data into page cache is pointless.
@@ -148,7 +147,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
     else
     {
-        throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence");
     }
 
     /// Position is unchanged.
@@ -233,7 +232,7 @@ void ReadBufferFromFileDescriptor::rewind()
 
 
 /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
+bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
 {
     fd_set fds;
     FD_ZERO(&fds);
@@ -252,20 +251,6 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 size_t ReadBufferFromFileDescriptor::getFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
-}
-
-
-void ReadBufferFromFileDescriptor::setProgressCallback(ContextPtr context)
-{
-    auto file_progress_callback = context->getFileProgressCallback();
-
-    if (!file_progress_callback)
-        return;
-
-    setProfileCallback([file_progress_callback](const ProfileInfo & progress)
-    {
-        file_progress_callback(FileProgress(progress.bytes_read, 0));
-    });
 }
 
 }

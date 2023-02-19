@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/database-engines/postgresql
 sidebar_position: 40
 sidebar_label: PostgreSQL
 ---
@@ -29,7 +30,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 ## Data Types Support {#data_types-support}
 
-| PostgerSQL       | ClickHouse                                                   |
+| PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
 | DATE             | [Date](../../sql-reference/data-types/date.md)               |
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
@@ -136,3 +137,6 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
+## Related content
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)

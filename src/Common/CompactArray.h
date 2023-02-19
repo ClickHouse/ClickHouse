@@ -119,7 +119,7 @@ public:
     inline std::pair<BucketIndex, UInt8> get() const
     {
         if ((current_bucket_index == 0) || is_eof)
-            throw Exception("No available data.", ErrorCodes::NO_AVAILABLE_DATA);
+            throw Exception(ErrorCodes::NO_AVAILABLE_DATA, "No available data.");
 
         if (fits_in_byte)
             return std::make_pair(current_bucket_index - 1, locus.read(value_l));
@@ -130,7 +130,7 @@ public:
 private:
     ReadBuffer & in;
     /// The physical location of the current cell.
-    Locus locus;
+    Locus locus{};
     /// The current position in the file as a cell number.
     BucketIndex current_bucket_index = 0;
     /// The number of bytes read.

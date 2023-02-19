@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long, no-parallel, no-ordinary-database
 # Test is too heavy, avoid parallel run in Flaky Check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

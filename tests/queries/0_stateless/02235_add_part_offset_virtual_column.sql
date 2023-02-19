@@ -24,6 +24,8 @@ INSERT INTO t_1 select rowNumberInAllBlocks(), *, '1984-01-01' from t_random_1 l
 
 OPTIMIZE TABLE t_1 FINAL;
 
+ALTER TABLE t_1 ADD COLUMN foo String DEFAULT 'foo';
+
 SELECT COUNT(DISTINCT(_part)) FROM t_1;
 
 SELECT min(_part_offset), max(_part_offset) FROM t_1;
@@ -37,13 +39,19 @@ SELECT order_0, _part_offset, _part FROM t_1 WHERE order_0 <= 1 OR (order_0 BETW
 SELECT order_0, _part_offset, computed FROM t_1 ORDER BY order_0, _part_offset, computed LIMIT 3;
 SELECT order_0, _part_offset, computed FROM t_1 ORDER BY order_0 DESC, _part_offset DESC, computed DESC LIMIT 3;
 SELECT order_0, _part_offset, _part FROM t_1 WHERE order_0 <= 1 OR order_0 >= 999998 ORDER BY order_0 LIMIT 3;
+SELECT _part_offset FROM t_1 ORDER BY order_0 LIMIT 3;
+SELECT _part_offset, foo FROM t_1 ORDER BY order_0 LIMIT 3;
 
 SELECT 'SOME GRANULES FILTERED OUT';
 SELECT count(*), sum(_part_offset), sum(order_0) from t_1 where granule == 0;
 SELECT count(*), sum(_part_offset), sum(order_0) from t_1 where granule == 0 AND _part_offset < 100000;
 SELECT count(*), sum(_part_offset), sum(order_0) from t_1 where granule == 0 AND _part_offset >= 100000;
+SELECT _part_offset FROM t_1 where granule == 0 AND _part_offset >= 100000 ORDER BY order_0 LIMIT 3;
+SELECT _part_offset, foo FROM t_1 where granule == 0 AND _part_offset >= 100000 ORDER BY order_0 LIMIT 3;
 
 SELECT 'PREWHERE';
 SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere granule == 0 where _part_offset >= 100000;
 SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere _part != '' where granule == 0; -- { serverError 10 }
 SELECT count(*), sum(_part_offset), sum(order_0) from t_1 prewhere _part_offset > 100000 where granule == 0; -- { serverError 10 }
+SELECT _part_offset FROM t_1 PREWHERE order_0 % 10000 == 42 ORDER BY order_0 LIMIT 3;
+SELECT _part_offset, foo FROM t_1 PREWHERE order_0 % 10000 == 42 ORDER BY order_0 LIMIT 3;

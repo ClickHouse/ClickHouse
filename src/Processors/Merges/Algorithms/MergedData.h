@@ -57,11 +57,22 @@ public:
     void insertChunk(Chunk && chunk, size_t rows_size)
     {
         if (merged_rows)
-            throw Exception("Cannot insert to MergedData from Chunk because MergedData is not empty.",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert to MergedData from Chunk because MergedData is not empty.");
 
         UInt64 num_rows = chunk.getNumRows();
-        columns = chunk.mutateColumns();
+        UInt64 num_columns = chunk.getNumColumns();
+        auto chunk_columns = chunk.mutateColumns();
+
+        /// Here is a special code for constant columns.
+        /// Currently, 'columns' will contain constants, but 'chunk_columns' will not.
+        /// We want to keep constants in the result, so just re-create them carefully.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (isColumnConst(*columns[i]))
+                columns[i] = columns[i]->cloneResized(num_rows);
+            else
+                columns[i] = std::move(chunk_columns[i]);
+        }
 
         if (rows_size < num_rows)
         {

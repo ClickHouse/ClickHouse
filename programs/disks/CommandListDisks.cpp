@@ -1,6 +1,5 @@
-#pragma once
-
 #include "ICommand.h"
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -10,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class CommandListDisks : public ICommand
+class CommandListDisks final : public ICommand
 {
 public:
     CommandListDisks()
@@ -33,7 +32,7 @@ public:
         if (!command_arguments.empty())
         {
             printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
 
         for (const auto & [disk_name, _] : global_context->getDisksMap())

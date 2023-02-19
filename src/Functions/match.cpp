@@ -17,7 +17,7 @@ using FunctionMatch = FunctionsStringSearch<MatchImpl<NameMatch, MatchTraits::Sy
 
 }
 
-void registerFunctionMatch(FunctionFactory & factory)
+REGISTER_FUNCTION(Match)
 {
     factory.registerFunction<FunctionMatch>();
     factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::CaseInsensitive);

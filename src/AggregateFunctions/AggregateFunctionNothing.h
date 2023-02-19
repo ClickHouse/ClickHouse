@@ -6,6 +6,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include "DataTypes/IDataType.h"
 
 
 namespace DB
@@ -18,17 +19,12 @@ struct Settings;
 class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
-    AggregateFunctionNothing(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params) {}
+    AggregateFunctionNothing(const DataTypes & arguments, const Array & params, const DataTypePtr & result_type_)
+        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, result_type_) {}
 
     String getName() const override
     {
         return "nothing";
-    }
-
-    DataTypePtr getReturnType() const override
-    {
-        return argument_types.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : argument_types.front();
     }
 
     bool allocatesMemoryInArena() const override { return false; }

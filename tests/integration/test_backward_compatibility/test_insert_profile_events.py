@@ -6,7 +6,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, name="insert_profile_events")
+cluster = ClickHouseCluster(__file__)
 upstream_node = cluster.add_instance("upstream_node")
 old_node = cluster.add_instance(
     "old_node",

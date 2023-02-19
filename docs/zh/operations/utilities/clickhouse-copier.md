@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/utilities/clickhouse-copier
+---
 # clickhouse-copier {#clickhouse-copier}
 
 将数据从一个群集中的表复制到另一个（或相同）群集中的表。
@@ -167,5 +170,3 @@ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-
 ```
 
 `clickhouse-copier` 跟踪更改 `/task/path/description` 并在飞行中应用它们。 例如，如果你改变的值 `max_workers`，运行任务的进程数也会发生变化。
-
-[原始文章](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

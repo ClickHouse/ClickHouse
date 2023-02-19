@@ -66,7 +66,7 @@ struct StorageSnapshot
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
-    Block getSampleBlockForColumns(const Names & column_names) const;
+    Block getSampleBlockForColumns(const Names & column_names, const NameToNameMap & parameter_values = {}) const;
 
     ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
 
@@ -85,6 +85,10 @@ private:
     void init();
 
     std::unordered_map<String, DataTypePtr> virtual_columns;
+
+    /// System columns are not visible in the schema but might be persisted in the data.
+    /// One example of such column is lightweight delete mask '_row_exists'.
+    std::unordered_map<String, DataTypePtr> system_columns;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

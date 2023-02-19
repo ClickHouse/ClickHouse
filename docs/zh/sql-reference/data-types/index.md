@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/data-types/
 sidebar_label: 数据类型
 sidebar_position: 37
 ---

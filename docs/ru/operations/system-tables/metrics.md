@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/metrics
+---
 # system.metrics {#system_tables-metrics}
 
 Содержит метрики, которые могут быть рассчитаны мгновенно или имеют текущее значение. Например, число одновременно обрабатываемых запросов или текущее значение задержки реплики. Эта таблица всегда актуальна.
@@ -37,4 +40,3 @@ SELECT * FROM system.metrics LIMIT 10
 -   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 -   [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 -   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
-

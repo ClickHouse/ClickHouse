@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, name="aggregate_alias_column")
+cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=False)
 node2 = cluster.add_instance(
     "node2",

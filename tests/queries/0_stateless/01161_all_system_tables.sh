@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: since someone may create table in system database
 
 # Server may ignore some exceptions, but it still print exceptions to logs and (at least in CI) sends Error and Warning log messages to client
 # making test fail because of non-empty stderr. Ignore such log messages.
@@ -16,7 +18,7 @@ function run_selects()
 {
     thread_num=$1
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT database || '.' || name FROM system.tables
-    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name!='zookeeper' and name!='merge_tree_metadata_cache'
+    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name!='zookeeper' and name!='merge_tree_metadata_cache' and name!='models'
     AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num")
 
     for t in "${tables_arr[@]}"

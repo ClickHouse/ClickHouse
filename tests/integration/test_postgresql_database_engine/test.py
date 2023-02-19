@@ -282,6 +282,7 @@ def test_predefined_connection_configuration(started_cluster):
     result = node1.query(
         "select create_table_query from system.tables where database ='postgres_database'"
     )
+    print(f"kssenii: {result}")
     assert result.strip().endswith(
         "ENGINE = PostgreSQL(postgres1, table = \\'test_table\\')"
     )
@@ -347,6 +348,42 @@ def test_postgres_database_old_syntax(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
     cursor.execute(f"DROP TABLE test_table")
     node1.query("DROP DATABASE IF EXISTS postgres_database;")
+
+
+def test_postgresql_fetch_tables(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
+    cursor.execute("CREATE SCHEMA test_schema")
+    cursor.execute("CREATE TABLE test_schema.table1 (a integer)")
+    cursor.execute("CREATE TABLE test_schema.table2 (a integer)")
+    cursor.execute("CREATE TABLE table3 (a integer)")
+
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
+    )
+
+    assert node1.query("SHOW TABLES FROM postgres_database") == "table3\n"
+    assert not node1.contains_in_log("PostgreSQL table table1 does not exist")
+
+    cursor.execute(f"DROP TABLE table3")
+    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
+
+
+def test_datetime(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("drop table if exists test")
+    cursor.execute("create table test (u timestamp)")
+
+    node1.query("drop database if exists pg")
+    node1.query("create database pg engine = PostgreSQL(postgres1)")
+    assert "DateTime64(6)" in node1.query("show create table pg.test")
+    node1.query("detach table pg.test")
+    node1.query("attach table pg.test")
+    assert "DateTime64(6)" in node1.query("show create table pg.test")
 
 
 if __name__ == "__main__":

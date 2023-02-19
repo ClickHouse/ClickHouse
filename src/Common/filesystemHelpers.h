@@ -9,20 +9,24 @@
 #include <sys/statvfs.h>
 #include <Poco/TemporaryFile.h>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
 
-using TemporaryFile = Poco::TemporaryFile;
+using PocoTemporaryFile = Poco::TemporaryFile;
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
-std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
+std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path);
+
 
 // Determine what block device is responsible for specified path
 #if !defined(OS_LINUX)
 [[noreturn]]
 #endif
 String getBlockDeviceId([[maybe_unused]] const String & path);
+
+std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path);
 
 enum class BlockDeviceType
 {
@@ -70,7 +74,7 @@ std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 
 /// Get inode number for a file path.
 /// Will not work correctly if filesystem does not support inodes.
-int getINodeNumberFromPath(const String & path);
+Int64 getINodeNumberFromPath(const String & path);
 
 }
 
@@ -89,4 +93,8 @@ Poco::Timestamp getModificationTimestamp(const std::string & path);
 void setModificationTime(const std::string & path, time_t time);
 /// st_ctime
 time_t getChangeTime(const std::string & path);
+
+bool isSymlink(const fs::path & path);
+fs::path readSymlink(const fs::path & path);
+
 }

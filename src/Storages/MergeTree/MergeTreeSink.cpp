@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
+#include <DataTypes/ObjectUtils.h>
 
 namespace ProfileEvents
 {
@@ -23,6 +24,7 @@ MergeTreeSink::MergeTreeSink(
     , metadata_snapshot(metadata_snapshot_)
     , max_parts_per_block(max_parts_per_block_)
     , context(context_)
+    , storage_snapshot(storage.getStorageSnapshotWithoutParts(metadata_snapshot))
 {
 }
 
@@ -54,9 +56,9 @@ struct MergeTreeSink::DelayedChunk
 void MergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
-    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, context);
+    if (!storage_snapshot->object_columns.empty())
+        convertDynamicColumnsToTuples(block, storage_snapshot);
 
-    storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
 
     using DelayedPartitions = std::vector<MergeTreeSink::DelayedChunk::Partition>;
@@ -80,7 +82,7 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        if (!support_parallel_write && temp_part.part->data_part_storage->supportParallelWrite())
+        if (!support_parallel_write && temp_part.part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
         if (storage.getDeduplicationLog())
@@ -154,19 +156,13 @@ void MergeTreeSink::finishDelayedChunk()
                 if (!res.second)
                 {
                     ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
-                }
-                else
-                {
-                    added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
-                    transaction.commit(&lock);
+                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
+                    continue;
                 }
             }
-            else
-            {
-                added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
-                transaction.commit(&lock);
-            }
+
+            added = storage.renameTempPartAndAdd(part, transaction, lock);
+            transaction.commit(&lock);
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added

@@ -1,9 +1,10 @@
 #pragma once
-#include <Processors/IProcessor.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/ResizeProcessor.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB
@@ -85,7 +86,8 @@ private:
     bool read_from_all_inputs = false;
     std::vector<bool> read_from_input;
 
-    bool expect_several_chunks_for_single_bucket_per_source = false;
+    /// If we aggregate partitioned data several chunks might be produced for the same bucket: one for each partition.
+    bool expect_several_chunks_for_single_bucket_per_source = true;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
@@ -105,7 +107,8 @@ private:
 class MergingAggregatedBucketTransform : public ISimpleTransform
 {
 public:
-    explicit MergingAggregatedBucketTransform(AggregatingTransformParamsPtr params);
+    explicit MergingAggregatedBucketTransform(
+        AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -113,6 +116,7 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
+    const SortDescription required_sort_description;
 };
 
 /// Has several inputs and single output.
@@ -142,6 +146,7 @@ struct ChunksToMerge : public ChunkInfo
     std::unique_ptr<Chunks> chunks;
     Int32 bucket_num = -1;
     bool is_overflows = false;
+    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
 
 class Pipe;

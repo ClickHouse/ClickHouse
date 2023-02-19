@@ -1,5 +1,4 @@
 #include <Coordination/CoordinationSettings.h>
-#include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
 #include <Coordination/Defines.h>
@@ -37,7 +36,7 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
 }
 
 
-const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr";
+const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
@@ -141,6 +140,10 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
+    writeText("max_request_queue_size=", buf);
+    write_int(coordination_settings->max_request_queue_size);
+    writeText("max_requests_quick_batch_size=", buf);
+    write_int(coordination_settings->max_requests_quick_batch_size);
     writeText("quorum_reads=", buf);
     write_bool(coordination_settings->quorum_reads);
     writeText("force_sync=", buf);

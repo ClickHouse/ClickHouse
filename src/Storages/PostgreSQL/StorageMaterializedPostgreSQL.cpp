@@ -27,8 +27,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/applyTableOverride.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageFactory.h>
@@ -279,7 +277,7 @@ void StorageMaterializedPostgreSQL::read(
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams)
+        size_t num_streams)
 {
     auto nested_table = getNested();
 
@@ -552,7 +550,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
-            throw Exception("Storage MaterializedPostgreSQL needs order by key or primary key", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL needs order by key or primary key");
 
         if (args.storage_def->primary_key)
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());

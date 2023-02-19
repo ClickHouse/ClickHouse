@@ -86,7 +86,7 @@ public:
     static DataTypePtr getReturnType(const DataTypePtr & /* score_type */, const DataTypePtr & label_type)
     {
         if (!(isNumber(label_type) || isEnum(label_type)))
-            throw Exception(std::string(NameArrayAUC::name) + " label must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} label must have numeric type.", std::string(NameArrayAUC::name));
 
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
@@ -140,7 +140,7 @@ public:
 /// auc(array_score, array_label) - Calculate AUC with array of score and label
 using FunctionArrayAUC = FunctionArrayScalarProduct<ArrayAUCImpl, NameArrayAUC>;
 
-void registerFunctionArrayAUC(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayAUC)
 {
     factory.registerFunction<FunctionArrayAUC>();
 }

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/explain
 sidebar_position: 39
 sidebar_label: EXPLAIN
 ---
@@ -247,10 +248,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 -   `Keys` — массив столбцов, используемых индексом.
 -   `Condition` — строка с используемым условием.
 -   `Description` — индекс (на данный момент используется только для индекса `Skip`).
--   `Initial Parts` — количество кусков до применения индекса.
--   `Selected Parts` — количество кусков после применения индекса.
--   `Initial Granules` — количество гранул до применения индекса.
--   `Selected Granulesis` — количество гранул после применения индекса.
+-   `Parts` — количество кусков до/после применения индекса.
+-   `Granules` — количество гранул до/после применения индекса.
 
 Пример:
 
@@ -261,46 +260,36 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
     "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
-    "Initial Parts": 5,
-    "Selected Parts": 4,
-    "Initial Granules": 12,
-    "Selected Granules": 11
+    "Parts": 5/4,
+    "Granules": 12/11
   },
   {
     "Type": "Partition",
     "Keys": ["y", "bitAnd(z, 3)"],
     "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
-    "Initial Parts": 4,
-    "Selected Parts": 3,
-    "Initial Granules": 11,
-    "Selected Granules": 10
+    "Parts": 4/3,
+    "Granules": 11/10
   },
   {
     "Type": "PrimaryKey",
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
-    "Initial Parts": 3,
-    "Selected Parts": 2,
-    "Initial Granules": 10,
-    "Selected Granules": 6
+    "Parts": 3/2,
+    "Granules": 10/6
   },
   {
     "Type": "Skip",
     "Name": "t_minmax",
     "Description": "minmax GRANULARITY 2",
-    "Initial Parts": 2,
-    "Selected Parts": 1,
-    "Initial Granules": 6,
-    "Selected Granules": 2
+    "Parts": 2/1,
+    "Granules": 6/2
   },
   {
     "Type": "Skip",
     "Name": "t_set",
     "Description": "set GRANULARITY 2",
-    "Initial Parts": 1,
-    "Selected Parts": 1,
-    "Initial Granules": 2,
-    "Selected Granules": 1
+    "": 1/1,
+    "Granules": 2/1
   }
 ]
 ```
@@ -412,5 +401,3 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/statements/explain/) <!--hide-->
