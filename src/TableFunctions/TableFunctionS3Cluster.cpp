@@ -73,7 +73,7 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     std::copy(args.begin() + 1, args.end(), std::back_inserter(clipped_args));
 
     /// StorageS3ClusterConfiguration inherints from StorageS3::Configuration, so it is safe to upcast it.
-    TableFunctionS3::parseArgumentsImpl(message.text, clipped_args, context, static_cast<StorageS3::Configuration & >(configuration));
+    TableFunctionS3::parseArgumentsImpl(message.text, clipped_args, context, static_cast<StorageS3::Configuration &>(configuration));
 }
 
 
@@ -82,7 +82,7 @@ ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr co
     context->checkAccess(getSourceAccessType());
 
     if (configuration.structure == "auto")
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+        return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
 
     return parseColumnsListFromString(configuration.structure, context);
 }

@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class CollectTopLevelColumnIdentifiersVisitor : public InDepthQueryTreeVisitor<CollectTopLevelColumnIdentifiersVisitor, true>
+class CollectTopLevelColumnIdentifiersVisitor : public ConstInDepthQueryTreeVisitor<CollectTopLevelColumnIdentifiersVisitor>
 {
 public:
 
@@ -20,15 +20,15 @@ public:
         , planner_context(planner_context_)
     {}
 
-    static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType & child)
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
     {
-        const auto & node_type = child->getNodeType();
-        return node_type != QueryTreeNodeType::TABLE
-            && node_type != QueryTreeNodeType::TABLE_FUNCTION
-            && node_type != QueryTreeNodeType::QUERY
-            && node_type != QueryTreeNodeType::UNION
-            && node_type != QueryTreeNodeType::JOIN
-            && node_type != QueryTreeNodeType::ARRAY_JOIN;
+        auto child_node_type = child->getNodeType();
+        return child_node_type != QueryTreeNodeType::TABLE
+            && child_node_type != QueryTreeNodeType::TABLE_FUNCTION
+            && child_node_type != QueryTreeNodeType::QUERY
+            && child_node_type != QueryTreeNodeType::UNION
+            && child_node_type != QueryTreeNodeType::JOIN
+            && child_node_type != QueryTreeNodeType::ARRAY_JOIN;
     }
 
     void visitImpl(const QueryTreeNodePtr & node)

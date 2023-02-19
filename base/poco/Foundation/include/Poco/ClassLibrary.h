@@ -23,11 +23,7 @@
 #include "Poco/Manifest.h"
 
 
-#if defined(_WIN32)
-#    define POCO_LIBRARY_API __declspec(dllexport)
-#else
 #    define POCO_LIBRARY_API
-#endif
 
 
 //

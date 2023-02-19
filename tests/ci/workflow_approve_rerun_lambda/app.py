@@ -123,6 +123,7 @@ TRUSTED_CONTRIBUTORS = {
         "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
         "tylerhannan",  # ClickHouse Employee
+        "myrrc",  # Mike Kot, DoubleCloud
     ]
 }
 

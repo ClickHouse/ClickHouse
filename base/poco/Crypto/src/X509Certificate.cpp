@@ -20,10 +20,6 @@
 #include "Poco/Format.h"
 #include <sstream>
 #include <openssl/pem.h>
-#ifdef _WIN32
-// fix for WIN32 header conflict
-#undef X509_NAME 
-#endif
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
@@ -133,7 +129,7 @@ void X509Certificate::load(const std::string& path)
 
 	BIO *pBIO = BIO_new(BIO_s_file());
 	if (!pBIO) throw Poco::IOException("Cannot create BIO for reading certificate file", path);
-	if (!BIO_read_filename(pBIO, path.c_str()))
+	if (!BIO_read_filename(pBIO, const_cast<char *>(path.c_str())))
 	{
 		BIO_free(pBIO);
 		throw Poco::OpenFileException("Cannot open certificate file for reading", path);

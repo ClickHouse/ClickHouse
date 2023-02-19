@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
@@ -11,7 +13,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include "Common/logger_useful.h"
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>

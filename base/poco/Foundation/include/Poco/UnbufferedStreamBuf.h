@@ -156,9 +156,6 @@ private:
 // instantiation - to avoid duplicate symbols due to multiple
 // instantiations in different libraries.
 //
-#if defined(_MSC_VER) && defined(POCO_DLL) && !defined(Foundation_EXPORTS)
-template class Foundation_API BasicUnbufferedStreamBuf<char, std::char_traits<char>>;
-#endif
 typedef BasicUnbufferedStreamBuf<char, std::char_traits<char>> UnbufferedStreamBuf;
 
 
