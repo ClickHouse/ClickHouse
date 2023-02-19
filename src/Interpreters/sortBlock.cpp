@@ -9,6 +9,9 @@ namespace ErrorCodes
     extern const int BAD_COLLATION;
 }
 
+namespace
+{
+
 /// Column with description for sort
 struct ColumnWithSortDescription
 {
@@ -20,9 +23,6 @@ struct ColumnWithSortDescription
 };
 
 using ColumnsWithSortDescriptions = std::vector<ColumnWithSortDescription>;
-
-namespace
-{
 
 inline bool isCollationRequired(const SortColumnDescription & description)
 {
