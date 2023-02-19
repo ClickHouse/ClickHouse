@@ -1012,6 +1012,11 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
+    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} to stage {}{}",
+        query_tree->formatConvertedASTForErrorMessage(),
+        QueryProcessingStage::toString(select_query_options.to_stage),
+        select_query_options.only_analyze ? " only analyze" : "");
+
     if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
         buildPlanForUnionNode();
     else
@@ -1199,6 +1204,12 @@ void Planner::buildPlanForQueryNode()
         from_stage = join_tree_query_plan.from_stage;
         query_plan = std::move(join_tree_query_plan.query_plan);
     }
+
+    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
+        query_tree->formatConvertedASTForErrorMessage(),
+        QueryProcessingStage::toString(from_stage),
+        QueryProcessingStage::toString(select_query_options.to_stage),
+        select_query_options.only_analyze ? " only analyze" : "");
 
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;
