@@ -436,7 +436,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
     {
         if (storage)
-            checkStorageSupportsTransactionsIfNeeded(storage, context);
+            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
         for (const auto & table : joined_tables.tablesWithColumns())
         {
             if (table.table.table.empty())
@@ -444,7 +444,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
             if (!maybe_storage)
                 continue;
-            checkStorageSupportsTransactionsIfNeeded(storage, context);
+            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
         }
     }
 
