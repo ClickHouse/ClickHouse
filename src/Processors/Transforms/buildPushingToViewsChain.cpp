@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
@@ -311,8 +312,8 @@ Chain buildPushingToViewsChain(
 
             if (lock == nullptr)
             {
-                // In case the materialized view is dropped at this point, we register a warning and ignore it
-                assert(materialized_view->is_dropped);
+                // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
+                assert(materialized_view->is_dropped || materialized_view->is_detached);
                 LOG_WARNING(
                     &Poco::Logger::get("PushingToViews"), "Trying to access table {} but it doesn't exist", view_id.getFullTableName());
                 continue;
@@ -327,16 +328,13 @@ Chain buildPushingToViewsChain(
             query = view_metadata_snapshot->getSelectQuery().inner_query;
             target_name = inner_table_id.getFullTableName();
 
-            /// Get list of columns we get from select query.
             Block header;
-            if (context->getSettingsRef().allow_experimental_analyzer)
-            {
-                header = InterpreterSelectQueryAnalyzer(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
-            }
+
+            /// Get list of columns we get from select query.
+            if (select_context->getSettingsRef().allow_experimental_analyzer)
+                header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
             else
-            {
                 header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
-            }
 
             /// Insert only columns returned by select.
             Names insert_columns;
@@ -486,15 +484,15 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         views_data.source_storage->getVirtuals()));
 
     QueryPipelineBuilder pipeline;
-    if (context->getSettingsRef().allow_experimental_analyzer)
+
+    if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        InterpreterSelectQueryAnalyzer select(view.query, local_context, SelectQueryOptions());
-        pipeline = select.buildQueryPipeline();
+        InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, local_context->getViewSource(), SelectQueryOptions());
+        pipeline = interpreter.buildQueryPipeline();
     }
     else
-    {
-        InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
-        pipeline = select.buildQueryPipeline();
+    {   InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions());
+        pipeline = interpreter.buildQueryPipeline();
     }
     pipeline.resize(1);
     pipeline.dropTotalsAndExtremes();
@@ -652,7 +650,7 @@ PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveVi
 void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-    StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
+    live_view.writeBlock(getHeader().cloneWithColumns(chunk.detachColumns()), context);
 
     if (auto process = context->getProcessListElement())
         process->updateProgressIn(local_progress);

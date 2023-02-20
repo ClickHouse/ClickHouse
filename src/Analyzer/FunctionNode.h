@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 class IFunctionOverloadResolver;
@@ -85,6 +86,10 @@ public:
     /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
+    /// Get argument types
+    const DataTypes & getArgumentTypes() const;
+
+    /// Get argument columns
     ColumnsWithTypeAndName getArgumentColumns() const;
 
     /// Returns true if function node has window, false otherwise
@@ -103,13 +108,26 @@ public:
       */
     QueryTreeNodePtr & getWindowNode() { return children[window_child_index]; }
 
-    /** Get non aggregate function.
-      * If function is not resolved nullptr returned.
+    /** Get ordinary function.
+      * If function is not resolved or is resolved as non ordinary function nullptr is returned.
       */
     FunctionBasePtr getFunction() const
     {
         if (kind != FunctionKind::ORDINARY)
             return {};
+        return std::static_pointer_cast<const IFunctionBase>(function);
+    }
+
+    /** Get ordinary function.
+      * If function is not resolved or is resolved as non ordinary function exception is thrown.
+      */
+    FunctionBasePtr getFunctionOrThrow() const
+    {
+        if (kind != FunctionKind::ORDINARY)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+              "Function node with name '{}' is not resolved as ordinary function",
+              function_name);
+
         return std::static_pointer_cast<const IFunctionBase>(function);
     }
 
@@ -143,6 +161,11 @@ public:
       * Function name must be updated accordingly.
       */
     void resolveAsFunction(FunctionBasePtr function_value);
+
+    void resolveAsFunction(const FunctionOverloadResolverPtr & resolver)
+    {
+        resolveAsFunction(resolver->build(getArgumentColumns()));
+    }
 
     /** Resolve function node as aggregate function.
       * It is important that function name is updated with resolved function name.

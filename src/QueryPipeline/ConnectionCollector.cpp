@@ -34,7 +34,7 @@ ConnectionCollector & ConnectionCollector::init(ContextMutablePtr global_context
 {
     if (connection_collector)
     {
-        throw Exception("Connection collector is initialized twice. This is a bug", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection collector is initialized twice. This is a bug");
     }
 
     connection_collector.reset(new ConnectionCollector(global_context_, max_threads));

@@ -114,7 +114,7 @@ Chunk IRowInputFormat::generate()
                     {
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
-                            throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Unexpected empty column");
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
@@ -245,7 +245,7 @@ Chunk IRowInputFormat::generate()
 
 void IRowInputFormat::syncAfterError()
 {
-    throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format");
 }
 
 void IRowInputFormat::resetParser()

@@ -162,7 +162,7 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
         if (!areTypesEqual(expected_type, actual_type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
             "Key type for complex key at position {} does not match, expected {}, found {}",
-            std::to_string(i),
+            i,
             expected_type->getName(),
             actual_type->getName());
     }
@@ -429,9 +429,10 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
     if (!valid_range)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
-            " Actual 'range_min' and 'range_max' type is {}",
-            range_min->type->getName());
+                        "Dictionary structure type of 'range_min' and 'range_max' should "
+                        "be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
+                        " Actual 'range_min' and 'range_max' type is {}",
+                        range_min->type->getName());
     }
 
     if (!range_min->expression.empty() || !range_max->expression.empty())

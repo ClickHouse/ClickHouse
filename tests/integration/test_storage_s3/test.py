@@ -703,6 +703,7 @@ def run_s3_mocks(started_cluster):
             ("mock_s3.py", "resolver", "8080"),
             ("unstable_server.py", "resolver", "8081"),
             ("echo.py", "resolver", "8082"),
+            ("no_list_objects.py", "resolver", "8083"),
         ],
     )
 
@@ -1698,7 +1699,6 @@ def test_ast_auth_headers(started_cluster):
 
 
 def test_environment_credentials(started_cluster):
-    filename = "test.csv"
     bucket = started_cluster.minio_restricted_bucket
 
     instance = started_cluster.instances["s3_with_environment_credentials"]
@@ -1711,3 +1711,54 @@ def test_environment_credentials(started_cluster):
             f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
         ).strip()
     )
+
+    # manually defined access key should override from env
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', 'aws', 'aws123')"
+        )
+
+        assert ei.value.returncode == 243
+        assert "HTTP response code: 403" in ei.value.stderr
+
+
+def test_s3_list_objects_failure(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    filename = "test_no_list_{_partition_id}.csv"
+
+    put_query = f"""
+        INSERT INTO TABLE FUNCTION
+        s3('http://resolver:8083/{bucket}/{filename}', 'CSV', 'c1 UInt32')
+        PARTITION BY c1 % 20
+        SELECT number FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+    """
+
+    run_query(instance, put_query)
+
+    T = 10
+    for _ in range(0, T):
+        started_cluster.exec_in_container(
+            started_cluster.get_container_id("resolver"),
+            [
+                "curl",
+                "-X",
+                "POST",
+                f"http://localhost:8083/reset_counters?max={random.randint(1, 15)}",
+            ],
+        )
+
+        get_query = """
+            SELECT sleep({seconds}) FROM s3('http://resolver:8083/{bucket}/test_no_list_*', 'CSV', 'c1 UInt32')
+            SETTINGS s3_list_object_keys_size = 1, max_threads = {max_threads}, enable_s3_requests_logging = 1
+            """.format(
+            bucket=bucket, seconds=random.random(), max_threads=random.randint(2, 20)
+        )
+
+        with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+            result = run_query(instance, get_query)
+            print(result)
+
+        assert ei.value.returncode == 243
+        assert "Could not list objects" in ei.value.stderr

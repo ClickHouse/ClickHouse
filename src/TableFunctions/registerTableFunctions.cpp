@@ -27,9 +27,12 @@ void registerTableFunctions()
     registerTableFunctionS3(factory);
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
+    registerTableFunctionOSS(factory);
     registerTableFunctionHudi(factory);
     registerTableFunctionDeltaLake(factory);
-    registerTableFunctionOSS(factory);
+#if USE_AVRO
+    registerTableFunctionIceberg(factory);
+#endif
 
 #endif
 

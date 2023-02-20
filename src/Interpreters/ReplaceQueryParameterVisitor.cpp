@@ -24,6 +24,10 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
 }
 
+/// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
+/// and all shared_ptr's that pointed to the original object will now point to the new replaced value.
+/// However, with ASTQueryParameter, we are only assigning a new value to the passed shared_ptr, while
+/// all other shared_ptr's still point to the old ASTQueryParameter.
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
@@ -55,7 +59,7 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     if (search != query_parameters.end())
         return search->second;
     else
-        throw Exception("Substitution " + backQuote(name) + " is not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)

@@ -534,36 +534,64 @@ MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash &
     return it->second;
 }
 
-CSN TransactionLog::getCSN(const TransactionID & tid)
+CSN TransactionLog::getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
     if (tid == Tx::PrehistoricTID)
         return Tx::PrehistoricCSN;
-    return instance().getCSNImpl(tid.getHash());
+    return instance().getCSNImpl(tid.getHash(), failback_with_strict_load_csn);
 }
 
-CSN TransactionLog::getCSN(const TIDHash & tid)
+CSN TransactionLog::getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
     if (tid == Tx::PrehistoricTID.getHash())
         return Tx::PrehistoricCSN;
-    return instance().getCSNImpl(tid);
+    return instance().getCSNImpl(tid, failback_with_strict_load_csn);
 }
 
-CSN TransactionLog::getCSNImpl(const TIDHash & tid_hash) const
+CSN TransactionLog::getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> * failback_with_strict_load_csn) const
 {
     chassert(tid_hash);
     chassert(tid_hash != Tx::EmptyTID.getHash());
 
-    std::lock_guard lock{mutex};
-    auto it = tid_to_csn.find(tid_hash);
-    if (it != tid_to_csn.end())
-        return it->second.csn;
+    {
+        std::lock_guard lock{mutex};
+        auto it = tid_to_csn.find(tid_hash);
+        if (it != tid_to_csn.end())
+            return it->second.csn;
+    }
+
+    /// Usually commit csn checked by load memory with memory_order_relaxed option just for performance improvements
+    /// If fast loading fails than getCSN is called.
+    /// There is a race possible, transaction could be committed concurrently. Right before getCSN has been called. In that case tid_to_csn has no tid_hash but commit csn is set.
+    /// In order to be sure, commit csn has to be loaded with memory_order_seq_cst after lookup at tid_to_csn
+    if (failback_with_strict_load_csn)
+        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+            return maybe_csn;
 
     return Tx::UnknownCSN;
 }
 
-void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid)
+CSN TransactionLog::getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> & failback_with_strict_load_csn)
+{
+    /// failback_with_strict_load_csn is not provided to getCSN
+    /// Because it would be checked after assertTIDIsNotOutdated
+    if (CSN maybe_csn = getCSN(tid))
+        return maybe_csn;
+
+    assertTIDIsNotOutdated(tid, &failback_with_strict_load_csn);
+
+   /// If transaction is not outdated then it might be already committed
+   /// We should load CSN again to distinguish it
+   /// Otherwise the transactiuon hasn't been committed yet
+    if (CSN maybe_csn = failback_with_strict_load_csn.load())
+        return maybe_csn;
+
+    return Tx::UnknownCSN;
+}
+
+void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     if (tid == Tx::PrehistoricTID)
         return;
@@ -572,6 +600,14 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid)
     CSN tail = instance().tail_ptr.load();
     if (tail <= tid.start_csn)
         return;
+
+    /// At this point of execution tail is lesser that tid.start_csn
+    /// This mean that transaction is either outdated or just has been committed concurrently and the tail moved forward.
+    /// If the second case takes place transaction's commit csn has to be set.
+    /// We should load CSN again to distinguish the second case.
+    if (failback_with_strict_load_csn)
+        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+            return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);
 }

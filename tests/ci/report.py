@@ -3,6 +3,7 @@ from ast import literal_eval
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
+from html import escape
 import csv
 import os
 import datetime
@@ -210,7 +211,7 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
             name = line[0]
             status = line[1]
             time = None
-            if len(line) >= 3 and line[2]:
+            if len(line) >= 3 and line[2] and line[2] != "\\N":
                 # The value can be emtpy, but when it's not,
                 # it's the time spent on the test
                 try:
@@ -223,7 +224,10 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestRes
                 # The value can be emtpy, but when it's not,
                 # the 4th value is a pythonic list, e.g. ['file1', 'file2']
                 if with_raw_logs:
-                    result.set_raw_logs(line[3])
+                    # Python does not support TSV, so we unescape manually
+                    result.set_raw_logs(
+                        line[3].replace("\\t", "\t").replace("\\n", "\n")
+                    )
                 else:
                     result.set_log_files(line[3])
 
@@ -372,9 +376,10 @@ def create_test_html_report(
             row += "</tr>"
             rows_part += row
             if test_result.raw_logs is not None:
+                raw_logs = escape(test_result.raw_logs)
                 row = (
                     '<tr class="failed-content">'
-                    f'<td colspan="{colspan}"><pre>{test_result.raw_logs}</pre></td>'
+                    f'<td colspan="{colspan}"><pre>{raw_logs}</pre></td>'
                     "</tr>"
                 )
                 rows_part += row

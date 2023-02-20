@@ -373,6 +373,7 @@ class ClickHouseCluster:
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
         self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
+        self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
         self.up_called = False
@@ -467,6 +468,7 @@ class ClickHouseCluster:
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
+        self.kafka_dir = os.path.join(self.instances_dir, "kafka")
         self.kafka_port = get_free_port()
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
@@ -476,6 +478,7 @@ class ClickHouseCluster:
         self.coredns_host = "coredns"
 
         # available when with_kerberozed_kafka == True
+        # reuses kafka_dir
         self.kerberized_kafka_host = "kerberized_kafka1"
         self.kerberized_kafka_port = get_free_port()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
@@ -1852,6 +1855,8 @@ class ClickHouseCluster:
             exec_cmd = ["docker", "exec"]
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
+            if "privileged" in kwargs:
+                exec_cmd += ["--privileged"]
             result = subprocess_check_call(
                 exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
             )
@@ -2235,13 +2240,22 @@ class ClickHouseCluster:
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
-                break
+                return
             else:
                 retries += 1
                 if retries > max_retries:
-                    raise Exception("Kafka is not available")
+                    break
                 logging.debug("Waiting for Kafka to start up")
                 time.sleep(1)
+
+        try:
+            with open(os.path.join(self.kafka_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_kafka_cmd + ["logs"], stdout=f
+                )
+        except Exception as e:
+            logging.debug("Unable to get logs from docker.")
+        raise Exception("Kafka is not available")
 
     def wait_kerberos_kdc_is_available(self, kerberos_kdc_docker_id, max_retries=50):
         retries = 0
@@ -2601,6 +2615,7 @@ class ClickHouseCluster:
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
+                os.mkdir(self.kafka_dir)
                 subprocess_check_call(
                     self.base_kafka_cmd + common_opts + ["--renew-anon-volumes"]
                 )
@@ -2610,6 +2625,7 @@ class ClickHouseCluster:
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug("Setup kerberized kafka")
+                os.mkdir(self.kafka_dir)
                 run_and_check(
                     self.base_kerberized_kafka_cmd
                     + common_opts
@@ -2841,7 +2857,10 @@ class ClickHouseCluster:
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
                     sanitizer_assert_instance = instance.grep_in_log(
-                        SANITIZER_SIGN, from_host=True, filename="stderr.log"
+                        SANITIZER_SIGN,
+                        from_host=True,
+                        filename="stderr.log",
+                        after=1000,
                     )
                     logging.error(
                         "Sanitizer in instance %s log %s",
@@ -2882,8 +2901,8 @@ class ClickHouseCluster:
 
         if sanitizer_assert_instance is not None:
             raise Exception(
-                "Sanitizer assert found in {} for instance {}".format(
-                    self.docker_logs_path, sanitizer_assert_instance
+                "Sanitizer assert found for instance {}".format(
+                    sanitizer_assert_instance
                 )
             )
         if fatal_log is not None:
@@ -2990,6 +3009,8 @@ services:
             - NET_ADMIN
             - IPC_LOCK
             - SYS_NICE
+            # for umount/mount on fly
+            - SYS_ADMIN
         depends_on: {depends_on}
         user: '{user}'
         env_file:
@@ -3364,6 +3385,7 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
+        content=False,
     ):
         output, error = self.http_query_and_get_answer_with_error(
             sql,
@@ -3375,6 +3397,7 @@ class ClickHouseInstance:
             port=port,
             timeout=timeout,
             retry_strategy=retry_strategy,
+            content=content,
         )
 
         if error:
@@ -3427,6 +3450,7 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
+        content=False,
     ):
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
@@ -3458,7 +3482,7 @@ class ClickHouseInstance:
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
 
         if r.ok:
-            return (r.text, None)
+            return (r.content if content else r.text, None)
 
         code = r.status_code
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
@@ -3635,15 +3659,21 @@ class ClickHouseInstance:
             )
         return len(result) > 0
 
-    def grep_in_log(self, substring, from_host=False, filename="clickhouse-server.log"):
+    def grep_in_log(
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None
+    ):
         logging.debug(f"grep in log called %s", substring)
+        if after is not None:
+            after_opt = "-A{}".format(after)
+        else:
+            after_opt = ""
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
                 ]
             )
         else:
@@ -3651,7 +3681,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
                 ]
             )
         logging.debug("grep result %s", result)
