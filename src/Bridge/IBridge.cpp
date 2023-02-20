@@ -160,7 +160,7 @@ void IBridge::initialize(Application & self)
     hostname = config().getString("listen-host", "127.0.0.1");
     port = config().getUInt("http-port");
     if (port > 0xFFFF)
-        throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range 'http-port': {}", port);
 
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);

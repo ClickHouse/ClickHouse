@@ -149,7 +149,7 @@ Compares two values and returns the minimum. The returned value is converted to 
 **Syntax**
 
 ```sql
-max2(value1, value2)
+min2(value1, value2)
 ```
 
 **Arguments**

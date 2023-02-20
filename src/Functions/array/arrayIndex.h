@@ -390,8 +390,9 @@ public:
         {
             if (!array_type && !map_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array or map.",
-                    getName());
+                    "First argument for function {} must be an array or map. Actual {}",
+                    getName(),
+                    first_argument_type->getName());
 
             inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
         }
@@ -399,8 +400,9 @@ public:
         {
             if (!array_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array.",
-                    getName());
+                    "First argument for function {} must be an array. Actual {}",
+                    getName(),
+                    first_argument_type->getName());
 
             inner_type = array_type->getNestedType();
         }
@@ -583,9 +585,7 @@ private:
                 if (auto res = executeLowCardinality(arguments))
                     return res;
 
-                throw Exception(
-                    "Illegal internal type of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
             }
         }
 
@@ -594,9 +594,7 @@ private:
               || (res = executeConst(arguments, result_type))
               || (res = executeString(arguments))
               || (res = executeGeneric(arguments))))
-            throw Exception(
-                "Illegal internal type of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
 
         return res;
     }
@@ -928,9 +926,7 @@ private:
                     null_map_data,
                     null_map_item);
             else
-                throw Exception(
-                    "Logical error: ColumnConst contains not String nor FixedString column",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Logical error: ColumnConst contains not String nor FixedString column");
         }
         else if (const auto *const item_arg_vector = checkAndGetColumn<ColumnString>(&data.right))
         {

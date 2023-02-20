@@ -209,9 +209,13 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
     {
+        static_assert(sizeof(FieldType) <= sizeof(Key));
         const auto * key_holder = reinterpret_cast<const char *>(&key);
         auto * column = static_cast<ColumnVectorHelper *>(key_columns[0]);
-        column->insertRawData<sizeof(FieldType)>(key_holder);
+        if constexpr (sizeof(FieldType) < sizeof(Key) && std::endian::native == std::endian::big)
+            column->insertRawData<sizeof(FieldType)>(key_holder + (sizeof(Key) - sizeof(FieldType)));
+        else
+            column->insertRawData<sizeof(FieldType)>(key_holder);
     }
 };
 
@@ -863,7 +867,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             #undef M
 
             default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+                throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
     }
 };
@@ -1084,6 +1088,7 @@ private:
     friend struct AggregatedDataVariants;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
+    friend class ConvertingAggregatedToChunksWithMergingSource;
     friend class AggregatingInOrderTransform;
 
     /// Data structure of source blocks.
@@ -1302,6 +1307,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket) const;
+
+    Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
         ManyAggregatedDataVariants & variants,

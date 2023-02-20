@@ -260,6 +260,17 @@ void writeText(const Object & x, WriteBuffer & buf)
     writeFieldText(Field(x), buf);
 }
 
+void writeBinary(const CustomType & x, WriteBuffer & buf)
+{
+    writeBinary(std::string_view(x.getTypeName()), buf);
+    writeBinary(x.toString(), buf);
+}
+
+void writeText(const CustomType & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
+}
+
 template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
@@ -273,7 +284,7 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
     {
         scale = 0;
         if (common::mulOverflow(value.value, DecimalUtils::scaleMultiplier<T>(exponent), value.value))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
     else
         scale = -exponent;
@@ -302,7 +313,7 @@ Field Field::restoreFromDump(std::string_view dump_)
 {
     auto show_error = [&dump_]
     {
-        throw Exception("Couldn't restore Field from dump: " + String{dump_}, ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP);
+        throw Exception(ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP, "Couldn't restore Field from dump: {}", String{dump_});
     };
 
     std::string_view dump = dump_;
@@ -597,6 +608,7 @@ String fieldTypeToString(Field::Types::Which type)
         case Field::Types::Which::UUID: return "UUID";
         case Field::Types::Which::IPv4: return "IPv4";
         case Field::Types::Which::IPv6: return "IPv6";
+        case Field::Types::Which::CustomType: return "CustomType";
     }
 }
 
