@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS t;
+
+SET param_o = 'a';
+CREATE TABLE t (a Int64) ENGINE=MergeTree ORDER BY ({o:String}); -- { serverError UNKNOWN_QUERY_PARAMETER }
+
+DROP TABLE IF EXISTS t;
