@@ -39,7 +39,7 @@ public:
 
 private:
     void finalizeImpl() override;
-    void execWithRetry(std::function<void()> func, size_t num_tries);
+    void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
     Poco::Logger * log;

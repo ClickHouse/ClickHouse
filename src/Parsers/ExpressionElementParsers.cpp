@@ -1619,7 +1619,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
-            replacement->expr = std::move(expr);
+            replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
         };

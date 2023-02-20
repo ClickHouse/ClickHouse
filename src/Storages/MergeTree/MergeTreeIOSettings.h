@@ -3,6 +3,8 @@
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/WriteSettings.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 
 
 namespace DB

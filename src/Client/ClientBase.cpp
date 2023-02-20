@@ -1616,13 +1616,27 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->settings_ast)
+        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
+            apply_query_settings(*select->settings());
+        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
+        {
+            const ASTs & children = select_with_union->list_of_selects->children;
+            if (!children.empty())
+            {
+                // On the client it is enough to apply settings only for the
+                // last SELECT, since the only thing that is important to apply
+                // on the client is format settings.
+                const auto * last_select = children.back()->as<ASTSelectQuery>();
+                if (last_select && last_select->settings())
+                {
+                    apply_query_settings(*last_select->settings());
+                }
+            }
+        }
+        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
+            apply_query_settings(*query_with_output->settings_ast);
+        else if (insert && insert->settings_ast)
             apply_query_settings(*insert->settings_ast);
-
-        /// FIXME: try to prettify this cast using `as<>()`
-        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-        if (with_output && with_output->settings_ast)
-            apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
@@ -2345,6 +2359,22 @@ void ClientBase::showClientVersion()
     std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
+namespace
+{
+
+/// Define transparent hash to we can use
+/// std::string_view with the containers
+struct TransparentStringHash
+{
+    using is_transparent = void;
+    size_t operator()(std::string_view txt) const
+    {
+        return std::hash<std::string_view>{}(txt);
+    }
+};
+
+}
+
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
@@ -2360,19 +2390,35 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         /// skip ambiguous merge tree settings.
         auto & main_options = options_description.main_description.value();
 
-        NameSet main_option_names;
+        std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> main_option_names;
         for (const auto & option : main_options.options())
             main_option_names.insert(option->long_name());
 
         for (const auto & setting : cmd_merge_tree_settings.all())
         {
-            if (main_option_names.contains(setting.getName()))
-                continue;
+            const auto add_setting = [&](const std::string_view name)
+            {
+                if (auto it = main_option_names.find(name); it != main_option_names.end())
+                    return;
 
-            if (allow_repeated_settings)
-                cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, setting);
-            else
-                cmd_merge_tree_settings.addProgramOption(main_options, setting);
+                if (allow_repeated_settings)
+                    cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, name, setting);
+                else
+                    cmd_merge_tree_settings.addProgramOption(main_options, name, setting);
+            };
+
+            const auto & setting_name = setting.getName();
+
+            add_setting(setting_name);
+
+            const auto & settings_to_aliases = MergeTreeSettings::Traits::settingsToAliases();
+            if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
+            {
+                for (const auto alias : it->second)
+                {
+                    add_setting(alias);
+                }
+            }
         }
     }
 
