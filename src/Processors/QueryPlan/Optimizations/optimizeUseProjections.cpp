@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/matchTrees.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -52,10 +52,10 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
-        std::cerr << "============ Found ReadFromMergeTreen";
+        //std::cerr << "============ Found ReadFromMergeTreen";
         if (const auto * prewhere_info = reading->getPrewhereInfo())
         {
-            std::cerr << "============ Found prewhere info\n";
+            //std::cerr << "============ Found prewhere info\n";
             if (prewhere_info->row_level_filter)
             {
                 appendExpression(dag, prewhere_info->row_level_filter);
@@ -67,9 +67,9 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
 
             if (prewhere_info->prewhere_actions)
             {
-                std::cerr << "============ Found prewhere actions\n";
+                //std::cerr << "============ Found prewhere actions\n";
                 appendExpression(dag, prewhere_info->prewhere_actions);
-                std::cerr << "============ Cur dag \n" << dag->dumpDAG();
+                //std::cerr << "============ Cur dag \n" << dag->dumpDAG();
                 need_remove_column = prewhere_info->remove_prewhere_column;
                 if (const auto * filter_node = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
                     filter_nodes.push_back(filter_node);
@@ -93,7 +93,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
             return false;
 
         appendExpression(dag, actions);
-        std::cerr << "============ Cur e dag \n" << dag->dumpDAG();
+        //std::cerr << "============ Cur e dag \n" << dag->dumpDAG();
         need_remove_column = false;
         return true;
     }
@@ -105,7 +105,7 @@ static bool buildAggregatingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, Act
             return false;
 
         appendExpression(dag, actions);
-        std::cerr << "============ Cur f dag \n" << dag->dumpDAG();
+        //std::cerr << "============ Cur f dag \n" << dag->dumpDAG();
         need_remove_column = filter->removesFilterColumn();
         const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName());
         if (!filter_expression)
@@ -282,8 +282,8 @@ ActionsDAGPtr analyzeAggregateProjection(
             const auto & candidate = info.aggregates[idx];
 
             /// Note: this check is a bit strict.
-            /// We check that aggregate function names, arguemnt types and parameters are equal.
-            /// In some cases it's possilbe only to check that states are equal,
+            /// We check that aggregate function names, argument types and parameters are equal.
+            /// In some cases it's possible only to check that states are equal,
             /// e.g. for quantile(0.3)(...) and quantile(0.5)(...).
             /// But also functions sum(...) and sumIf(...) will have equal states,
             /// and we can't replace one to another from projection.
@@ -709,7 +709,7 @@ bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
         proj_snapshot->addProjection(best_candidate->projection);
 
-        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}",  proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}", proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
 
         projection_reading = reader.readFromParts(
             {},
@@ -966,7 +966,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
     proj_snapshot->addProjection(best_candidate->projection);
 
-    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}",  proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
+    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}", proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
 
     auto query_info_copy = query_info;
     query_info_copy.prewhere_info = nullptr;
