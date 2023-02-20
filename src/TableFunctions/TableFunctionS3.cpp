@@ -29,7 +29,8 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration)
+void TableFunctionS3::parseArgumentsImpl(
+    const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration, bool get_format_from_file)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
     {
@@ -48,7 +49,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
         /// Size -> argument indexes
-        static auto size_to_args = std::map<size_t, std::map<String, size_t>>
+        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_args
         {
             {1, {{}}},
             {2, {{"format", 1}}},
@@ -56,7 +57,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
         };
 
-        std::map<String, size_t> args_to_idx;
+        std::unordered_map<std::string_view, size_t> args_to_idx;
         /// For 4 arguments we support 2 possible variants:
         /// s3(source, format, structure, compression_method) and s3(source, access_key_id, access_key_id, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
@@ -105,7 +106,8 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             s3_configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
     }
 
-    if (s3_configuration.format == "auto")
+    /// For DataLake table functions, we should specify default format.
+    if (s3_configuration.format == "auto" && get_format_from_file)
         s3_configuration.format = FormatFactory::instance().getFormatFromFileName(s3_configuration.url.uri.getPath(), true);
 }
 
@@ -114,17 +116,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     /// Parse args
     ASTs & args_func = ast_function->children;
 
-    const auto message = fmt::format(
-        "The signature of table function {} could be the following:\n" \
-        " - url\n" \
-        " - url, format\n" \
-        " - url, format, structure\n" \
-        " - url, access_key_id, secret_access_key\n" \
-        " - url, format, structure, compression_method\n" \
-        " - url, access_key_id, secret_access_key, format\n" \
-        " - url, access_key_id, secret_access_key, format, structure\n" \
-        " - url, access_key_id, secret_access_key, format, structure, compression_method",
-        getName());
+    const auto message = fmt::format("The signature of table function '{}' could be the following:\n{}", getName(), signature);
 
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
@@ -139,7 +131,7 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) 
     if (configuration.structure == "auto")
     {
         context->checkAccess(getSourceAccessType());
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+        return StorageS3::getTableStructureFromData(configuration, std::nullopt, context);
     }
 
     return parseColumnsListFromString(configuration.structure, context);

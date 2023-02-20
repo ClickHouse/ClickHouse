@@ -18,9 +18,6 @@
 #include "Poco/Exception.h"
 #include <algorithm>
 #include <ctime>
-#if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-#include "wce_time.h"
-#endif
 
 
 namespace Poco {
@@ -261,22 +258,13 @@ void LocalDateTime::determineTzd(bool adjust)
 	{
 		std::time_t epochTime = _dateTime.timestamp().epochTime();
 #if defined(_WIN32) || defined(POCO_NO_POSIX_TSF)
-#if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-		std::tm* broken = wceex_localtime(&epochTime);
-#else
 		std::tm* broken = std::localtime(&epochTime);
-#endif
 		if (!broken) throw Poco::SystemException("cannot get local time");
 		_tzd = (Timezone::utcOffset() + ((broken->tm_isdst == 1) ? 3600 : 0));
 #else
 		std::tm broken;
-#if defined(POCO_VXWORKS)
-		if (localtime_r(&epochTime, &broken) != OK)
-			throw Poco::SystemException("cannot get local time");
-#else
 		if (!localtime_r(&epochTime, &broken))
 			throw Poco::SystemException("cannot get local time");
-#endif
 		_tzd = (Timezone::utcOffset() + ((broken.tm_isdst == 1) ? 3600 : 0));
 #endif
 		adjustForTzd();
@@ -302,11 +290,7 @@ std::time_t LocalDateTime::dstOffset(int& dstOffset) const
 	broken.tm_min   = _dateTime.minute();
 	broken.tm_sec   = _dateTime.second();
 	broken.tm_isdst = -1;
-#if defined(_WIN32_WCE) && _WIN32_WCE < 0x800
-	local = wceex_mktime(&broken);
-#else
 	local = std::mktime(&broken);
-#endif
 	
 	dstOffset = (broken.tm_isdst == 1) ? 3600 : 0;
 	return local;

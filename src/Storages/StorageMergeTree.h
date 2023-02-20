@@ -83,6 +83,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
@@ -165,6 +166,7 @@ private:
             const String & partition_id,
             bool final, bool deduplicate,
             const Names & deduplicate_by_columns,
+            bool cleanup,
             const MergeTreeTransactionPtr & txn,
             String * out_disable_reason = nullptr,
             bool optimize_skip_merged_partitions = false);

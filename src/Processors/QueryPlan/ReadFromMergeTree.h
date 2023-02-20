@@ -158,7 +158,14 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
     const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
-    void requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+    /// Returns `false` if requested reading cannot be performed.
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
+
+    static bool isFinal(const SelectQueryInfo & query_info);
+
+    /// Returns true if the optimisation is applicable (and applies it then).
+    bool requestOutputEachPartitionThroughSeparatePort();
+    bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
@@ -173,6 +180,8 @@ private:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log);
+
+    bool isQueryWithFinal() const;
 
     int getSortDirection() const
     {
@@ -209,6 +218,9 @@ private:
     const size_t preferred_max_column_in_block_size_bytes;
     const bool sample_factor_column_queried;
 
+    /// Used for aggregation optimisation (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
+    bool output_each_partition_through_separate_port = false;
+
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
 
     Poco::Logger * log;
@@ -224,20 +236,22 @@ private:
     template<typename TSource>
     ProcessorPtr createSource(const RangesInDataPart & part, const Names & required_columns, bool use_uncompressed_cache, bool has_limit_below_one_block, MergeTreeInOrderReadPoolParallelReplicasPtr pool);
 
-    Pipe spreadMarkRangesAmongStreams(
-        RangesInDataParts && parts_with_ranges,
-        const Names & column_names);
+    Pipe spreadMarkRanges(
+        RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, ActionsDAGPtr & result_projection);
+
+    Pipe groupStreamsByPartition(AnalysisResult & result, ActionsDAGPtr & result_projection);
+
+    Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
+        size_t num_streams,
         const Names & column_names,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
     Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts,
-        const Names & column_names,
-        ActionsDAGPtr & out_projection);
+        RangesInDataParts && parts, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection);
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
