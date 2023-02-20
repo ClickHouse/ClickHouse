@@ -23,6 +23,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <QueryPipeline/Chain.h>
 
 namespace DB
 {
@@ -160,6 +162,8 @@ public:
 
             external_tables.emplace(external_table_name, external_storage_holder);
 
+            const auto & settings = getContext()->getSettingsRef();
+
             /// We need to materialize external tables immediately because reading from distributed
             /// tables might generate local plans which can refer to external tables during index
             /// analysis. It's too late to populate the external table via CreatingSetsTransform.
@@ -167,12 +171,18 @@ public:
             {
                 /// Do not materialize external tables if it's explain statement.
             }
-            else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
+            else if (settings.use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                io.pipeline.complete(std::move(table_out));
+                Chain chain;
+                /// We don't check `external_table->prefersLargeBlocks()` here because we're more concerned about how fast
+                /// the blocks of data will reach the initiator rather than what is more optimal from storage perspective.
+                chain.addSource(std::make_unique<SquashingChunksTransform>(
+                    table_out->getHeader(), settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes));
+                chain.addSink(std::move(table_out));
+                io.pipeline.complete(std::move(chain));
                 CompletedPipelineExecutor executor(io.pipeline);
                 executor.execute();
             }
