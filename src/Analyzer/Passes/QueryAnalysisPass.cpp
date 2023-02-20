@@ -3647,7 +3647,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
     if (!table_expression_node)
     {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
             "Qualified matcher {} does not find table. In scope {}",
             matcher_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
