@@ -210,7 +210,7 @@ private:
         ColumnString::Offsets & res_offsets)
     {
         size_t rows = column_index->size();
-        res_data.reserve(str.size() / 5);
+        res_data.reserve(rows * str.size() / 5);
         res_offsets.reserve(rows);
 
         /// Copy data into padded array to be able to use memcpySmallAllowReadWriteOverflow15.
