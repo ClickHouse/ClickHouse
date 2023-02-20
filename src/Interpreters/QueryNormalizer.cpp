@@ -118,6 +118,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
                 alias_node->checkSize(data.settings.max_expanded_ast_elements);
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
+                if (data.finished_asts.contains(alias_node))
+                    data.finished_asts[ast] = ast;
             }
         }
         else
@@ -127,6 +129,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             auto alias_name = ast->getAliasOrColumnName();
             ast = alias_node->clone();
             ast->setAlias(alias_name);
+            if (data.finished_asts.contains(alias_node))
+                data.finished_asts[ast] = ast;
         }
     }
 }
