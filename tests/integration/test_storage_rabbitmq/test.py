@@ -1033,8 +1033,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_num_consumers = 2,
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -1044,8 +1043,6 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'over',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
