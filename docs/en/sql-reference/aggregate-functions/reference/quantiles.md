@@ -122,7 +122,7 @@ Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a nu
 **Syntax**
 
 ``` sql
-quantileGK(accuracy, level1, level2, ...)(expr)
+quantilesGK(accuracy, level1, level2, ...)(expr)
 ```
 
 **Arguments**
