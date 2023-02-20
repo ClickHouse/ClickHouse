@@ -879,7 +879,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         buffer.data.swap(block_to_write);
 
-        if (!buffer.first_write_time) // -V547
+        if (!buffer.first_write_time)
             buffer.first_write_time = current_time;
 
         /// After a while, the next write attempt will happen.

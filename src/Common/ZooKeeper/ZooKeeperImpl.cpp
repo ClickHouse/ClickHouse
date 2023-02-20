@@ -826,7 +826,7 @@ void ZooKeeper::receiveEvent()
         if (length != actual_length)
             throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
 
-        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);   //-V614
+        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
     }
     catch (...)
     {
