@@ -239,8 +239,6 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
-#ifndef KEEPER_STANDALONE_BUILD
-
 struct SettingFieldMap
 {
 public:
@@ -263,8 +261,6 @@ public:
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
-
-#endif
 
 struct SettingFieldChar
 {

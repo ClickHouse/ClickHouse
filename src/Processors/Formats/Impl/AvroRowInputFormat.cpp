@@ -68,35 +68,35 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-class InputStreamReadBufferAdapter : public avro::InputStream
+bool AvroInputStreamReadBufferAdapter::next(const uint8_t ** data, size_t * len)
 {
-public:
-    explicit InputStreamReadBufferAdapter(ReadBuffer & in_) : in(in_) {}
-
-    bool next(const uint8_t ** data, size_t * len) override
+    if (in.eof())
     {
-        if (in.eof())
-        {
-            *len = 0;
-            return false;
-        }
-
-        *data = reinterpret_cast<const uint8_t *>(in.position());
-        *len = in.available();
-
-        in.position() += in.available();
-        return true;
+        *len = 0;
+        return false;
     }
 
-    void backup(size_t len) override { in.position() -= len; }
+    *data = reinterpret_cast<const uint8_t *>(in.position());
+    *len = in.available();
 
-    void skip(size_t len) override { in.tryIgnore(len); }
+    in.position() += in.available();
+    return true;
+}
 
-    size_t byteCount() const override { return in.count(); }
+void AvroInputStreamReadBufferAdapter::backup(size_t len)
+{
+    in.position() -= len;
+}
 
-private:
-    ReadBuffer & in;
-};
+void AvroInputStreamReadBufferAdapter::skip(size_t len)
+{
+    in.tryIgnore(len);
+}
+
+size_t AvroInputStreamReadBufferAdapter::byteCount() const
+{
+    return in.count();
+}
 
 /// Insert value with conversion to the column of target type.
 template <typename T>
@@ -757,7 +757,7 @@ AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, 
 
 void AvroRowInputFormat::readPrefix()
 {
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(*in));
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*in));
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.avro.null_as_default);
     file_reader_ptr->init();
@@ -914,7 +914,7 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
 
 void AvroConfluentRowInputFormat::readPrefix()
 {
-    input_stream = std::make_unique<InputStreamReadBufferAdapter>(*in);
+    input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*in);
     decoder = avro::binaryDecoder();
     decoder->init(*input_stream);
 }
@@ -971,7 +971,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     }
     else
     {
-        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
+        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(in));
         root_node = file_reader_ptr->dataSchema().root();
     }
 

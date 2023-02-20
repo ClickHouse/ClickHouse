@@ -56,6 +56,13 @@ class Reviews:
             logging.info("There aren't reviews for PR #%s", self.pr.number)
             return False
 
+        logging.info(
+            "The following users have reviewed the PR:\n  %s",
+            "\n  ".join(
+                f"{user.login}: {review.state}" for user, review in self.reviews.items()
+            ),
+        )
+
         filtered_reviews = {
             user: review
             for user, review in self.reviews.items()
@@ -125,7 +132,11 @@ class Reviews:
                 return False
             return True
 
-        logging.info("The PR #%s is not approved", self.pr.number)
+        logging.info(
+            "The PR #%s is not approved by any of %s team member",
+            self.pr.number,
+            TEAM_NAME,
+        )
         return False
 
 
