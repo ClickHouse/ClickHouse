@@ -2,6 +2,8 @@
     <profiles>
         <default>
             <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
+            <!-- One test is expecting the interruption after blocking ZooKeeper -->
+            <test_kafka_no_holes_when_write_suffix_failed>0</test_kafka_no_holes_when_write_suffix_failed>
         </default>
     </profiles>
 </clickhouse>
