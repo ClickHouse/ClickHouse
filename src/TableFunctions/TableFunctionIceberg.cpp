@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_AWS_S3
+#if USE_AWS_S3 && USE_AVRO
 
 #    include <Storages/StorageIceberg.h>
 #    include <TableFunctions/ITableFunctionDataLake.h>

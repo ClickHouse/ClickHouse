@@ -2,7 +2,8 @@
 
 #include "config.h"
 
-#if USE_AWS_S3
+// StorageIceberg depending on Avro to parse metadata with Avro format.
+#if USE_AWS_S3 && USE_AVRO
 
 #    include <Storages/IStorageDataLake.h>
 #    include <Storages/S3DataLakeMetadataReadHelper.h>

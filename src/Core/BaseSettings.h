@@ -1018,7 +1018,6 @@ struct DefineAliases
     \
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
-//-V:IMPLEMENT_SETTINGS:501
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \

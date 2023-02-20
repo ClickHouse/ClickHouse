@@ -71,17 +71,24 @@ size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Node
 ///                      - Something -                    - Expression - Something -
 size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
+size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 9> optimizations = {{
+    static const std::array<Optimization, 10> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryReuseStorageOrderingForWindowFunctions,
+         "reuseStorageOrderingForWindowFunctions",
+         &QueryPlanOptimizationSettings::optimize_plan},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryAggregatePartitionsIndependently,
+         "aggregatePartitionsIndependently",
+         &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
     }};
 
