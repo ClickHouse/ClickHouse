@@ -275,7 +275,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
             assert(tuple || func);
 
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
+            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
             if (tuple_size != num_columns)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
                     tuple_size, num_columns);
