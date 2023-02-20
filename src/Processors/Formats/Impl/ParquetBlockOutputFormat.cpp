@@ -44,6 +44,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         auto sink = std::make_shared<ArrowBufferedOutputStream>(out);
 
         parquet::WriterProperties::Builder builder;
+        builder.version(parquet::ParquetVersion::PARQUET_2_LATEST);
 #if USE_SNAPPY
         builder.compression(parquet::Compression::SNAPPY);
 #endif
