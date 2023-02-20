@@ -167,6 +167,8 @@ public:
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
     static bool isFinal(const SelectQueryInfo & query_info);
+    bool isQueryWithFinal() const;
+    bool isQueryWithSampling() const;
 
     /// Returns true if the optimisation is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
@@ -196,8 +198,6 @@ private:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log);
-
-    bool isQueryWithFinal() const;
 
     int getSortDirection() const
     {

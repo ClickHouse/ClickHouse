@@ -504,6 +504,15 @@ bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (reading->hasAnalyzedResult())
         return false;
 
+    if (reading->isQueryWithFinal())
+        return false;
+
+    if (reading->isQueryWithSampling())
+        return false;
+
+    if (reading->isParallelReadingEnabled())
+        return false;
+
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 5");
 
     const auto metadata = reading->getStorageMetadata();
@@ -790,6 +799,15 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     /// Probably some projection already was applied.
     if (reading->hasAnalyzedResult())
+        return false;
+
+    if (reading->isQueryWithFinal())
+        return false;
+
+    if (reading->isQueryWithSampling())
+        return false;
+
+    if (reading->isParallelReadingEnabled())
         return false;
 
     auto iter = stack.rbegin();
