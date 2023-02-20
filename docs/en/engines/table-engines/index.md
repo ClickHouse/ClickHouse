@@ -76,6 +76,7 @@ Engines in the family:
 -   [View](../../engines/table-engines/special/view.md#table_engines-view)
 -   [Memory](../../engines/table-engines/special/memory.md#memory)
 -   [Buffer](../../engines/table-engines/special/buffer.md#buffer)
+-   [KeeperMap](../../engines/table-engines/special/keepermap.md)
 
 ## Virtual Columns {#table_engines-virtual_columns}
 

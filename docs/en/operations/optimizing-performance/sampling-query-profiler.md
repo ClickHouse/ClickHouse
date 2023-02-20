@@ -60,7 +60,3 @@ GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10
 ```
-
-``` text
-{% include "examples/sampling_query_profiler_result.txt" %}
-```

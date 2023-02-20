@@ -149,8 +149,9 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
         /// It is expected by execution layer that if there are only 1 grouping set it will be removed
         if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.getGroupBy().getNodes().size() == 1)
         {
-            auto & grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front()->as<ListNode &>();
-            query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node.getNodes());
+            auto grouping_set_list_node = query_node_typed.getGroupBy().getNodes().front();
+            auto & grouping_set_list_node_typed = grouping_set_list_node->as<ListNode &>();
+            query_node_typed.getGroupBy().getNodes() = std::move(grouping_set_list_node_typed.getNodes());
             query_node_typed.setIsGroupByWithGroupingSets(false);
         }
 
