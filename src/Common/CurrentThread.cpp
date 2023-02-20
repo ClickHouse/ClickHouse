@@ -110,4 +110,26 @@ ThreadGroupStatusPtr CurrentThread::getGroup()
     return current_thread->getThreadGroup();
 }
 
+MemoryTracker * CurrentThread::getUserMemoryTracker()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    if (auto group = current_thread->getThreadGroup())
+        return group->memory_tracker.getParent();
+
+    return nullptr;
+}
+
+void CurrentThread::flushUntrackedMemory()
+{
+    if (unlikely(!current_thread))
+        return;
+    if (current_thread->untracked_memory == 0)
+        return;
+
+    current_thread->memory_tracker.adjustWithUntrackedMemory(current_thread->untracked_memory);
+    current_thread->untracked_memory = 0;
+}
+
 }
