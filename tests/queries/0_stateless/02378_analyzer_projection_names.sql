@@ -1,4 +1,5 @@
 SET allow_experimental_analyzer = 1;
+SET single_join_prefer_left_table = 0;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
@@ -254,7 +255,7 @@ DESCRIBE (WITH x -> x + 1 AS test_lambda SELECT test_lambda(1));
 
 SELECT '--';
 
-DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS value, value FROM test_table);
+DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS lambda_value, lambda_value FROM test_table);
 
 SELECT 'Subquery';
 

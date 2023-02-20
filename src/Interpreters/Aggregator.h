@@ -1088,6 +1088,7 @@ private:
     friend struct AggregatedDataVariants;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
+    friend class ConvertingAggregatedToChunksWithMergingSource;
     friend class AggregatingInOrderTransform;
 
     /// Data structure of source blocks.
@@ -1306,6 +1307,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket) const;
+
+    Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
         ManyAggregatedDataVariants & variants,

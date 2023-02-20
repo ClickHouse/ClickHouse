@@ -246,7 +246,7 @@ std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_c
         /// And use setting from query context.
         /// It works, because queries with the same set of settings are already grouped together.
         if (data->size_in_bytes >= key.settings.async_insert_max_data_size
-            || data->query_number >= key.settings.async_insert_max_query_number)
+            || (data->query_number >= key.settings.async_insert_max_query_number && key.settings.async_insert_deduplicate))
         {
             data_to_process = std::move(data);
             shard.iterators.erase(it);

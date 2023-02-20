@@ -32,8 +32,9 @@ def create_buckets_s3(cluster):
             # a String, b UInt64
             data = []
 
-            for number in range(100):
-                data.append([str(number) * 10, number])
+            # Make all files a bit different
+            for number in range(100 + file_number):
+                data.append([str(number + file_number) * 10, number + file_number])
 
             writer = csv.writer(f)
             writer.writerows(data)
@@ -326,3 +327,39 @@ def test_distributed_insert_select_with_replicated(started_cluster):
     first_replica_first_shard.query(
         """DROP TABLE IF EXISTS insert_select_replicated_local ON CLUSTER 'first_shard' SYNC;"""
     )
+
+
+def test_parallel_distributed_insert_select_with_schema_inference(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    node.query(
+        """DROP TABLE IF EXISTS parallel_insert_select ON CLUSTER 'first_shard' SYNC;"""
+    )
+
+    node.query(
+        """
+    CREATE TABLE parallel_insert_select ON CLUSTER 'first_shard' (a String, b UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select_with_replicated', '{replica}')
+    ORDER BY (a, b);
+        """
+    )
+
+    node.query(
+        """
+    INSERT INTO parallel_insert_select SELECT * FROM s3Cluster(
+        'first_shard',
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV'
+    ) SETTINGS parallel_distributed_insert_select=1, use_structure_from_insertion_table_in_table_functions=0;
+        """
+    )
+
+    node.query("SYSTEM SYNC REPLICA parallel_insert_select")
+
+    actual_count = int(
+        node.query(
+            "SELECT count() FROM s3('http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')"
+        )
+    )
+
+    count = int(node.query("SELECT count() FROM parallel_insert_select"))
+    assert count == actual_count
