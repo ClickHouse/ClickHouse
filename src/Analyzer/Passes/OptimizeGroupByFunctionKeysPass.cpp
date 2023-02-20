@@ -18,8 +18,11 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<OptimizeGroupByFunctionKeysVisitor>;
     using Base::Base;
 
-    static bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & child)
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        if (parent->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return false;
+
         return !child->as<FunctionNode>();
     }
 
@@ -62,7 +65,7 @@ private:
 
         std::vector<NodeWithInfo> candidates;
         auto & function_arguments = function->getArguments().getNodes();
-        bool is_deterministic = function->getFunction()->isDeterministicInScopeOfQuery();
+        bool is_deterministic = function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
         for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
             candidates.push_back({ *it, is_deterministic });
 
@@ -86,7 +89,8 @@ private:
 
                     if (!found)
                     {
-                        bool is_deterministic_function = parents_are_only_deterministic && function->getFunction()->isDeterministicInScopeOfQuery();
+                        bool is_deterministic_function = parents_are_only_deterministic &&
+                            function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
                             candidates.push_back({ *it, is_deterministic_function });
                     }

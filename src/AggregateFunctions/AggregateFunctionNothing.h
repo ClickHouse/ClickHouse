@@ -19,17 +19,12 @@ struct Settings;
 class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
-    AggregateFunctionNothing(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, createResultType(arguments)) {}
+    AggregateFunctionNothing(const DataTypes & arguments, const Array & params, const DataTypePtr & result_type_)
+        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, result_type_) {}
 
     String getName() const override
     {
         return "nothing";
-    }
-
-    static DataTypePtr createResultType(const DataTypes & arguments)
-    {
-        return arguments.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : arguments.front();
     }
 
     bool allocatesMemoryInArena() const override { return false; }

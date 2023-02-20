@@ -103,9 +103,6 @@ public:
             size_t max_block_size,
             size_t num_streams) override
     {
-        String cnames;
-        for (const auto & c : column_names)
-            cnames += c + " ";
         auto storage = getNested();
         auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,

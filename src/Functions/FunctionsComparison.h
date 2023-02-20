@@ -85,7 +85,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -112,12 +112,25 @@ struct NumComparisonImpl
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            vectorVectorImplAVX512BW(a, b, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            vectorVectorImplAVX512F(a, b, c);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorVectorImplAVX2(a, b, c);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             vectorVectorImplSSE42(a, b, c);
             return;
@@ -128,7 +141,7 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -148,12 +161,25 @@ struct NumComparisonImpl
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            vectorConstantImplAVX512BW(a, b, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX512F))
+        {
+            vectorConstantImplAVX512F(a, b, c);
+            return;
+        }
+
         if (isArchSupported(TargetArch::AVX2))
         {
             vectorConstantImplAVX2(a, b, c);
             return;
         }
-        else if (isArchSupported(TargetArch::SSE42))
+
+        if (isArchSupported(TargetArch::SSE42))
         {
             vectorConstantImplSSE42(a, b, c);
             return;

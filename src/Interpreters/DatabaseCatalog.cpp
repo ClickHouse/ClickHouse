@@ -152,20 +152,30 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
 
-void DatabaseCatalog::loadDatabases()
+void DatabaseCatalog::createBackgroundTasks()
 {
+    /// It has to be done before databases are loaded (to avoid a race condition on initialization)
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
             = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
+    }
+
+    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
+}
+
+void DatabaseCatalog::startupBackgroundCleanup()
+{
+    /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
+    if (cleanup_task)
+    {
         (*cleanup_task)->activate();
         /// Do not start task immediately on server startup, it's not urgent.
         (*cleanup_task)->scheduleAfter(unused_dir_hide_timeout_sec * 1000);
     }
 
-    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
-    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
     std::lock_guard lock{tables_marked_dropped_mutex};
     if (!tables_marked_dropped.empty())

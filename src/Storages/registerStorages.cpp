@@ -35,6 +35,9 @@ void registerStorageCOS(StorageFactory & factory);
 void registerStorageOSS(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageDeltaLake(StorageFactory & factory);
+#if USE_AVRO
+void registerStorageIceberg(StorageFactory & factory);
+#endif
 #endif
 
 #if USE_HDFS
@@ -124,6 +127,11 @@ void registerStorages()
     registerStorageOSS(factory);
     registerStorageHudi(factory);
     registerStorageDeltaLake(factory);
+
+    #if USE_AVRO
+    registerStorageIceberg(factory);
+    #endif
+
     #endif
 
     #if USE_HDFS
