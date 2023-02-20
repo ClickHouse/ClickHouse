@@ -32,6 +32,16 @@ def start_cluster():
             with_minio=True,
             macros={"replica": "node2", "shard": "shard1"},
         )
+        cluster.add_instance(
+            "node3",
+            main_configs=[
+                "configs/config.d/storage_configuration.xml",
+                "configs/config.d/remote_servers.xml",
+                "configs/config.d/mergetree_settings.xml",
+            ],
+            stay_alive=True,
+            with_minio=True,
+        )
 
         cluster.start()
         yield cluster
@@ -42,19 +52,6 @@ def start_cluster():
 
 def test_merge_tree_disk_setting(start_cluster):
     node1 = cluster.instances["node1"]
-
-    assert (
-        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
-        in node1.query_and_get_error(
-            f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME} (a Int32)
-        ENGINE = MergeTree()
-        ORDER BY tuple()
-        SETTINGS disk = 'disk_local', storage_policy = 's3';
-    """
-        )
-    )
 
     node1.query(
         f"""
@@ -295,4 +292,78 @@ def test_merge_tree_custom_disk_setting(start_cluster):
         == node2.query(
             f"SELECT disks FROM system.storage_policies WHERE policy_name = '{policy2}'"
         ).strip()
+    )
+
+
+def test_merge_tree_setting_override(start_cluster):
+    node = cluster.instances["node3"]
+    assert (
+        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 'kek', storage_policy = 's3';
+    """
+        )
+    )
+
+    assert "Unknown storage policy" in node.query_and_get_error(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple();
+    """
+    )
+
+    assert "Unknown disk" in node.query_and_get_error(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 'kek';
+    """
+    )
+
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} NO DELAY;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS
+            disk = disk(
+                type=s3,
+                endpoint='http://minio1:9001/root/data/',
+                access_key_id='minio',
+                secret_access_key='minio123');
+    """
+    )
+
+    minio = cluster.minio_client
+    node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
+    assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
+    )
+
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} NO DELAY;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 's3'
+    """
+    )
+
+    minio = cluster.minio_client
+    node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
+    assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
     )

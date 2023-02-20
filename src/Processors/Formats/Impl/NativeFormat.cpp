@@ -55,9 +55,9 @@ private:
 class NativeOutputFormat final : public IOutputFormat
 {
 public:
-    NativeOutputFormat(WriteBuffer & buf, const Block & header)
+    NativeOutputFormat(WriteBuffer & buf, const Block & header, UInt64 client_protocol_version = 0)
         : IOutputFormat(header, buf)
-        , writer(buf, 0, header)
+        , writer(buf, client_protocol_version, header)
     {
     }
 
@@ -115,9 +115,9 @@ void registerOutputFormatNative(FormatFactory & factory)
     factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings & settings)
     {
-        return std::make_shared<NativeOutputFormat>(buf, sample);
+        return std::make_shared<NativeOutputFormat>(buf, sample, settings.client_protocol_version);
     });
 }
 

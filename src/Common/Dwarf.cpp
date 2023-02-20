@@ -1083,7 +1083,7 @@ bool Dwarf::findLocation(
                 // file+line of the non-inlined outer function making the call.
                 // locationInfo.name is already set by the caller by looking up the
                 // non-inlined function @address belongs to.
-                info.has_file_and_line = true; //-V1048
+                info.has_file_and_line = true;
                 info.file = call_locations[0].file;
                 info.line = call_locations[0].line;
 
@@ -1783,7 +1783,7 @@ void Dwarf::LineNumberVM::init()
     lineRange_ = read<uint8_t>(header);
     opcodeBase_ = read<uint8_t>(header);
     SAFE_CHECK(opcodeBase_ != 0, "invalid opcode base");
-    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data()); //-V506
+    standardOpcodeLengths_ = reinterpret_cast<const uint8_t *>(header.data());
     header.remove_prefix(opcodeBase_ - 1);
 
     if (version_ <= 4)
