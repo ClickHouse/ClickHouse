@@ -655,7 +655,7 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
         return false;
 
     ConstSetPtr prepared_set = rhs.tryGetPreparedSet();
-    if (!prepared_set && !prepared_set->hasExplicitSetElements())
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
     for (const auto & data_type : prepared_set->getDataTypes())

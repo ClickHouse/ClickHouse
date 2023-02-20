@@ -28,6 +28,23 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+class AvroInputStreamReadBufferAdapter : public avro::InputStream
+{
+public:
+    explicit AvroInputStreamReadBufferAdapter(ReadBuffer & in_) : in(in_) {}
+
+    bool next(const uint8_t ** data, size_t * len) override;
+
+    void backup(size_t len) override;
+
+    void skip(size_t len) override;
+
+    size_t byteCount() const override;
+
+private:
+    ReadBuffer & in;
+};
+
 class AvroDeserializer
 {
 public:
@@ -185,8 +202,8 @@ public:
 
     NamesAndTypesList readSchema() override;
 
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
 private:
-    DataTypePtr avroNodeToDataType(avro::NodePtr node);
 
     bool confluent;
     const FormatSettings format_settings;

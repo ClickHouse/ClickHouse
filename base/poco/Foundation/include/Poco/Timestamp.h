@@ -140,10 +140,6 @@ public:
     /// Since the timestamp has microsecond resolution,
     /// the returned value is always 1000000.
 
-#if defined(_WIN32)
-    static Timestamp fromFileTimeNP(UInt32 fileTimeLow, UInt32 fileTimeHigh);
-    void toFileTimeNP(UInt32 & fileTimeLow, UInt32 & fileTimeHigh) const;
-#endif
 
 private:
     TimeVal _ts;
