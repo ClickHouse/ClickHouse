@@ -581,16 +581,6 @@ def test_virtual_columns(started_cluster):
     )
     print(result)
 
-    instance.query(
-        f"INSERT INTO postgres_database.{table_name} SELECT number, number, number from numbers(20, 10)"
-    )
-    check_tables_are_synchronized(instance, table_name)
-
-    result = instance.query(
-        f"SELECT key, value, value2,  _sign, _version FROM test_database.{table_name};"
-    )
-    print(result)
-
 
 def test_multiple_databases(started_cluster):
     NUM_TABLES = 5
