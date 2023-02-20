@@ -7,6 +7,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
