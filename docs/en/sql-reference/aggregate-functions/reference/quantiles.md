@@ -114,3 +114,47 @@ Result:
 │ [249.75,499.5,749.25,899.1,949.05,989.01,998.001]                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+## quantilesGK
+
+Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](https://dl.acm.org/doi/10.1145/375663.375670) algorithm.
+
+**Syntax**
+
+``` sql
+quantileGK(accuracy, level1, level2, ...)(expr)
+```
+
+**Arguments**
+
+-   `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+
+**Parameters**
+
+-   `accuracy` — Accuracy of quantile. Constant positive integer. The larger the better.
+
+-   `levelN` — Level of quantile. Constant floating-point number from 0 to 1.
+
+**Returned value**
+
+-   [Array](../../../sql-reference/data-types/array.md) of quantiles of the specified levels.
+
+Type of array values:
+
+-   [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
+-   [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
+-   [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
+
+**Example**
+
+Query:
+
+
+``` sql
+WITH arrayJoin([0, 6, 7, 9, 10]) AS x
+SELECT quantilesGK(100, 0.1, 0.2, 0.3)(x)
+
+┌─quantilesGK(100, 0.1, 0.2, 0.3)(x)─┐
+│ [0,0,6]                            │
+└────────────────────────────────────┘
+```
