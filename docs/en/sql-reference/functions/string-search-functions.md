@@ -901,3 +901,42 @@ SELECT
 │ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
 └──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
 ```
+
+
+## regexpExtractAll(haystack, pattern[, index])
+
+Extracts all the fragments of a string that matches the regexp pattern and corresponds to the regex group index.
+
+**Syntax**
+
+``` sql
+regexpExtractAll(haystack, pattern[, index])
+```
+
+Alias: `REGEXP_EXTRACT_ALL(haystack, pattern[, index])`.
+
+**Arguments**
+
+-   `haystack` — String, in which regexp pattern will to be matched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — String, regexp expression, must be constant. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `index` – An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+`pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression.
+
+Type: `Array(String)`.
+
+**Examples**
+
+``` sql
+SELECT
+    regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)', 1),
+    regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)', 2),
+    regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)', 0),
+    regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)')
+
+┌─regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)', 1)─┬─regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)', 2)─┬─regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)', 0)─┬─regexpExtractAll('100-200 300-400', '(\\d+)-(\\d+)')─┐
+│ ['100','300']                                           │ ['200','400']                                           │ ['100-200','300-400']                                   │ ['100','300']                                        │
+└─────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+```
