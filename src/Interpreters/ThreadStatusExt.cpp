@@ -169,8 +169,10 @@ ProfileEvents::Counters * ThreadStatus::attachProfileCountersScope(ProfileEvents
         /// Allow to attach the same scope multiple times
         return prev_counters;
 
-    if (!performance_counters_scope->getParent())
+    /// Avoid cycles when exiting local scope and attaching back to current thread counters
+    if (performance_counters_scope != &performance_counters)
         performance_counters_scope->setParent(&performance_counters);
+
     current_performance_counters = performance_counters_scope;
 
     return prev_counters;
