@@ -778,15 +778,14 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
 
 void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
 {
+    size_t row = columns[0]->size() + 1;
     ext.read_columns.assign(columns.size(), false);
     row_action.execute(columns, decoder, ext);
     for (size_t i = 0; i < ext.read_columns.size(); ++i)
     {
         /// Insert default in missing columns.
-        if (!column_found[i])
-        {
+        if (columns[i]->size() != row)
             columns[i]->insertDefault();
-        }
     }
 }
 
