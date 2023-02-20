@@ -21,13 +21,7 @@
 #include "Poco/Foundation.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS) && defined(POCO_WIN32_UTF8)
-#    include "Poco/LogFile_WIN32U.h"
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#    include "Poco/LogFile_WIN32.h"
-#else
 #    include "Poco/LogFile_STD.h"
-#endif
 
 
 namespace Poco

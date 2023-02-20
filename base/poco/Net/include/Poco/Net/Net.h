@@ -31,13 +31,6 @@
 // Net_API functions as being imported from a DLL, whereas this DLL sees symbols
 // defined with this macro as being exported.
 //
-#if defined(_WIN32) && defined(POCO_DLL)
-#    if defined(Net_EXPORTS)
-#        define Net_API __declspec(dllexport)
-#    else
-#        define Net_API __declspec(dllimport)
-#    endif
-#endif
 
 
 #if !defined(Net_API)
@@ -52,11 +45,6 @@
 //
 // Automatically link Net library.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(Net_EXPORTS)
-#        pragma comment(lib, "PocoNet" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 // Default to enabled IPv6 support if not explicitly disabled
@@ -91,27 +79,6 @@ namespace Net
 // Automate network initialization (only relevant on Windows).
 //
 
-#if defined(POCO_OS_FAMILY_WINDOWS) && !defined(POCO_NO_AUTOMATIC_LIB_INIT) && !defined(__GNUC__)
-
-extern "C" const struct Net_API NetworkInitializer pocoNetworkInitializer;
-
-#    if defined(Net_EXPORTS)
-#        if defined(_WIN64) || defined(_WIN32_WCE)
-#            define POCO_NET_FORCE_SYMBOL(s) __pragma(comment(linker, "/export:" #            s))
-#        elif defined(_WIN32)
-#            define POCO_NET_FORCE_SYMBOL(s) __pragma(comment(linker, "/export:_" #            s))
-#        endif
-#    else // !Net_EXPORTS
-#        if defined(_WIN64) || defined(_WIN32_WCE)
-#            define POCO_NET_FORCE_SYMBOL(s) __pragma(comment(linker, "/include:" #            s))
-#        elif defined(_WIN32)
-#            define POCO_NET_FORCE_SYMBOL(s) __pragma(comment(linker, "/include:_" #            s))
-#        endif
-#    endif // Net_EXPORTS
-
-POCO_NET_FORCE_SYMBOL(pocoNetworkInitializer)
-
-#endif // POCO_OS_FAMILY_WINDOWS
 
 
 //
