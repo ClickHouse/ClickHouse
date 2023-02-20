@@ -33,6 +33,8 @@ public:
         SourceId source_id_,
         bool is_mutable_);
 
+    bool has(const Key & key) const;
+
     template <typename T> T get(const Key & key) const;
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;

@@ -387,31 +387,41 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, bool require_table)
+{
+    StoragePostgreSQL::Configuration configuration;
+    std::unordered_set<std::string_view> required_arguments = {"user", "password", "database", "table"};
+    if (require_table)
+        required_arguments.insert("table");
+    validateNamedCollection(
+        named_collection, required_arguments,
+        {"schema", "on_conflict", "addresses_expr", "host", "port"});
+
+    configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
+    if (configuration.addresses_expr.empty())
+    {
+        configuration.host = named_collection.get<String>("host");
+        configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
+        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+    }
+
+    configuration.username = named_collection.get<String>("user");
+    configuration.password = named_collection.get<String>("password");
+    configuration.database = named_collection.get<String>("database");
+    if (require_table)
+        configuration.table = named_collection.get<String>("table");
+    configuration.schema = named_collection.getOrDefault<String>("schema", "");
+    configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
+
+    return configuration;
+}
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
     {
-        validateNamedCollection(
-            *named_collection,
-            {"user", "password", "database", "table"},
-            {"schema", "on_conflict", "addresses_expr", "host", "port"});
-
-        configuration.addresses_expr = named_collection->getOrDefault<String>("addresses_expr", "");
-        if (configuration.addresses_expr.empty())
-        {
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-        }
-
-        configuration.username = named_collection->get<String>("user");
-        configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->get<String>("database");
-        configuration.table = named_collection->get<String>("table");
-        configuration.schema = named_collection->getOrDefault<String>("schema", "");
-        configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection);
     }
     else
     {

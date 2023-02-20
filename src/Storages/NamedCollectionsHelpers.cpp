@@ -53,7 +53,7 @@ namespace
 }
 
 
-NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
 {
     if (asts.empty())
         return nullptr;
@@ -62,10 +62,10 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
     if (!collection)
         return nullptr;
 
-    if (asts.size() == 1)
-        return collection;
-
     auto collection_copy = collection->duplicate();
+
+    if (asts.size() == 1)
+        return collection_copy;
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
@@ -78,6 +78,23 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
         const auto & [key, value] = *value_override;
         collection_copy->setOrUpdate<String>(key, toString(value));
     }
+
+    return collection_copy;
+}
+
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+{
+    auto collection_name = config.getString(config_prefix + ".name", "");
+    if (collection_name.empty())
+        return nullptr;
+
+    const auto & collection = NamedCollectionFactory::instance().get(collection_name);
+    auto collection_copy = collection->duplicate();
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    for (const auto & key : keys)
+        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key));
 
     return collection_copy;
 }

@@ -40,12 +40,6 @@ struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
 };
 
 
-struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
-{
-    bool replace_query = false;
-    String on_duplicate_clause;
-};
-
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
 struct ExternalDataSourceInfo

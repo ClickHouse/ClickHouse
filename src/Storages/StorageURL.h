@@ -8,7 +8,6 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/StorageConfiguration.h>
 
