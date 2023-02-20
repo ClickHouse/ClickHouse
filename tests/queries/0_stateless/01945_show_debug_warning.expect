@@ -24,13 +24,13 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 expect ":) "
 
 # Check debug type
-send -- "SELECT value FROM system.build_options WHERE name='BUILD_TYPE'\r"
+send -- "SELECT lower(value) FROM system.build_options WHERE name='BUILD_TYPE'\r"
 expect {
-"Debug"  {
-    set Debug_type 1
-    expect ":) "
+    "debug"  {
+        set Debug_type 1
+        expect ":) "
     }
-"RelWithDebInfo"
+    "relwithdebinfo"
 }
 
 send -- "q\r"
