@@ -74,6 +74,11 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
     }
 }
 
+bool ASTStorage::isExtendedStorageDefinition() const
+{
+    return partition_by || primary_key || order_by || sample_by || settings;
+}
+
 
 class ASTColumnsElement : public IAST
 {

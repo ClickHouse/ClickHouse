@@ -8,6 +8,8 @@
 # Since our replication queue executing tasks concurrently it may happen, that we download already mutated
 # part before source part.
 
+# Messages about deleting of tmp-fetch directories are ok.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

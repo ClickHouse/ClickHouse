@@ -52,7 +52,7 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
-                write_part_log(ExecutionStatus::fromCurrentException());
+                write_part_log(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
         }
@@ -107,6 +107,7 @@ void MergePlainMergeTreeTask::prepare()
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
+            cleanup,
             storage.merging_params,
             txn);
 }

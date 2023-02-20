@@ -10,11 +10,13 @@ from os import getenv
 from pprint import pformat
 from typing import Dict, List
 
+from github.PaginatedList import PaginatedList
 from github.PullRequestReview import PullRequestReview
+from github.WorkflowRun import WorkflowRun
 
 from commit_status_helper import get_commit_filtered_statuses
 from get_robot_token import get_best_robot_token
-from github_helper import GitHub, NamedUser, PullRequest
+from github_helper import GitHub, NamedUser, PullRequest, Repository
 from pr_info import PRInfo
 
 
@@ -53,6 +55,13 @@ class Reviews:
         if not self.reviews:
             logging.info("There aren't reviews for PR #%s", self.pr.number)
             return False
+
+        logging.info(
+            "The following users have reviewed the PR:\n  %s",
+            "\n  ".join(
+                f"{user.login}: {review.state}" for user, review in self.reviews.items()
+            ),
+        )
 
         filtered_reviews = {
             user: review
@@ -123,8 +132,26 @@ class Reviews:
                 return False
             return True
 
-        logging.info("The PR #%s is not approved", self.pr.number)
+        logging.info(
+            "The PR #%s is not approved by any of %s team member",
+            self.pr.number,
+            TEAM_NAME,
+        )
         return False
+
+
+def get_workflows_for_head(repo: Repository, head_sha: str) -> List[WorkflowRun]:
+    # The monkey-patch until the PR is merged:
+    # https://github.com/PyGithub/PyGithub/pull/2408
+    return list(
+        PaginatedList(
+            WorkflowRun,
+            repo._requester,  # type:ignore # pylint:disable=protected-access
+            f"{repo.url}/actions/runs",
+            {"head_sha": head_sha},
+            list_item="workflow_runs",
+        )
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -135,9 +162,24 @@ def parse_args() -> argparse.Namespace:
         "status and green commit statuses could be done",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="if set, the script won't merge the PR, just check the conditions",
+    )
+    parser.add_argument(
         "--check-approved",
         action="store_true",
         help="if set, checks that the PR is approved and no changes required",
+    )
+    parser.add_argument(
+        "--check-running-workflows", default=True, help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--no-check-running-workflows",
+        dest="check_running_workflows",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="(dangerous) if set, skip checking for running workflows for the PR head",
     )
     parser.add_argument("--check-green", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -194,6 +236,19 @@ def main():
         logging.info("The PR #%s is not ready for merge, stopping", pr.number)
         return
 
+    if args.check_running_workflows:
+        workflows = get_workflows_for_head(repo, pr.head.sha)
+        workflows_in_progress = [wf for wf in workflows if wf.status != "completed"]
+        # At most one workflow in progress is fine. We check that there no
+        # cases like, e.g. PullRequestCI and DocksCheck in progress at once
+        if len(workflows_in_progress) > 1:
+            logging.info(
+                "The PR #%s has more than one workflows in progress, check URLs:\n%s",
+                pr.number,
+                "\n".join(wf.html_url for wf in workflows_in_progress),
+            )
+            return
+
     if args.check_green:
         logging.info("Checking that all PR's statuses are green")
         commit = repo.get_commit(pr.head.sha)
@@ -217,7 +272,8 @@ def main():
             return
 
     logging.info("Merging the PR")
-    pr.merge()
+    if not args.dry_run:
+        pr.merge()
 
 
 if __name__ == "__main__":

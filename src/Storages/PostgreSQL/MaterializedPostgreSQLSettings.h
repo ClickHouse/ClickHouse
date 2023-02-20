@@ -11,7 +11,7 @@ namespace DB
     class ASTStorage;
 
 
-#define LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(M) \
+#define LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS(M, ALIAS) \
     M(UInt64, materialized_postgresql_max_block_size, 65536, "Number of row collected before flushing data into table.", 0) \
     M(String, materialized_postgresql_tables_list, "", "List of tables for MaterializedPostgreSQL database engine", 0) \
     M(String, materialized_postgresql_schema_list, "", "List of schemas for MaterializedPostgreSQL database engine", 0) \

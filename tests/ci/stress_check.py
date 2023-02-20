@@ -95,7 +95,7 @@ def process_results(
 
     try:
         results_path = Path(result_folder) / "test_results.tsv"
-        test_results = read_test_results(results_path, False)
+        test_results = read_test_results(results_path, True)
         if len(test_results) == 0:
             raise Exception("Empty results")
     except Exception as e:

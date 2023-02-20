@@ -522,11 +522,13 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    if (query_context->getSettingsRef().check_table_dependencies)
+    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
+    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
+    if (check_ref_deps || check_loading_deps)
     {
         std::lock_guard lock(mutex);
         for (auto & table : tables)
-            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first});
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
     }
 
     try

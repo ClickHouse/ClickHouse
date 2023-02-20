@@ -638,12 +638,15 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
         return false;
 
     auto prepared_set = right_argument.tryGetPreparedSet(data_types);
-    if (!prepared_set)
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
-    for (const auto & data_type : prepared_set->getDataTypes())
-        if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
+    for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
+    {
+        auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
+        if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
             return false;
+    }
 
     std::vector<std::vector<BloomFilter>> bloom_filters;
     std::vector<size_t> key_position;

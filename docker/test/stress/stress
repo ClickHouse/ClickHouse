@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from multiprocessing import cpu_count
-from subprocess import Popen, call, check_output, STDOUT
+from subprocess import Popen, call, check_output, STDOUT, PIPE
 import os
 import argparse
 import logging
@@ -230,7 +230,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--test-cmd", default="/usr/bin/clickhouse-test")
     parser.add_argument("--skip-func-tests", default="")
-    parser.add_argument("--client-cmd", default="clickhouse-client")
     parser.add_argument("--server-log-folder", default="/var/log/clickhouse-server")
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
@@ -298,19 +297,23 @@ if __name__ == "__main__":
                 # Use system database to avoid CREATE/DROP DATABASE queries
                 "--database=system",
                 "--hung-check",
-                "--stress",
                 "--report-logs-stats",
                 "00001_select_1",
             ]
         )
-        res = call(cmd, shell=True, stderr=STDOUT)
-        hung_check_status = "No queries hung\tOK\n"
+        hung_check_log = os.path.join(args.output_folder, "hung_check.log")
+        tee = Popen(['/usr/bin/tee', hung_check_log], stdin=PIPE)
+        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
+        tee.stdin.close()
         if res != 0 and have_long_running_queries:
             logging.info("Hung check failed with exit code {}".format(res))
-            hung_check_status = "Hung check failed\tFAIL\n"
-        with open(
-            os.path.join(args.output_folder, "test_results.tsv"), "w+"
-        ) as results:
-            results.write(hung_check_status)
+        else:
+            hung_check_status = "No queries hung\tOK\t\\N\t\n"
+            with open(
+                os.path.join(args.output_folder, "test_results.tsv"), "w+"
+            ) as results:
+                results.write(hung_check_status)
+            os.remove(hung_check_log)
+
 
     logging.info("Stress test finished")

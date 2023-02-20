@@ -89,7 +89,11 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    disk->removeRecursive(path);
+    if (disk->exists(path))
+        disk->removeRecursive(path);
+    else
+        LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
+
     disk->createDirectories(path);
     disk->createDirectories(path + "tmp/");
 
@@ -104,7 +108,7 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine Join supports only DELETE mutations");
 }
 
-void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context, bool /*force_wait*/)
+void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 {
     /// Firstly acquire lock for mutation, that locks changes of data.
     /// We cannot acquire rwlock here, because read lock is needed

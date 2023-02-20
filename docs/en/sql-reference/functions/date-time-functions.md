@@ -1205,6 +1205,8 @@ Formats a Time according to the given Format string. Format is a constant expres
 
 formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
 
+Alias: `DATE_FORMAT`.
+
 **Syntax**
 
 ``` sql
@@ -1220,29 +1222,39 @@ Using replacement fields, you can define a pattern for the resulting string. “
 
 | Placeholder | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
+| %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
+| %b       | abbreviated month name (Jan-Dec)                        | Jan        |
+| %c       | month as a decimal number (01-12)                       | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
-| %e       | day of the month, space-padded ( 1-31)                  | &nbsp; 2   |
+| %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
 | %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
+| %h       | hour in 12h format (01-12)                              | 09         |
 | %H       | hour in 24h format (00-23)                              | 22         |
+| %i       | minute (00-59)                                          | 33         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
+| %k       | hour in 24h format (00-23)                              | 22         |
+| %l       | hour in 12h format (01-12)                              | 09         |
 | %m       | month as a decimal number (01-12)                       | 01         |
 | %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%M %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%M                 | 22:33      |
+| %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
 | %t       | horizontal-tab character (’)                            |            |
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
 | %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
+| %W       | full weekday name (Monday-Sunday)                       | Monday     |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
 | %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
@@ -1293,31 +1305,31 @@ Similar to formatDateTime, except that it formats datetime in Joda style instead
 Using replacement fields, you can define a pattern for the resulting string. 
 
 
-| Placeholder | Description | Presentation  | Examples |
-| ----------- | ----------- | ------------- | -------- |
-| G       | era                          | text          | AD | 
-| C       | century of era (>=0)         | number        | 20 | 
-| Y       | year of era (>=0)            | year          | 1996 | 
-| x       | weekyear(not supported yet)  | year          | 1996 | 
-| w       | week of weekyear(not supported yet) | number        | 27 | 
-| e       | day of week                  | number        | 2 | 
-| E       | day of week                  | text          | Tuesday; Tue | 
-| y       | year                         | year          | 1996 | 
-| D       | day of year                  | number        | 189 | 
-| M       | month of year                | month         | July; Jul; 07 | 
-| d       | day of month                 | number        | 10 | 
-| a       | halfday of day               | text          | PM | 
-| K       | hour of halfday (0~11)       | number        | 0 | 
-| h       | clockhour of halfday (1~12)  | number        | 12 | 
-| H       | hour of day (0~23)           | number        | 0 | 
-| k       | clockhour of day (1~24)      | number        | 24 | 
-| m       | minute of hour               | number        | 30 | 
-| s       | second of minute             | number        | 55 | 
-| S       | fraction of second(not supported yet) | number        | 978 | 
-| z       | time zone(short name not supported yet) | text          | Pacific Standard Time; PST | 
-| Z       | time zone offset/id(not supported yet) | zone          | -0800; -08:00; America/Los_Angeles | 
-| '       | escape for text              | delimiter|  | 
-| ''      | single quote                 | literal       | ' | 
+| Placeholder | Description                              | Presentation  | Examples                           |
+| ----------- | ---------------------------------------- | ------------- | ---------------------------------- |
+| G           | era                                      | text          | AD                                 |
+| C           | century of era (>=0)                     | number        | 20                                 |
+| Y           | year of era (>=0)                        | year          | 1996                               |
+| x           | weekyear (not supported yet)             | year          | 1996                               |
+| w           | week of weekyear (not supported yet)     | number        | 27                                 |
+| e           | day of week                              | number        | 2                                  |
+| E           | day of week                              | text          | Tuesday; Tue                       |
+| y           | year                                     | year          | 1996                               |
+| D           | day of year                              | number        | 189                                |
+| M           | month of year                            | month         | July; Jul; 07                      |
+| d           | day of month                             | number        | 10                                 |
+| a           | halfday of day                           | text          | PM                                 |
+| K           | hour of halfday (0~11)                   | number        | 0                                  |
+| h           | clockhour of halfday (1~12)              | number        | 12                                 |
+| H           | hour of day (0~23)                       | number        | 0                                  |
+| k           | clockhour of day (1~24)                  | number        | 24                                 |
+| m           | minute of hour                           | number        | 30                                 |
+| s           | second of minute                         | number        | 55                                 |
+| S           | fraction of second (not supported yet)   | number        | 978                                |
+| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
+| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
+| '           | escape for text                          | delimiter     |                                    |
+| ''          | single quote                             | literal       | '                                  |
 
 **Example**
 

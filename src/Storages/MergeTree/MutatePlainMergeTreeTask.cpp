@@ -103,7 +103,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(&Poco::Logger::get("MutatePlainMergeTreeTask"), exception_message);
                 storage.updateMutationEntriesErrors(future_part, false, exception_message.text);
-                write_part_log(ExecutionStatus::fromCurrentException());
+                write_part_log(ExecutionStatus::fromCurrentException("", true));
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 return false;
             }

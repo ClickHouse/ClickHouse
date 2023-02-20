@@ -363,24 +363,17 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
 {
     ASTs & elements = select_query->select()->children;
 
-    std::unordered_map<String, size_t> required_columns_with_duplicate_count;
-    /// Order of output columns should match order in required_result_columns,
-    /// otherwise UNION queries may have incorrect header when subselect has duplicated columns.
-    ///
-    /// NOTE: multimap is required since there can be duplicated column names.
-    std::unordered_multimap<String, size_t> output_columns_positions;
+    std::map<String, size_t> required_columns_with_duplicate_count;
 
     if (!required_result_columns.empty())
     {
         /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
-        for (size_t i = 0; i < required_result_columns.size(); ++i)
+        for (const auto & name : required_result_columns)
         {
-            const auto & name = required_result_columns[i];
             if (remove_dups)
                 required_columns_with_duplicate_count[name] = 1;
             else
                 ++required_columns_with_duplicate_count[name];
-            output_columns_positions.emplace(name, i);
         }
     }
     else if (remove_dups)
@@ -392,8 +385,8 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     else
         return;
 
-    ASTs new_elements(elements.size() + output_columns_positions.size());
-    size_t new_elements_size = 0;
+    ASTs new_elements;
+    new_elements.reserve(elements.size());
 
     NameSet remove_columns;
 
@@ -401,35 +394,17 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     {
         String name = elem->getAliasOrColumnName();
 
-        /// Columns that are presented in output_columns_positions should
-        /// appears in the same order in the new_elements, hence default
-        /// result_index goes after all elements of output_columns_positions
-        /// (it is for columns that are not located in
-        /// output_columns_positions, i.e. untuple())
-        size_t result_index = output_columns_positions.size() + new_elements_size;
-
-        /// Note, order of duplicated columns is not important here (since they
-        /// are the same), only order for unique columns is important, so it is
-        /// fine to use multimap here.
-        if (auto it = output_columns_positions.find(name); it != output_columns_positions.end())
-        {
-            result_index = it->second;
-            output_columns_positions.erase(it);
-        }
-
         auto it = required_columns_with_duplicate_count.find(name);
         if (required_columns_with_duplicate_count.end() != it && it->second)
         {
-            new_elements[result_index] = elem;
+            new_elements.push_back(elem);
             --it->second;
-            ++new_elements_size;
         }
         else if (select_query->distinct || hasArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.
-            new_elements[result_index] = elem;
-            ++new_elements_size;
+            new_elements.push_back(elem);
         }
         else
         {
@@ -440,25 +415,18 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Never remove untuple. It's result column may be in required columns.
             /// It is not easy to analyze untuple here, because types were not calculated yet.
             if (func && func->name == "untuple")
-            {
-                new_elements[result_index] = elem;
-                ++new_elements_size;
-            }
+                new_elements.push_back(elem);
+
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
             if (func && !select_query->groupBy())
             {
                 GetAggregatesVisitor::Data data = {};
                 GetAggregatesVisitor(data).visit(elem);
                 if (!data.aggregates.empty())
-                {
-                    new_elements[result_index] = elem;
-                    ++new_elements_size;
-                }
+                    new_elements.push_back(elem);
             }
         }
     }
-    /// Remove empty nodes.
-    std::erase(new_elements, ASTPtr{});
 
     if (select_query->interpolate())
     {
@@ -655,10 +623,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     {
         bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
         if (join_on_const_ok)
-        {
-            table_join.on_expression = nullptr;
             return;
-        }
 
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 

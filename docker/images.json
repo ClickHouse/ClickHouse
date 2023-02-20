@@ -134,6 +134,14 @@
         "name": "clickhouse/keeper-jepsen-test",
         "dependent": []
     },
+    "docker/test/install/deb": {
+        "name": "clickhouse/install-deb-test",
+        "dependent": []
+    },
+    "docker/test/install/rpm": {
+        "name": "clickhouse/install-rpm-test",
+        "dependent": []
+    },
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
         "dependent": [
