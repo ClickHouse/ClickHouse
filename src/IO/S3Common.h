@@ -61,43 +61,6 @@ private:
 };
 }
 
-namespace DB::S3
-{
-
-class ClientFactory
-{
-public:
-    ~ClientFactory();
-
-    static ClientFactory & instance();
-
-    std::unique_ptr<S3::Client> create(
-        const PocoHTTPClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const String & server_side_encryption_customer_key_base64,
-        HTTPHeaderEntries headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request);
-
-    PocoHTTPClientConfiguration createClientConfiguration(
-        const String & force_region,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects,
-        bool enable_s3_requests_logging,
-        bool for_disk_s3,
-        const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler);
-
-private:
-    ClientFactory();
-
-    Aws::SDKOptions aws_options;
-    std::atomic<bool> s3_requests_logging_enabled;
-};
-
-}
 #endif
 
 namespace Poco::Util
