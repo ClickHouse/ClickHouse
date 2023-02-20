@@ -25,29 +25,30 @@ namespace ErrorCodes
 namespace
 {
 
-using EquiCondition = std::tuple<QueryTreeNodePtr, QueryTreeNodePtr>;
-
 void exctractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_conditions, QueryTreeNodes & other)
 {
-    if (auto * func = node->as<FunctionNode>())
+    auto * func = node->as<FunctionNode>();
+    if (!func)
     {
-        const auto & args = func->getArguments().getNodes();
-
-        if (args.size() == 2 && func->getFunctionName() == "equals")
-        {
-            equi_conditions.push_back(node);
-            return;
-        }
-
-        if (func->getFunctionName() == "and")
-        {
-            for (auto & arg : args)
-                exctractJoinConditions(arg, equi_conditions, other);
-            return;
-        }
+        other.push_back(node);
+        return;
     }
 
-    other.push_back(node);
+    const auto & args = func->getArguments().getNodes();
+
+    if (args.size() == 2 && func->getFunctionName() == "equals")
+    {
+        equi_conditions.push_back(node);
+    }
+    else if (func->getFunctionName() == "and")
+    {
+        for (auto & arg : args)
+            exctractJoinConditions(arg, equi_conditions, other);
+    }
+    else
+    {
+        other.push_back(node);
+    }
 }
 
 const QueryTreeNodePtr & getEquiArgument(const QueryTreeNodePtr & cond, size_t index)
