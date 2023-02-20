@@ -2890,6 +2890,13 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
     }
 
+    if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
+    {
+        AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(place);
+        result.without_key = place;
+    }
+
     if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
         mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
 #define M(NAME, IS_TWO_LEVEL) \
