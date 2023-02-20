@@ -1086,6 +1086,9 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
+    for thread in threads:
+        thread.join()
+
     while True:
         result = instance.query("SELECT count() FROM test.view_overload")
         expected = messages_num * threads_num
@@ -1096,15 +1099,12 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload;
-        DROP TABLE test.view_overload;
-        DROP TABLE test.rabbitmq_consume;
-        DROP TABLE test.rabbitmq_overload;
+        DROP TABLE test.consumer_overload NO DELAY;
+        DROP TABLE test.view_overload NO DELAY;
+        DROP TABLE test.rabbitmq_consume NO DELAY;
+        DROP TABLE test.rabbitmq_overload NO DELAY;
     """
     )
-
-    for thread in threads:
-        thread.join()
 
     assert (
         int(result) == messages_num * threads_num
