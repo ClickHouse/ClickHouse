@@ -15,13 +15,7 @@
 #include "Poco/Event.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS)
-#include "Event_WIN32.cpp"
-#elif defined(POCO_VXWORKS)
-#include "Event_VX.cpp"
-#else
 #include "Event_POSIX.cpp"
-#endif
 
 
 namespace Poco {

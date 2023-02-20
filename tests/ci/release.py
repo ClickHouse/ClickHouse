@@ -104,8 +104,10 @@ class Release:
 
     def set_release_info(self):
         # Fetch release commit and tags in case they don't exist locally
-        self.run(f"git fetch {self.repo.url} {self.release_commit}")
-        self.run(f"git fetch {self.repo.url} --tags")
+        self.run(
+            f"git fetch {self.repo.url} {self.release_commit} --no-recurse-submodules"
+        )
+        self.run(f"git fetch {self.repo.url} --tags --no-recurse-submodules")
 
         # Get the actual version for the commit before check
         with self._checkout(self.release_commit, True):
@@ -248,9 +250,11 @@ class Release:
 
         # Prefetch the branch to have it updated
         if self._git.branch == branch:
-            self.run("git pull")
+            self.run("git pull --no-recurse-submodules")
         else:
-            self.run(f"git fetch {self.repo.url} {branch}:{branch}")
+            self.run(
+                f"git fetch {self.repo.url} {branch}:{branch} --no-recurse-submodules"
+            )
         output = self.run(f"git branch --contains={self.release_commit} {branch}")
         if branch not in output:
             raise Exception(

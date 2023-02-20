@@ -34,8 +34,6 @@ public:
         bool is_remote_read_,
         const MergeTreeSettings & storage_settings_);
 
-    ~MergeTreePrefetchedReadPool() override;
-
     MergeTreeReadTaskPtr getTask(size_t thread) override;
 
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
@@ -84,12 +82,20 @@ private:
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     size_t index_granularity_bytes;
     size_t fixed_index_granularity;
+
+    StorageSnapshotPtr storage_snapshot;
+    const Names column_names;
+    const Names virtual_column_names;
+    PrewhereInfoPtr prewhere_info;
+    RangesInDataParts parts_ranges;
+
     [[ maybe_unused ]] const bool is_remote_read;
     ThreadPool & prefetch_threadpool;
 
     PartsInfos parts_infos;
 
     ThreadsTasks threads_tasks;
+    std::mutex mutex;
 
     struct TaskHolder
     {
