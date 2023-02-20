@@ -333,6 +333,11 @@ expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
     pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+
+    if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
+        pattern="^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$"
+        grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+    fi
 done
 
 # Conflict markers
