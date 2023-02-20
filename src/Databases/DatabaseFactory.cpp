@@ -13,7 +13,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
@@ -24,11 +23,11 @@
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
-#    include <Databases/MySQL/ConnectionMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Storages/MySQL/MySQLHelpers.h>
 #    include <Storages/MySQL/MySQLSettings.h>
+#    include <Storages/StorageMySQL.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <mysqlxx/Pool.h>
 #endif
@@ -183,21 +182,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        StorageMySQLConfiguration configuration;
+        StorageMySQL::Configuration configuration;
         ASTs & arguments = engine->arguments->children;
-        auto mysql_settings = std::make_unique<ConnectionMySQLSettings>();
+        auto mysql_settings = std::make_unique<MySQLSettings>();
 
-        if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, *mysql_settings))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments))
         {
-            auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
-
-            configuration.set(common_configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            mysql_settings->applyChanges(settings_changes);
-
-            if (!storage_specific_args.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, false);
         }
         else
         {
@@ -326,19 +317,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema", "on_conflict", "use_table_cache"});
-
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
-            configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
         }
         else
@@ -401,18 +380,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema"});
-
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection);
         }
         else
         {

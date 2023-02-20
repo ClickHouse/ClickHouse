@@ -13,9 +13,9 @@
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromString.h>
@@ -68,27 +68,21 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
         MySQLSettings mysql_settings;
-        auto has_config_key = [&](const String & key)
-        {
-            return dictionary_allowed_keys.contains(key) || key.starts_with("replica") || mysql_settings.has(key);
-        };
-        StorageMySQLConfiguration configuration;
-        auto named_collection = created_from_ddl
-                              ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key, mysql_settings)
-                              : std::nullopt;
+
+        StorageMySQL::Configuration configuration;
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix) : nullptr;
         if (named_collection)
         {
-            if (created_from_ddl)
-                global_context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
+            named_collection->remove("name");
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, mysql_settings);
+            global_context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
 
-            mysql_settings.applyChanges(named_collection->settings_changes);
-            configuration.set(named_collection->configuration);
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             const auto & settings = global_context->getSettingsRef();
             if (!mysql_settings.isChanged("connect_timeout"))
                 mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
             if (!mysql_settings.isChanged("read_write_timeout"))
                 mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+
             pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
         }
         else

@@ -200,6 +200,11 @@ public:
         return std::unique_ptr<Impl>(new Impl(collection_config, keys));
     }
 
+    bool has(const Key & key) const
+    {
+        return Configuration::hasConfigValue(*config, key);
+    }
+
     template <typename T> T get(const Key & key) const
     {
         return Configuration::getConfigValue<T>(*config, key);
@@ -339,6 +344,12 @@ MutableNamedCollectionPtr NamedCollection::create(
     auto impl = Impl::create(config, collection_name, collection_path, keys);
     return std::unique_ptr<NamedCollection>(
         new NamedCollection(std::move(impl), collection_name, source_id, is_mutable));
+}
+
+bool NamedCollection::has(const Key & key) const
+{
+    std::lock_guard lock(mutex);
+    return pimpl->has(key);
 }
 
 template <typename T> T NamedCollection::get(const Key & key) const

@@ -3,6 +3,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -41,6 +42,17 @@ void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
+}
+
+void MySQLSettings::loadFromQueryContext(ContextPtr context)
+{
+    if (!context->hasQueryContext())
+        return;
+
+    const Settings & settings = context->getQueryContext()->getSettingsRef();
+
+    if (settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
+        set("mysql_datatypes_support_level", settings.mysql_datatypes_support_level.toString());
 }
 
 }

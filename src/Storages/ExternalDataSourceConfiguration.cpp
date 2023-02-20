@@ -15,10 +15,6 @@
 #if USE_RDKAFKA
 #include <Storages/Kafka/KafkaSettings.h>
 #endif
-#if USE_MYSQL
-#include <Storages/MySQL/MySQLSettings.h>
-#include <Databases/MySQL/ConnectionMySQLSettings.h>
-#endif
 #if USE_NATSIO
 #include <Storages/NATS/NATSSettings.h>
 #endif
@@ -473,23 +469,4 @@ template
 SettingsChanges getSettingsChangesFromConfig(
     const BaseSettings<EmptySettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
-#if USE_MYSQL
-template
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<MySQLSettingsTraits> & storage_settings);
-
-template
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<ConnectionMySQLSettingsTraits> & storage_settings);
-
-template
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
-    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<MySQLSettingsTraits> & settings);
-
-template
-SettingsChanges getSettingsChangesFromConfig(
-    const BaseSettings<MySQLSettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
-#endif
 }
