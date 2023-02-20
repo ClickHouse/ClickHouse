@@ -1494,8 +1494,16 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         auto ast_rename = std::make_shared<ASTRenameQuery>();
         ASTRenameQuery::Element elem
         {
-            ASTRenameQuery::Table{create.getDatabase(), create.getTable()},
-            ASTRenameQuery::Table{create.getDatabase(), table_to_replace_name}
+            ASTRenameQuery::Table
+            {
+                create.getDatabase().empty() ? nullptr : std::make_shared<ASTIdentifier>(create.getDatabase()),
+                std::make_shared<ASTIdentifier>(create.getTable())
+            },
+            ASTRenameQuery::Table
+            {
+                create.getDatabase().empty() ? nullptr : std::make_shared<ASTIdentifier>(create.getDatabase()),
+                std::make_shared<ASTIdentifier>(table_to_replace_name)
+            }
         };
 
         ast_rename->elements.push_back(std::move(elem));
