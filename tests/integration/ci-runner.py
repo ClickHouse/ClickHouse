@@ -380,13 +380,10 @@ class ClickhouseIntegrationTestsRunner:
         )
 
     def _compress_logs(self, dir, relpaths, result_path):
-        # We execute sync in advance to have all files written after containers
-        # are finished or killed
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "sync", shell=True
-        )
         retcode = subprocess.call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            "tar czf {} -C {} {}".format(result_path, dir, " ".join(relpaths)),
+            "tar --use-compress-program='zstd --threads=0' -cf {} -C {} {}".format(
+                result_path, dir, " ".join(relpaths)
+            ),
             shell=True,
         )
         # tar return 1 when the files are changed on compressing, we ignore it
@@ -716,7 +713,7 @@ class ClickhouseIntegrationTestsRunner:
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
                     str(self.path()),
-                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.gz",
+                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
                 )
                 self._compress_logs(
                     os.path.join(repo_path, "tests/integration"),
@@ -760,7 +757,7 @@ class ClickhouseIntegrationTestsRunner:
 
         tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
         if not tests_to_run:
-            logging.info("No tests to run found")
+            logging.info("No integration tests to run found")
             return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         self._install_clickhouse(build_path)

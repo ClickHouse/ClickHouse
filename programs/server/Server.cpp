@@ -82,9 +82,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
-#if USE_BORINGSSL
 #include <Compression/CompressionCodecEncrypted.h>
-#endif
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -128,6 +126,10 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -140,6 +142,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
+    extern const Event ServerStartupMilliseconds;
 }
 
 namespace fs = std::filesystem;
@@ -256,7 +259,7 @@ static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
-        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "path configuration parameter is empty");
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -415,7 +418,7 @@ void Server::createServer(
         }
         else
         {
-            throw Exception{message, ErrorCodes::NETWORK_ERROR};
+            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
         }
     }
 }
@@ -652,6 +655,8 @@ static void sanityChecks(Server & server)
 int Server::main(const std::vector<std::string> & /*args*/)
 try
 {
+    Stopwatch startup_watch;
+
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
@@ -746,6 +751,19 @@ try
         config().getUInt("max_thread_pool_size", 10000),
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000));
+
+#if USE_AZURE_BLOB_STORAGE
+    /// It makes sense to deinitialize libxml after joining of all threads
+    /// in global pool because libxml uses thread-local memory allocations via
+    /// 'pthread_key_create' and 'pthread_setspecific' which should be deallocated
+    /// at 'pthread_exit'. Deinitialization of libxml leads to call of 'pthread_key_delete'
+    /// and if it is done before joining of threads, allocated memory will not be freed
+    /// and there may be memory leaks in threads that used libxml.
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
 
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
@@ -943,7 +961,7 @@ try
         if (effective_user_id == 0)
         {
             message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
         }
         else
         {
@@ -1113,7 +1131,7 @@ try
 #endif
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
-        throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
     static const auto interserver_tags =
     {
@@ -1138,7 +1156,7 @@ try
             int port = parse<int>(port_str);
 
             if (port < 0 || port > 0xFFFF)
-                throw Exception("Out of range '" + String(port_tag) + "': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
             global_context->setInterserverIOAddress(this_host, port);
             global_context->setInterserverScheme(scheme);
@@ -1264,6 +1282,8 @@ try
                 auto new_pool_size = config->getUInt64("background_pool_size", 16);
                 auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+                auto new_scheduling_policy = config->getString("background_merges_mutations_scheduling_policy", "round_robin");
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_scheduling_policy);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
@@ -1328,9 +1348,8 @@ try
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
-#if USE_BORINGSSL
+            global_context->updateQueryCacheConfiguration(*config);
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
-#endif
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);
 #endif
@@ -1416,8 +1435,7 @@ try
                                 global_context->getSettingsRef().send_timeout.totalSeconds(), true), server_pool, socket));
 #else
                     UNUSED(port);
-                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
                 });
         }
@@ -1462,7 +1480,7 @@ try
     size_t max_cache_size = static_cast<size_t>(memory_amount * cache_size_to_ram_max_ratio);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
-    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "SLRU");
     LOG_INFO(log, "Uncompressed cache policy name {}", uncompressed_cache_policy);
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size > max_cache_size)
@@ -1488,7 +1506,7 @@ try
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
-    String mark_cache_policy = config().getString("mark_cache_policy", "");
+    String mark_cache_policy = config().getString("mark_cache_policy", "SLRU");
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -1514,6 +1532,9 @@ try
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
+    /// A cache for query results.
+    global_context->setQueryCache(config());
+
 #if USE_EMBEDDED_COMPILER
     /// 128 MB
     constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
@@ -1536,10 +1557,8 @@ try
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks);
     }
-#if USE_BORINGSSL
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-#endif
 
     SCOPE_EXIT({
         async_metrics.stop();
@@ -1637,11 +1656,12 @@ try
         /// that may execute DROP before loadMarkedAsDroppedTables() in background,
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
+        database_catalog.createBackgroundTasks();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
         startupSystemTables();
-        database_catalog.loadDatabases();
+        database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
@@ -1737,14 +1757,15 @@ try
             std::lock_guard lock(servers_lock);
             createServers(config(), listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers);
             if (servers.empty())
-                throw Exception(
-                    "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
-                    ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+                throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                                "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
+                                "to configuration file.)");
         }
 
         if (servers.empty())
-             throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
-                ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                             "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
+                             "to configuration file.)");
 
 #if USE_SSL
         CertificateReloader::instance().tryLoad(config());
@@ -1804,7 +1825,7 @@ try
             String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
-                throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker",
                                                                      &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
@@ -1821,6 +1842,9 @@ try
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
         }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
 
         try
         {
@@ -1930,8 +1954,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 #if USE_SSL
             return TCPServerConnectionFactory::Ptr(new TLSHandlerFactory(*this, conf_name));
 #else
-            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                            ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
 
         if (type == "proxy1")
@@ -2098,8 +2121,7 @@ void Server::createServers(
                     httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
             UNUSED(port);
-            throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
-                            ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
 #endif
         });
 
@@ -2161,8 +2183,7 @@ void Server::createServers(
                     new Poco::Net::TCPServerParams));
 #else
             UNUSED(port);
-            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                            ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
         });
 
@@ -2267,8 +2288,7 @@ void Server::createServers(
                     http_params));
 #else
             UNUSED(port);
-            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                            ErrorCodes::SUPPORT_IS_DISABLED};
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
         });
     }

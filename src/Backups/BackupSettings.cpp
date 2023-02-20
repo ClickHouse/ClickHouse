@@ -6,7 +6,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
-
+#include <Backups/SettingsFieldOptionalUUID.h>
 
 namespace DB
 {
@@ -15,48 +15,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
     extern const int WRONG_BACKUP_SETTINGS;
 }
-
-
-namespace
-{
-    struct SettingFieldOptionalUUID
-    {
-        std::optional<UUID> value;
-
-        explicit SettingFieldOptionalUUID(const std::optional<UUID> & value_) : value(value_) {}
-
-        explicit SettingFieldOptionalUUID(const Field & field)
-        {
-            if (field.getType() == Field::Types::Null)
-            {
-                value = std::nullopt;
-                return;
-            }
-
-            if (field.getType() == Field::Types::String)
-            {
-                const String & str = field.get<const String &>();
-                if (str.empty())
-                {
-                    value = std::nullopt;
-                    return;
-                }
-
-                UUID id;
-                if (tryParse(id, str))
-                {
-                    value = id;
-                    return;
-                }
-            }
-
-            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse uuid from {}", field);
-        }
-
-        explicit operator Field() const { return Field(value ? toString(*value) : ""); }
-    };
-}
-
 
 /// List of backup settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_BACKUP_SETTINGS(M) \
@@ -210,7 +168,9 @@ std::pair<size_t, size_t> BackupSettings::Util::findShardNumAndReplicaNum(const 
             if (cluster_host_ids[i][j] == host_id)
                 return {i + 1, j + 1};
     }
-    throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Cannot determine shard number or replica number, the current host {} is not found in the cluster's hosts", host_id);
+    throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS,
+                    "Cannot determine shard number or replica number, the current host {} is not found "
+                    "in the cluster's hosts", host_id);
 }
 
 Strings BackupSettings::Util::filterHostIDs(const std::vector<Strings> & cluster_host_ids, size_t only_shard_num, size_t only_replica_num)

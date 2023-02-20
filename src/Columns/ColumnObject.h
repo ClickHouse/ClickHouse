@@ -259,7 +259,7 @@ public:
 private:
     [[noreturn]] static void throwMustBeConcrete()
     {
-        throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ColumnObject must be converted to ColumnTuple before use");
     }
 
     template <typename Func>

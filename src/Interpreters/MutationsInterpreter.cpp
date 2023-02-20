@@ -17,7 +17,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -33,6 +33,11 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 
 namespace DB
@@ -197,7 +202,7 @@ bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextMutablePtr context_copy)
+    ContextPtr context)
 {
     if (commands.empty())
         return false;
@@ -210,7 +215,7 @@ bool isStorageTouchedByMutations(
 
         if (command.partition)
         {
-            const String partition_id = storage.getPartitionIDFromQuery(command.partition, context_copy);
+            const String partition_id = storage.getPartitionIDFromQuery(command.partition, context);
             if (partition_id == source_part->info.partition_id)
                 all_commands_can_be_skipped = false;
         }
@@ -221,34 +226,41 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    /// We must read with one thread because it guarantees that
-    /// output stream will be sorted after reading from MergeTree parts.
-    /// Disable all settings that can enable reading with several streams.
-    context_copy->setSetting("max_streams_to_max_threads_ratio", 1);
-    context_copy->setSetting("max_threads", 1);
-    context_copy->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
-    context_copy->setSetting("max_streams_for_merge_tree_reading", Field(0));
-
-    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context_copy);
-
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
 
-    /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and give it into ExpressionTransform
-    /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(
-        select_query, context_copy, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
-    auto io = interpreter.execute();
-    PullingPipelineExecutor executor(io.pipeline);
+    std::optional<InterpreterSelectQuery> interpreter_select_query;
+    BlockIO io;
+
+    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_query,
+            context,
+            storage_from_part,
+            SelectQueryOptions().ignoreLimits().ignoreProjections());
+        io = interpreter.execute();
+    }
+    else
+    {
+        /// Interpreter must be alive, when we use result of execute() method.
+        /// For some reason it may copy context and give it into ExpressionTransform
+        /// after that we will use context from destroyed stack frame in our stream.
+        interpreter_select_query.emplace(
+            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
+
+        io = interpreter_select_query->execute();
+    }
+
+    PullingAsyncPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (executor.pull(block)) {}
+    while (block.rows() == 0 && executor.pull(block));
 
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
-        throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} rows, not 1", block.rows());
 
     Block tmp_block;
     while (executor.pull(tmp_block));
@@ -276,7 +288,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         else if (storage_from_merge_tree_data_part)
             partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(command.partition, context);
         else
-            throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
         partition_predicate_as_ast_func = makeASTFunction("equals",
                     std::make_shared<ASTIdentifier>("_partition_id"),
@@ -456,14 +468,14 @@ static void validateUpdateColumns(
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
             {
                 if (col.name == column_name)
-                    throw Exception("Cannot UPDATE materialized column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE materialized column {}", backQuote(column_name));
             }
 
-            throw Exception("There is no column " + backQuote(column_name) + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", backQuote(column_name));
         }
 
         if (key_columns.contains(column_name))
-            throw Exception("Cannot UPDATE key column " + backQuote(column_name), ErrorCodes::CANNOT_UPDATE_COLUMN);
+            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE key column {}", backQuote(column_name));
 
         auto materialized_it = column_to_affected_materialized.find(column_name);
         if (materialized_it != column_to_affected_materialized.end())
@@ -471,9 +483,9 @@ static void validateUpdateColumns(
             for (const String & materialized : materialized_it->second)
             {
                 if (key_columns.contains(materialized))
-                    throw Exception("Updated column " + backQuote(column_name) + " affects MATERIALIZED column "
-                        + backQuote(materialized) + ", which is a key column. Cannot UPDATE it.",
-                        ErrorCodes::CANNOT_UPDATE_COLUMN);
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                    "Updated column {} affects MATERIALIZED column {}, which is a key column. "
+                                    "Cannot UPDATE it.", backQuote(column_name), backQuote(materialized));
             }
         }
     }
@@ -512,10 +524,10 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 void MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
-        throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MutationsInterpreter is already prepared. It is a bug.");
 
     if (commands.empty())
-        throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty mutation commands list");
 
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
@@ -713,7 +725,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         return index.name == command.index_name;
                     });
             if (it == std::cend(indices_desc))
-                throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
 
             auto query = (*it).expression_list_ast->clone();
             auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
@@ -802,7 +814,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
         }
         else
-            throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
     }
 
     if (!read_columns.empty())
@@ -1178,7 +1190,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         {
             const auto & step = stage.expressions_chain.steps[i];
             if (step->actions()->hasArrayJoin())
-                throw Exception("arrayJoin is not allowed in mutations", ErrorCodes::UNEXPECTED_EXPRESSION);
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
@@ -1239,7 +1251,7 @@ void MutationsInterpreter::validate()
 QueryPipelineBuilder MutationsInterpreter::execute()
 {
     if (!can_execute)
-        throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute mutations interpreter because can_execute flag set to false");
 
     QueryPlan plan;
     initQueryPlan(stages.front(), plan);

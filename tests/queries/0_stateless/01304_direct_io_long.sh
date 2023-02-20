@@ -7,7 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE IF EXISTS bug;
-    CREATE TABLE bug (UserID UInt64, Date Date) ENGINE = MergeTree ORDER BY Date;
+    CREATE TABLE bug (UserID UInt64, Date Date) ENGINE = MergeTree ORDER BY Date
+        SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', merge_max_block_size = 8192;
     INSERT INTO bug SELECT rand64(), '2020-06-07' FROM numbers(50000000);
     OPTIMIZE TABLE bug FINAL;"
 LOG="$CLICKHOUSE_TMP/err-$CLICKHOUSE_DATABASE"
