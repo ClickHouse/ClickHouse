@@ -26,6 +26,7 @@ send -- "SELECT 1\r"
 expect "1"
 expect ":) "
 send -- "SELECT 2"
+# NOTE: it does not work for alacritty with TERM=xterm
 send -- "\033\[A"
 expect "SELECT 1"
 send -- "\033\[B"
