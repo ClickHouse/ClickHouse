@@ -533,7 +533,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
         for (auto & output_node : cast_actions_dag->getOutputs())
         {
-            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
+            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name) &&
+                output_node->result_type->canBeInsideNullable())
                 output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
         }
 
