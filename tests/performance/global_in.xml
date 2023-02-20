@@ -1,0 +1,22 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>size</name>
+            <values>
+                <value>100000</value>
+                <value>1000000</value>
+                <value>10000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE t_{size}(a UInt64) ENGINE=MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO t_{size} SELECT number FROM numbers_mt({size})</fill_query>
+
+    <query>SELECT a FROM remote('127.0.0.{{1,2}}', default, t_{size}) WHERE a GLOBAL IN (SELECT a FROM remote('127.0.0.{{1,2}}', default, t_{size}) WHERE a % 2) FORMAT Null</query>
+
+    <drop_query>drop table t_{size}</drop_query>
+</test>
+
+
