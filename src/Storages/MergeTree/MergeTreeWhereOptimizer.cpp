@@ -42,10 +42,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    if (!primary_key.column_names.empty())
-        first_primary_key_column = primary_key.column_names[0];
-
     for (const auto & name : queried_columns)
     {
         auto it = column_sizes.find(name);
@@ -193,8 +189,9 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
             && !cannotBeMoved(node, is_final)
-            /// Do not take into consideration the conditions consisting only of the first primary key column
-            && !hasPrimaryKeyAtoms(node)
+            /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
+            /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
+            && (!is_final || isExpressionOverSortingKey(node))
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
@@ -320,48 +317,22 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     return size;
 }
 
-
-bool MergeTreeWhereOptimizer::hasPrimaryKeyAtoms(const ASTPtr & ast) const
+bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const ASTPtr & ast) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
-
-        if ((func->name == "not" && 1 == args.size()) || func->name == "and" || func->name == "or")
+        for (const auto & arg : args)
         {
-            for (const auto & arg : args)
-                if (hasPrimaryKeyAtoms(arg))
-                    return true;
-
-            return false;
+            if (isConstant(ast) || sorting_key_names.contains(arg->getColumnName()))
+                continue;
+            if (!isExpressionOverSortingKey(arg))
+                return false;
         }
+        return true;
     }
 
-    return isPrimaryKeyAtom(ast);
-}
-
-
-bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
-{
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        if (!KeyCondition::atom_map.contains(func->name))
-            return false;
-
-        const auto & args = func->arguments->children;
-        if (args.size() != 2)
-            return false;
-
-        const auto & first_arg_name = args.front()->getColumnName();
-        const auto & second_arg_name = args.back()->getColumnName();
-
-        if ((first_primary_key_column == first_arg_name && isConstant(args[1]))
-            || (first_primary_key_column == second_arg_name && isConstant(args[0]))
-            || (first_primary_key_column == first_arg_name && functionIsInOrGlobalInOperator(func->name)))
-            return true;
-    }
-
-    return false;
+    return isConstant(ast) || sorting_key_names.contains(ast->getColumnName());
 }
 
 

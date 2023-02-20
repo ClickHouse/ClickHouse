@@ -226,7 +226,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--test-cmd", default="/usr/bin/clickhouse-test")
     parser.add_argument("--skip-func-tests", default="")
-    parser.add_argument("--client-cmd", default="clickhouse-client")
     parser.add_argument("--server-log-folder", default="/var/log/clickhouse-server")
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
@@ -294,7 +293,6 @@ if __name__ == "__main__":
                 # Use system database to avoid CREATE/DROP DATABASE queries
                 "--database=system",
                 "--hung-check",
-                "--stress",
                 "--report-logs-stats",
                 "00001_select_1",
             ]
