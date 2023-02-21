@@ -75,6 +75,9 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    /// Append extra processors for this step.
+    void appendExtraProcessors(const Processors & extra_processors);
+
     /// Enforcement is supposed to be done through the special settings that will be taken into account by remote nodes during query planning (e.g. force_aggregation_in_order).
     /// Should be called only if data_stream_traits.can_enforce_sorting_properties_in_distributed_query == true.
     virtual void adjustSettingsToEnforceSortingPropertiesInDistributedQuery(ContextMutablePtr) const
@@ -97,7 +100,8 @@ protected:
 private:
     virtual void updateOutputStream() = 0;
 
-    /// If we should collect processors got after pipeline transformation.
+    /// We collect processors got after pipeline transformation.
+    Processors processors;
     bool collect_processors;
 
     const DataStreamTraits data_stream_traits;

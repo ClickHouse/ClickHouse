@@ -4,6 +4,7 @@
 
 #if USE_SSL
 #include <Disks/IDisk.h>
+#include <Disks/DiskDecorator.h>
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
 
@@ -26,7 +27,7 @@ struct DiskEncryptedSettings
 /// Encrypted disk ciphers all written files on the fly and writes the encrypted files to an underlying (normal) disk.
 /// And when we read files from an encrypted disk it deciphers them automatically,
 /// so we can work with a encrypted disk like it's a normal disk.
-class DiskEncrypted : public IDisk
+class DiskEncrypted : public DiskDecorator
 {
 public:
     DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
@@ -251,32 +252,6 @@ public:
         return std::make_shared<FakeDiskTransaction>(*this);
     }
 
-    UInt64 getTotalSpace() const override
-    {
-        return delegate->getTotalSpace();
-    }
-
-    UInt64 getAvailableSpace() const override
-    {
-        return delegate->getAvailableSpace();
-    }
-
-    UInt64 getUnreservedSpace() const override
-    {
-        return delegate->getUnreservedSpace();
-    }
-
-    bool supportZeroCopyReplication() const override
-    {
-        return delegate->supportZeroCopyReplication();
-    }
-
-    MetadataStoragePtr getMetadataStorage() override
-    {
-        return delegate->getMetadataStorage();
-    }
-
-
 private:
     String wrappedPath(const String & path) const
     {
@@ -286,7 +261,6 @@ private:
         return disk_path + path;
     }
 
-    DiskPtr delegate;
     const String encrypted_name;
     const String disk_path;
     const String disk_absolute_path;

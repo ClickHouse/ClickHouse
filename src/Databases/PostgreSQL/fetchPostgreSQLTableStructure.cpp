@@ -115,11 +115,11 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
                 res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
                 res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>)
+            else if (precision <= DecimalUtils::max_precision<Decimal256>) //-V547
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);

@@ -693,6 +693,19 @@ def test_auto_close_connection(started_cluster):
     assert count == 2
 
 
+def test_datetime(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("drop table if exists test")
+    cursor.execute("create table test (u timestamp)")
+
+    node1.query("drop database if exists pg")
+    node1.query("create database pg engine = PostgreSQL(postgres1)")
+    assert "DateTime64(6)" in node1.query("show create table pg.test")
+    node1.query("detach table pg.test")
+    node1.query("attach table pg.test")
+    assert "DateTime64(6)" in node1.query("show create table pg.test")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

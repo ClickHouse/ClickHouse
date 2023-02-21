@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
-#include <Storages/NATS/NATSConsumer.h>
+#include <Storages/NATS/ReadBufferFromNATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
 
 
@@ -21,11 +21,11 @@ public:
     ~NATSSource() override;
 
     String getName() const override { return storage.getName(); }
-    NATSConsumerPtr getConsumer() { return consumer; }
+    ConsumerBufferPtr getBuffer() { return buffer; }
 
     Chunk generate() override;
 
-    bool queueEmpty() const { return !consumer || consumer->queueEmpty(); }
+    bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
 
     void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
@@ -42,7 +42,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    NATSConsumerPtr consumer;
+    ConsumerBufferPtr buffer;
 
     Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};

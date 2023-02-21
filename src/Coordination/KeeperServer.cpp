@@ -50,10 +50,10 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
     String root_ca_file_property = "openSSL.server.caConfig";
 
     if (!config.has(certificate_file_property))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
+        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     if (!config.has(private_key_file_property))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
+        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     asio_opts.enable_ssl_ = true;
     asio_opts.server_cert_file_ = config.getString(certificate_file_property);
@@ -273,19 +273,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds(), "election_timeout_lower_bound_ms", log);
     params.election_timeout_upper_bound_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds(), "election_timeout_upper_bound_ms", log);
-
-    if (params.election_timeout_lower_bound_ || params.election_timeout_upper_bound_)
-    {
-        if (params.election_timeout_lower_bound_ >= params.election_timeout_upper_bound_)
-        {
-            LOG_FATAL(
-                log,
-                "election_timeout_lower_bound_ms is greater than election_timeout_upper_bound_ms, this would disable leader election "
-                "completely.");
-            std::terminate();
-        }
-    }
-
     params.reserved_log_items_ = getValueOrMaxInt32AndLogWarning(coordination_settings->reserved_log_items, "reserved_log_items", log);
     params.snapshot_distance_ = getValueOrMaxInt32AndLogWarning(coordination_settings->snapshot_distance, "snapshot_distance", log);
 
@@ -314,7 +301,8 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 #if USE_SSL
         setSSLParams(asio_opts);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
+        throw Exception(
+            "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
 

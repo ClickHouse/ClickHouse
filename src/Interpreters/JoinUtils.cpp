@@ -324,20 +324,17 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
+ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
 {
-    ColumnPtrMap ptrs;
+    ColumnRawPtrMap ptrs;
     ptrs.reserve(names.size());
 
     for (const auto & column_name : names)
     {
-        ColumnPtr column = block.getByName(column_name).column;
-
-        column = column->convertToFullColumnIfConst();
-        column = recursiveRemoveLowCardinality(column);
-        column = recursiveRemoveSparse(column);
-
-        ptrs[column_name] = column;
+        auto & column = block.getByName(column_name);
+        column.column = recursiveRemoveLowCardinality(column.column->convertToFullColumnIfConst());
+        column.type = recursiveRemoveLowCardinality(column.type);
+        ptrs[column_name] = column.column.get();
     }
 
     return ptrs;
@@ -486,7 +483,7 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column)
+        if (!column.column) //-V1051
             column.column = column.type->createColumn();
     }
 }
@@ -532,24 +529,24 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
 JoinMask getColumnAsMask(const Block & block, const String & column_name)
 {
     if (column_name.empty())
-        return JoinMask(true, block.rows());
+        return JoinMask(true);
 
     const auto & src_col = block.getByName(column_name);
 
     DataTypePtr col_type = recursiveRemoveLowCardinality(src_col.type);
     if (isNothing(col_type))
-        return JoinMask(false, block.rows());
+        return JoinMask(false);
 
     if (const auto * const_cond = checkAndGetColumn<ColumnConst>(*src_col.column))
     {
-        return JoinMask(const_cond->getBool(0), block.rows());
+        return JoinMask(const_cond->getBool(0));
     }
 
     ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
-            return JoinMask(false, block.rows());
+            return JoinMask(false);
 
         /// Return nested column with NULL set to false
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
@@ -642,8 +639,9 @@ Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block
 {
     if (num_shards == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards must be positive");
-    if (likely(isPowerOf2(num_shards)))
-        return scatterBlockByHashPow2(key_columns_names, block, num_shards);
+    UNUSED(scatterBlockByHashPow2);
+    // if (likely(isPowerOf2(num_shards)))
+    //     return scatterBlockByHashPow2(key_columns_names, block, num_shards);
     return scatterBlockByHashGeneric(key_columns_names, block, num_shards);
 }
 

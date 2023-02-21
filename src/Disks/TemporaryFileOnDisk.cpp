@@ -15,6 +15,7 @@ namespace CurrentMetrics
     extern const Metric TotalTemporaryFiles;
 }
 
+
 namespace DB
 {
 
@@ -38,7 +39,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     , metric_increment(CurrentMetrics::TotalTemporaryFiles)
 {
     if (!disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk is not specified");
+        throw Exception("Disk is not specified", ErrorCodes::LOGICAL_ERROR);
 
     if (fs::path prefix_path(prefix); prefix_path.has_parent_path())
         disk->createDirectories(prefix_path.parent_path());
@@ -55,7 +56,7 @@ TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & p
     relative_path.replace(0, dummy_prefix.length(), prefix);
 
     if (relative_path.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file name is empty");
+        throw Exception("Temporary file name is empty", ErrorCodes::LOGICAL_ERROR);
 }
 
 String TemporaryFileOnDisk::getPath() const

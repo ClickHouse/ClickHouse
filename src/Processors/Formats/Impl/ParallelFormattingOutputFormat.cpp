@@ -216,7 +216,7 @@ namespace DB
                 }
                 case ProcessingUnitType::FINALIZE:
                 {
-                    formatter->statistics = std::move(unit.statistics);
+                    formatter->setOutsideStatistics(std::move(unit.statistics));
                     formatter->finalizeImpl();
                     break;
                 }

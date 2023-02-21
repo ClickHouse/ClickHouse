@@ -379,7 +379,8 @@ protected:
 
     KeysNullMap<Key> createBitmap(size_t) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling createBitmap() for non-nullable keys is forbidden");
+        throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
+                        " is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
 private:

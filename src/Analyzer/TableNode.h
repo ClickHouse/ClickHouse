@@ -29,9 +29,6 @@ public:
     /// Construct table node with storage, storage lock, storage snapshot
     explicit TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_);
 
-    /// Construct table node with storage, context
-    explicit TableNode(StoragePtr storage_, const ContextPtr & context);
-
     /// Get storage
     const StoragePtr & getStorage() const
     {

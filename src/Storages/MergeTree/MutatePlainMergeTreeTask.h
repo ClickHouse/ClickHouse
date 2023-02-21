@@ -9,7 +9,6 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 
-
 namespace DB
 {
 
@@ -77,8 +76,6 @@ private:
 
     ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
-
-    ProfileEvents::Counters profile_counters;
 };
 
 

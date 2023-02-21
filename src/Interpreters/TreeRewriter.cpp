@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <memory>
-#include <set>
 
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
@@ -43,7 +42,6 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTCreateQuery.h>
 
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -53,7 +51,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
-#include <Storages/StorageView.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -65,6 +62,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int EMPTY_NESTED_TABLE;
     extern const int EXPECTED_ALL_OR_ANY;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -208,8 +206,73 @@ struct CustomizeAggregateFunctionsMoveSuffixData
     }
 };
 
+struct FuseSumCountAggregates
+{
+    std::vector<ASTFunction *> sums {};
+    std::vector<ASTFunction *> counts {};
+    std::vector<ASTFunction *> avgs {};
+
+    void addFuncNode(ASTFunction * func)
+    {
+        if (func->name == "sum")
+            sums.push_back(func);
+        else if (func->name == "count")
+            counts.push_back(func);
+        else
+        {
+            assert(func->name == "avg");
+            avgs.push_back(func);
+        }
+    }
+
+    bool canBeFused() const
+    {
+        // Need at least two different kinds of functions to fuse.
+        if (sums.empty() && counts.empty())
+            return false;
+        if (sums.empty() && avgs.empty())
+            return false;
+        if (counts.empty() && avgs.empty())
+            return false;
+        return true;
+    }
+};
+
+struct FuseSumCountAggregatesVisitorData
+{
+    using TypeToVisit = ASTFunction;
+
+    std::unordered_map<String, FuseSumCountAggregates> fuse_map;
+
+    void visit(ASTFunction & func, ASTPtr &)
+    {
+        if (func.name == "sum" || func.name == "avg" || func.name == "count")
+        {
+            if (func.arguments->children.empty())
+                return;
+
+            // Probably we can extend it to match count() for non-nullable argument
+            // to sum/avg with any other argument. Now we require strict match.
+            const auto argument = func.arguments->children.at(0)->getColumnName();
+            auto it = fuse_map.find(argument);
+            if (it != fuse_map.end())
+            {
+                it->second.addFuncNode(&func);
+            }
+            else
+            {
+                FuseSumCountAggregates funcs{};
+                funcs.addFuncNode(&func);
+                fuse_map[argument] = funcs;
+            }
+        }
+    }
+};
+
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
+using FuseSumCountAggregatesVisitor = InDepthNodeVisitor<OneTypeMatcher<FuseSumCountAggregatesVisitorData>, true>;
+
 
 struct ExistsExpressionData
 {
@@ -298,17 +361,62 @@ using ReplacePositionalArgumentsVisitor = InDepthNodeVisitor<OneTypeMatcher<Repl
 /// Expand asterisks and qualified asterisks with column names.
 /// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
 void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query, const NameSet & source_columns_set,
-                             const TablesWithColumns & tables_with_columns, const NameToNameMap & parameter_values = {},
-                             const NameToNameMap & parameter_types = {})
+                             const TablesWithColumns & tables_with_columns)
 {
     LogAST log;
-    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns, true/* has_columns */, parameter_values, parameter_types);
+    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 
     /// This may happen after expansion of COLUMNS('regexp').
     if (select_query.select()->children.empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns in SELECT query");
+        throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
+}
+
+// Replaces one avg/sum/count function with an appropriate expression with
+// sumCount().
+void replaceWithSumCount(String column_name, ASTFunction & func)
+{
+    auto func_base = makeASTFunction("sumCount", std::make_shared<ASTIdentifier>(column_name));
+    auto exp_list = std::make_shared<ASTExpressionList>();
+    if (func.name == "sum" || func.name == "count")
+    {
+        /// Rewrite "sum" to sumCount().1, rewrite "count" to sumCount().2
+        UInt8 idx = (func.name == "sum" ? 1 : 2);
+        func.name = "tupleElement";
+        exp_list->children.push_back(func_base);
+        exp_list->children.push_back(std::make_shared<ASTLiteral>(idx));
+    }
+    else
+    {
+        /// Rewrite "avg" to sumCount().1 / sumCount().2
+        auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
+        auto new_arg2 = makeASTFunction("CAST",
+            makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(static_cast<UInt8>(2))),
+            std::make_shared<ASTLiteral>("Float64"));
+
+        func.name = "divide";
+        exp_list->children.push_back(new_arg1);
+        exp_list->children.push_back(new_arg2);
+    }
+    func.arguments = exp_list;
+    func.children.push_back(func.arguments);
+}
+
+void fuseSumCountAggregates(std::unordered_map<String, FuseSumCountAggregates> & fuse_map)
+{
+    for (auto & it : fuse_map)
+    {
+        if (it.second.canBeFused())
+        {
+            for (auto & func: it.second.sums)
+                replaceWithSumCount(it.first, *func);
+            for (auto & func: it.second.avgs)
+                replaceWithSumCount(it.first, *func);
+            for (auto & func: it.second.counts)
+                replaceWithSumCount(it.first, *func);
+        }
+    }
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -363,17 +471,24 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
 {
     ASTs & elements = select_query->select()->children;
 
-    std::map<String, size_t> required_columns_with_duplicate_count;
+    std::unordered_map<String, size_t> required_columns_with_duplicate_count;
+    /// Order of output columns should match order in required_result_columns,
+    /// otherwise UNION queries may have incorrect header when subselect has duplicated columns.
+    ///
+    /// NOTE: multimap is required since there can be duplicated column names.
+    std::unordered_multimap<String, size_t> output_columns_positions;
 
     if (!required_result_columns.empty())
     {
         /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
-        for (const auto & name : required_result_columns)
+        for (size_t i = 0; i < required_result_columns.size(); ++i)
         {
+            const auto & name = required_result_columns[i];
             if (remove_dups)
                 required_columns_with_duplicate_count[name] = 1;
             else
                 ++required_columns_with_duplicate_count[name];
+            output_columns_positions.emplace(name, i);
         }
     }
     else if (remove_dups)
@@ -385,8 +500,8 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     else
         return;
 
-    ASTs new_elements;
-    new_elements.reserve(elements.size());
+    ASTs new_elements(elements.size() + output_columns_positions.size());
+    size_t new_elements_size = 0;
 
     NameSet remove_columns;
 
@@ -394,17 +509,35 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     {
         String name = elem->getAliasOrColumnName();
 
+        /// Columns that are presented in output_columns_positions should
+        /// appears in the same order in the new_elements, hence default
+        /// result_index goes after all elements of output_columns_positions
+        /// (it is for columns that are not located in
+        /// output_columns_positions, i.e. untuple())
+        size_t result_index = output_columns_positions.size() + new_elements_size;
+
+        /// Note, order of duplicated columns is not important here (since they
+        /// are the same), only order for unique columns is important, so it is
+        /// fine to use multimap here.
+        if (auto it = output_columns_positions.find(name); it != output_columns_positions.end())
+        {
+            result_index = it->second;
+            output_columns_positions.erase(it);
+        }
+
         auto it = required_columns_with_duplicate_count.find(name);
         if (required_columns_with_duplicate_count.end() != it && it->second)
         {
-            new_elements.push_back(elem);
+            new_elements[result_index] = elem;
             --it->second;
+            ++new_elements_size;
         }
         else if (select_query->distinct || hasArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.
-            new_elements.push_back(elem);
+            new_elements[result_index] = elem;
+            ++new_elements_size;
         }
         else
         {
@@ -415,25 +548,32 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Never remove untuple. It's result column may be in required columns.
             /// It is not easy to analyze untuple here, because types were not calculated yet.
             if (func && func->name == "untuple")
-                new_elements.push_back(elem);
-
+            {
+                new_elements[result_index] = elem;
+                ++new_elements_size;
+            }
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
             if (func && !select_query->groupBy())
             {
                 GetAggregatesVisitor::Data data = {};
                 GetAggregatesVisitor(data).visit(elem);
                 if (!data.aggregates.empty())
-                    new_elements.push_back(elem);
+                {
+                    new_elements[result_index] = elem;
+                    ++new_elements_size;
+                }
             }
         }
     }
+    /// Remove empty nodes.
+    std::erase(new_elements, ASTPtr{});
 
     if (select_query->interpolate())
     {
         auto & children = select_query->interpolate()->children;
         if (!children.empty())
         {
-            for (auto * it = children.begin(); it != children.end();)
+            for (auto it = children.begin(); it != children.end();)
             {
                 if (remove_columns.contains((*it)->as<ASTInterpolateElement>()->column))
                     it = select_query->interpolate()->children.erase(it);
@@ -473,7 +613,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
     if (result.array_join_result_to_source.empty())
     {
         if (select_query->arrayJoinExpressionList().first->children.empty())
-            throw DB::Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "ARRAY JOIN requires an argument");
+            throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         ASTPtr expr = select_query->arrayJoinExpressionList().first->children.at(0);
         String source_name = expr->getColumnName();
@@ -498,7 +638,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
                 }
             }
             if (!found)
-                throw Exception(ErrorCodes::EMPTY_NESTED_TABLE, "No columns in nested table {}", source_name);
+                throw Exception("No columns in nested table " + source_name, ErrorCodes::EMPTY_NESTED_TABLE);
         }
     }
 }
@@ -519,8 +659,8 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
         else if (join_default_strictness == JoinStrictness::All)
             table_join.strictness = JoinStrictness::All;
         else
-            throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_ANY,
-                            "Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty");
+            throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
+                            DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
 
     if (old_any)
@@ -538,7 +678,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
     else
     {
         if (table_join.strictness == JoinStrictness::Any && table_join.kind == JoinKind::Full)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
+            throw Exception("ANY FULL JOINs are not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     analyzed_join->getTableJoin() = table_join;
@@ -575,34 +715,32 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
     return res > 0;
 }
 
-bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, ContextPtr context)
+bool tryJoinOnConst(TableJoin & analyzed_join, ASTPtr & on_expression, ContextPtr context)
 {
-    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
-        return false;
-
-    if (analyzed_join.strictness() == JoinStrictness::Asof)
-        return false;
-
-    if (analyzed_join.isSpecialStorage())
-        return false;
-
+    bool join_on_value;
     if (auto eval_const_res = tryEvaluateConstCondition(on_expression, context))
+        join_on_value = *eval_const_res;
+    else
+        return false;
+
+    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "JOIN ON constant ({}) supported only with join algorithm 'hash'",
+                        queryToString(on_expression));
+
+    on_expression = nullptr;
+    if (join_on_value)
     {
-        if (eval_const_res.value())
-        {
-            /// JOIN ON 1 == 1
-            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
-            analyzed_join.resetToCross();
-        }
-        else
-        {
-            /// JOIN ON 1 != 1
-            LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
-            analyzed_join.resetKeys();
-        }
-        return true;
+        LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
+        analyzed_join.resetToCross();
     }
-    return false;
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
+        analyzed_join.resetKeys();
+    }
+
+    return true;
 }
 
 /// Find the columns that are obtained by JOIN.
@@ -621,10 +759,6 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
     else if (table_join.on_expression)
     {
-        bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
-        if (join_on_const_ok)
-            return;
-
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
@@ -645,22 +779,44 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
-        bool any_keys_empty = std::any_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
 
-        if (any_keys_empty)
-            throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                                "Cannot get JOIN keys from JOIN ON section: '{}', found keys: {}",
-                                queryToString(table_join.on_expression), TableJoin::formatClauses(analyzed_join.getClauses()));
-
-        if (is_asof)
+        /// All clauses should to have keys or be empty simultaneously
+        bool all_keys_empty = std::all_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
+        if (all_keys_empty)
         {
-            if (!analyzed_join.oneDisjunct())
-                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
-            data.asofToJoinKeys();
-        }
+            /// Try join on constant (cross or empty join) or fail
+            if (is_asof)
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
 
-        if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+            if (const auto storage_join = analyzed_join.getStorageJoin())
+                throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+                    "StorageJoin keys should match JOIN keys, expected JOIN ON [{}]", fmt::join(storage_join->getKeyNames(), ", "));
+
+            bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
+            if (!join_on_const_ok)
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
+        }
+        else
+        {
+            bool any_keys_empty = std::any_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
+
+            if (any_keys_empty)
+                throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                    "Cannot get JOIN keys from JOIN ON section: '{}'",
+                                    queryToString(table_join.on_expression));
+
+            if (is_asof)
+            {
+                if (!analyzed_join.oneDisjunct())
+                    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
+                data.asofToJoinKeys();
+            }
+
+            if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+        }
     }
 }
 
@@ -1003,7 +1159,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             required.insert(std::min_element(columns.begin(), columns.end())->name);
         else if (!source_columns.empty())
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
-            required.insert(ExpressionActions::getSmallestColumn(source_columns).name);
+            required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
     else if (is_select && storage_snapshot && !columns_context.has_array_join)
     {
@@ -1074,7 +1230,6 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (!unknown_required_source_columns.empty())
     {
-        constexpr auto format_string = "Missing columns: {} while processing query: '{}', required columns:{}{}";
         WriteBufferFromOwnString ss;
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
@@ -1088,24 +1243,16 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         if (storage)
         {
             std::vector<String> hint_name{};
-            std::set<String> helper_hint_name{};
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
-                for (const auto & hint : hints)
-                {
-                    // We want to preserve the ordering of the hints
-                    // (as they are ordered by Levenshtein distance)
-                    auto [_, inserted] = helper_hint_name.insert(hint);
-                    if (inserted)
-                        hint_name.push_back(hint);
-                }
+                hint_name.insert(hint_name.end(), hints.begin(), hints.end());
             }
 
             if (!hint_name.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << toStringWithFinalSeparator(hint_name, " or ");
+                ss << toString(hint_name);
             }
         }
         else
@@ -1131,7 +1278,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
                 ss << " '" << name << "'";
         }
 
-        throw Exception(PreformattedMessage{ss.str(), format_string}, ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception(ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
     required_source_columns.swap(source_columns);
@@ -1153,16 +1300,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     ASTPtr & query,
     TreeRewriterResult && result,
     const SelectQueryOptions & select_options,
-    const TablesWithColumns & tables_with_columns,
+    const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
     const Names & required_result_columns,
-    std::shared_ptr<TableJoin> table_join,
-    bool is_parameterized_view,
-    const NameToNameMap parameter_values,
-    const NameToNameMap parameter_types) const
+    std::shared_ptr<TableJoin> table_join) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
+        throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
@@ -1196,10 +1340,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns, parameter_values, parameter_types);
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
 
     /// Optimizes logical expressions.
-    LogicalExpressionsOptimizer(select_query, tables_with_columns, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+    LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
 
     NameSet all_source_columns_set = source_columns_set;
     if (table_join)
@@ -1208,7 +1352,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             all_source_columns_set.insert(name);
     }
 
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext(), select_options.is_create_parameterized_view);
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     // expand GROUP BY ALL
     if (select_query->group_by_all)
@@ -1250,18 +1394,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
-
-    /// replaceQueryParameterWithValue is used for parameterized view (which are created using query parameters
-    /// and SELECT is used with substitution of these query parameters )
-    /// the replaced column names will be used in the next steps
-    if (is_parameterized_view)
-    {
-        for (auto & column : result.source_columns)
-            column.name = StorageView::replaceQueryParameterWithValue(column.name, parameter_values, parameter_types);
-    }
-
     result.collectUsedColumns(query, true, settings.query_plan_optimize_primary_key);
-
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
@@ -1322,17 +1455,16 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     const StorageSnapshotPtr & storage_snapshot,
     bool allow_aggregations,
     bool allow_self_aliases,
-    bool execute_scalar_subqueries,
-    bool is_create_parameterized_view) const
+    bool execute_scalar_subqueries) const
 {
     if (query->as<ASTSelectQuery>())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not select analyze for select asts.");
+        throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
 
     const auto & settings = getContext()->getSettingsRef();
 
     TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
 
-    normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext(), is_create_parameterized_view);
+    normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext());
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, result.local_scalars, !execute_scalar_subqueries);
@@ -1361,7 +1493,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 }
 
 void TreeRewriter::normalize(
-    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view)
+    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query);
@@ -1399,6 +1531,17 @@ void TreeRewriter::normalize(
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
     }
 
+    // Try to fuse sum/avg/count with identical arguments to one sumCount call,
+    // if we have at least two different functions. E.g. we will replace sum(x)
+    // and count(x) with sumCount(x).1 and sumCount(x).2, and sumCount() will
+    // be calculated only once because of CSE.
+    if (settings.optimize_fuse_sum_count_avg && settings.optimize_syntax_fuse_functions)
+    {
+        FuseSumCountAggregatesVisitor::Data data;
+        FuseSumCountAggregatesVisitor(data).visit(query);
+        fuseSumCountAggregates(data.fuse_map);
+    }
+
     /// Rewrite all aggregate functions to add -OrNull suffix to them
     if (settings.aggregate_functions_null_for_empty)
     {
@@ -1425,7 +1568,7 @@ void TreeRewriter::normalize(
         FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases, is_create_parameterized_view);
+    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases);
     QueryNormalizer(normalizer_data).visit(query);
 
     optimizeGroupingSets(query);

@@ -55,8 +55,7 @@ ccache --zero-stats ||:
 if [ "$BUILD_MUSL_KEEPER" == "1" ]
 then
     # build keeper with musl separately
-    # and without rust bindings
-    cmake --debug-trycompile -DENABLE_RUST=OFF -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
+    cmake --debug-trycompile -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
     # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
     ninja $NINJA_FLAGS clickhouse-keeper
 
@@ -98,7 +97,7 @@ ccache_status
 if [ -n "$MAKE_DEB" ]; then
   # No quotes because I want it to expand to nothing if empty.
   # shellcheck disable=SC2086
-  DESTDIR=/build/packages/root ninja $NINJA_FLAGS programs/install
+  DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
   cp /build/programs/clickhouse-diagnostics /build/packages/root/usr/bin
   cp /build/programs/clickhouse-diagnostics /output
   bash -x /build/packages/build
@@ -107,6 +106,8 @@ fi
 mv ./programs/clickhouse* /output
 [ -x ./programs/self-extracting/clickhouse ] && mv ./programs/self-extracting/clickhouse /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
+find . -name '*.so' -print -exec mv '{}' /output \;
+find . -name '*.so.*' -print -exec mv '{}' /output \;
 
 prepare_combined_output () {
     local OUTPUT
@@ -159,24 +160,23 @@ then
     git -C "$PERF_OUTPUT"/ch log -5
     (
         cd "$PERF_OUTPUT"/..
-        tar -cv --zstd -f /output/performance.tar.zst output
+        tar -cv -I pigz -f /output/performance.tgz output
     )
 fi
 
-# May be set for performance test.
+# May be set for split build or for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then
     prepare_combined_output /output
-    tar -cv --zstd -f "$COMBINED_OUTPUT.tar.zst" /output
+    tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
-    mv "$COMBINED_OUTPUT.tar.zst" /output
+    mv "$COMBINED_OUTPUT.tgz" /output
 fi
 
 if [ "coverity" == "$COMBINED_OUTPUT" ]
 then
-    # Coverity does not understand ZSTD.
-    tar -cvz -f "coverity-scan.tar.gz" cov-int
-    mv "coverity-scan.tar.gz" /output
+    tar -cv -I pigz -f "coverity-scan.tgz" cov-int
+    mv "coverity-scan.tgz" /output
 fi
 
 ccache_status

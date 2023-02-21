@@ -24,6 +24,7 @@ private:
     Block header;
     Operator current_operator;
     size_t max_threads;
+    Processors processors;
 };
 
 }

@@ -36,3 +36,4 @@ FROM system.errors
 LIMIT 1
 SETTINGS allow_introspection_functions=1\G
 ```
+

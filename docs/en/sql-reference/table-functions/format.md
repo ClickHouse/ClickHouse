@@ -27,7 +27,7 @@ A table with data parsed from `data` argument according specified format and ext
 
 **Query:**
 ``` sql
-SELECT * FROM format(JSONEachRow,
+:) select * from format(JSONEachRow, 
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
@@ -38,7 +38,7 @@ $$)
 
 **Result:**
 
-```response
+```text
 ┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
@@ -49,7 +49,8 @@ $$)
 
 **Query:**
 ```sql
-DESC format(JSONEachRow,
+
+:) desc format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
@@ -60,7 +61,7 @@ $$)
 
 **Result:**
 
-```response
+```text
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
@@ -70,3 +71,5 @@ $$)
 **See Also**
 
 -   [Formats](../../interfaces/formats.md)
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/format) <!--hide-->
