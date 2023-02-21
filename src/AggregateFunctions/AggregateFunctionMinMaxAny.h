@@ -1478,6 +1478,17 @@ public:
         this->data(place).insertResultInto(to);
     }
 
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function,
+        const DataTypes & /*arguments*/,
+        const Array & /*params*/,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        if (Data::is_nullable)
+            return nested_function;
+        return nullptr;
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override
