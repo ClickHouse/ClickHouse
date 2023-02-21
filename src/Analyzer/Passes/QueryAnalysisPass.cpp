@@ -4928,11 +4928,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto function_base = function->build(argument_columns);
 
+        /// Do not constant fold get scalar functions
+        bool is_get_scalar_function = function_name == "__getScalar" || function_name == "shardNum" ||
+            function_name == "shardCount";
+
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
           * Result: SELECT 2;
           */
-        if (function_base->isSuitableForConstantFolding())
+        if (function_base->isSuitableForConstantFolding() && !is_get_scalar_function)
         {
             auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
@@ -6247,6 +6251,21 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     {
         validateTableExpressionModifiers(join_tree_node, scope);
         initializeTableExpressionData(join_tree_node, scope);
+
+        auto & query_node = scope.scope_node->as<QueryNode &>();
+        auto & mutable_context = query_node.getMutableContext();
+
+        if (!mutable_context->isDistributed())
+        {
+            bool is_distributed = false;
+
+            if (auto * table_node = join_tree_node->as<TableNode>())
+                is_distributed = table_node->getStorage()->isRemote();
+            else if (auto * table_function_node = join_tree_node->as<TableFunctionNode>())
+                is_distributed = table_function_node->getStorage()->isRemote();
+
+            mutable_context->setDistributed(is_distributed);
+        }
     }
 
     auto add_table_expression_alias_into_scope = [&](const QueryTreeNodePtr & table_expression_node)
