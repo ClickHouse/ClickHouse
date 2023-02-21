@@ -350,7 +350,7 @@ Pipe ReadFromMergeTree::readFromPool(
           && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method))
          || (!all_parts_are_local
              && settings.allow_prefetched_read_pool_for_local_filesystem
-             && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method)))
+             && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_method)))
      {
          pool = std::make_shared<MergeTreePrefetchedReadPool>(
              max_streams,
