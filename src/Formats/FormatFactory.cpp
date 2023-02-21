@@ -216,7 +216,8 @@ InputFormatPtr FormatFactory::getInput(
     const Block & sample,
     ContextPtr context,
     UInt64 max_block_size,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    const bool disable_parallel_parsing) const
 {
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
@@ -231,7 +232,7 @@ InputFormatPtr FormatFactory::getInput(
 
     // Doesn't make sense to use parallel parsing with less than four threads
     // (segmentator + two parsers + reader).
-    bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
+    bool parallel_parsing = !disable_parallel_parsing && settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
 
     if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
