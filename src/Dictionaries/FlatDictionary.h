@@ -92,15 +92,10 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const override;
-
-    size_t getHierarchicalIndexBytesAllocated() const override { return hierarchical_index_bytes_allocated; }
-
     ColumnPtr getDescendants(
         ColumnPtr key_column,
         const DataTypePtr & key_type,
-        size_t level,
-        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index) const override;
+        size_t level) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
@@ -136,22 +131,15 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<IPv4>,
-            ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             container;
     };
 
     void createAttributes();
-
     void blockToAttributes(const Block & block);
-
     void updateData();
-
     void loadData();
-
-    void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
 
@@ -177,7 +165,6 @@ private:
     std::vector<bool> loaded_keys;
 
     size_t bytes_allocated = 0;
-    size_t hierarchical_index_bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
@@ -185,7 +172,6 @@ private:
 
     BlockPtr update_field_loaded_block;
     Arena string_arena;
-    DictionaryHierarchicalParentToChildIndexPtr hierarhical_index;
 };
 
 }

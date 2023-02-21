@@ -1,7 +1,6 @@
 ---
-slug: /zh/engines/database-engines/materialize-mysql
-sidebar_position: 29
-sidebar_label: "[experimental] MaterializedMySQL"
+toc_priority: 29
+toc_title: "[experimental] MaterializedMySQL"
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
@@ -97,7 +96,7 @@ CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', 
 
 ### DDL查询 {#ddl-queries}
 
-MySQL DDL查询转换为相应的ClickHouse DDL查询([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop), [RENAME](../../sql-reference/statements/rename.md))。如果ClickHouse无法解析某个DDL查询，则该查询将被忽略。
+MySQL DDL查询转换为相应的ClickHouse DDL查询([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md))。如果ClickHouse无法解析某个DDL查询，则该查询将被忽略。
 
 ### Data Replication {#data-replication}
 
@@ -194,3 +193,5 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │ 
 └───┴─────┴──────┘
 ```
+
+[来源文章](https://clickhouse.com/docs/en/engines/database-engines/materialize-mysql/) <!--hide-->

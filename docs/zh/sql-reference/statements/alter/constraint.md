@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/statements/alter/constraint
-sidebar_position: 43
-sidebar_label: 约束
+toc_priority: 43
+toc_title: 约束
 ---
 
 # 操作约束 {#manipulations-with-constraints}
@@ -13,7 +12,7 @@ ALTER TABLE [db].name ADD CONSTRAINT constraint_name CHECK expression;
 ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 ```
 
-查看[constraints](../../../sql-reference/statements/create/table.mdx#constraints)。
+查看[constraints](../../../sql-reference/statements/create/table.md#constraints)。
 
 查询将从表中添加或删除关于约束的元数据，因此它们将被立即处理。
 

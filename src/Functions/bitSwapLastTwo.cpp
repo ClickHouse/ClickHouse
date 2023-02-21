@@ -27,7 +27,7 @@ struct BitSwapLastTwoImpl
         if constexpr (!std::is_same_v<A, ResultType>)
             // Should be a logical error, but this function is callable from SQL.
             // Need to investigate this.
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.");
+            throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_ARGUMENTS);
 
         auto little_bits = littleBits<A>(a);
         return static_cast<ResultType>(((little_bits & 1) << 1) | ((little_bits >> 1) & 1));
@@ -39,7 +39,7 @@ static constexpr bool compilable = true;
 static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 {
     if (!arg->getType()->isIntegerTy())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "__bitSwapLastTwo expected an integral type");
+        throw Exception("__bitSwapLastTwo expected an integral type", ErrorCodes::LOGICAL_ERROR);
     return b.CreateOr(
             b.CreateShl(b.CreateAnd(arg, 1), 1),
             b.CreateAnd(b.CreateLShr(arg, 1), 1)
@@ -62,7 +62,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
     }
 };
 
-REGISTER_FUNCTION(BitSwapLastTwo)
+void registerFunctionBitSwapLastTwo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitSwapLastTwo>();
 }

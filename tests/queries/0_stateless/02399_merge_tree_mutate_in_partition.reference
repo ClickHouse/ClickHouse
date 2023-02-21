@@ -1,9 +1,0 @@
-1	1	1_1_1_0
-1	2	1_3_3_0
-2	1	2_2_2_0
-2	2	2_4_4_0
-mutation_5.txt	UPDATE n = n + (n NOT IN (default.m)) IN PARTITION ID \'1\' WHERE 1	[]	0	1
-1	2
-1	3
-2	1
-2	2

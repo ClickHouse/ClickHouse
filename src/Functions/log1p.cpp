@@ -13,7 +13,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(Log1p)
+void registerFunctionLog1p(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLog1p>();
 }

@@ -2,11 +2,6 @@ import os
 import math
 import pytest
 
-# FIXME This test is too flaky
-# https://github.com/ClickHouse/ClickHouse/issues/33006
-
-pytestmark = pytest.mark.skip
-
 from .common import *
 
 from helpers.cluster import ClickHouseCluster
@@ -29,7 +24,7 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    cluster = ClickHouseCluster(__file__)
+    cluster = ClickHouseCluster(__file__, name=test_name)
 
     SOURCE = SourceCassandra(
         "Cassandra",

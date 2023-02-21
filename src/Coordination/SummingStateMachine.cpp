@@ -71,10 +71,10 @@ void SummingStateMachine::createSnapshotInternal(nuraft::snapshot & s)
     snapshots[s.get_last_log_idx()] = ctx;
 
     // Maintain last 3 snapshots only.
-    ssize_t num = snapshots.size();
+    int num = snapshots.size();
     auto entry = snapshots.begin();
 
-    for (ssize_t ii = 0; ii < num - MAX_SNAPSHOTS; ++ii)
+    for (int ii = 0; ii < num - MAX_SNAPSHOTS; ++ii)
     {
         if (entry == snapshots.end())
             break;

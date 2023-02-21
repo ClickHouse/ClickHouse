@@ -14,7 +14,7 @@ public:
     using Base::create;
 };
 
-REGISTER_FUNCTION(ArrayEnumerateDenseRanked)
+void registerFunctionArrayEnumerateDenseRanked(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayEnumerateDenseRanked>();
 }

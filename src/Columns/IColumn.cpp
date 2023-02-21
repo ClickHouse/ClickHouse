@@ -20,10 +20,12 @@ String IColumn::dumpStructure() const
     WriteBufferFromOwnString res;
     res << getFamilyName() << "(size = " << size();
 
-    forEachSubcolumn([&](const auto & subcolumn)
+    ColumnCallback callback = [&](ColumnPtr & subcolumn)
     {
         res << ", " << subcolumn->dumpStructure();
-    });
+    };
+
+    const_cast<IColumn*>(this)->forEachSubcolumn(callback);
 
     res << ")";
     return res.str();
@@ -62,20 +64,9 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & defa
     return res;
 }
 
-void IColumn::forEachSubcolumn(MutableColumnCallback callback)
+SerializationInfoPtr IColumn::getSerializationInfo() const
 {
-    std::as_const(*this).forEachSubcolumn([&callback](const WrappedPtr & subcolumn)
-    {
-        callback(const_cast<WrappedPtr &>(subcolumn));
-    });
-}
-
-void IColumn::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
-{
-    std::as_const(*this).forEachSubcolumnRecursively([&callback](const IColumn & subcolumn)
-    {
-        callback(const_cast<IColumn &>(subcolumn));
-    });
+    return std::make_shared<SerializationInfo>(ISerialization::getKind(*this), SerializationInfo::Settings{});
 }
 
 bool isColumnNullable(const IColumn & column)

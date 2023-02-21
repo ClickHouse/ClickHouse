@@ -129,7 +129,7 @@ public:
 
     IntervalTree() { nodes.resize(1); }
 
-    template <typename TValue = Value>
+    template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     requires std::is_same_v<Value, IntervalTreeVoidValue>
     ALWAYS_INLINE bool emplace(Interval interval)
     {
@@ -157,22 +157,19 @@ public:
         return true;
     }
 
-    template <typename TValue = Value>
-    requires std::is_same_v<TValue, IntervalTreeVoidValue>
+    template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     bool insert(Interval interval)
     {
         return emplace(interval);
     }
 
-    template <typename TValue = Value>
-    requires (!std::is_same_v<TValue, IntervalTreeVoidValue>)
+    template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     bool insert(Interval interval, const Value & value)
     {
         return emplace(interval, value);
     }
 
-    template <typename TValue = Value>
-    requires (!std::is_same_v<TValue, IntervalTreeVoidValue>)
+    template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     bool insert(Interval interval, Value && value)
     {
         return emplace(interval, std::move(value));

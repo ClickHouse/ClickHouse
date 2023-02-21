@@ -27,9 +27,9 @@ protected:
 
     String getAliasToOrName(const String & name) const
     {
-        if (aliases.contains(name))
+        if (aliases.count(name))
             return aliases.at(name);
-        else if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.contains(name_lowercase))
+        else if (String name_lowercase = Poco::toLower(name); case_insensitive_aliases.count(name_lowercase))
             return case_insensitive_aliases.at(name_lowercase);
         else
             return name;
@@ -60,25 +60,25 @@ public:
         else if (auto real_name_lowercase = Poco::toLower(real_name); case_insensitive_creator_map.count(real_name_lowercase))
             real_dict_name = real_name_lowercase;
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: can't create alias '{}', the real name '{}' is not registered",
-                            factory_name, alias_name, real_name);
+            throw Exception(factory_name + ": can't create alias '" + alias_name + "', the real name '" + real_name + "' is not registered",
+                ErrorCodes::LOGICAL_ERROR);
 
         String alias_name_lowercase = Poco::toLower(alias_name);
 
         if (creator_map.count(alias_name) || case_insensitive_creator_map.count(alias_name_lowercase))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: the alias name '{}' is already registered as real name",
-                            factory_name, alias_name);
+            throw Exception(
+                factory_name + ": the alias name '" + alias_name + "' is already registered as real name", ErrorCodes::LOGICAL_ERROR);
 
         if (case_sensitiveness == CaseInsensitive)
         {
             if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_dict_name).second)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: case insensitive alias name '{}' is not unique",
-                                factory_name, alias_name);
+                throw Exception(
+                    factory_name + ": case insensitive alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
             case_insensitive_name_mapping[alias_name_lowercase] = real_name;
         }
 
         if (!aliases.emplace(alias_name, real_dict_name).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: alias name '{}' is not unique", factory_name, alias_name);
+            throw Exception(factory_name + ": alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
     }
 
     std::vector<String> getAllRegisteredNames() const override
@@ -103,12 +103,12 @@ public:
         else if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
             return jt->second;
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: name '{}' is not alias", getFactoryName(), name);
+        throw Exception(getFactoryName() + ": name '" + name + "' is not alias", ErrorCodes::LOGICAL_ERROR);
     }
 
     bool isAlias(const String & name) const
     {
-        return aliases.count(name) || case_insensitive_aliases.contains(name);
+        return aliases.count(name) || case_insensitive_aliases.count(name);
     }
 
     bool hasNameOrAlias(const String & name) const
@@ -125,7 +125,7 @@ public:
         return name;
     }
 
-    ~IFactoryWithAliases() override = default;
+    virtual ~IFactoryWithAliases() override = default;
 
 private:
     using InnerMap = std::unordered_map<String, Value>; // name -> creator

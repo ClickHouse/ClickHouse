@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -70,7 +70,7 @@ public:
             using Converter = typename TypeConverter::Type;
 
             if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<Point>>)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of function {} must not be a Point", getName());
+                throw Exception(fmt::format("The argument of function {} must not be a Point", getName()), ErrorCodes::BAD_ARGUMENTS);
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
@@ -99,7 +99,7 @@ template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
 
-REGISTER_FUNCTION(PolygonConvexHull)
+void registerFunctionPolygonConvexHull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
 }

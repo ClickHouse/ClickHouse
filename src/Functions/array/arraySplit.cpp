@@ -69,7 +69,7 @@ struct ArraySplitImpl
             const auto * column_cut_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_cut_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of cut column");
+                throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_cut_const->getValue<UInt8>())
             {
@@ -116,7 +116,7 @@ struct NameArrayReverseSplit { static constexpr auto name = "arrayReverseSplit";
 using FunctionArraySplit = FunctionArrayMapped<ArraySplitImpl<false>, NameArraySplit>;
 using FunctionArrayReverseSplit = FunctionArrayMapped<ArraySplitImpl<true>, NameArrayReverseSplit>;
 
-REGISTER_FUNCTION(ArraySplit)
+void registerFunctionsArraySplit(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArraySplit>();
     factory.registerFunction<FunctionArrayReverseSplit>();

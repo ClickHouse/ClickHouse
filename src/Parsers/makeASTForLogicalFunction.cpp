@@ -22,9 +22,9 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
     });
 
     if (!partial_result)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(0)});
+        return std::make_shared<ASTLiteral>(Field{UInt8(0)});
     if (arguments.empty())
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return std::make_shared<ASTLiteral>(Field{UInt8(1)});
     if (arguments.size() == 1)
         return arguments[0];
 
@@ -51,9 +51,9 @@ ASTPtr makeASTForLogicalOr(ASTs && arguments)
     });
 
     if (partial_result)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return std::make_shared<ASTLiteral>(Field{UInt8(1)});
     if (arguments.empty())
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(0)});
+        return std::make_shared<ASTLiteral>(Field{UInt8(0)});
     if (arguments.size() == 1)
         return arguments[0];
 

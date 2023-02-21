@@ -12,7 +12,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -42,15 +41,14 @@ ASTPtr makeSubqueryTemplate()
     ParserTablesInSelectQueryElement parser(true);
     ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--.s`", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (!subquery_template)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse subquery template");
+        throw Exception("Cannot parse subquery template", ErrorCodes::LOGICAL_ERROR);
     return subquery_template;
 }
 
 ASTPtr makeSubqueryQualifiedAsterisk()
 {
     auto asterisk = std::make_shared<ASTQualifiedAsterisk>();
-    asterisk->qualifier = std::make_shared<ASTIdentifier>("--.s");
-    asterisk->children.push_back(asterisk->qualifier);
+    asterisk->children.emplace_back(std::make_shared<ASTTableIdentifier>("--.s"));
     return asterisk;
 }
 
@@ -61,7 +59,6 @@ public:
     struct Data
     {
         std::unordered_map<String, NamesAndTypesList> table_columns;
-        std::unordered_map<String, String> table_name_alias;
         std::vector<String> tables_order;
         std::shared_ptr<ASTExpressionList> new_select_expression_list;
 
@@ -73,7 +70,6 @@ public:
                 String table_name = table.table.getQualifiedNamePrefix(false);
                 NamesAndTypesList columns = table.columns;
                 tables_order.push_back(table_name);
-                table_name_alias.emplace(table.table.table /* table_name */, table_name /* alias_name */);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }
         }
@@ -85,24 +81,11 @@ public:
         /// By default should_add_column_predicate returns true for any column name
         void addTableColumns(
             const String & table_name,
-            ASTs & columns,
             ShouldAddColumnPredicate should_add_column_predicate = [](const String &) { return true; })
         {
-            String name = table_name;
-            auto it = table_columns.find(name);
+            auto it = table_columns.find(table_name);
             if (it == table_columns.end())
-            {
-                auto table_name_it = table_name_alias.find(table_name);
-                if (table_name_it != table_name_alias.end())
-                {
-                    name = table_name_it->second;
-                    it = table_columns.find(table_name_it->second);
-                    if (it == table_columns.end())
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown qualified identifier: {}", table_name);
-                }
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown qualified identifier: {}", table_name);
-            }
+                throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
             for (const auto & column : it->second)
             {
@@ -122,7 +105,7 @@ public:
                     else
                         identifier = std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name});
 
-                    columns.emplace_back(std::move(identifier));
+                    new_select_expression_list->children.emplace_back(std::move(identifier));
                 }
             }
         }
@@ -146,80 +129,32 @@ private:
 
         for (const auto & child : node.children)
         {
-            ASTs columns;
-            if (const auto * asterisk = child->as<ASTAsterisk>())
+            if (child->as<ASTAsterisk>())
             {
                 has_asterisks = true;
 
                 for (auto & table_name : data.tables_order)
-                    data.addTableColumns(table_name, columns);
-
-                if (asterisk->transformers)
-                {
-                    for (const auto & transformer : asterisk->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
-                }
+                    data.addTableColumns(table_name);
             }
-            else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
+            else if (child->as<ASTQualifiedAsterisk>())
             {
                 has_asterisks = true;
 
-                if (!qualified_asterisk->qualifier)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must have a qualifier");
+                if (child->children.size() != 1)
+                    throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
+                auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
 
-                auto & identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
-
-                data.addTableColumns(identifier.name(), columns);
-
-                if (qualified_asterisk->transformers)
-                {
-                    for (const auto & transformer : qualified_asterisk->transformers->children)
-                    {
-                        if (transformer->as<ASTColumnsApplyTransformer>() ||
-                            transformer->as<ASTColumnsExceptTransformer>() ||
-                            transformer->as<ASTColumnsReplaceTransformer>())
-                            IASTColumnsTransformer::transform(transformer, columns);
-                        else
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must only have children of IASTColumnsTransformer type");
-                    }
-                }
+                data.addTableColumns(identifier.name());
             }
-            else if (const auto * columns_list_matcher = child->as<ASTColumnsListMatcher>())
-            {
-                has_asterisks = true;
-
-                for (const auto & ident : columns_list_matcher->column_list->children)
-                    columns.emplace_back(ident->clone());
-
-                if (columns_list_matcher->transformers)
-                {
-                    for (const auto & transformer : columns_list_matcher->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
-                }
-            }
-            else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
+            else if (auto * columns_matcher = child->as<ASTColumnsMatcher>())
             {
                 has_asterisks = true;
 
                 for (auto & table_name : data.tables_order)
-                    data.addTableColumns(
-                        table_name,
-                        columns,
-                        [&](const String & column_name) { return columns_regexp_matcher->isColumnMatching(column_name); });
-
-                if (columns_regexp_matcher->transformers)
-                {
-                    for (const auto & transformer : columns_regexp_matcher->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
-                }
+                    data.addTableColumns(table_name, [&](const String & column_name) { return columns_matcher->isColumnMatching(column_name); });
             }
             else
                 data.new_select_expression_list->children.push_back(child);
-
-            data.new_select_expression_list->children.insert(
-                data.new_select_expression_list->children.end(),
-                std::make_move_iterator(columns.begin()),
-                std::make_move_iterator(columns.end()));
         }
 
         if (!has_asterisks)
@@ -241,12 +176,13 @@ struct RewriteTablesVisitorData
     {
         if (done)
             return;
-        ASTs new_tables{left, right};
+        std::vector<ASTPtr> new_tables{left, right};
         ast->children.swap(new_tables);
         done = true;
     }
 };
 
+template <size_t version = 1>
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables())
@@ -261,13 +197,14 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         return false;
 
     size_t num_array_join = 0;
+    size_t num_using = 0;
 
     table_expressions.reserve(num_tables);
     for (size_t i = 0; i < num_tables; ++i)
     {
         const auto * table = tables->children[i]->as<ASTTablesInSelectQueryElement>();
         if (!table)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table expected");
+            throw Exception("Table expected", ErrorCodes::LOGICAL_ERROR);
 
         if (table->table_expression)
             if (const auto * expression = table->table_expression->as<ASTTableExpression>())
@@ -276,7 +213,7 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
             continue;
 
         if (!table->table_join && !table->array_join)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Joined table expected");
+            throw Exception("Joined table expected", ErrorCodes::LOGICAL_ERROR);
 
         if (table->array_join)
         {
@@ -285,16 +222,21 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         }
 
         const auto & join = table->table_join->as<ASTTableJoin &>();
-        if (join.kind == JoinKind::Comma)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query");
+        if (join.kind == ASTTableJoin::Kind::Comma)
+            throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (join.using_expression_list)
+            ++num_using;
     }
 
     if (num_tables - num_array_join <= 2)
         return false;
 
     /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
+    if (num_using && version <= 1)
+        throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
     if (num_array_join)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple JOIN does not support mix with ARRAY JOINs");
+        throw Exception("Multiple JOIN does not support mix with ARRAY JOINs", ErrorCodes::NOT_IMPLEMENTED);
     return true;
 }
 
@@ -320,7 +262,7 @@ struct CollectColumnIdentifiersMatcher
         void addIdentifier(const ASTIdentifier & ident)
         {
             for (const auto & aliases : ignored)
-                if (aliases.contains(ident.name()))
+                if (aliases.count(ident.name()))
                     return;
             identifiers.push_back(const_cast<ASTIdentifier *>(&ident));
         }
@@ -385,11 +327,10 @@ struct CheckAliasDependencyVisitorData
 
     void visit(ASTIdentifier & ident, ASTPtr &)
     {
-        if (!dependency && aliases.contains(ident.name()))
+        if (!dependency && aliases.count(ident.name()))
             dependency = &ident;
     }
 };
-
 using CheckAliasDependencyMatcher = OneTypeMatcher<CheckAliasDependencyVisitorData>;
 using CheckAliasDependencyVisitor = InDepthNodeVisitor<CheckAliasDependencyMatcher, true>;
 
@@ -439,12 +380,7 @@ private:
     static void visit(ASTSelectQuery & select, ASTPtr &, Data & data)
     {
         if (!data.done)
-        {
-            if (data.expression_list->children.empty())
-                data.expression_list->children.emplace_back(std::make_shared<ASTAsterisk>());
-
             select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.expression_list));
-        }
         data.done = true;
     }
 };
@@ -530,19 +466,16 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
 {
     if (!ident.tryGetAlias().empty())
         return;
-
     if (original_name.empty())
         return;
 
-    if (!restored_names.contains(original_name))
+    if (!restored_names.count(original_name))
     {
         ident.setAlias(original_name);
         restored_names.emplace(original_name);
     }
     else
-    {
         ident.setShortName(original_name);
-    }
 }
 
 /// Find clashes and normalize names
@@ -560,15 +493,15 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 {
     size_t last_table_pos = tables.size() - 1;
 
+    NameSet restored_names;
     std::vector<TableNeededColumns> needed_columns;
     needed_columns.reserve(tables.size());
     for (const auto & table : tables)
         needed_columns.push_back(TableNeededColumns{table.table});
 
-    NameSet restored_names;
     for (ASTIdentifier * ident : identifiers)
     {
-        bool got_alias = aliases.contains(ident->name());
+        bool got_alias = aliases.count(ident->name());
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
         if (auto table_pos = IdentifierSemantic::chooseTableColumnMatch(*ident, tables, allow_ambiguous))
@@ -579,25 +512,22 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 {
                     auto alias = aliases.find(ident->name())->second;
                     auto alias_ident = alias->clone();
-                    if (auto * alias_ident_typed = alias_ident->as<ASTIdentifier>())
-                    {
-                        alias_ident_typed->restoreTable();
-                        bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
-                        if (!alias_equals_column_name)
-                            throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Alias clashes with qualified column '{}'", ident->name());
-                    }
+                    alias_ident->as<ASTIdentifier>()->restoreTable();
+                    bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
+                    if (!alias_equals_column_name)
+                        throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 }
                 String short_name = ident->shortName();
                 String original_long_name;
-                if (public_identifiers.contains(ident))
+                if (public_identifiers.count(ident))
                     original_long_name = ident->name();
 
                 size_t count = countTablesWithColumn(tables, short_name);
-                const auto & table = tables[*table_pos];
 
                 /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
-                if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
+                if (count > 1 || aliases.count(short_name) || !isValidIdentifierBegin(short_name.at(0)))
                 {
+                    const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     const auto & unique_long_name = ident->name();
 
@@ -611,13 +541,6 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 }
                 else
                 {
-                    if (!table.hasColumn(short_name))
-                    {
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                                        "There's no column '{}' in table '{}'",
-                                        ident->name(),
-                                        table.table.getQualifiedNamePrefix(false));
-                    }
                     ident->setShortName(short_name); /// table.column -> column
                     needed_columns[*table_pos].no_clashes.emplace(short_name);
                 }
@@ -682,7 +605,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     std::vector<const ASTTableExpression *> table_expressions;
-    if (!needRewrite(select, table_expressions))
+    if (!needRewrite<2>(select, table_expressions))
         return;
 
     auto & src_tables = select.tables()->children;
@@ -690,7 +613,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
 
     if (table_expressions.size() != data.tables.size() ||
         tables_count != data.tables.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent tables count in JOIN rewriter");
+        throw Exception("Inconsistent tables count in JOIN rewriter", ErrorCodes::LOGICAL_ERROR);
 
     /// Replace * and t.* with columns in select expression list.
     {
@@ -730,7 +653,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
                     for (auto * ident : on_identifiers)
                     {
                         auto it = data.aliases.find(ident->name());
-                        if (!on_aliases.contains(ident->name()) && it != data.aliases.end())
+                        if (!on_aliases.count(ident->name()) && it != data.aliases.end())
                         {
                             auto alias_expression = it->second;
                             alias_pushdown[table_pos].push_back(alias_expression);
@@ -753,15 +676,15 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         CheckAliasDependencyVisitor::Data check{data.aliases};
         CheckAliasDependencyVisitor(check).visit(expr.second);
         if (check.dependency)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rewrite JOINs. "
-                            "Alias '{}' used in ON section depends on another alias '{}'",
-                            expr.first, check.dependency->name());
+            throw Exception("Cannot rewrite JOINs. Alias '" + expr.first +
+                            "' used in ON section depends on another alias '" + check.dependency->name() + "'",
+                            ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Check same name in aliases, USING and ON sections. Cannot push down alias to ON through USING cause of name masquerading.
     for (auto * ident : using_identifiers)
-        if (on_aliases.contains(ident->name()))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rewrite JOINs. Alias '{}' appears both in ON and USING", ident->name());
+        if (on_aliases.count(ident->name()))
+            throw Exception("Cannot rewrite JOINs. Alias '" + ident->name() + "' appears both in ON and USING", ErrorCodes::NOT_IMPLEMENTED);
     using_identifiers.clear();
 
     /// Replace pushdowned expressions with aliases names in original expression lists.
@@ -772,10 +695,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     std::unordered_set<ASTIdentifier *> public_identifiers;
     for (auto & top_level_child : select.select()->children)
         if (auto * ident = top_level_child->as<ASTIdentifier>())
-        {
-            if (!data.try_to_keep_original_names || startsWith(ident->name(), UniqueShortNames::pattern))
-                public_identifiers.insert(ident);
-        }
+            public_identifiers.insert(ident);
 
     UniqueShortNames unique_names;
     std::vector<TableNeededColumns> needed_columns =
@@ -809,10 +729,10 @@ ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_r
     const auto * left = ast_left->as<ASTTablesInSelectQueryElement>();
     const auto * right = ast_right->as<ASTTablesInSelectQueryElement>();
     if (!left || !right)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two TablesInSelectQueryElements expected");
+        throw Exception("Two TablesInSelectQueryElements expected", ErrorCodes::LOGICAL_ERROR);
 
     if (!right->table_join)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join expected");
+        throw Exception("Table join expected", ErrorCodes::LOGICAL_ERROR);
 
     /// replace '_t' with pair of joined tables
     RewriteVisitor::Data visitor_data{ast_left, ast_right};

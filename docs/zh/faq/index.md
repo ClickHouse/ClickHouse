@@ -1,8 +1,7 @@
 ---
-slug: /zh/faq/
-sidebar_label: F.A.Q.
+toc_folder_title: F.A.Q.
 toc_hidden: true
-sidebar_position: 76
+toc_priority: 76
 ---
 
 # ClickHouse 问答 F.A.Q {#clickhouse-f-a-q}

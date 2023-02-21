@@ -52,15 +52,12 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// tuple(..., Nothing, ...) -> Tuple(..., Nothing, ...)
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
+            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return std::make_shared<DataTypeTuple>(arguments);
     }
@@ -83,7 +80,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Tuple)
+void registerFunctionTuple(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTuple>();
 }

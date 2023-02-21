@@ -81,8 +81,8 @@
         <substitution>
             <name>elements_count</name>
             <values>
-                <value>500000</value>
-                <value>750000</value>
+                <value>5000000</value>
+                <value>7500000</value>
             </values>
         </substitution>
     </substitutions>
@@ -129,9 +129,10 @@
         FORMAT Null;
     </query>
 
+    <drop_query>DROP TABLE IF EXISTS simple_key_hashed_array_dictionary_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS complex_key_hashed_array_dictionary_source_table;</drop_query>
+
     <drop_query>DROP DICTIONARY IF EXISTS simple_key_hashed_array_dictionary;</drop_query>
     <drop_query>DROP DICTIONARY IF EXISTS complex_key_hashed_array_dictionary;</drop_query>
 
-    <drop_query>DROP TABLE IF EXISTS simple_key_hashed_array_dictionary_source_table;</drop_query>
-    <drop_query>DROP TABLE IF EXISTS complex_key_hashed_array_dictionary_source_table;</drop_query>
 </test>

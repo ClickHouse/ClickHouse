@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
+#include "config_core.h"
 
 #if USE_NURAFT
 
@@ -8,6 +9,7 @@
 #include <Common/MultiVersion.h>
 #include "IServer.h"
 #include <Common/Stopwatch.h>
+#include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -80,8 +82,6 @@ private:
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBufferFromPocoSocket> out;
-
-    std::atomic<bool> connected{false};
 
     void runImpl();
 

@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/clusters
----
-# clusters
+# system.clusters {#system-clusters}
 
 Contains information about clusters available in the config file and the servers in them.
 
@@ -70,3 +67,5 @@ estimated_recovery_time: 0
 -   [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 -   [distributed_replica_error_cap setting](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life setting](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/clusters) <!--hide-->
