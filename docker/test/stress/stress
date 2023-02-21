@@ -78,7 +78,7 @@ def run_func_test(
     pipes = []
     for i in range(0, len(output_paths)):
         f = open(output_paths[i], "w")
-        full_command = "{} {} {} {} {} --stress".format(
+        full_command = "{} {} {} {} {}".format(
             cmd,
             get_options(i, backward_compatibility_check),
             global_time_limit_option,
