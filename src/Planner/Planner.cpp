@@ -216,16 +216,11 @@ public:
             limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         }
 
-        if (settings.limit)
-            limit_length = limit_length ? std::min(limit_length, settings.limit.value) : settings.limit;
-
         if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
             limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
         }
-
-        limit_offset += settings.offset;
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
         if (limit_length != 0 &&
