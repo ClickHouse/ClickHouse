@@ -516,8 +516,10 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
 
 bool AggregatingStep::canUseProjection() const
 {
-    //LOG_TRACE(&Poco::Logger::get("AggregatingStep"), "canUseProjection {} {} {}", grouping_sets_params.size(), sort_description_for_merging.size(), memory_bound_merging_of_aggregation_results_enabled);
-    return grouping_sets_params.empty() && sort_description_for_merging.empty(); // && !memory_bound_merging_of_aggregation_results_enabled;
+    /// For now, grouping sets are not supported.
+    /// Aggregation in order should be applied after projection optimization if projection is full.
+    /// Skip it here just in case.
+    return grouping_sets_params.empty() && sort_description_for_merging.empty();
 }
 
 void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & input_stream)
@@ -541,13 +543,8 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
         DataStreams{input_streams.front(), input_stream},
         params,
         final,
-        //max_block_size,
         merge_threads,
         temporary_data_merge_threads
-        //group_by_use_nulls,
-        //group_by_sort_description,
-        //should_produce_results_in_order_of_bucket_number
-        //memory_bound_merging_of_aggregation_results_enabled,
     );
 
     assertBlocksHaveEqualStructure(getOutputStream().header, aggregating_projection->getOutputStream().header, "AggregatingStep");
@@ -572,23 +569,12 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     DataStreams input_streams_,
     Aggregator::Params params_,
     bool final_,
-    //size_t max_block_size_,
     size_t merge_threads_,
-    size_t temporary_data_merge_threads_
-    //bool group_by_use_nulls_,
-    //SortDescription group_by_sort_description_,
-    //bool should_produce_results_in_order_of_bucket_number_
-    //bool memory_bound_merging_of_aggregation_results_enabled_
-    )
+    size_t temporary_data_merge_threads_)
     : params(std::move(params_))
     , final(final_)
-    //, max_block_size(max_block_size_)
     , merge_threads(merge_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
-    //, group_by_use_nulls(group_by_use_nulls_)
-    //, group_by_sort_description(std::move(group_by_sort_description_))
-    //, should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
-    //, memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
     input_streams = std::move(input_streams_);
 
@@ -631,7 +617,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
 
     AggregatorListPtr aggregator_list_ptr = std::make_shared<AggregatorList>();
 
-    /// TODO apply optimize_aggregation_in_order here too (like below)
+    /// TODO apply optimize_aggregation_in_order here somehow
     auto build_aggregate_pipeline = [&](QueryPipelineBuilder & pipeline, bool projection)
     {
         auto params_copy = params;

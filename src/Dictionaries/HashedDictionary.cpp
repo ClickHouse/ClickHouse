@@ -396,8 +396,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::hasKeys
             extractor.rollbackCurrentKey();
         }
 
-        query_count.fetch_add(keys_size);
-        found_count.fetch_add(keys_found);
+        query_count.fetch_add(keys_size, std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
 
@@ -422,8 +422,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::hasKeys
         }
     });
 
-    query_count.fetch_add(keys_size);
-    found_count.fetch_add(keys_found);
+    query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -482,8 +482,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getHierarchy(C
 
         auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, is_key_valid_func, get_parent_func);
 
-        query_count.fetch_add(keys.size());
-        found_count.fetch_add(keys_found);
+        query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return dictionary_hierarchy_array;
     }
@@ -556,8 +556,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::isInHie
 
         auto result = getKeysIsInHierarchyColumn(keys, keys_in, is_key_valid_func, get_parent_key_func);
 
-        query_count.fetch_add(keys.size());
-        found_count.fetch_add(keys_found);
+        query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return result;
     }
@@ -615,8 +615,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getDescendants
         size_t keys_found;
         auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
-        query_count.fetch_add(keys.size());
-        found_count.fetch_add(keys_found);
+        query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
         return result;
     }
@@ -882,8 +882,8 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsImpl(
         keys_extractor.rollbackCurrentKey();
     }
 
-    query_count.fetch_add(keys_size);
-    found_count.fetch_add(keys_found);
+    query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

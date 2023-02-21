@@ -105,6 +105,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
+    size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t num_applied_projection = 0;
     bool has_reading_from_mt = false;
 
@@ -141,12 +142,18 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             continue;
         }
 
-        if (num_applied_projection < 5 && optimization_settings.optimize_projection)
+        if (optimization_settings.optimize_projection)
         {
             bool applied = optimizeUseNormalProjections(stack, nodes);
             /// This is actually some internal knowledge
             bool stack_was_updated = !stack.back().node->children.empty();
             num_applied_projection += applied;
+
+            if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
+                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                "Too many projection optimizations applied to query plan. Current limit {}",
+                                max_optimizations_to_apply);
+
             if (applied && stack_was_updated)
                 continue;
         }

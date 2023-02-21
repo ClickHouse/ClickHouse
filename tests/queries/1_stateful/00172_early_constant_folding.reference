@@ -1,6 +1,8 @@
-(Expression)
-ExpressionTransform
-  (ReadFromStorage)
-  AggregatingTransform
-    ExpressionTransform
-      SourceFromSingleChunk 0 → 1
+ExpressionTransform × 25
+  (Aggregating)
+  Resize 1 → 25
+    AggregatingTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromPreparedSource)
+        SourceFromSingleChunk 0 → 1
