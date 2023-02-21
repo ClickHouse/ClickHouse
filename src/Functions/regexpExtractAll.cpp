@@ -287,6 +287,7 @@ namespace
             Pos start = reinterpret_cast<Pos>(padded_str.data());
             Pos pos = start;
             Pos end = start + padded_str.size();
+            Pos prev_pos = nullptr;
             std::vector<OptimizedRegularExpression::MatchVec> matches_groups;
             while (pos < end)
             {
@@ -302,7 +303,12 @@ namespace
                     if (match.offset != std::string::npos)
                         match.offset += pos - start;
 
+                prev_pos = pos;
                 pos = start + matches[0].offset + matches[0].length;
+                /// Avoid dead loop caused by empty captured string
+                if (pos == prev_pos)
+                    ++pos;
+
                 matches_groups.emplace_back(std::move(matches));
             }
 
