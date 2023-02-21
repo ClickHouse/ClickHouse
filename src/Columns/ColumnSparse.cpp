@@ -456,6 +456,7 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
             nullptr, nested_result, direction, nan_direction_hint);
 
         const auto & offsets_data = getOffsetsData();
+        compare_results.resize(size());
         std::fill(compare_results.begin(), compare_results.end(), nested_result[0]);
         for (size_t i = 0; i < offsets_data.size(); ++i)
             compare_results[offsets_data[i]] = nested_result[i + 1];
