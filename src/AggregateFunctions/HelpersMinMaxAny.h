@@ -51,20 +51,11 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
     return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<>>>(argument_type);
 }
 
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
+template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, bool RespectNulls = false, bool NullIsGreater = false>
 static IAggregateFunction * createAggregateFunctionSingleNullableValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
+    assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
-    bool is_nullable = false;
-    bool is_null_greater = false;
-    if (parameters.size() > 0)
-    {
-        is_nullable = parameters[0].get<bool>();
-    }
-    if (parameters.size() > 1)
-    {
-       is_null_greater = parameters[1].get<bool>();
-    }
     if (parameters.size() > 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "name's parameter size must not be larger  then 2");
 
@@ -72,15 +63,15 @@ static IAggregateFunction * createAggregateFunctionSingleNullableValue(const Str
     WhichDataType which(argument_type);
     // if the resule value could be null(excluding the case that no row is matched),
     // use SingleValueDataGeneric.
-    if (!is_nullable)
+    if constexpr (!RespectNulls)
     {
         return createAggregateFunctionSingleValue<AggregateFunctionTemplate, Data>(name, argument_types, Array(), settings);
     }
-    else if (is_nullable && is_null_greater)
+    else if constexpr (NullIsGreater)
     {
         return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true, true>>>(argument_type);
     }
-    else if (is_nullable && !is_null_greater)
+    else
     {
         return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true, false>>>(argument_type);
     }

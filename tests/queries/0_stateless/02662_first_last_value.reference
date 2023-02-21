@@ -7,14 +7,14 @@ insert into test (a,b) values (1,null), (2,3), (4, 5), (6,null);
 -- first value
 select first_value(b) from test;
 3
-select first_value(false)(b) from test;
+select first_value(b) ignore nulls from test;
 3
-select first_value(true)(b) from test;
+select first_value(b) respect nulls from test;
 \N
 -- last value
 select last_value(b) from test;
 5
-select last_value(false)(b) from test;
+select last_value(b) ignore nulls from test;
 5
-select last_value(true)(b) from test;
+select last_value(true)(b) respect nulls from test;
 \N
