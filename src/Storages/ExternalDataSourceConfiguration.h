@@ -34,12 +34,6 @@ struct ExternalDataSourceConfiguration
 };
 
 
-struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
-{
-    String on_conflict;
-};
-
-
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
 struct ExternalDataSourceInfo
@@ -48,20 +42,6 @@ struct ExternalDataSourceInfo
     StorageSpecificArgs specific_args;
     SettingsChanges settings_changes;
 };
-
-/* If there is a storage engine's configuration specified in the named_collections,
- * this function returns valid for usage ExternalDataSourceConfiguration struct
- * otherwise std::nullopt is returned.
- *
- * If any configuration options are provided as key-value engine arguments, they will override
- * configuration values, i.e. ENGINE = PostgreSQL(postgresql_configuration, database = 'postgres_database');
- *
- * Any key-value engine argument except common (`host`, `port`, `username`, `password`, `database`)
- * is returned in EngineArgs struct.
- */
-template <typename T = EmptySettingsTraits>
-std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true, const BaseSettings<T> & storage_settings = {});
 
 using HasConfigKeyFunc = std::function<bool(const String &)>;
 
