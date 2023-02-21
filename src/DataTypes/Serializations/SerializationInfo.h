@@ -51,6 +51,7 @@ public:
     virtual ~SerializationInfo() = default;
 
     virtual bool hasCustomSerialization() const { return kind != ISerialization::Kind::DEFAULT; }
+    virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(SerializationInfo) == typeid(rhs); }
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);

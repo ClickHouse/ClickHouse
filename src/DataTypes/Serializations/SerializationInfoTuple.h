@@ -11,6 +11,7 @@ public:
     SerializationInfoTuple(MutableSerializationInfos elems_, Names names_, const Settings & settings_);
 
     bool hasCustomSerialization() const override;
+    bool structureEquals(const SerializationInfo & rhs) const override;
 
     void add(const IColumn & column) override;
     void add(const SerializationInfo & other) override;
@@ -25,6 +26,7 @@ public:
     Poco::JSON::Object toJSON() const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
+    size_t getNumElements() const { return elems.size(); }
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     ISerialization::Kind getElementKind(size_t i) const { return elems[i]->getKind(); }
 

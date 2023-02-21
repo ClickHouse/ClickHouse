@@ -28,6 +28,19 @@ bool SerializationInfoTuple::hasCustomSerialization() const
     return std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasCustomSerialization(); });
 }
 
+bool SerializationInfoTuple::structureEquals(const SerializationInfo & rhs) const
+{
+    const auto * rhs_tuple = typeid_cast<const SerializationInfoTuple *>(&rhs);
+    if (!rhs_tuple || elems.size() != rhs_tuple->elems.size())
+        return false;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+        if (!elems[i]->structureEquals(*rhs_tuple->elems[i]))
+            return false;
+
+    return true;
+}
+
 void SerializationInfoTuple::add(const IColumn & column)
 {
     SerializationInfo::add(column);
