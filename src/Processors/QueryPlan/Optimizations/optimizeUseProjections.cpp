@@ -513,6 +513,10 @@ bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (reading->isParallelReadingEnabled())
         return false;
 
+    // Currently projection don't support deduplication when moving parts between shards.
+    if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
+        return false;
+
     LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try optimize projection 5");
 
     const auto metadata = reading->getStorageMetadata();
@@ -810,6 +814,10 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (reading->isParallelReadingEnabled())
         return false;
 
+    // Currently projection don't support deduplication when moving parts between shards.
+    if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
+        return false;
+
     auto iter = stack.rbegin();
     while (iter != stack.rend())
     {
@@ -844,17 +852,12 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (!buildAggregatingDAG(*iter->node->children.front(), dag, filter_nodes, need_remove_column))
         return false;
 
-    if (dag)
-    {
-        dag->removeUnusedActions();
-        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
-    }
-
     const ActionsDAG::Node * filter_node = nullptr;
     if (!filter_nodes.empty())
     {
         auto & outputs = dag->getOutputs();
         filter_node = filter_nodes.back();
+
         if (filter_nodes.size() > 1)
         {
             if (need_remove_column)
@@ -866,6 +869,20 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
                 if (pos < outputs.size())
                     outputs.erase(outputs.begin() + pos);
             }
+            else
+            {
+                for (auto & output : outputs)
+                {
+                    if (output == filter_node)
+                    {
+                        ColumnWithTypeAndName col;
+                        col.name = filter_node->result_name;
+                        col.type = filter_node->result_type;
+                        col.column = col.type->createColumnConst(1, 1);
+                        output = &dag->addColumn(std::move(col));
+                    }
+                }
+            }
 
             FunctionOverloadResolverPtr func_builder_and =
                 std::make_unique<FunctionToOverloadResolverAdaptor>(
@@ -873,9 +890,16 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
             filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
             outputs.insert(outputs.begin(), filter_node);
+            need_remove_column = true;
         }
-        else if (!need_remove_column)
-            outputs.insert(outputs.begin(), filter_node);
+        // else if (!need_remove_column)
+        //     outputs.insert(outputs.begin(), filter_node);
+    }
+
+    if (dag)
+    {
+        dag->removeUnusedActions();
+        LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
     }
 
     std::list<NormalProjectionCandidate> candidates;
@@ -1024,11 +1048,14 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
         if (filter_node)
         {
+            //std::cerr << "======== " << projection_reading_node.step->getOutputStream().header.dumpStructure();
             expr_or_filter_node.step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputStream(),
                 dag,
                 filter_node->result_name,
-                true);
+                need_remove_column);
+
+            //std::cerr << "======2= " << expr_or_filter_node.step->getOutputStream().header.dumpStructure();
         }
         else
             expr_or_filter_node.step = std::make_unique<ExpressionStep>(
@@ -1048,8 +1075,30 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     }
     else
     {
+        const auto & main_stream = iter->node->children.front()->step->getOutputStream();
+        const auto * proj_stream = &next_node->step->getOutputStream();
+
+        if (!blocksHaveEqualStructure(proj_stream->header, main_stream.header))
+        {
+
+            //std::cerr << "======3= " << next_node->step->getOutputStream().header.dumpStructure();
+            auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                proj_stream->header.getColumnsWithTypeAndName(),
+                main_stream.header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                true);
+
+            auto converting = std::make_unique<ExpressionStep>(*proj_stream, convert_actions_dag);
+            proj_stream = &converting->getOutputStream();
+            auto & expr_node = nodes.emplace_back();
+            expr_node.step = std::move(converting);
+            expr_node.children.push_back(next_node);
+            next_node = &expr_node;
+            //std::cerr << "======4= " << next_node->step->getOutputStream().header.dumpStructure();
+        }
+
         auto & union_node = nodes.emplace_back();
-        DataStreams input_streams = {iter->node->children.front()->step->getOutputStream(), next_node->step->getOutputStream()};
+        DataStreams input_streams = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
         union_node.children = {iter->node->children.front(), next_node};
         iter->node->children.front() = &union_node;

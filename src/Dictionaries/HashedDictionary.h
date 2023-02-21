@@ -69,10 +69,10 @@ public:
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load();
+        size_t queries = query_count.load(std::memory_order_relaxed);
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load()) / queries;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
     }
 
     double getHitRate() const override { return 1.0; }

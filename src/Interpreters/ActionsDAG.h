@@ -215,7 +215,27 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
-    static ActionsDAGPtr foldActionsByProjection(const std::unordered_map<const Node *, std::string> & new_inputs, const NodeRawConstPtrs & required_outputs);
+    /// Get an ActionsDAG where:
+    /// * Subtrees from new_inputs are converted to inputs with specified names.
+    /// * Outputs are taken from required_outputs.
+    /// Here want to substitute some expressions to columns from projection.
+    /// This function expects that all required_outputs can be calculated from nodes in new_inputs.
+    /// If not, excpetion will happen.
+    /// This function also expects that new_inputs and required_outputs are valid nodes from the same DAG.
+    /// Example:
+    /// DAG:                   new_inputs:                   Result DAG
+    /// a      b               c * d -> "(a + b) * d"
+    /// \     /                e     -> ""
+    ///  a + b
+    ///     \                  required_outputs:         =>  "(a + b) * d"    e
+    ///   c (alias)   d        c * d - e                              \      /
+    ///       \      /                                               c * d - e
+    ///        c * d       e
+    ///            \      /
+    ///            c * d - e
+    static ActionsDAGPtr foldActionsByProjection(
+        const std::unordered_map<const Node *, std::string> & new_inputs,
+        const NodeRawConstPtrs & required_outputs);
 
     /// Reorder the output nodes using given position mapping.
     void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
