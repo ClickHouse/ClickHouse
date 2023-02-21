@@ -65,7 +65,6 @@ struct ExternalDataSourcesByPriority
 ExternalDataSourcesByPriority
 getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key);
 
-
 struct URLBasedDataSourceConfiguration
 {
     String url;
@@ -91,8 +90,5 @@ struct URLBasedDataSourceConfig
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
-
-template<typename T>
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);
 
 }

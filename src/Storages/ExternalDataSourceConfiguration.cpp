@@ -288,64 +288,6 @@ void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration 
     headers = conf.headers;
 }
 
-template<typename T>
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
-{
-    if (args.empty())
-        return false;
-
-    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
-    {
-        const auto & config = context->getConfigRef();
-        const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
-
-        if (!config.has(config_prefix))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
-
-        auto config_settings = getSettingsChangesFromConfig(settings, config, config_prefix);
-
-        /// Check key-value arguments.
-        for (size_t i = 1; i < args.size(); ++i)
-        {
-            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
-            {
-                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
-                auto function_args = args_expr->children;
-                if (function_args.size() != 2)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
-                config_settings.emplace_back(arg_name, arg_value);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
-            }
-        }
-
-        settings.applyChanges(config_settings);
-        return true;
-    }
-    return false;
-}
-
-#if USE_AMQPCPP
-template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQSettingsTraits> & settings, ContextPtr context);
-#endif
-
-#if USE_RDKAFKA
-template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
-#endif
-
-#if USE_NATSIO
-template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<NATSSettingsTraits> & settings, ContextPtr context);
-#endif
-
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
