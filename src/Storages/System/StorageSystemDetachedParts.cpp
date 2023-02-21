@@ -19,7 +19,7 @@ namespace DB
 namespace
 {
 
-static void partFilesOnDiskImpl(const DiskPtr & disk, const String & from, std::vector<String> & files)
+void partFilesOnDiskImpl(const DiskPtr & disk, const String & from, std::vector<String> & files)
 {
     if (disk->isFile(from))
     {
@@ -32,7 +32,7 @@ static void partFilesOnDiskImpl(const DiskPtr & disk, const String & from, std::
     }
 }
 
-static std::vector<String> partFilesOnDisk(const DiskPtr & disk, const String & from)
+std::vector<String> partFilesOnDisk(const DiskPtr & disk, const String & from)
 {
     std::vector<String> files;
     try
@@ -85,7 +85,7 @@ protected:
         while (result.getNumRows() < block_size)
         {
             if (detached_parts.empty())
-                get_more_parts();
+                getMoreParts();
 
             if (detached_parts.empty())
             {
@@ -93,7 +93,7 @@ protected:
                 return result;
             }
 
-            Chunk chunk = generate_chunk(block_size - result.getNumRows());
+            Chunk chunk = generateChunk(block_size - result.getNumRows());
 
             if (result)
                 result.append(chunk);
@@ -114,7 +114,7 @@ private:
     StoragesInfo current_info;
     DetachedPartsInfo detached_parts;
 
-    void get_more_parts()
+    void getMoreParts()
     {
         chassert(detached_parts.empty());
 
@@ -125,7 +125,7 @@ private:
         detached_parts = current_info.data->getDetachedParts();
     }
 
-    Chunk generate_chunk(size_t max_rows)
+    Chunk generateChunk(size_t max_rows)
     {
         chassert(current_info);
 
@@ -152,10 +152,9 @@ private:
 
                 const String part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / p.dir_name;
                 const String relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
+                auto * counter = &parts_sizes[p_id - begin];
 
                 std::vector<String> listing = partFilesOnDisk(disk, relative_path);
-                chassert(listing.size() > 0);
-                auto * counter = &parts_sizes[p_id - begin];
                 for (const auto & file : listing)
                 {
                     futures.push_back(
