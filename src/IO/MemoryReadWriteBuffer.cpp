@@ -118,7 +118,7 @@ void MemoryWriteBuffer::addChunk()
         if (0 == next_chunk_size)
         {
             set(position(), 0);
-            throw Exception(ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED, "MemoryWriteBuffer limit is exhausted");
+            throw Exception("MemoryWriteBuffer limit is exhausted", ErrorCodes::CURRENT_WRITE_BUFFER_IS_EXHAUSTED);
         }
     }
 

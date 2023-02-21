@@ -88,7 +88,7 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
             return "after_having_auto threshold " + std::to_string(auto_include_threshold);
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const

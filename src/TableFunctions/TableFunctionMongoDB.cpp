@@ -1,5 +1,3 @@
-#include <TableFunctions/TableFunctionMongoDB.h>
-
 #include <Common/Exception.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -9,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
+#include <TableFunctions/TableFunctionMongoDB.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -55,15 +54,14 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
     if (!func_args.arguments)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'mongodb' must have arguments.");
+        throw Exception("Table function 'mongodb' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     ASTs & args = func_args.arguments->children;
 
     if (args.size() < 6 || args.size() > 7)
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Table function 'mongodb' requires from 6 to 7 parameters: "
-                        "mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
+        "Table function 'mongodb' requires from 6 to 7 parameters: mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
     }
 
     ASTs main_arguments(args.begin(), args.begin() + 5);

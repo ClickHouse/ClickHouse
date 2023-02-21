@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_NLP
 
@@ -37,7 +37,9 @@ struct StemImpl
 
         if (stemmer == nullptr)
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Language {} is not supported for function stem", language);
+            throw Exception(
+            "Language " + language + " is not supported for function stem",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         res_data.resize(data.size());
@@ -49,8 +51,8 @@ struct StemImpl
             /// Note that accessing -1th element is valid for PaddedPODArray.
             size_t original_size = offsets[i] - offsets[i - 1];
             const sb_symbol * result = sb_stemmer_stem(stemmer,
-                reinterpret_cast<const uint8_t *>(data.data() + offsets[i - 1]),
-                static_cast<int>(original_size - 1));
+                                                       reinterpret_cast<const uint8_t *>(data.data() + offsets[i - 1]),
+                                                       original_size - 1);
             size_t new_size = sb_stemmer_length(stemmer) + 1;
 
             memcpy(res_data.data() + data_size, result, new_size);
@@ -72,9 +74,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         if (!context->getSettingsRef().allow_experimental_nlp_functions)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Natural language processing function '{}' is experimental. "
-                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionStem>();
     }
@@ -88,11 +88,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return arguments[1];
     }
 
@@ -109,11 +109,11 @@ public:
         const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
         if (!lang_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         if (!words_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[1].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         String language = lang_col->getValue<String>();
 
@@ -127,7 +127,7 @@ public:
 
 REGISTER_FUNCTION(Stem)
 {
-    factory.registerFunction<FunctionStem>();
+    factory.registerFunction<FunctionStem>(FunctionFactory::CaseInsensitive);
 }
 
 }

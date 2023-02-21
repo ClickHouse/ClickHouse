@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #include <Functions/FunctionFactory.h>
 

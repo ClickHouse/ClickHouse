@@ -11,9 +11,6 @@ namespace DB
 class Chain;
 class ThreadStatus;
 
-struct ThreadStatusesHolder;
-using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
-
 /** Interprets the INSERT query.
   */
 class InterpreterInsertQuery : public IInterpreter, WithContext
@@ -40,11 +37,10 @@ public:
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & columns,
-        ThreadStatusesHolderPtr thread_status_holder = {},
+        ThreadStatus * thread_status = nullptr,
         std::atomic_uint64_t * elapsed_counter_ms = nullptr);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
-
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);
@@ -65,7 +61,7 @@ private:
         const StoragePtr & table,
         const StorageMetadataPtr & metadata_snapshot,
         const Block & query_sample_block,
-        ThreadStatusesHolderPtr thread_status_holder,
+        ThreadStatus * thread_status,
         std::atomic_uint64_t * elapsed_counter_ms);
 };
 

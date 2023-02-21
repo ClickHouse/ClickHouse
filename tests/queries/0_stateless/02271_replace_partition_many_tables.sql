@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 DROP TABLE IF EXISTS replace_partition_source;
 DROP TABLE IF EXISTS replace_partition_dest1;
 DROP TABLE IF EXISTS replace_partition_dest1_2;

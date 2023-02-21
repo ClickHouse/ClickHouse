@@ -32,7 +32,8 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
         // an input. This is why it also accepts a Tuple(keys, values) argument.
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         if (!tuple_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "When function {} gets one argument it must be a tuple", name);
+            throw Exception("When function " + name + " gets one argument it must be a tuple",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto elems = tuple_type->getElements();
         args.insert(args.end(), elems.begin(), elems.end());
@@ -45,13 +46,13 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
     }
 
     if (args.size() < 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} requires at least two arguments of Array type or one argument of tuple of two arrays", name);
+        throw Exception("Aggregate function " + name + " requires at least two arguments of Array type or one argument of tuple of two arrays",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(args[0].get());
     if (!array_type)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array, not {}",
-            name, args[0]->getName());
+        throw Exception("First argument for function " + name + " must be an array, not " + args[0]->getName(),
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     DataTypePtr keys_type = array_type->getNestedType();
 
@@ -61,8 +62,8 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
     {
         array_type = checkAndGetDataType<DataTypeArray>(args[i].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} for function {} must be an array.",
-                i, name);
+            throw Exception("Argument #" + toString(i) + " for function " + name + " must be an array.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         values_types.push_back(array_type->getNestedType());
     }
 
@@ -97,7 +98,7 @@ AggregateFunctionPtr createAggregateFunctionMap(const std::string & name, const 
             res.reset(createWithStringType<MappedFunction<false>::template F>(*keys_type, keys_type, values_types, arguments, params));
     }
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for aggregate function {}", name);
+        throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
 }

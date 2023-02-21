@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/integrations/
 sidebar_label: 集成的表引擎
 sidebar_position: 30
 ---

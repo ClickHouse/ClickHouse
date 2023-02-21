@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/cell-towers
 sidebar_position: 21
 sidebar_label: Вышки сотовой связи
 ---

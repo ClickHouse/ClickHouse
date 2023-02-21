@@ -21,3 +21,5 @@ RUN yarn config set registry https://registry.npmjs.org \
 COPY run.sh /run.sh
 
 ENTRYPOINT ["/run.sh"]
+
+CMD ["yarn", "build"]
