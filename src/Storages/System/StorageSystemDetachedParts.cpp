@@ -110,6 +110,7 @@ private:
     const std::vector<UInt8> columns_mask;
     const UInt64 block_size;
     const bool has_bytes_on_disk_column;
+    static const size_t files_peer_thread = 15;
 
     StoragesInfo current_info;
     DetachedPartsInfo detached_parts;
@@ -125,6 +126,53 @@ private:
         detached_parts = current_info.data->getDetachedParts();
     }
 
+    void calculatePartSizeOnDisk(size_t begin, std::vector<std::atomic<size_t>> & parts_sizes)
+    {
+        if (!has_bytes_on_disk_column)
+            return;
+
+        std::vector<std::future<void>> futures;
+        SCOPE_EXIT_SAFE({
+            /// Exceptions are not propagated
+            for (auto & future : futures)
+                if (future.valid())
+                    future.wait();
+            futures.clear();
+        });
+
+        for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
+        {
+            auto & p = detached_parts.at(p_id);
+            DiskPtr & disk = p.disk;
+
+            const String part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / p.dir_name;
+            const String relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
+            std::vector<String> listing = partFilesOnDisk(disk, relative_path);
+
+            auto * counter = &parts_sizes[p_id - begin];
+            for (size_t slice_begin = 0; slice_begin < listing.size(); slice_begin += files_peer_thread)
+            {
+                size_t slice_end = std::min(slice_begin + files_peer_thread, listing.size());
+                auto slice = std::vector<String>(listing.begin() + slice_begin, listing.begin() + slice_end);
+                futures.push_back(
+                    scheduleFromThreadPool<void>(
+                        [disk, counter, files = std::move(slice)] ()
+                        {
+                            size_t partial_files_size = 0;
+                            for (const auto & file : files)
+                                partial_files_size += disk->getFileSize(file);
+                            counter->fetch_add(partial_files_size);
+                        },
+                        IOThreadPool::get(),
+                        "DP_BytesOnDisk"));
+            }
+        }
+
+        /// Exceptions are propagated
+        for (auto & future : futures)
+            future.get();
+    }
+
     Chunk generateChunk(size_t max_rows)
     {
         chassert(current_info);
@@ -133,46 +181,7 @@ private:
         auto begin = detached_parts.size() - rows;
 
         std::vector<std::atomic<size_t>> parts_sizes(rows);
-
-        if (has_bytes_on_disk_column)
-        {
-            std::vector<std::future<void>> futures;
-            SCOPE_EXIT_SAFE({
-                /// Exceptions are not propagated
-                for (auto & future : futures)
-                    if (future.valid())
-                        future.wait();
-                futures.clear();
-            });
-
-            for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
-            {
-                auto & p = detached_parts.at(p_id);
-                DiskPtr & disk = p.disk;
-
-                const String part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / p.dir_name;
-                const String relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
-                auto * counter = &parts_sizes[p_id - begin];
-
-                std::vector<String> listing = partFilesOnDisk(disk, relative_path);
-                for (const auto & file : listing)
-                {
-                    futures.push_back(
-                        scheduleFromThreadPool<void>(
-                            [disk, file, counter] ()
-                            {
-                                size_t size = disk->getFileSize(file);
-                                counter->fetch_add(size);
-                            },
-                            IOThreadPool::get(),
-                            "DP_BytesOnDisk"));
-                }
-            }
-
-            /// Exceptions are propagated
-            for (auto & future : futures)
-                future.get();
-        }
+        calculatePartSizeOnDisk(begin, parts_sizes);
 
         MutableColumns new_columns = getPort().getHeader().cloneEmptyColumns();
 
