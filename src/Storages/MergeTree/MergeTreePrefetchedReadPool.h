@@ -34,8 +34,6 @@ public:
         bool is_remote_read_,
         const MergeTreeSettings & storage_settings_);
 
-    ~MergeTreePrefetchedReadPool() override;
-
     MergeTreeReadTaskPtr getTask(size_t thread) override;
 
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
