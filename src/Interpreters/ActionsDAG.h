@@ -220,7 +220,7 @@ public:
     /// * Outputs are taken from required_outputs.
     /// Here want to substitute some expressions to columns from projection.
     /// This function expects that all required_outputs can be calculated from nodes in new_inputs.
-    /// If not, excpetion will happen.
+    /// If not, exception will happen.
     /// This function also expects that new_inputs and required_outputs are valid nodes from the same DAG.
     /// Example:
     /// DAG:                   new_inputs:                   Result DAG

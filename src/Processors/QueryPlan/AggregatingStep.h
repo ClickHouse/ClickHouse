@@ -66,12 +66,12 @@ public:
     void skipMerging() { skip_merging = true; }
 
     bool canUseProjection() const;
-    /// When we apply aggregate projection (whihc is full), this step will only merge data.
-    /// Agrument input_stream replaces current single input.
+    /// When we apply aggregate projection (which is full), this step will only merge data.
+    /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
     void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
-    /// When we apply aggregate projection (whihc is partial), this step should be replaced to AggregatingProjection.
-    /// Agrument input_stream would be the second input (from projection).
+    /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
+    /// Argument input_stream would be the second input (from projection).
     std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
 private:
