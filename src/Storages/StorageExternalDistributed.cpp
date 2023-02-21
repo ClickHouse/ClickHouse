@@ -14,7 +14,6 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/MySQL/MySQLHelpers.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/logger_useful.h>
@@ -26,7 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -104,7 +102,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                             "engine_name, named_collection and/or description");
 
         auto context = args.getLocalContext();
-        const auto & settings = context->getSettingsRef();
+        [[maybe_unused]] const auto & settings = context->getSettingsRef();
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
         auto get_addresses = [&](const std::string addresses_expr)
         {
