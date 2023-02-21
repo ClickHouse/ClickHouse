@@ -737,7 +737,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
                 else
                     statuses[i].exception = data.exception;
 
-                if (i == 0 && statuses[0].is_first)
+                if (i == 0 && statuses[0].is_first && !materialized_views_ignore_errors)
                 {
                     output.pushData(std::move(data));
                     return Status::PortFull;
@@ -754,7 +754,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         if (!statuses.empty())
             return Status::Ready;
 
-        if (any_exception)
+        if (any_exception && !materialized_views_ignore_errors)
             output.pushException(any_exception);
 
         output.finish();
@@ -791,19 +791,16 @@ void FinalizingViewsTransform::work()
         auto & status = statuses[i];
         ++i;
 
-        if (status.exception && materialized_views_ignore_errors)
-        {
-            auto exception = addStorageToException(status.exception, view.table_id);
-            tryLogException(exception, &Poco::Logger::get("PushingToViews"), "Cannot push to the storage, ignoring the error");
-            continue;
-        }
-
         if (status.exception)
         {
             if (!any_exception)
                 any_exception = status.exception;
 
             view.setException(addStorageToException(status.exception, view.table_id));
+
+            /// Exception will be ignored, it is saved here for the system.query_views_log
+            if (materialized_views_ignore_errors)
+                tryLogException(view.exception, &Poco::Logger::get("PushingToViews"), "Cannot push to the storage, ignoring the error");
         }
         else
         {
