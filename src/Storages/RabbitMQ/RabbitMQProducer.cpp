@@ -262,7 +262,20 @@ void RabbitMQProducer::startProducingTaskLoop()
         LOG_TEST(log, "Waiting for pending callbacks to finish (count: {}, try: {})", res, try_num);
     }
 
-    LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
+    producer_channel->close()
+    .onSuccess([&]()
+    {
+        LOG_TRACE(log, "Successfully closed producer channel");
+        connection.getHandler().stopLoop();
+    })
+    .onError([&](const char * message)
+    {
+        LOG_ERROR(log, "Failed to close producer channel: {}", message);
+        connection.getHandler().stopLoop();
+    });
+
+    int active = connection.getHandler().startBlockingLoop();
+    LOG_DEBUG(log, "Producer on channel completed (not finished events: {})", active);
 }
 
 
