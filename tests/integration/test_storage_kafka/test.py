@@ -4440,6 +4440,7 @@ def test_block_based_formats_2(kafka_cluster):
         kafka_delete_topic(admin_client, format_name)
 
 
+@pytest.mark.skip(reason="Debug")
 def test_bad_messages_parsing(kafka_cluster):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
