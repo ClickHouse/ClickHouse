@@ -50,7 +50,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
      * For now named collection can be used only for remote as cluster does not require credentials.
      */
     size_t max_args = is_cluster_function ? 4 : 6;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, false))
     {
         if (is_cluster_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection cannot be used for table function cluster");

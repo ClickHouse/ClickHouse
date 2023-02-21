@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 namespace
 {
-    NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts)
+    NamedCollectionPtr tryGetNamedCollectionFromASTs(ASTs asts, bool throw_unknown_collection)
     {
         if (asts.empty())
             return nullptr;
@@ -25,7 +25,9 @@ namespace
             return nullptr;
 
         const auto & collection_name = identifier->name();
-        return NamedCollectionFactory::instance().get(collection_name);
+        if (throw_unknown_collection)
+            return NamedCollectionFactory::instance().get(collection_name);
+        return NamedCollectionFactory::instance().tryGet(collection_name);
     }
 
     std::optional<std::pair<std::string, Field>> getKeyValueFromAST(ASTPtr ast)
@@ -53,12 +55,12 @@ namespace
 }
 
 
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool throw_unknown_collection)
 {
     if (asts.empty())
         return nullptr;
 
-    auto collection = tryGetNamedCollectionFromASTs(asts);
+    auto collection = tryGetNamedCollectionFromASTs(asts, throw_unknown_collection);
     if (!collection)
         return nullptr;
 
