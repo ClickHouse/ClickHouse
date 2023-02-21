@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_PROTOCOL;
     extern const int AUTHENTICATION_FAILED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -658,6 +659,7 @@ bool TCPHandler::readDataNext()
             {
                 LOG_INFO(log, "Client has dropped the connection, cancel the query.");
                 state.is_connection_closed = true;
+                state.is_cancelled = true;
                 break;
             }
 
@@ -701,6 +703,9 @@ void TCPHandler::readData()
 
     while (readDataNext())
         ;
+
+    if (state.is_cancelled)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 
@@ -711,6 +716,9 @@ void TCPHandler::skipData()
 
     while (readDataNext())
         ;
+
+    if (state.is_cancelled)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 
@@ -747,7 +755,10 @@ void TCPHandler::processInsertQuery()
         while (readDataNext())
             executor.push(std::move(state.block_for_insert));
 
-        executor.finish();
+        if (state.is_cancelled)
+            executor.cancel();
+        else
+            executor.finish();
     };
 
     if (num_threads > 1)
@@ -1313,6 +1324,8 @@ bool TCPHandler::receivePacket()
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
             }
+
+            state.is_cancelled = true;
 
             return false;
         }
