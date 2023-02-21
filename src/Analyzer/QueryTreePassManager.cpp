@@ -40,6 +40,7 @@
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
+#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 
 
 namespace DB
@@ -147,7 +148,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support _shard_num into shardNum() rewriting.
   * TODO: Support logical expressions optimizer.
   * TODO: Support setting convert_query_to_cnf.
   * TODO: Support setting optimize_using_constraints.
@@ -266,10 +266,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
-
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
-
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
+    manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 }
 
 }
