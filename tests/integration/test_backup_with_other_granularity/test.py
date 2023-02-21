@@ -166,7 +166,9 @@ def test_backup_from_old_version_config(started_cluster):
         )
 
     # We don't want to wait old outdated version to finish properly, just terminate it
-    node3.restart_with_latest_version(callback_onstop=callback, fix_metadata=True, signal=9)
+    node3.restart_with_latest_version(
+        callback_onstop=callback, fix_metadata=True, signal=9
+    )
 
     node3.query(
         "CREATE TABLE dest_table (A Int64,  B String,  Y String) ENGINE = ReplicatedMergeTree('/test/dest_table3', '1')  ORDER BY tuple() SETTINGS enable_mixed_granularity_parts = 1"
