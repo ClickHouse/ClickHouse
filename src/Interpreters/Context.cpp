@@ -3260,9 +3260,9 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const bool disable_parallel_parsing) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings, disable_parallel_parsing);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const

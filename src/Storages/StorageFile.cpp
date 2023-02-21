@@ -565,6 +565,7 @@ public:
         , block_for_format(block_for_format_)
         , context(context_)
         , max_block_size(max_block_size_)
+        , disable_parallel_parsing(storage->paths.size() > 1)
     {
         if (!storage->use_table_fd)
         {
@@ -607,7 +608,7 @@ public:
                     read_buf = createReadBuffer(current_path, storage->use_table_fd, storage->getName(), storage->table_fd, storage->compression_method, context);
 
                 auto format
-                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings);
+                    = context->getInputFormat(storage->format_name, *read_buf, block_for_format, max_block_size, storage->format_settings, disable_parallel_parsing);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(format));
@@ -691,6 +692,8 @@ private:
     UInt64 total_rows_approx_accumulated = 0;
     size_t total_rows_count_times = 0;
     UInt64 total_rows_approx_max = 0;
+
+    bool disable_parallel_parsing = false;
 };
 
 
