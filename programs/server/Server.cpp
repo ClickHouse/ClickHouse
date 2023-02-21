@@ -76,6 +76,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
+#include <Server/RemoteFSHandlerFactory.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
 #include <Common/SensitiveDataMasker.h>
@@ -2243,6 +2244,25 @@ void Server::createServers(
                 std::make_unique<HTTPServer>(
                     httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
+
+        port_name = "remote_fs_port";
+        createServer(config, listen_host, port_name, listen_try, start_servers,servers,[&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, listen_host, port);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            return ProtocolServerAdapter(
+                listen_host,
+                port_name,
+                "remote filesystem protocol (tcp): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new RemoteFSHandlerFactory(*this, /* secure */ false),
+                    server_pool,
+                    socket,
+                    new Poco::Net::TCPServerParams));
+        });
+
     }
 
     /// Now iterate over interserver_listen_hosts
