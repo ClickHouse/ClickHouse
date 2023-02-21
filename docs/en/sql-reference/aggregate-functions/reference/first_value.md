@@ -46,6 +46,7 @@ select first_value(b) respect nulls from test_data
 ```
 
 ```text
+
 ┌─first_value_respect_nulls(b)─┐
 │                         ᴺᵁᴸᴸ │
 └──────────────────────────────┘
