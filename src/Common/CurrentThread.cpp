@@ -115,10 +115,11 @@ MemoryTracker * CurrentThread::getUserMemoryTracker()
     if (unlikely(!current_thread))
         return nullptr;
 
-    if (auto group = current_thread->getThreadGroup())
-        return group->memory_tracker.getParent();
+    auto * tracker = current_thread->memory_tracker.getParent();
+    while (tracker && tracker->level != VariableContext::User)
+        tracker = tracker->getParent();
 
-    return nullptr;
+    return tracker;
 }
 
 void CurrentThread::flushUntrackedMemory()
