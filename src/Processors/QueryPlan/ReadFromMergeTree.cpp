@@ -113,6 +113,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .read_in_order = query_info.input_order_info != nullptr,
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
+        .enable_multiple_prewhere_read_steps = settings.enable_multiple_prewhere_read_steps,
     };
 }
 
@@ -265,6 +266,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         extension,
         parts_with_range,
         prewhere_info,
+        actions_settings,
+        reader_settings,
         required_columns,
         virt_column_names,
         min_marks_for_concurrent_read
@@ -359,6 +362,7 @@ Pipe ReadFromMergeTree::readFromPool(
              std::move(parts_with_range),
              storage_snapshot,
              prewhere_info,
+             actions_settings,
              required_columns,
              virt_column_names,
              settings.preferred_block_size_bytes,
@@ -377,6 +381,8 @@ Pipe ReadFromMergeTree::readFromPool(
              std::move(parts_with_range),
              storage_snapshot,
              prewhere_info,
+             actions_settings,
+             reader_settings,
              required_columns,
              virt_column_names,
              context,

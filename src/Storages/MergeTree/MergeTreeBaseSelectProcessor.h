@@ -43,7 +43,7 @@ public:
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        ExpressionActionsSettings actions_settings,
+        const ExpressionActionsSettings & actions_settings,
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
@@ -70,6 +70,8 @@ public:
     const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
 
     virtual std::string getName() const = 0;
+
+    static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps);
 
 protected:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
@@ -101,8 +103,7 @@ protected:
     static void
     injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
 
-    static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings);
-
+protected:
     static void initializeRangeReadersImpl(
          MergeTreeRangeReader & range_reader,
          std::deque<MergeTreeRangeReader> & pre_range_readers,
@@ -138,6 +139,7 @@ protected:
     /// This step is added when the part has lightweight delete mask
     const PrewhereExprStep lightweight_delete_filter_step { nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, true };
     PrewhereInfoPtr prewhere_info;
+    ExpressionActionsSettings actions_settings;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
     UInt64 max_block_size_rows;
