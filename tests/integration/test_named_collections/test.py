@@ -102,7 +102,10 @@ def test_access(cluster):
         ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
-    assert node.query("select collection['key1'] from system.named_collections").strip() == "value1"
+    assert (
+        node.query("select collection['key1'] from system.named_collections").strip()
+        == "value1"
+    )
     replace_in_users_config(
         node, "show_named_collections_secrets>1", "show_named_collections_secrets>0"
     )
@@ -110,7 +113,10 @@ def test_access(cluster):
         ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
-    assert node.query("select collection['key1'] from system.named_collections").strip() == "[HIDDEN]"
+    assert (
+        node.query("select collection['key1'] from system.named_collections").strip()
+        == "[HIDDEN]"
+    )
     replace_in_users_config(
         node, "show_named_collections_secrets>0", "show_named_collections_secrets>1"
     )
@@ -118,7 +124,10 @@ def test_access(cluster):
         ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
-    assert node.query("select collection['key1'] from system.named_collections").strip() == "value1"
+    assert (
+        node.query("select collection['key1'] from system.named_collections").strip()
+        == "value1"
+    )
 
 
 def test_config_reload(cluster):
