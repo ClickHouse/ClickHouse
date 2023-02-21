@@ -219,6 +219,7 @@ public:
     bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
+    MutableColumnPtr cloneNullable() const;
 
     ColumnPtr cloneWithDefaultOnNull() const;
 
@@ -361,6 +362,8 @@ private:
 
     void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
 };
+
+bool isColumnLowCardinalityNullable(const IColumn & column);
 
 
 }

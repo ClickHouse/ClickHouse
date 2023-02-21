@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -811,6 +812,23 @@ ColumnPtr makeNullable(const ColumnPtr & column)
 
     if (isColumnConst(*column))
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+}
+
+ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
+{
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnLowCardinalityNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->lowCardinality())
+        return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
 }

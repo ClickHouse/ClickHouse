@@ -310,6 +310,13 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
 }
 
+MutableColumnPtr ColumnLowCardinality::cloneNullable() const
+{
+    auto res = cloneFinalized();
+    assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
+    return res;
+}
+
 int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
 {
     const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
@@ -856,6 +863,13 @@ ColumnPtr ColumnLowCardinality::cloneWithDefaultOnNull() const
     }
 
     return res;
+}
+
+bool isColumnLowCardinalityNullable(const IColumn & column)
+{
+    if (const auto * lc_column = checkAndGetColumn<ColumnLowCardinality>(column))
+        return lc_column->nestedIsNullable();
+    return false;
 }
 
 }
