@@ -52,3 +52,19 @@ SELECT count(*) FROM view(SELECT * FROM numbers(10) SETTINGS limit=5);
 5
 SELECT count(*) FROM view(SELECT * FROM numbers(10)) SETTINGS limit=5;
 10
+SET limit = 4;
+SET offset = 1;
+SELECT * FROM numbers(10);
+1
+2
+3
+4
+SELECT * FROM numbers(10) LIMIT 3 OFFSET 2;
+3
+4
+5
+SELECT * FROM numbers(10) LIMIT 5 OFFSET 2;
+3
+4
+5
+6
