@@ -233,6 +233,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
 
+    if (is_subquery)
+    {
+        if (const Settings & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
+        {
+            Settings settings = updated_context->getSettings();
+            settings.limit = 0;
+            settings.offset = 0;
+            updated_context->setSettings(settings);
+        }
+    }
+
     if (select_settings)
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
