@@ -7,7 +7,6 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -70,7 +69,7 @@ BlockIO InterpreterDropQuery::execute()
     else if (drop.database)
         return executeToDatabase(drop);
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
+        throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -111,7 +110,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     {
         if (query.if_exists)
             return {};
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
+        throw Exception("Temporary table " + backQuoteIfNeed(table_id.table_name) + " doesn't exist",
+                        ErrorCodes::UNKNOWN_TABLE);
     }
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
@@ -122,8 +122,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
     if (database && table)
     {
-        checkStorageSupportsTransactionsIfNeeded(table, context_);
-
         auto & ast_drop_query = query.as<ASTDropQuery &>();
 
         if (ast_drop_query.is_view && !table->isView())
@@ -187,9 +185,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             if (query.permanently)
             {
                 /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
-                bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
-                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
-                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
+                                                                         is_drop_or_detach_database);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -202,7 +199,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
             if (table->isDictionary())
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot TRUNCATE dictionary");
+                throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
             if (table->isStaticStorage())
@@ -210,15 +207,18 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             table->checkTableCanBeDropped();
 
-            TableExclusiveLockHolder table_excl_lock;
-            /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
-            /// For the rest of tables types exclusive lock is needed
-            if (!std::dynamic_pointer_cast<MergeTreeData>(table))
-                table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+            TableExclusiveLockHolder table_lock;
+            /// We don't need this lock for ReplicatedMergeTree
+            if (!table->supportsReplication())
+            {
+                /// And for simple MergeTree we can stop merges before acquiring the lock
+                auto merges_blocker = table->getActionLock(ActionLocks::PartsMerge);
+                table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
+            }
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            table->truncate(query_ptr, metadata_snapshot, context_, table_excl_lock);
+            table->truncate(query_ptr, metadata_snapshot, context_, table_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -234,9 +234,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 table->checkTableCanBeDropped();
 
             /// Check dependencies before shutting table down
-            bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
-            bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
-            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            if (context_->getSettingsRef().check_table_dependencies)
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, is_drop_or_detach_database);
 
             table->flushAndShutdown();
 
@@ -244,7 +243,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
 
-            DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+            DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
+                                                                     is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to drop mmapio cache when dropping table from Ordinary database
@@ -263,7 +263,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
     if (kind == ASTDropQuery::Kind::Detach)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
+        throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
     else
     {
         auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
@@ -287,10 +287,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 /// Delete table data
                 table->drop();
                 table->is_dropped = true;
-            }
-            else if (kind == ASTDropQuery::Kind::Detach)
-            {
-                table->is_detached = true;
             }
         }
     }
@@ -336,7 +332,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     {
         if (query.kind == ASTDropQuery::Kind::Truncate)
         {
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to truncate database");
+            throw Exception("Unable to truncate database", ErrorCodes::SYNTAX_ERROR);
         }
         else if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -344,7 +340,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
+                throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
 
             if (database->hasReplicationThread())
                 database->stopReplication();
@@ -433,6 +429,11 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     return required_access;
 }
 
+void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
+{
+    elem.query_kind = "Drop";
+}
+
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
@@ -461,18 +462,6 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();
     }
-}
-
-bool InterpreterDropQuery::supportsTransactions() const
-{
-    /// Enable only for truncate table with MergeTreeData engine
-
-    auto & drop = query_ptr->as<ASTDropQuery &>();
-
-    return drop.cluster.empty()
-            && !drop.temporary
-            && drop.kind == ASTDropQuery::Kind::Truncate
-            && drop.table;
 }
 
 }

@@ -302,23 +302,23 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
 /// All methods below just wrap nested serialization.
 
-void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationSparse::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    nested->serializeBinary(field, ostr, settings);
+    nested->serializeBinary(field, ostr);
 }
 
-void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationSparse::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-    nested->deserializeBinary(field, istr, settings);
+    nested->deserializeBinary(field, istr);
 }
 
-void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationSparse::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
-    nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+    nested->serializeBinary(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr);
 }
 
-void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationSparse::deserializeBinary(IColumn &, ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'deserializeBinary' is not implemented for SerializationSparse");
 }

@@ -30,33 +30,30 @@ def start_cluster():
         pytest.param("wide", "backup_wide", "s3_backup_wide", int(0), id="wide"),
     ],
 )
-def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide_part):
+def test_attach_compact_part(
+    table_name, backup_name, storage_policy, min_bytes_for_wide_part
+):
     node.query(
         f"""
     -- Catch any errors (NOTE: warnings are ok)
     set send_logs_level='error';
 
     -- BACKUP writes Ordinary like structure
-    -- but what is more important that you cannot ATTACH directly from Atomic
-    -- so Memory engine will work (to avoid using allow_deprecated_database_ordinary).
-    create database ordinary_db engine=Memory;
+    set allow_deprecated_database_ordinary=1;
 
-    create table ordinary_db.{table_name} engine=MergeTree() order by key partition by part
-    settings min_bytes_for_wide_part={min_bytes_for_wide_part}
-    as select number%5 part, number key from numbers(100);
+    create database ordinary_db engine=Ordinary;
 
-    backup table ordinary_db.{table_name} TO Disk('backup_disk_s3_plain', '{backup_name}') settings deduplicate_files=0;
+    create table ordinary_db.{table_name} engine=MergeTree() order by tuple() as select * from numbers(100);
+    -- NOTE: name of backup ("backup") is significant.
+    backup table ordinary_db.{table_name} TO Disk('backup_disk_s3_plain', '{backup_name}');
 
     drop table ordinary_db.{table_name};
-    attach table ordinary_db.{table_name} (part UInt8, key UInt64)
+    attach table ordinary_db.{table_name} (number UInt64)
     engine=MergeTree()
-    order by key partition by part
+    order by tuple()
     settings
-        max_suspicious_broken_parts=0,
-        disk=disk(type=s3_plain,
-            endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{backup_name}/',
-            access_key_id='minio',
-            secret_access_key='minio123');
+        min_bytes_for_wide_part={min_bytes_for_wide_part},
+        storage_policy='{storage_policy}';
     """
     )
 
@@ -64,6 +61,9 @@ def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide
 
     node.query(
         f"""
+    -- NOTE: be aware not to DROP the table, but DETACH first to keep it in S3.
+    detach table ordinary_db.{table_name};
+
     -- NOTE: DROP DATABASE cannot be done w/o this due to metadata leftovers
     set force_remove_data_recursively_on_drop=1;
     drop database ordinary_db sync;

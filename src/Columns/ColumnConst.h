@@ -222,7 +222,7 @@ public:
 
     void gather(ColumnGathererStream &) override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
+        throw Exception("Cannot gather into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getExtremes(Field & min, Field & max) const override
@@ -230,14 +230,14 @@ public:
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
     {
-        callback(*data);
+        callback(data);
         data->forEachSubcolumnRecursively(callback);
     }
 

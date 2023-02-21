@@ -10,11 +10,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_)
+IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
     : IOutputFormat(header, out_)
     , num_columns(header.columns())
     , types(header.getDataTypes())
     , serializations(header.getSerializations())
+    , params(params_)
 {
 }
 
@@ -25,10 +26,14 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (haveWrittenData())
+        if (!first_row || getRowsReadBefore() != 0)
             writeRowBetweenDelimiter();
 
         write(columns, row);
+
+        if (params.callback)
+            params.callback(columns, row);
+
         first_row = false;
     }
 }
@@ -40,7 +45,7 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in totals chunk, expected 1", num_rows);
+        throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
 
     const auto & columns = chunk.getColumns();
 
@@ -57,7 +62,7 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
     if (num_rows != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} in extremes chunk, expected 2", num_rows);
+        throw Exception("Got " + toString(num_rows) + " in extremes chunk, expected 2", ErrorCodes::LOGICAL_ERROR);
 
     writeBeforeExtremes();
     writeMinExtreme(columns, 0);
@@ -86,7 +91,7 @@ void IRowOutputFormat::writeMinExtreme(const DB::Columns & columns, size_t row_n
     write(columns, row_num);
 }
 
-void IRowOutputFormat::writeMaxExtreme(const DB::Columns & columns, size_t row_num)
+void IRowOutputFormat::writeMaxExtreme(const DB::Columns & columns, size_t row_num) //-V524
 {
     write(columns, row_num);
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Databases/TablesLoader.h>
 
 
 namespace DB

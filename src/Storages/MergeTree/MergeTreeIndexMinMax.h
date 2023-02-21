@@ -51,7 +51,7 @@ class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
-        const SelectQueryInfo & query_info,
+        const SelectQueryInfo & query,
         ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;

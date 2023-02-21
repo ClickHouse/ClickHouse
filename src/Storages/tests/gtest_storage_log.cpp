@@ -39,20 +39,21 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     return table;
 }
 
+template <typename T>
 class StorageLogTest : public testing::Test
 {
 public:
 
     void SetUp() override
     {
-        disk = createDisk();
+        disk = createDisk<T>();
         table = createStorage(disk);
     }
 
     void TearDown() override
     {
         table->flushAndShutdown();
-        destroyDisk(disk);
+        destroyDisk<T>(disk);
     }
 
     const DB::DiskPtr & getDisk() { return disk; }
@@ -63,6 +64,9 @@ private:
     DB::StoragePtr table;
 };
 
+
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
+TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
 std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
@@ -149,7 +153,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     return out_buf.str();
 }
 
-TEST_F(StorageLogTest, testReadWrite)
+TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
     const auto & context_holder = getContext();

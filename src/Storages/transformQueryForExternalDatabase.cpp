@@ -116,7 +116,7 @@ bool isCompatible(IAST & node)
             return false;
 
         if (!function->arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: function->arguments is not set");
+            throw Exception("Logical error: function->arguments is not set", ErrorCodes::LOGICAL_ERROR);
 
         String name = function->name;
 
@@ -288,7 +288,7 @@ String transformQueryForExternalDatabase(
         }
         else if (strict)
         {
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains non-compatible expressions (and external_table_strict_query=true)");
+            throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
         }
         else if (const auto * function = original_where->as<ASTFunction>())
         {
@@ -309,7 +309,7 @@ String transformQueryForExternalDatabase(
     }
     else if (strict && original_where)
     {
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains non-compatible expressions (and external_table_strict_query=true)");
+        throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
     }
 
     auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());

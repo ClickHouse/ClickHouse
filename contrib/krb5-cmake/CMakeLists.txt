@@ -15,10 +15,6 @@ if(NOT AWK_PROGRAM)
     message(FATAL_ERROR "You need the awk program to build ClickHouse with krb5 enabled.")
 endif()
 
-if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
-    add_compile_definitions(USE_BORINGSSL=1)
-endif ()
-
 set(KRB5_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/krb5/src")
 set(KRB5_ET_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/include_private")
 
@@ -581,6 +577,12 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c")
 endif()
+
+if (ENABLE_EXTERNAL_OPENSSL)
+    list(REMOVE_ITEM ALL_SRCS "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/aes.c")
+    list(APPEND ALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/aes.c")
+endif ()
+
 
 target_sources(_krb5 PRIVATE
     ${ALL_SRCS}

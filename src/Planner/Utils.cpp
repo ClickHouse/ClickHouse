@@ -4,14 +4,9 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-
 #include <Columns/getLeastSuperColumn.h>
 
 #include <IO/WriteBufferFromString.h>
-
-#include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -29,9 +24,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
-    extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
-    extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
 
 String dumpQueryPlan(QueryPlan & query_plan)
@@ -51,7 +45,7 @@ String dumpQueryPipeline(QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode)
+Block buildCommonHeaderForUnion(const Blocks & queries_headers)
 {
     size_t num_selects = queries_headers.size();
     Block common_header = queries_headers.front();
@@ -59,19 +53,9 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
 
     for (size_t query_number = 1; query_number < num_selects; ++query_number)
     {
-        int error_code = 0;
-
-        if (union_mode == SelectUnionMode::UNION_DEFAULT ||
-            union_mode == SelectUnionMode::UNION_ALL ||
-            union_mode == SelectUnionMode::UNION_DISTINCT)
-            error_code = ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH;
-        else
-            error_code = ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
-
         if (queries_headers.at(query_number).columns() != columns_size)
-            throw Exception(error_code,
-                            "Different number of columns in {} elements: {} and {}",
-                            toString(union_mode),
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                            "Different number of columns in UNION elements: {} and {}",
                             common_header.dumpNames(),
                             queries_headers[query_number].dumpNames());
     }
@@ -116,7 +100,7 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 /** There are no limits on the maximum size of the result for the subquery.
   * Since the result of the query is not the result of the entire query.
   */
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
+ContextPtr buildSubqueryContext(const ContextPtr & context)
 {
     /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
       * Because the result of this query is not the result of the entire query.
@@ -125,12 +109,15 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
       *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
       *  which are checked separately (in the Set, Join objects).
       */
-    Settings subquery_settings = mutable_context->getSettings();
+    auto subquery_context = Context::createCopy(context);
+    Settings subquery_settings = context->getSettings();
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
     subquery_settings.extremes = false;
-    mutable_context->setSettings(subquery_settings);
+    subquery_context->setSettings(subquery_settings);
+
+    return subquery_context;
 }
 
 namespace
@@ -250,9 +237,8 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Unexpected node type for table expression. "
-                                "Expected table, table function, query, union, join or array join. Actual {}",
-                                join_tree_node_to_process->getNodeTypeName());
+                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
+                    join_tree_node_to_process->getNodeTypeName());
             }
         }
     }
@@ -316,45 +302,13 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Unexpected node type for table expression. "
-                                "Expected table, table function, query, union, join or array join. Actual {}",
-                                join_tree_node_to_process->getNodeTypeName());
+                    "Unexpected node type for table expression. Expected table, table function, query, union, join or array join. Actual {}",
+                    join_tree_node_to_process->getNodeTypeName());
             }
         }
     }
 
     return false;
-}
-
-QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
-{
-    auto function_node = std::make_shared<FunctionNode>("and");
-    auto and_function = FunctionFactory::instance().get("and", context);
-    function_node->getArguments().getNodes() = condition_nodes;
-    function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
-
-    return function_node;
-}
-
-std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
-{
-    const auto * constant_node = condition_node->as<ConstantNode>();
-    if (!constant_node)
-        return {};
-
-    const auto & value = constant_node->getValue();
-    auto constant_type = constant_node->getResultType();
-    constant_type = removeNullable(removeLowCardinality(constant_type));
-
-    auto which_constant_type = WhichDataType(constant_type);
-    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
-        return {};
-
-    if (value.isNull())
-        return false;
-
-    UInt8 predicate_value = value.safeGet<UInt8>();
-    return predicate_value > 0;
 }
 
 }

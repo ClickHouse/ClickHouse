@@ -117,7 +117,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
 #else
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
+                throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
             }
             else
@@ -148,8 +148,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
-        int tcp_keep_alive_timeout_in_sec = timeouts.tcp_keep_alive_timeout.totalSeconds();
-        if (tcp_keep_alive_timeout_in_sec)
+        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
         {
             socket->setKeepAlive(true);
             socket->setOption(IPPROTO_TCP,
@@ -158,7 +157,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #else
                 TCP_KEEPIDLE  // __APPLE__
 #endif
-                , tcp_keep_alive_timeout_in_sec);
+                , timeouts.tcp_keep_alive_timeout);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
@@ -184,7 +183,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription());
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
@@ -241,8 +240,7 @@ void Connection::sendHello()
     if (has_control_character(default_database)
         || has_control_character(user)
         || has_control_character(password))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
+        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
@@ -261,8 +259,9 @@ void Connection::sendHello()
 #if USE_SSL
         sendClusterNameAndSalt();
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else
@@ -309,21 +308,6 @@ void Connection::receiveHello()
             readVarUInt(server_version_patch, *in);
         else
             server_version_patch = server_revision;
-
-        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
-        {
-            UInt64 rules_size;
-            readVarUInt(rules_size, *in);
-            password_complexity_rules.reserve(rules_size);
-
-            for (size_t i = 0; i < rules_size; ++i)
-            {
-                String original_pattern, exception_message;
-                readStringBinary(original_pattern, *in);
-                readStringBinary(exception_message, *in);
-                password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
-            }
-        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -593,8 +577,9 @@ void Connection::sendQuery(
             std::string hash = encodeSHA256(data);
             writeStringBinary(hash, *out);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+        throw Exception(
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
+            ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
         }
         else
@@ -686,7 +671,7 @@ void Connection::sendReadTaskResponse(const String & response)
 }
 
 
-void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
+void Connection::sendMergeTreeReadTaskResponse(const PartitionReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
     response.serialize(*out);
@@ -698,7 +683,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
     if (input.eof())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Buffer is empty (some kind of corruption)");
+        throw Exception("Buffer is empty (some kind of corruption)", ErrorCodes::EMPTY_DATA_PASSED);
 
     writeVarUInt(Protocol::Client::Data, *out);
     writeStringBinary(name, *out);
@@ -960,12 +945,8 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
-                res.announcement = receiveInitialParallelReadAnnounecement();
-                return res;
-
             case Protocol::Server::MergeTreeReadTaskRequest:
-                res.request = receiveParallelReadRequest();
+                res.request = receivePartitionReadRequest();
                 return res;
 
             case Protocol::Server::ProfileEvents:
@@ -975,8 +956,9 @@ Packet Connection::receivePacket()
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    toString(res.type), getDescription());
+                throw Exception("Unknown packet "
+                    + toString(res.type)
+                    + " from server " + getDescription(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         }
     }
     catch (Exception & e)
@@ -1118,26 +1100,20 @@ ProfileInfo Connection::receiveProfileInfo() const
     return profile_info;
 }
 
-ParallelReadRequest Connection::receiveParallelReadRequest() const
+PartitionReadRequest Connection::receivePartitionReadRequest() const
 {
-    ParallelReadRequest request;
+    PartitionReadRequest request;
     request.deserialize(*in);
     return request;
-}
-
-InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
-{
-    InitialAllRangesAnnouncement announcement;
-    announcement.deserialize(*in);
-    return announcement;
 }
 
 
 void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {
-    throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-            "Unexpected packet from server {} (expected {}, got {})",
-                       getDescription(), expected, String(Protocol::Server::toString(packet_type)));
+    throw NetException(
+            "Unexpected packet from server " + getDescription() + " (expected " + expected
+            + ", got " + String(Protocol::Server::toString(packet_type)) + ")",
+            ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)

@@ -6,6 +6,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Interpreters/maskSensitiveInfoInQueryForLogging.h>
 
 
 namespace DB
@@ -35,7 +36,6 @@ ASTPtr BackupInfo::toAST() const
     auto func = std::make_shared<ASTFunction>();
     func->name = backup_engine_name;
     func->no_empty_args = true;
-    func->kind = ASTFunction::Kind::BACKUP_NAME;
 
     auto list = std::make_shared<ASTExpressionList>();
     func->arguments = list;
@@ -93,9 +93,10 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
 }
 
 
-String BackupInfo::toStringForLogging() const
+String BackupInfo::toStringForLogging(const ContextPtr & context) const
 {
-    return toAST()->formatForLogging();
+    ASTPtr ast = toAST();
+    return maskSensitiveInfoInBackupNameForLogging(serializeAST(*ast), ast, context);
 }
 
 }

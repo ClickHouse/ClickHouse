@@ -231,7 +231,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     auto kind = magic_enum::enum_cast<BinarySerializationKind>(kind_raw);
     if (!kind)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
+            "Unknown binary serialization kind of Object: " + std::to_string(kind_raw));
 
     auto state_object = std::make_shared<DeserializeStateObject>();
     state_object->kind = *kind;
@@ -255,7 +255,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     else
     {
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
+            "Unknown binary serialization kind of Object: " + std::to_string(kind_raw));
     }
 
     settings.path.push_back(Substream::ObjectData);
@@ -376,25 +376,25 @@ void SerializationObject<Parser>::deserializeBinaryBulkFromTuple(
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::serializeBinary(const Field &, WriteBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::deserializeBinary(Field &, ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::serializeBinary(const IColumn &, size_t, WriteBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }

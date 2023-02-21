@@ -29,35 +29,18 @@ node_without_interserver_listen_host = cluster.add_instance(
 def start_cluster():
     try:
         cluster.start()
-        cluster.wait_for_url(
-            f"http://{INTERSERVER_LISTEN_HOST}:{INTERSERVER_HTTP_PORT}"
-        )
-        cluster.wait_for_url(
-            f"http://{node_without_interserver_listen_host.ip_address}:8123"
-        )
         yield cluster
 
     finally:
         cluster.shutdown()
 
 
-def requests_get(url, attempts=10, sleep=0.5):
-    attempt = 0
-    while True:
-        attempt += 1
-        try:
-            return requests.get(url)
-        except requests.exceptions.ConnectionError as e:
-            if attempt >= attempts:
-                raise
-        time.sleep(sleep)
-
-
 def test_request_to_node_with_interserver_listen_host(start_cluster):
-    response_interserver = requests_get(
+    time.sleep(5)  # waiting for interserver listener to start
+    response_interserver = requests.get(
         f"http://{INTERSERVER_LISTEN_HOST}:{INTERSERVER_HTTP_PORT}"
     )
-    response_client = requests_get(
+    response_client = requests.get(
         f"http://{node_without_interserver_listen_host.ip_address}:8123"
     )
     assert response_interserver.status_code == 200
@@ -66,7 +49,7 @@ def test_request_to_node_with_interserver_listen_host(start_cluster):
 
 
 def test_request_to_node_without_interserver_listen_host(start_cluster):
-    response = requests_get(
+    response = requests.get(
         f"http://{node_without_interserver_listen_host.ip_address}:{INTERSERVER_HTTP_PORT}"
     )
     assert response.status_code == 200

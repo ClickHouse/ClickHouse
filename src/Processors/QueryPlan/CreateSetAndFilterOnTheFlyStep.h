@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
+#include <Processors/DelayedPortsProcessor.h>
 
 
 namespace DB

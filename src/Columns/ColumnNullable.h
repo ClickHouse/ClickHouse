@@ -130,17 +130,17 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(nested_column);
         callback(null_map);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
     {
-        callback(*nested_column);
+        callback(nested_column);
         nested_column->forEachSubcolumnRecursively(callback);
-        callback(*null_map);
+        callback(null_map);
         null_map->forEachSubcolumnRecursively(callback);
     }
 
@@ -220,6 +220,5 @@ private:
 
 ColumnPtr makeNullable(const ColumnPtr & column);
 ColumnPtr makeNullableSafe(const ColumnPtr & column);
-ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 
 }

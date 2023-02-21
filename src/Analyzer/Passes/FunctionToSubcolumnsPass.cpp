@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Storages/IStorage.h>
@@ -23,17 +22,15 @@ namespace DB
 namespace
 {
 
-class FunctionToSubcolumnsVisitor : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>
+class FunctionToSubcolumnsVisitor : public InDepthQueryTreeVisitor<FunctionToSubcolumnsVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>;
-    using Base::Base;
+    explicit FunctionToSubcolumnsVisitor(ContextPtr & context_)
+        : context(context_)
+    {}
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
-        if (!getSettings().optimize_functions_to_subcolumns)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
@@ -81,11 +78,11 @@ public:
                     column.name += ".size0";
                     column.type = std::make_shared<DataTypeUInt64>();
 
+                    resolveOrdinaryFunctionNode(*function_node, "equals");
+
                     function_arguments_nodes.clear();
                     function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
                     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-                    resolveOrdinaryFunctionNode(*function_node, "equals");
                 }
                 else if (function_name == "notEmpty")
                 {
@@ -93,11 +90,11 @@ public:
                     column.name += ".size0";
                     column.type = std::make_shared<DataTypeUInt64>();
 
+                    resolveOrdinaryFunctionNode(*function_node, "notEquals");
+
                     function_arguments_nodes.clear();
                     function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
                     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
-
-                    resolveOrdinaryFunctionNode(*function_node, "notEquals");
                 }
             }
             else if (column_type.isNullable())
@@ -115,9 +112,9 @@ public:
                     column.name += ".null";
                     column.type = std::make_shared<DataTypeUInt8>();
 
-                    function_arguments_nodes = {std::make_shared<ColumnNode>(column, column_source)};
-
                     resolveOrdinaryFunctionNode(*function_node, "not");
+
+                    function_arguments_nodes = {std::make_shared<ColumnNode>(column, column_source)};
                 }
             }
             else if (column_type.isMap())
@@ -142,14 +139,14 @@ public:
         }
         else
         {
-            const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
+            auto second_argument_constant_value = function_arguments_nodes[1]->getConstantValueOrNull();
 
-            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
+            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_value)
             {
                 /** Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)`
                   * with `tuple_argument.column_name`.
                   */
-                const auto & tuple_element_constant_value = second_argument_constant_node->getValue();
+                const auto & tuple_element_constant_value = second_argument_constant_value->getValue();
                 const auto & tuple_element_constant_value_type = tuple_element_constant_value.getType();
 
                 const auto & data_type_tuple = assert_cast<const DataTypeTuple &>(*column.type);
@@ -182,12 +179,12 @@ public:
 
                 /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
                 column.name += ".keys";
-                column.type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
+                column.type = data_type_map.getKeyType();
 
                 auto has_function_argument = std::make_shared<ColumnNode>(column, column_source);
-                function_arguments_nodes[0] = std::move(has_function_argument);
-
                 resolveOrdinaryFunctionNode(*function_node, "has");
+
+                function_arguments_nodes[0] = std::move(has_function_argument);
             }
         }
     }
@@ -195,9 +192,12 @@ public:
 private:
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function = FunctionFactory::instance().get(function_name, getContext());
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+        auto function_result_type = function_node.getResultType();
+        auto function = FunctionFactory::instance().get(function_name, context);
+        function_node.resolveAsFunction(function, std::move(function_result_type));
     }
+
+    ContextPtr & context;
 };
 
 }

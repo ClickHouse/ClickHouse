@@ -9,7 +9,6 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -131,15 +130,15 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!data_type_p.parse(pos, type, expected))
         return false;
 
-    if (s_granularity.ignore(pos, expected))
-    {
-        if (!granularity_p.parse(pos, granularity, expected))
-            return false;
-    }
+    if (!s_granularity.ignore(pos, expected))
+        return false;
+
+    if (!granularity_p.parse(pos, granularity, expected))
+        return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->name = name->as<ASTIdentifier &>().name();
-    index->granularity = granularity ? granularity->as<ASTLiteral &>().value.safeGet<UInt64>() : 1;
+    index->granularity = granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
     node = index;
@@ -443,20 +442,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!storage_like)
         return false;
 
-    if (engine)
-    {
-        switch (engine_kind)
-        {
-            case EngineKind::TABLE_ENGINE:
-                engine->as<ASTFunction &>().kind = ASTFunction::Kind::TABLE_ENGINE;
-                break;
-
-            case EngineKind::DATABASE_ENGINE:
-                engine->as<ASTFunction &>().kind = ASTFunction::Kind::DATABASE_ENGINE;
-                break;
-        }
-    }
-
     auto storage = std::make_shared<ASTStorage>();
     storage->set(storage->engine, engine);
     storage->set(storage->partition_by, partition_by);
@@ -464,6 +449,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->ttl_table, ttl_table);
+
     storage->set(storage->settings, settings);
 
     node = storage;
@@ -487,7 +473,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+    ParserStorage storage_p;
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
@@ -649,7 +635,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             }
         }
     }
-
     auto comment = parseComment(pos, expected);
 
     auto query = std::make_shared<ASTCreateQuery>();
@@ -684,7 +669,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!query->storage)
             query->set(query->storage, std::make_shared<ASTStorage>());
         else if (query->storage->primary_key)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+            throw Exception("Multiple primary keys are not allowed.", ErrorCodes::BAD_ARGUMENTS);
 
         query->storage->primary_key = query->columns_list->primary_key;
     }
@@ -712,8 +697,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
-    ParserStorage storage_inner{ParserStorage::TABLE_ENGINE};
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
 
@@ -852,8 +835,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserToken s_eq(TokenType::Equals);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
-    ParserStorage storage_inner{ParserStorage::TABLE_ENGINE};
+    ParserStorage storage_p;
+    ParserStorage storage_inner;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserExpression watermark_p;
     ParserExpression lateness_p;
@@ -1152,7 +1135,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserStorage storage_p{ParserStorage::DATABASE_ENGINE};
+    ParserStorage storage_p;
     ParserIdentifier name_p(true);
     ParserTableOverridesDeclarationList table_overrides_p;
 
@@ -1239,7 +1222,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+    ParserStorage storage_p;
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
@@ -1299,13 +1282,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (is_materialized_view && ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
+
+    if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
         ParserStringLiteral literal_p;
         if (!literal_p.parse(pos, to_inner_uuid, expected))
             return false;
     }
-    else if (is_materialized_view && ParserKeyword{"TO"}.ignore(pos, expected))
+    else if (ParserKeyword{"TO"}.ignore(pos, expected))
     {
         // TO [db.]table
         if (!table_name_p.parse(pos, to_table, expected))
@@ -1381,59 +1365,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 
-}
-
-bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_attach("ATTACH");
-    ParserKeyword s_named_collection("NAMED COLLECTION");
-    ParserKeyword s_as("AS");
-
-    ParserToken s_comma(TokenType::Comma);
-    ParserIdentifier name_p;
-
-    ASTPtr collection_name;
-    String cluster_str;
-
-    if (!s_create.ignore(pos, expected))
-        return false;
-
-    if (!s_named_collection.ignore(pos, expected))
-        return false;
-
-    if (!name_p.parse(pos, collection_name, expected))
-        return false;
-
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-            return false;
-    }
-
-    if (!s_as.ignore(pos, expected))
-        return false;
-
-    SettingsChanges changes;
-
-    while (true)
-    {
-        if (!changes.empty() && !s_comma.ignore(pos))
-            break;
-
-        changes.push_back(SettingChange{});
-
-        if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
-            return false;
-    }
-
-    auto query = std::make_shared<ASTCreateNamedCollectionQuery>();
-
-    tryGetIdentifierNameInto(collection_name, query->collection_name);
-    query->changes = changes;
-
-    node = query;
-    return true;
 }
 
 bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)

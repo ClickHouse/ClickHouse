@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
+#include <shared_mutex>
+
 #include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
@@ -34,7 +35,7 @@ public:
     /// Has to be called only after setTotals()/mergeRightBlocks()
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
-    IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
@@ -71,7 +72,7 @@ private:
 
     using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
-    mutable SharedMutex rwlock;
+    mutable std::shared_mutex rwlock;
     std::shared_ptr<TableJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;

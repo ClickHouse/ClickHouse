@@ -244,7 +244,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = std::make_shared<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = std::make_shared<ASTExpressionList>();
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatWithSecretsHidden()));
+            
+            WriteBufferFromOwnString buf;
+            IAST::FormatSettings settings{buf, true};
+            type->as<ASTFunction>()->format(settings);
+            
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(buf.str()));
             default_expression = default_function;
         }
 
@@ -431,20 +436,9 @@ protected:
   */
 class ParserStorage : public IParserBase
 {
-public:
-    /// What kind of engine we're going to parse.
-    enum EngineKind
-    {
-        TABLE_ENGINE,
-        DATABASE_ENGINE,
-    };
-
-    ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
-
 protected:
     const char * getName() const override { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    EngineKind engine_kind;
 };
 
 /** Query like this:
@@ -530,13 +524,6 @@ class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "CREATE DICTIONARY"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-class ParserCreateNamedCollectionQuery : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CREATE NAMED COLLECTION"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -4,7 +4,6 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
 
 
 namespace DB
@@ -52,10 +51,6 @@ public:
 
                 auto thread_func = [&lhs, &rhs, next_bucket_to_merge, thread_group = CurrentThread::getGroup()]()
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachQueryIfNotDetached();
-                    );
                     if (thread_group)
                         CurrentThread::attachToIfDetached(thread_group);
                     setThreadName("UniqExactMerger");

@@ -1,7 +1,4 @@
--- Tags: no-s3-storage
-
 -- Part of 00961_check_table test, but with in-memory parts
-
 SET check_query_single_value_result = 0;
 DROP TABLE IF EXISTS mt_table;
 CREATE TABLE mt_table (d Date, key UInt64, data String) ENGINE = MergeTree() PARTITION BY toYYYYMM(d) ORDER BY key

@@ -44,7 +44,6 @@ public:
         std::atomic_uint64_t * elapsed_counter_ms = nullptr);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
-
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);

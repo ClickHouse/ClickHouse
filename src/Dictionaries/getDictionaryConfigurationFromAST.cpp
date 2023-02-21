@@ -110,7 +110,6 @@ void buildLifetimeConfiguration(
 void buildLayoutConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
-    const ASTDictionarySettings * settings,
     const ASTDictionaryLayout * layout)
 {
     AutoPtr<Element> layout_element(doc->createElement("layout"));
@@ -120,19 +119,6 @@ void buildLayoutConfiguration(
 
     if (!layout->parameters)
         return;
-
-    if (settings != nullptr)
-    {
-        AutoPtr<Element> settings_element(doc->createElement("settings"));
-        root->appendChild(settings_element);
-        for (const auto & [name, value] : settings->changes)
-        {
-            AutoPtr<Element> setting_change_element(doc->createElement(name));
-            settings_element->appendChild(setting_change_element);
-            AutoPtr<Text> setting_value(doc->createTextNode(convertFieldToString(value)));
-            setting_change_element->appendChild(setting_value);
-        }
-    }
 
     for (const auto & param : layout->parameters->children)
     {
@@ -358,14 +344,11 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        const auto * it = std::find_if(
-            children.begin(),
-            children.end(),
-            [&](const ASTPtr & node)
-            {
-                const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
-                return dict_attr->name == identifier_name;
-            });
+        auto it = std::find_if(children.begin(), children.end(), [&](const ASTPtr & node)
+        {
+            const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
+            return dict_attr->name == identifier_name;
+        });
 
         if (it == children.end())
         {
@@ -473,8 +456,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// It's not possible to have a function in a dictionary definition since 22.10,
             /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
             /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
-            assert(Context::getGlobalContextInstance()->getApplicationType() != Context::ApplicationType::SERVER
-                   || !Context::getGlobalContextInstance()->isServerCompletelyStarted());
+            assert(!Context::getGlobalContextInstance()->isServerCompletelyStarted());
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});
@@ -616,7 +598,7 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
-    buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
+    buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
     buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
@@ -641,21 +623,20 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 {
     ClickHouseDictionarySourceInfo info;
 
-    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
-    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
-
-    String host = config->getString("dictionary.source.clickhouse.host", "localhost");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
+    String host = config->getString("dictionary.source.clickhouse.host", "");
+    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", 0);
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
+    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
 
-    if (table.empty())
+    if (host.empty() || port == 0 || table.empty())
         return {};
 
     info.table_name = {database, table};
 
     try
     {
+        UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
         if (isLocalAddress({host, port}, default_port))
             info.is_local = true;
     }
