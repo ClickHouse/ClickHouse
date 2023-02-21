@@ -120,10 +120,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
                                              : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context_);
 
-    checkStorageSupportsTransactionsIfNeeded(table, context_);
-
     if (database && table)
     {
+        checkStorageSupportsTransactionsIfNeeded(table, context_);
+
         auto & ast_drop_query = query.as<ASTDropQuery &>();
 
         if (ast_drop_query.is_view && !table->isView())
