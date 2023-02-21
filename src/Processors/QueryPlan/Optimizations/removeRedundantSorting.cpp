@@ -188,7 +188,6 @@ private:
             return false;
 
         /// remove sorting
-        // parent_node->children.front() = sorting_node->children.front();
         for (auto & child : parent_node->children)
         {
             if (child == sorting_node)
