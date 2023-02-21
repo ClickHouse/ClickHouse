@@ -20,53 +20,64 @@ inline String likePatternToRegexp(std::string_view pattern)
     const char * pos = pattern.data();
     const char * const end = pattern.begin() + pattern.size();
 
+    char char_slot;
     if (pos < end && *pos == '%')
-        ++pos;
-    else
-        res = "^";
-
-    while (pos < end)
     {
-        switch (*pos)
+        while (++pos < end && *pos == '%')
         {
-            case '^': case '$': case '.': case '[': case '|': case '(': case ')': case '?': case '*': case '+': case '{':
+        }
+    }
+    else
+    {
+        res = "^";
+    }
+    while (pos != end)
+    {
+        char_slot = *(pos++);
+        switch (char_slot)
+        {
+            case '^':
+            case '$':
+            case '.':
+            case '[':
+            case '|':
+            case '(':
+            case ')':
+            case '?':
+            case '*':
+            case '+':
+            case '{':
                 res += '\\';
-                res += *pos;
+                res += char_slot;
                 break;
             case '%':
-                if (pos + 1 != end)
+                if (pos != end)
+                {
                     res += ".*";
+                }
                 else
+                {
                     return res;
+                }
                 break;
             case '_':
                 res += ".";
                 break;
             case '\\':
-                if (pos + 1 == end)
+                if (pos == end)
+                {
                     throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern");
-                /// Known escape sequences.
-                if (pos[1] == '%' || pos[1] == '_')
-                {
-                    res += pos[1];
-                    ++pos;
-                }
-                else if (pos[1] == '\\')
-                {
-                    res += "\\\\";
-                    ++pos;
                 }
                 else
                 {
-                    /// Unknown escape sequence treated literally: as backslash and the following character.
-                    res += "\\\\";
+                    res += '\\';
+                    res += *(pos++);
+                    break;
                 }
-                break;
             default:
-                res += *pos;
+                res += char_slot;
                 break;
         }
-        ++pos;
     }
 
     res += '$';
