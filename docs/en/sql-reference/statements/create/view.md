@@ -68,6 +68,8 @@ Materialized views in ClickHouse use **column names** instead of column order du
 Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
 
 By default if the will be an error during pushing to the materialized view the data will not be inserted into the table to which the materialized view is attached. You can change this by setting `materialized_views_ignore_errors=true` setting for your `INSERT` query.
+
+`materialized_views_ignore_errors` set to `true` by default for `system.*_log` tables.
 :::
 
 If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
