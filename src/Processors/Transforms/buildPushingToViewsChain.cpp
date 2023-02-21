@@ -15,6 +15,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -173,7 +174,7 @@ class FinalizingViewsTransform final : public IProcessor
     static InputPorts initPorts(std::vector<Block> headers);
 
 public:
-    FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data);
+    FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data, bool materialized_views_ignore_errors_);
 
     String getName() const override { return "FinalizingViewsTransform"; }
     Status prepare() override;
@@ -184,6 +185,7 @@ private:
     ViewsDataPtr views_data;
     std::vector<ExceptionStatus> statuses;
     std::exception_ptr any_exception;
+    bool materialized_views_ignore_errors;
 };
 
 
@@ -407,7 +409,7 @@ Chain buildPushingToViewsChain(
             headers.push_back(chain.getOutputHeader());
 
         auto copying_data = std::make_shared<CopyingDataToViewsTransform>(storage_header, views_data);
-        auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(headers), views_data);
+        auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(headers), views_data, settings.materialized_views_ignore_errors);
         auto out = copying_data->getOutputs().begin();
         auto in = finalizing_views->getInputs().begin();
 
@@ -684,10 +686,11 @@ void PushingToWindowViewSink::consume(Chunk chunk)
 }
 
 
-FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data)
+FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data, bool materialized_views_ignore_errors_)
     : IProcessor(initPorts(std::move(headers)), {Block()})
     , output(outputs.front())
     , views_data(std::move(data))
+    , materialized_views_ignore_errors(materialized_views_ignore_errors_)
 {
     statuses.resize(views_data->views.size());
 }
@@ -787,6 +790,13 @@ void FinalizingViewsTransform::work()
     {
         auto & status = statuses[i];
         ++i;
+
+        if (status.exception && materialized_views_ignore_errors)
+        {
+            auto exception = addStorageToException(status.exception, view.table_id);
+            tryLogException(exception, &Poco::Logger::get("PushingToViews"), "Cannot push to the storage, ignoring the error");
+            continue;
+        }
 
         if (status.exception)
         {
