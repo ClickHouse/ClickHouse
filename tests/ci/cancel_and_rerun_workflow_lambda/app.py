@@ -15,6 +15,7 @@ import boto3  # type: ignore
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
     "PullRequestCI",
     "DocsCheck",
+    "DocsReleaseChecks",
     "BackportPR",
 }
 
