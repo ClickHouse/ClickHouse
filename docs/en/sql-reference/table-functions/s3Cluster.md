@@ -32,7 +32,7 @@ Select the data from all the files in the `/root/data/clickhouse` and `/root/dat
 ``` sql
 SELECT * FROM s3Cluster(
     'cluster_simple', 
-     'http://minio1:9001/root/data/{clickhouse,database}/*', 
+    'http://minio1:9001/root/data/{clickhouse,database}/*', 
     'minio', 
     'minio123', 
     'CSV', 
