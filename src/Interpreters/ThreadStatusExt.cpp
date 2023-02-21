@@ -480,7 +480,10 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
 {
     auto query_context_ptr = query_context.lock();
     if (!query_context_ptr)
+    {
+        LOG_ERROR(log, "No query context, query_views_log will not be written (this should never happen)");
         return;
+    }
 
     auto views_log = query_context_ptr->getQueryViewsLog();
     if (!views_log)
