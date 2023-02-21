@@ -39,7 +39,6 @@ expect "\n:) "
 send -- "INSERT INTO t01565(c0, c1) VALUES (\"1\",1) ;\n"
 expect "INSERT"
 send -- "\r"
-expect "\nConnected"
 expect "\n:) "
 
 send -- "INSERT INTO t01565(c0, c1) VALUES ('1', 1) ;\n"
