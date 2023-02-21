@@ -16,5 +16,5 @@ select last_value(b) from test;
 5
 select last_value(b) ignore nulls from test;
 5
-select last_value(true)(b) respect nulls from test;
+select last_value(b) respect nulls from test;
 \N
