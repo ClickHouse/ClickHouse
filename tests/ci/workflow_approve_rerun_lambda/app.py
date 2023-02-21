@@ -63,7 +63,8 @@ TRUSTED_WORKFLOW_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
-    "DocsCheck",
+    "Docs",
+    "DocsRelease",
     "MasterCI",
     "PullRequestCI",
     "ReleaseCI",
