@@ -981,6 +981,10 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if ((aggregating->inOrder() && !aggregating->explicitSortingRequired()) || aggregating->isGroupingSets())
         return;
 
+    /// It just does not work, see 02515_projections_with_totals
+    if (aggregating->getParams().overflow_row)
+        return;
+
     /// TODO: maybe add support for UNION later.
     std::vector<IQueryPlanStep*> steps_to_update;
     if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), steps_to_update); order_info.input_order)
