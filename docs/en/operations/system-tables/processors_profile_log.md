@@ -33,6 +33,7 @@ SELECT sleep(1)
 │     (ReadFromStorage)           │
 │     SourceFromSingleChunk 0 → 1 │
 └─────────────────────────────────┘
+
 SELECT sleep(1)
 SETTINGS log_processors_profiles = 1
 Query id: feb5ed16-1c24-4227-aa54-78c02b3b27d4
