@@ -327,7 +327,29 @@ try
         showClientVersion();
     }
 
-    connect();
+    try
+    {
+        connect();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+        {
+            if (!config().getString("password", "").empty())
+                throw;
+
+            if (!is_interactive)
+                throw;
+
+            String prompt = fmt::format("Password for user ({}): ", config().getString("user", ""));
+            String password;
+            if (auto * result = readpassphrase(prompt, buf, sizeof(buf), 0))
+                password = result;
+
+            config().setString("password", password);
+            connect();
+        }
+    }
 
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
