@@ -272,7 +272,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 
         if (entry->create_time && (!min_unprocessed_insert_time || entry->create_time < min_unprocessed_insert_time))
         {
-            min_unprocessed_insert_time = entry->create_time;
+            min_unprocessed_insert_time.store(entry->create_time, std::memory_order_relaxed);
             min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
         }
     }
@@ -316,18 +316,18 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (inserts_by_time.empty())
         {
-            min_unprocessed_insert_time = 0;
+            min_unprocessed_insert_time.store(0, std::memory_order_relaxed);
             min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
         }
         else if ((*inserts_by_time.begin())->create_time > min_unprocessed_insert_time)
         {
-            min_unprocessed_insert_time = (*inserts_by_time.begin())->create_time;
+            min_unprocessed_insert_time.store((*inserts_by_time.begin())->create_time, std::memory_order_relaxed);
             min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
         }
 
         if (entry->create_time > max_processed_insert_time)
         {
-            max_processed_insert_time = entry->create_time;
+            max_processed_insert_time.store(entry->create_time, std::memory_order_relaxed);
             max_processed_insert_time_changed = max_processed_insert_time;
         }
     }
@@ -674,7 +674,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                     std::lock_guard state_lock(state_mutex);
                     if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
                     {
-                        min_unprocessed_insert_time = entry.create_time;
+                        min_unprocessed_insert_time.store(entry.create_time, std::memory_order_relaxed);
                         min_unprocessed_insert_time_changed = min_unprocessed_insert_time;
                     }
                 }
@@ -1107,8 +1107,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     zkutil::ZooKeeperPtr zookeeper,
     const MergeTreePartInfo & part_info,
-    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
-    const String & fetch_entry_znode)
+    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry)
 {
     /// TODO is it possible to simplify it?
     Queue to_wait;
@@ -1122,40 +1121,22 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
         && covering_entry->replace_range_entry->columns_version < 0;
     [[maybe_unused]] bool called_for_broken_part = !covering_entry;
-    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part || !fetch_entry_znode.empty());
-
-    auto is_simple_part_producing_op = [](const ReplicatedMergeTreeLogEntryData & data)
-    {
-        return data.type == LogEntry::GET_PART ||
-               data.type == LogEntry::ATTACH_PART ||
-               data.type == LogEntry::MERGE_PARTS ||
-               data.type == LogEntry::MUTATE_PART;
-    };
+    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
-        /// Skipping currently processing entry
-        if (!fetch_entry_znode.empty() && (*it)->znode_name == fetch_entry_znode)
-        {
-            ++it;
-            continue;
-        }
-
-        bool is_simple_producing_op = is_simple_part_producing_op(**it);
-
+        auto type = (*it)->type;
+        bool is_simple_producing_op = type == LogEntry::GET_PART ||
+                                      type == LogEntry::ATTACH_PART ||
+                                      type == LogEntry::MERGE_PARTS ||
+                                      type == LogEntry::MUTATE_PART;
         bool simple_op_covered = is_simple_producing_op && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version));
         bool replace_range_covered = covering_entry && checkReplaceRangeCanBeRemoved(part_info, *it, *covering_entry);
         if (simple_op_covered || replace_range_covered)
         {
             if ((*it)->currently_executing)
-            {
-                bool is_covered_by_simple_op = covering_entry && is_simple_part_producing_op(*covering_entry);
-                bool is_fetching_covering_part = !fetch_entry_znode.empty();
-                if (is_covered_by_simple_op || is_fetching_covering_part)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove covered entry {} producing parts {}, it's a bug",
-                                    (*it)->znode_name, fmt::join((*it)->getVirtualPartNames(format_version), ", "));
                 to_wait.push_back(*it);
-            }
+
             auto code = zookeeper->tryRemove(fs::path(replica_path) / "queue" / (*it)->znode_name);
             if (code != Coordination::Error::ZOK)
                 LOG_INFO(log, "Couldn't remove {}: {}", (fs::path(replica_path) / "queue" / (*it)->znode_name).string(), Coordination::errorMessage(code));
@@ -1248,7 +1229,10 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
 
         constexpr auto fmt_string = "Not executing log entry {} for part {} "
                                     "because it is not disjoint with part {} that is currently executing.";
-        LOG_TEST(LogToStr(out_reason, log), fmt_string, entry.znode_name, new_part_name, future_part_elem.first);
+
+        /// This message can be too noisy, do not print it more than once per second
+        if (!(entry.last_postpone_time == time(nullptr) && entry.postpone_reason.ends_with("that is currently executing.")))
+            LOG_TEST(LogToStr(out_reason, log), fmt_string, entry.znode_name, new_part_name, future_part_elem.first);
         return true;
     }
 
@@ -1996,9 +1980,8 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res) const
 
 void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const
 {
-    std::lock_guard lock(state_mutex);
-    out_min_unprocessed_insert_time = min_unprocessed_insert_time;
-    out_max_processed_insert_time = max_processed_insert_time;
+    out_min_unprocessed_insert_time = min_unprocessed_insert_time.load(std::memory_order_relaxed);
+    out_max_processed_insert_time = max_processed_insert_time.load(std::memory_order_relaxed);
 }
 
 

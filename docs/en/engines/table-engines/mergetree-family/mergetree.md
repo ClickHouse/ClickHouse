@@ -611,7 +611,10 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 -   `TO VOLUME 'bbb'` - move part to the disk `bbb`;
 -   `GROUP BY` - aggregate expired rows.
 
-With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves or recompression).
+`DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
+``` sql
+TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
+```
 
 `GROUP BY` expression must be a prefix of the table primary key.
 

@@ -498,7 +498,7 @@ float Strtof(Vector<const char> buffer, int exponent) {
   //    low-precision (3 digits):
   //       when read from input: 123
   //       when rounded from high precision: 124.
-  // To do this we simply look at the neigbors of the correct result and see
+  // To do this we simply look at the neighbors of the correct result and see
   // if they would round to the same float. If the guess is not correct we have
   // to look at four values (since two different doubles could be the correct
   // double).
@@ -529,7 +529,7 @@ float Strtof(Vector<const char> buffer, int exponent) {
          (f1 == f2 && f2 != f3 && f3 == f4) ||
          (f1 == f2 && f2 == f3 && f3 != f4));
 
-  // guess and next are the two possible canditates (in the same way that
+  // guess and next are the two possible candidates (in the same way that
   // double_guess was the lower candidate for a double-precision guess).
   float guess = f1;
   float next = f4;

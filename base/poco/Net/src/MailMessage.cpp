@@ -24,7 +24,6 @@
 #include "Poco/Net/NameValueCollection.h"
 #include "Poco/Base64Encoder.h"
 #include "Poco/Base64Decoder.h"
-#include "Poco/StreamCopier.h"
 #include "Poco/DateTimeFormat.h"
 #include "Poco/DateTimeFormatter.h"
 #include "Poco/DateTimeParser.h"

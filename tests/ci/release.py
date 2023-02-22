@@ -104,8 +104,10 @@ class Release:
 
     def set_release_info(self):
         # Fetch release commit and tags in case they don't exist locally
-        self.run(f"git fetch {self.repo.url} {self.release_commit}")
-        self.run(f"git fetch {self.repo.url} --tags")
+        self.run(
+            f"git fetch {self.repo.url} {self.release_commit} --no-recurse-submodules"
+        )
+        self.run(f"git fetch {self.repo.url} --tags --no-recurse-submodules")
 
         # Get the actual version for the commit before check
         with self._checkout(self.release_commit, True):
@@ -171,7 +173,9 @@ class Release:
 
         self.check_commit_release_ready()
 
-    def do(self, check_dirty: bool, check_branch: bool) -> None:
+    def do(
+        self, check_dirty: bool, check_run_from_master: bool, check_branch: bool
+    ) -> None:
         self.check_prerequisites()
 
         if check_dirty:
@@ -181,8 +185,9 @@ class Release:
             except subprocess.CalledProcessError:
                 logging.fatal("Repo contains uncommitted changes")
                 raise
-            if self._git.branch != "master":
-                raise Exception("the script must be launched only from master")
+
+        if check_run_from_master and self._git.branch != "master":
+            raise Exception("the script must be launched only from master")
 
         self.set_release_info()
 
@@ -248,9 +253,11 @@ class Release:
 
         # Prefetch the branch to have it updated
         if self._git.branch == branch:
-            self.run("git pull")
+            self.run("git pull --no-recurse-submodules")
         else:
-            self.run(f"git fetch {self.repo.url} {branch}:{branch}")
+            self.run(
+                f"git fetch {self.repo.url} {branch}:{branch} --no-recurse-submodules"
+            )
         output = self.run(f"git branch --contains={self.release_commit} {branch}")
         if branch not in output:
             raise Exception(
@@ -273,8 +280,12 @@ class Release:
             dry_run=self.dry_run,
         )
 
+    @property
+    def has_rollback(self) -> bool:
+        return bool(self._rollback_stack)
+
     def log_rollback(self):
-        if self._rollback_stack:
+        if self.has_rollback:
             rollback = self._rollback_stack.copy()
             rollback.reverse()
             logging.info(
@@ -598,6 +609,14 @@ def parse_args() -> argparse.Namespace:
         default=argparse.SUPPRESS,
         help="(dangerous) if set, skip check repository for uncommited changes",
     )
+    parser.add_argument("--check-run-from-master", default=True, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--no-run-from-master",
+        dest="check_run_from_master",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="(for development) if set, the script could run from non-master branch",
+    )
     parser.add_argument("--check-branch", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-check-branch",
@@ -631,7 +650,20 @@ def main():
         repo, args.commit, args.release_type, args.dry_run, args.with_stderr
     )
 
-    release.do(args.check_dirty, args.check_branch)
+    try:
+        release.do(args.check_dirty, args.check_run_from_master, args.check_branch)
+    except:
+        if release.has_rollback:
+            logging.error(
+                "!!The release process finished with error, read the output carefully!!"
+            )
+            logging.error(
+                "Probably, rollback finished with error. "
+                "If you don't see any of the following commands in the output, "
+                "execute them manually:"
+            )
+            release.log_rollback()
+        raise
 
 
 if __name__ == "__main__":

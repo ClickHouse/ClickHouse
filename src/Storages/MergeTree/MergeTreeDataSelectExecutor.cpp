@@ -413,7 +413,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     std::move(sort_description_for_merging),
                     std::move(group_by_sort_description),
                     should_produce_results_in_order_of_bucket_number,
-                    settings.enable_memory_bound_merging_of_aggregation_results);
+                    settings.enable_memory_bound_merging_of_aggregation_results,
+                    !group_by_info && settings.force_aggregation_in_order);
                 query_plan->addStep(std::move(aggregating_step));
             };
 
@@ -793,14 +794,18 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
 
-    if (metadata_snapshot->hasPartitionKey() && !settings.allow_experimental_analyzer)
+    if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
+        auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
-        minmax_idx_condition.emplace(
-            query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            minmax_idx_condition.emplace(query_info.filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
+        else
+            minmax_idx_condition.emplace(query_info, context, minmax_columns_names, minmax_expression_actions);
+
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
@@ -1164,7 +1169,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description), //-V1030
+            .description = std::move(description),
             .num_parts_after = index_and_condition.stat.total_parts - index_and_condition.stat.parts_dropped,
             .num_granules_after = index_and_condition.stat.total_granules - index_and_condition.stat.granules_dropped});
     }
@@ -1181,7 +1186,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description), //-V1030
+            .description = std::move(description),
             .num_parts_after = index_and_condition.stat.total_parts - index_and_condition.stat.parts_dropped,
             .num_granules_after = index_and_condition.stat.total_granules - index_and_condition.stat.granules_dropped});
     }
