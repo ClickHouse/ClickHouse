@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/isDiskFunction.h>
 #include <Common/assert_cast.h>
 
 
