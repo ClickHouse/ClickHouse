@@ -35,6 +35,7 @@ bool FieldVisitorSum::operator() (Object &) const { throw Exception(ErrorCodes::
 bool FieldVisitorSum::operator() (UUID &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum UUIDs"); }
 bool FieldVisitorSum::operator() (IPv4 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum IPv4s"); }
 bool FieldVisitorSum::operator() (IPv6 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum IPv6s"); }
+bool FieldVisitorSum::operator() (CustomType & x) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot sum custom type {}", x.getTypeName()); }
 
 bool FieldVisitorSum::operator() (AggregateFunctionStateData &) const
 {

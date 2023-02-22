@@ -1,4 +1,4 @@
-if(NOT ARCH_AARCH64 AND NOT OS_FREEBSD AND NOT APPLE)
+if(NOT ARCH_AARCH64 AND NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE AND NOT ARCH_S390X)
     option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HDFS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
@@ -105,6 +105,9 @@ set(SRCS
 
 if (ARCH_AMD64)
     find_program(YASM_PATH NAMES yasm)
+    if (NOT YASM_PATH)
+        message(FATAL_ERROR "Please install the Yasm assembler to build ClickHouse with Hadoop Distributed File System (HDFS) support")
+    endif ()
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/crc_iscsi_v_pcl.o
         COMMAND ${YASM_PATH} -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o ${CMAKE_CURRENT_BINARY_DIR}/crc_iscsi_v_pcl.o ${HDFS3_SOURCE_DIR}/common/crc_iscsi_v_pcl.asm

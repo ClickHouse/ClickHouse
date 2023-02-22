@@ -18,7 +18,7 @@ struct Settings;
   */
 
 
-#define LIST_OF_COORDINATION_SETTINGS(M) \
+#define LIST_OF_COORDINATION_SETTINGS(M, ALIAS) \
     M(Milliseconds, min_session_timeout_ms, Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS, "Min client session timeout", 0) \
     M(Milliseconds, session_timeout_ms, Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS, "Max client session timeout", 0) \
     M(Milliseconds, operation_timeout_ms, Coordination::DEFAULT_OPERATION_TIMEOUT_MS, "Default client operation timeout", 0) \

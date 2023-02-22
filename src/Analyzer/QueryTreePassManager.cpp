@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/Context.h>
 
@@ -18,6 +19,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
@@ -34,6 +36,10 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
+#include <Analyzer/Passes/ArrayExistsToHasPass.h>
+#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+
 
 namespace DB
 {
@@ -58,6 +64,14 @@ public:
     explicit ValidationChecker(String pass_name_)
         : pass_name(std::move(pass_name_))
     {}
+
+    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
+    {
+        if (parent->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return false;
+
+        return true;
+    }
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
@@ -103,14 +117,22 @@ private:
             if (WhichDataType(expected_argument_types[i]).isFunction())
                 continue;
 
-            if (!expected_argument_types[i]->equals(*actual_argument_columns[i].type))
+            const auto & expected_argument_type = expected_argument_types[i];
+            const auto & actual_argument_type = actual_argument_columns[i].type;
+
+            if (!expected_argument_type->equals(*actual_argument_type))
             {
+                /// Aggregate functions remove low cardinality for their argument types
+                if ((function->isAggregateFunction() || function->isWindowFunction()) &&
+                    expected_argument_type->equals(*recursiveRemoveLowCardinality(actual_argument_type)))
+                    continue;
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Function {} expects {} argument to have {} type but receives {} after running {} pass",
                     function->toAST()->formatForErrorMessage(),
                     i + 1,
-                    expected_argument_types[i]->getName(),
-                    actual_argument_columns[i].type->getName(),
+                    expected_argument_type->getName(),
+                    actual_argument_type->getName(),
                     pass_name);
             }
         }
@@ -214,7 +236,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<CountDistinctPass>());
+    manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
+    manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_unique<CustomizeFunctionsPass>());
@@ -226,6 +250,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
+
+    manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
@@ -239,6 +265,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
+
+    manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+
 }
 
 }

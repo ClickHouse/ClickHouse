@@ -212,7 +212,7 @@ typedef struct ptr_table_s {
 local ptr_table table[MAX_PTR];
 /* This table is used to remember the original form of pointers
  * to large buffers (64K). Such pointers are normalized with a zero offset.
- * Since MSDOS is not a preemptive multitasking OS, this table is not
+ * Since MS-DOS is not a preemptive multitasking OS, this table is not
  * protected from concurrent access. This hack doesn't work anyway on
  * a protected system like OS/2. Use Microsoft C instead.
  */
