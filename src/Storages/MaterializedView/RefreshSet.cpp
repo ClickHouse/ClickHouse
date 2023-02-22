@@ -68,7 +68,6 @@ bool RefreshSetLess::operator()(const StorageID & l, const StorageID & r) const
 
 RefreshSet::Entry::Entry()
     : parent_set{nullptr}
-    , metric_increment{}
 {}
 
 RefreshSet::Entry::Entry(Entry && other) noexcept
