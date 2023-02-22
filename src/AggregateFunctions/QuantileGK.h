@@ -73,7 +73,7 @@ public:
         }
     }
 
-    void query(const Float64 * percentiles, const size_t * indices, size_t size, T * result)
+    void query(const Float64 * percentiles, const size_t * indices, size_t size, T * result) const
     {
         if (!head_sampled.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot operate on an uncompressed summary, call compress() first");
@@ -266,7 +266,7 @@ public:
     }
 
 private:
-    QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile)
+    QueryResult findApproxQuantile(size_t index, Int64 min_rank_at_index, double target_error, double percentile) const
     {
         Stats curr_sample = sampled[index];
         Int64 rank = static_cast<Int64>(std::ceil(percentile * count));

@@ -84,14 +84,14 @@ public:
         , argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one level parameter or less", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires one level parameter or less", getName());
 
         if constexpr (is_quantile_gk)
         {
             const auto & accuracy_field = params[0];
             if (!isInt64OrUInt64FieldType(accuracy_field.getType()))
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Aggregate function {} require accuracy parameter with integer type", getName());
+                    ErrorCodes::LOGICAL_ERROR, "Aggregate function {} requires accuracy parameter with integer type", getName());
 
             if (accuracy_field.getType() == Field::Types::Int64)
                 accuracy = accuracy_field.get<Int64>();
@@ -101,7 +101,7 @@ public:
             if (accuracy <= 0)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Aggregate function {} require accuracy parameter with positive value but is {}",
+                    "Aggregate function {} requires accuracy parameter with positive value but is {}",
                     getName(),
                     accuracy);
         }
