@@ -1,6 +1,7 @@
-ExpressionTransform × 25
+(Expression)
+ExpressionTransform × 10
   (Aggregating)
-  Resize 1 → 25
+  Resize 1 → 10
     AggregatingTransform
       (Expression)
       ExpressionTransform
