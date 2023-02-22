@@ -1042,31 +1042,23 @@ private:
                 }
                 else
                 {
-                    if constexpr (std::endian::native == std::endian::little)
-                    {
-                        if (std::is_same_v<Impl, JavaHashImpl>)
-                            h = JavaHashImpl::apply(vec_from[i]);
-                        else
-                            h = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
-                    }
+                    if (std::is_same_v<Impl, JavaHashImpl>)
+                        h = JavaHashImpl::apply(vec_from[i]);
                     else
                     {
-                        if (std::is_same_v<Impl, JavaHashImpl>)
-                            h = JavaHashImpl::apply(vec_from[i]);
+                        if constexpr (std::is_same_v<ToType, UInt64>)
+                        {
+                            UInt64 v = bit_cast<UInt64>(vec_from[i]);
+                            if constexpr (std::endian::native == std::endian::big)
+                                v = __builtin_bswap64(v);
+                            h = apply(key, reinterpret_cast<const char *>(&v), sizeof(vec_from[i]));
+                        }
                         else
                         {
-                            if constexpr (std::is_same_v<ToType, UInt64>)
-                            {
-                                UInt64 v = bit_cast<UInt64>(vec_from[i]);
-                                v = __builtin_bswap64(v);
-                                h = apply(key, reinterpret_cast<const char *>(&v), sizeof(vec_from[i]));
-                            }
-                            else
-                            {
-                                UInt32 v = bit_cast<UInt32>(vec_from[i]);
+                            UInt32 v = bit_cast<UInt32>(vec_from[i]);
+                            if constexpr (std::endian::native == std::endian::big)
                                 v = __builtin_bswap32(v);
-                                h = apply(key, reinterpret_cast<const char *>(&v), sizeof(vec_from[i]));
-                            }
+                            h = apply(key, reinterpret_cast<const char *>(&v), sizeof(vec_from[i]));
                         }
                     }
                 }
@@ -1081,28 +1073,21 @@ private:
         {
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
-            if constexpr (std::endian::native == std::endian::little)
+            if constexpr (std::is_same_v<ToType, UInt64>)
             {
-                if constexpr (std::is_same_v<ToType, UInt64>)
-                    hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
-                else
-                    hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+                UInt64 v = bit_cast<UInt64>(value);
+                if constexpr (std::endian::native == std::endian::big)
+                    v = __builtin_bswap64(v);
+                hash = IntHash64Impl::apply(v);
             }
             else
             {
-                if constexpr (std::is_same_v<ToType, UInt64>)
-                {
-                    UInt64 v = bit_cast<UInt64>(value);
-                    v = __builtin_bswap64(v);
-                    hash = IntHash64Impl::apply(v);
-                }
-                else
-                {
-                    UInt32 v = bit_cast<UInt32>(value);
+                UInt32 v = bit_cast<UInt32>(value);
+                if constexpr (std::endian::native == std::endian::big)
                     v = __builtin_bswap32(v);
-                    hash = IntHash32Impl::apply(bit_cast<UInt32>(v));
-                }
+                hash = IntHash32Impl::apply(bit_cast<UInt32>(v));
             }
+
             size_t size = vec_to.size();
             if constexpr (first)
             {
