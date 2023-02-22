@@ -90,6 +90,7 @@ inline String likePatternToRegexp(std::string_view pattern)
                         break;
                     default:
                         res += *pos;
+                        ++pos;
                         break;
                 }
                 break;
