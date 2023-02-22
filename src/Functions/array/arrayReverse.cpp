@@ -37,7 +37,8 @@ public:
     {
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array.", getName());
+            throw Exception("Argument for function " + getName() + " must be array.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0];
     }
@@ -58,8 +59,8 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 {
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!array)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-            arguments[0].column->getName(), getName());
+        throw Exception("Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+            ErrorCodes::ILLEGAL_COLUMN);
 
     auto res_ptr = array->cloneEmpty();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
@@ -93,8 +94,9 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 
     if (src_nullable_col)
         if (!executeNumber<UInt8>(src_nullable_col->getNullMapColumn(), offsets, res_nullable_col->getNullMapColumn()))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of null map of the first argument of function {}",
-                src_nullable_col->getNullMapColumn().getName(), getName());
+            throw Exception("Illegal column " + src_nullable_col->getNullMapColumn().getName()
+                + " of null map of the first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
 
     return res_ptr;
 }
@@ -110,7 +112,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
     {
         ssize_t src_index = src_array_offsets[i] - 1;
 
-        while (src_index >= static_cast<ssize_t>(src_prev_offset))
+        while (src_index >= ssize_t(src_prev_offset))
         {
             res_data.insertFrom(src_data, src_index);
             --src_index;
@@ -245,7 +247,7 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
 }
 
 
-REGISTER_FUNCTION(ArrayReverse)
+void registerFunctionArrayReverse(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayReverse>();
 }

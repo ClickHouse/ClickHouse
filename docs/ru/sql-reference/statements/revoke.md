@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/revoke
-sidebar_position: 39
-sidebar_label: REVOKE
+toc_priority: 39
+toc_title: REVOKE
 ---
 
 # REVOKE
@@ -45,3 +44,4 @@ REVOKE SELECT ON accounts.* FROM john;
 GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
+

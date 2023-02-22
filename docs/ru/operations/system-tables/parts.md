@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/parts
----
 # system.parts {#system_tables-parts}
 
 Содержит информацию о кусках данных таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
@@ -99,9 +96,9 @@ slug: /ru/operations/system-tables/parts
 
 -   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Массив выражений. Каждое выражение задаёт правило [TTL MOVE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-        :::note "Предупреждение"
+    !!! note "Предупреждение"
         Массив выражений `move_ttl_info.expression` используется, в основном, для обратной совместимости. Для работы с правилами `TTL MOVE` лучше использовать поля `move_ttl_info.min` и `move_ttl_info.max`.
-        :::
+
 -   `move_ttl_info.min` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Массив значений. Каждый элемент массива задаёт минимальное значение ключа даты и времени для правила [TTL MOVE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 -   `move_ttl_info.max` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Массив значений. Каждый элемент массива задаёт максимальное значение ключа даты и времени для правила [TTL MOVE](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
@@ -166,3 +163,4 @@ move_ttl_info.max:                     []
 
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [TTL для столбцов и таблиц](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
+

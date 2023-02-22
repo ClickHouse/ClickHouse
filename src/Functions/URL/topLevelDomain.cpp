@@ -5,30 +5,25 @@
 namespace DB
 {
 
-template<bool conform_rfc>
 struct ExtractTopLevelDomain
 {
     static size_t getReserveLengthForElement() { return 5; }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
-        std::string_view host;
-        if constexpr (conform_rfc)
-            host = getURLHostRFC(data, size);
-        else
-            host = getURLHost(data, size);
+        StringRef host = getURLHost(data, size);
 
         res_data = data;
         res_size = 0;
 
-        if (!host.empty())
+        if (host.size != 0)
         {
-            if (host[host.size() - 1] == '.')
-                host.remove_suffix(1);
+            if (host.data[host.size - 1] == '.')
+                host.size -= 1;
 
-            const auto * host_end = host.data() + host.size();
+            const auto * host_end = host.data + host.size;
 
-            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end);
+            Pos last_dot = find_last_symbols_or_null<'.'>(host.data, host_end);
             if (!last_dot)
                 return;
 
@@ -46,30 +41,11 @@ struct ExtractTopLevelDomain
 };
 
 struct NameTopLevelDomain { static constexpr auto name = "topLevelDomain"; };
-using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain<false>>, NameTopLevelDomain>;
+using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, NameTopLevelDomain>;
 
-struct NameTopLevelDomainRFC { static constexpr auto name = "topLevelDomainRFC"; };
-using FunctionTopLevelDomainRFC = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain<true>>, NameTopLevelDomainRFC>;
-
-REGISTER_FUNCTION(TopLevelDomain)
+void registerFunctionTopLevelDomain(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionTopLevelDomain>(
-    {
-        R"(
-Extracts the the top-level domain from a URL.
-
-Returns an empty string if the argument cannot be parsed as a URL or does not contain a top-level domain.
-        )",
-        Documentation::Examples{{"topLevelDomain", "SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')"}},
-        Documentation::Categories{"URL"}
-    });
-
-    factory.registerFunction<FunctionTopLevelDomainRFC>(
-    {
-        R"(Similar to topLevelDomain, but conforms to RFC 3986.)",
-        Documentation::Examples{},
-        Documentation::Categories{"URL"}
-    });
+    factory.registerFunction<FunctionTopLevelDomain>();
 }
 
 }

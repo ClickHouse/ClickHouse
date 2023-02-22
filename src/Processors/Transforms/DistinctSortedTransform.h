@@ -3,7 +3,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/SortDescription.h>
-#include <Core/ColumnNumbers.h>
 
 
 namespace DB
@@ -11,9 +10,6 @@ namespace DB
 
 /** This class is intended for implementation of SELECT DISTINCT clause and
   * leaves only unique rows in the stream.
-  *
-  * DistinctSortedTransform::isApplicable() have to be used to check if DistinctSortedTransform can be constructed with particular arguments,
-  * otherwise the constructor can throw LOGICAL_ERROR exception
   *
   * Implementation for case, when input stream has rows for same DISTINCT key or at least its prefix,
   *  grouped together (going consecutively).
@@ -26,21 +22,18 @@ class DistinctSortedTransform : public ISimpleTransform
 {
 public:
     /// Empty columns_ means all columns.
-    DistinctSortedTransform(
-        const Block & header,
-        const SortDescription & sort_description,
-        const SizeLimits & set_size_limits_,
-        UInt64 limit_hint_,
-        const Names & column_names);
+    DistinctSortedTransform(const Block & header, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "DistinctSortedTransform"; }
-
-    static bool isApplicable(const Block & header, const SortDescription & sort_description, const Names & column_names);
 
 protected:
     void transform(Chunk & chunk) override;
 
 private:
+    ColumnRawPtrs getKeyColumns(const Chunk & chunk) const;
+    /// When clearing_columns changed, we can clean HashSet to memory optimization
+    /// clearing_columns is a left-prefix of SortDescription exists in key_columns
+    ColumnRawPtrs getClearingColumns(const Chunk & chunk, const ColumnRawPtrs & key_columns) const;
     static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
 
     /// return true if has new data
@@ -53,6 +46,8 @@ private:
         size_t rows,
         ClearableSetVariants & variants) const;
 
+    SortDescription description;
+
     struct PreviousChunk
     {
         Chunk chunk;
@@ -60,11 +55,7 @@ private:
     };
     PreviousChunk prev_chunk;
 
-    ColumnNumbers column_positions;      /// DISTINCT columns positions in header
-    ColumnNumbers sort_prefix_positions; /// DISTINCT columns positions which form sort prefix of sort description
-    ColumnRawPtrs column_ptrs;           /// DISTINCT columns from chunk
-    ColumnRawPtrs sort_prefix_columns;   /// DISTINCT columns from chunk which form sort prefix of sort description
-
+    Names columns_names;
     ClearableSetVariants data;
     Sizes key_sizes;
     UInt64 limit_hint;

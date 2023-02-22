@@ -14,12 +14,13 @@ struct NameMultiSearchAllPositionsCaseInsensitiveUTF8
     static constexpr auto name = "multiSearchAllPositionsCaseInsensitiveUTF8";
 };
 
-using FunctionMultiSearchAllPositionsCaseInsensitiveUTF8
-    = FunctionsMultiStringPosition<MultiSearchAllPositionsImpl<NameMultiSearchAllPositionsCaseInsensitiveUTF8, PositionCaseInsensitiveUTF8>>;
+using FunctionMultiSearchAllPositionsCaseInsensitiveUTF8 = FunctionsMultiStringPosition<
+    MultiSearchAllPositionsImpl<PositionCaseInsensitiveUTF8>,
+    NameMultiSearchAllPositionsCaseInsensitiveUTF8>;
 
 }
 
-REGISTER_FUNCTION(MultiSearchAllPositionsCaseInsensitiveUTF8)
+void registerFunctionMultiSearchAllPositionsCaseInsensitiveUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearchAllPositionsCaseInsensitiveUTF8>();
 }

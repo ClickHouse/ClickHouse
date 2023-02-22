@@ -2,7 +2,6 @@
     <users>
         <default>
             <access_management>1</access_management>
-            <show_named_collections>1</show_named_collections>
         </default>
     </users>
 </clickhouse>

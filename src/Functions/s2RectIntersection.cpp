@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -150,7 +150,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(S2RectIntersection)
+void registerFunctionS2RectIntersection(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionS2RectIntersection>();
 }

@@ -1,5 +1,5 @@
 -- Tags: no-backward-compatibility-check
--- TODO: remove no-backward-compatibility-check after new 22.6 release
+
 
 SET cast_ipv4_ipv6_default_on_conversion_error = 1;
 

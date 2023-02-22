@@ -1,13 +1,12 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/stochasticlogisticregression
-sidebar_position: 222
+toc_priority: 222
 ---
 
-# stochasticLogisticRegression
+# stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
-### Parameters
+### Parameters {#agg_functions-stochasticlogisticregression-parameters}
 
 Parameters are exactly the same as in stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.

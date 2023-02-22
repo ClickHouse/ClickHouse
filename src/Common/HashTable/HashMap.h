@@ -3,7 +3,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
-#include <Common/HashTable/Prefetching.h>
 
 
 /** NOTE HashMap could only be used for memmoveable (position independent) types.
@@ -182,7 +181,7 @@ template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Grower = HashTableGrower<>,
     typename Allocator = HashTableAllocator>
 class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
@@ -190,10 +189,8 @@ public:
     using Self = HashMapTable;
     using Base = HashTable<Key, Cell, Hash, Grower, Allocator>;
     using LookupResult = typename Base::LookupResult;
-    using Iterator = typename Base::iterator;
 
     using Base::Base;
-    using Base::prefetch;
 
     /// Merge every cell's value of current map into the destination map via emplace.
     ///  Func should have signature void(Mapped & dst, Mapped & src, bool emplaced).
@@ -201,32 +198,11 @@ public:
     ///  have a key equals to the given cell, a new cell gets emplaced into that map,
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
-    template <typename Func, bool prefetch = false>
+    template <typename Func>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        DB::PrefetchingHelper prefetching;
-        size_t prefetch_look_ahead = prefetching.getInitialLookAheadValue();
-
-        size_t i = 0;
-        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
-
-        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            if constexpr (prefetch)
-            {
-                if (i == prefetching.iterationsToMeasure())
-                {
-                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - prefetching.getInitialLookAheadValue());
-                }
-
-                if (prefetch_it != end)
-                {
-                    that.prefetchByHash(prefetch_it.getHash());
-                    ++prefetch_it;
-                }
-            }
-
             typename Self::LookupResult res_it;
             bool inserted;
             that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
@@ -298,19 +274,7 @@ public:
     {
         if (auto it = this->find(x); it != this->end())
             return it->getMapped();
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot find element in HashMap::at method");
-    }
-
-private:
-    Iterator advanceIterator(Iterator it, size_t n)
-    {
-        size_t i = 0;
-        while (i < n && it != this->end())
-        {
-            ++i;
-            ++it;
-        }
-        return it;
+        throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -332,7 +296,7 @@ template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Grower = HashTableGrower<>,
     typename Allocator = HashTableAllocator>
 using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 
@@ -341,7 +305,7 @@ template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Grower = HashTableGrower<>,
     typename Allocator = HashTableAllocator>
 using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 

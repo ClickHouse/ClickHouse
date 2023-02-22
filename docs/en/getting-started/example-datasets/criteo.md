@@ -1,9 +1,9 @@
 ---
-slug: /en/getting-started/example-datasets/criteo
-sidebar_label: Terabyte Click Logs from Criteo
+toc_priority: 18
+toc_title: Terabyte Click Logs from Criteo
 ---
 
-# Terabyte of Click Logs from Criteo 
+# Terabyte of Click Logs from Criteo {#terabyte-of-click-logs-from-criteo}
 
 Download the data from http://labs.criteo.com/downloads/download-terabyte-click-logs/
 
@@ -65,9 +65,7 @@ CREATE TABLE criteo
     icat24 UInt32,
     icat25 UInt32,
     icat26 UInt32
-) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(date)
-ORDER BY (date, icat1)
+) ENGINE = MergeTree(date, intHash32(icat1), (date, intHash32(icat1)), 8192)
 ```
 
 Transform data from the raw log and put it in the second table:
@@ -77,3 +75,5 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 
 DROP TABLE criteo_log;
 ```
+
+[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/criteo/) <!--hide-->

@@ -1,7 +1,6 @@
 ---
-slug: /zh/interfaces/http
-sidebar_position: 19
-sidebar_label: HTTP客户端
+toc_priority: 19
+toc_title: HTTP客户端
 ---
 
 # HTTP客户端 {#http-interface}
@@ -635,3 +634,5 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
 ```
+
+[来源文章](https://clickhouse.com/docs/zh/interfaces/http_interface/) <!--hide-->

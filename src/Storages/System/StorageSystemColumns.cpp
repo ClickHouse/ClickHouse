@@ -20,6 +20,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_DROPPED;
+}
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -60,7 +64,7 @@ namespace
 }
 
 
-class ColumnsSource : public ISource
+class ColumnsSource : public SourceWithProgress
 {
 public:
     ColumnsSource(
@@ -71,7 +75,7 @@ public:
         ColumnPtr tables_,
         Storages storages_,
         ContextPtr context)
-        : ISource(header_)
+        : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
         , total_tables(tables->size()), access(context->getAccess())
@@ -109,12 +113,21 @@ protected:
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock;
 
-                table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
-
-                if (table_lock == nullptr)
+                try
                 {
-                    // Table was dropped while acquiring the lock, skipping table
-                    continue;
+                    table_lock = storage->lockForShare(query_id, lock_acquire_timeout);
+                }
+                catch (const Exception & e)
+                {
+                    /** There are case when IStorage::drop was called,
+                    *  but we still own the object.
+                    * Then table will throw exception at attempt to lock it.
+                    * Just skip the table.
+                    */
+                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        continue;
+                    else
+                        throw;
                 }
 
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -296,7 +309,7 @@ Pipe StorageSystemColumns::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const size_t /*num_streams*/)
+    const unsigned /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 
@@ -310,7 +323,7 @@ Pipe StorageSystemColumns::read(
     std::vector<UInt8> columns_mask(sample_block.columns());
     for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
     {
-        if (names_set.contains(sample_block.getByPosition(i).name))
+        if (names_set.count(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             header.insert(sample_block.getByPosition(i));

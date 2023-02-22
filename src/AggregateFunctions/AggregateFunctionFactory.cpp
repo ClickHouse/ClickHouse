@@ -40,19 +40,19 @@ const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
 void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, CaseSensitiveness case_sensitiveness)
 {
     if (creator_with_properties.creator == nullptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
-            "the aggregate function {} has been provided  a null constructor", name);
+        throw Exception("AggregateFunctionFactory: the aggregate function " + name + " has been provided "
+            " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
     if (!aggregate_functions.emplace(name, creator_with_properties).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",
-            name);
+        throw Exception("AggregateFunctionFactory: the aggregate function name '" + name + "' is not unique",
+            ErrorCodes::LOGICAL_ERROR);
 
     if (case_sensitiveness == CaseInsensitive)
     {
         auto key = Poco::toLower(name);
         if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
-                "the case insensitive aggregate function name '{}' is not unique", name);
+            throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
+                ErrorCodes::LOGICAL_ERROR);
         case_insensitive_name_mapping[key] = name;
     }
 }
@@ -72,18 +72,15 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 {
     auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
-    /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
-    /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
-    /// they must handle the nullability themselves
-    auto properties = tryGetPropertiesImpl(name);
-    bool is_window_function = properties.has_value() && properties->is_window_function;
-    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+    /// If one of the types is Nullable, we apply aggregate function combinator "Null".
+
+    if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: cannot find aggregate function combinator "
-                            "to apply a function to Nullable arguments.");
+            throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.",
+                ErrorCodes::LOGICAL_ERROR);
 
         DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -106,7 +103,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto with_original_arguments = getImpl(name, types_without_low_cardinality, parameters, out_properties, false);
 
     if (!with_original_arguments)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: AggregateFunctionFactory returned nullptr");
+        throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
     return with_original_arguments;
 }
 
@@ -179,12 +176,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
         /// need to filter aggregation result based on another column.
 
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
+
         if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
         {
             throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
                 "Nested identical combinator '{}' is not supported",
                 combinator_name);
         }
+
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic pop
+#endif
 
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -260,11 +266,11 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name) const
 {
-    if (aggregate_functions.contains(name) || isAlias(name))
+    if (aggregate_functions.count(name) || isAlias(name))
         return true;
 
     String name_lowercase = Poco::toLower(name);
-    if (case_insensitive_aggregate_functions.contains(name_lowercase) || isAlias(name_lowercase))
+    if (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase))
         return true;
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))

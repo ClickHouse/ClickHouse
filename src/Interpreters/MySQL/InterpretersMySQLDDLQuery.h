@@ -2,13 +2,12 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/executeQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/MySQL/ASTAlterQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
-#include <Parsers/MySQL/ASTDropQuery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -17,7 +16,7 @@ namespace MySQLInterpreter
 {
     struct InterpreterDropImpl
     {
-        using TQuery = MySQLParser::ASTDropQuery;
+        using TQuery = ASTDropQuery;
 
         static void validate(const TQuery & query, ContextPtr context);
 
@@ -88,8 +87,6 @@ using InterpreterMySQLDropQuery = InterpreterMySQLDDLQuery<InterpreterDropImpl>;
 using InterpreterMySQLAlterQuery = InterpreterMySQLDDLQuery<InterpreterAlterImpl>;
 using InterpreterMySQLRenameQuery = InterpreterMySQLDDLQuery<InterpreterRenameImpl>;
 using InterpreterMySQLCreateQuery = InterpreterMySQLDDLQuery<InterpreterCreateImpl>;
-
-NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition);
 
 }
 

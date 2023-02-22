@@ -17,7 +17,7 @@ using FunctionBitTestAll = FunctionBitTestMany<BitTestAllImpl, NameBitTestAll>;
 
 }
 
-REGISTER_FUNCTION(BitTestAll)
+void registerFunctionBitTestAll(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitTestAll>();
 }

@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
-#include <bit>
 
 
 namespace DB
@@ -113,7 +112,7 @@ MagicNumber serializeTypeId(TypeIndex type_id)
             break;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type is not supported by T64 codec: {}", static_cast<UInt32>(type_id));
+    throw Exception("Type is not supported by T64 codec: " + toString(UInt32(type_id)), ErrorCodes::LOGICAL_ERROR);
 }
 
 TypeIndex deserializeTypeId(uint8_t serialized_type_id)
@@ -138,7 +137,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Decimal64:    return TypeIndex::Decimal64;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad magic number in T64 codec: {}", static_cast<UInt32>(serialized_type_id));
+    throw Exception("Bad magic number in T64 codec: " + toString(UInt32(serialized_type_id)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -285,41 +284,29 @@ void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
 
     if constexpr (sizeof(T) > 4)
     {
-        value |= static_cast<UInt64>(matrix8[64 * 7 + col]) << (8 * 7);
-        value |= static_cast<UInt64>(matrix8[64 * 6 + col]) << (8 * 6);
-        value |= static_cast<UInt64>(matrix8[64 * 5 + col]) << (8 * 5);
-        value |= static_cast<UInt64>(matrix8[64 * 4 + col]) << (8 * 4);
+        value |= UInt64(matrix8[64 * 7 + col]) << (8 * 7);
+        value |= UInt64(matrix8[64 * 6 + col]) << (8 * 6);
+        value |= UInt64(matrix8[64 * 5 + col]) << (8 * 5);
+        value |= UInt64(matrix8[64 * 4 + col]) << (8 * 4);
     }
 
     if constexpr (sizeof(T) > 2)
     {
-        value |= static_cast<UInt32>(matrix8[64 * 3 + col]) << (8 * 3);
-        value |= static_cast<UInt32>(matrix8[64 * 2 + col]) << (8 * 2);
+        value |= UInt32(matrix8[64 * 3 + col]) << (8 * 3);
+        value |= UInt32(matrix8[64 * 2 + col]) << (8 * 2);
     }
 
     if constexpr (sizeof(T) > 1)
-        value |= static_cast<UInt32>(matrix8[64 * 1 + col]) << (8 * 1);
+        value |= UInt32(matrix8[64 * 1 + col]) << (8 * 1);
 
-    value |= static_cast<UInt32>(matrix8[col]);
+    value |= UInt32(matrix8[col]);
 }
 
 
 template <typename T>
 void load(const char * src, T * buf, UInt32 tail = 64)
 {
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        memcpy(buf, src, tail * sizeof(T));
-    }
-    else
-    {
-        /// Since the algorithm uses little-endian integers, data is loaded
-        /// as little-endian types on big-endian machine (s390x, etc).
-        for (UInt32 i = 0; i < tail; ++i)
-        {
-            buf[i] = unalignedLoadLE<T>(src + i * sizeof(T));
-        }
-    }
+    memcpy(buf, src, tail * sizeof(T));
 }
 
 template <typename T>
@@ -426,7 +413,7 @@ UInt32 getValuableBitsNumber(UInt64 min, UInt64 max)
 {
     UInt64 diff_bits = min ^ max;
     if (diff_bits)
-        return 64 - std::countl_zero(diff_bits);
+        return 64 - __builtin_clzll(diff_bits);
     return 0;
 }
 
@@ -435,12 +422,12 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     if (min < 0 && max >= 0)
     {
         if (min + max >= 0)
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
+            return getValuableBitsNumber(0ull, UInt64(max)) + 1;
         else
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+            return getValuableBitsNumber(0ull, UInt64(~min)) + 1;
     }
     else
-        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+        return getValuableBitsNumber(UInt64(min), UInt64(max));
 }
 
 
@@ -473,8 +460,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
     if (bytes_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not multiplier of {}",
-                        bytes_size, sizeof(T));
+        throw Exception("Cannot compress, data size " + toString(bytes_size) + " is not multiplier of " + toString(sizeof(T)),
+                        ErrorCodes::CANNOT_COMPRESS);
 
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
@@ -528,12 +515,12 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     static constexpr const UInt32 header_size = 2 * sizeof(UInt64);
 
     if (bytes_size < header_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size {} is less then T64 header",
-                        bytes_size);
+        throw Exception("Cannot decompress, data size " + toString(bytes_size) + " is less then T64 header",
+                        ErrorCodes::CANNOT_DECOMPRESS);
 
     if (uncompressed_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, unexpected uncompressed size {}",
-                        uncompressed_size);
+        throw Exception("Cannot decompress, unexpected uncompressed size " + toString(uncompressed_size),
+                        ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
@@ -550,7 +537,7 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     UInt32 num_bits = getValuableBitsNumber(min, max);
     if (!num_bits)
     {
-        T min_value = static_cast<T>(min);
+        T min_value = min;
         for (UInt32 i = 0; i < num_elements; ++i, dst += sizeof(T))
             unalignedStore<T>(dst, min_value);
         return;
@@ -560,8 +547,8 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     UInt32 dst_shift = sizeof(T) * matrix_size;
 
     if (!bytes_size || bytes_size % src_shift)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress, data size {} is not multiplier of {}",
-                        bytes_size, toString(src_shift));
+        throw Exception("Cannot decompress, data size " + toString(bytes_size) + " is not multiplier of " + toString(src_shift),
+                        ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt32 num_full = bytes_size / src_shift;
     UInt32 tail = num_elements % matrix_size;
@@ -572,14 +559,14 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     T upper_max [[maybe_unused]] = 0;
     T sign_bit [[maybe_unused]] = 0;
     if (num_bits < 64)
-        upper_min = static_cast<T>(static_cast<UInt64>(min) >> num_bits << num_bits);
+        upper_min = UInt64(min) >> num_bits << num_bits;
 
     if constexpr (is_signed_v<T>)
     {
         if (min < 0 && max >= 0 && num_bits < 64)
         {
-            sign_bit = static_cast<T>(1ull << (num_bits - 1));
-            upper_max = static_cast<T>(static_cast<UInt64>(max) >> num_bits << num_bits);
+            sign_bit = 1ull << (num_bits - 1);
+            upper_max = UInt64(max) >> num_bits << num_bits;
         }
     }
 
@@ -649,13 +636,13 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64");
+    throw Exception("Cannot compress with T64", ErrorCodes::CANNOT_COMPRESS);
 }
 
 void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, char * dst, UInt32 uncompressed_size) const
 {
     if (!src_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+        throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 cookie = unalignedLoad<UInt8>(src);
     src += 1;
@@ -686,7 +673,7 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
             break;
     }
 
-    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress with T64");
+    throw Exception("Cannot decompress with T64", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 uint8_t CompressionCodecT64::getMethodByte() const
@@ -720,13 +707,14 @@ void registerCodecT64(CompressionCodecFactory & factory)
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 support zero or one parameter, given {}",
-                                arguments->children.size());
+                throw Exception("T64 support zero or one parameter, given " + std::to_string(arguments->children.size()),
+                                ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64. Expected: 'bit', 'byte')");
+                throw Exception("Wrong modification for T64. Expected: 'bit', 'byte')",
+                                ErrorCodes::ILLEGAL_CODEC_PARAMETER);
             String name = literal->value.safeGet<String>();
 
             if (name == "byte")
@@ -734,12 +722,12 @@ void registerCodecT64(CompressionCodecFactory & factory)
             else if (name == "bit")
                 variant = Variant::Bit;
             else
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64: {}", name);
+                throw Exception("Wrong modification for T64: " + name, ErrorCodes::ILLEGAL_CODEC_PARAMETER);
         }
 
         auto type_idx = typeIdx(type);
         if (type && type_idx == TypeIndex::Nothing)
-            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
+            throw Exception("T64 codec is not supported for specified type " + type->getName(), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 

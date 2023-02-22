@@ -1,21 +1,19 @@
 #pragma once
-
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
 {
 
-class SourceFromSingleChunk : public ISource
+class SourceFromSingleChunk : public SourceWithProgress
 {
-/// If the source consists of multiple chunks you can instead use SourceFromChunks.
 public:
-    SourceFromSingleChunk(Block header, Chunk chunk_);
+    explicit SourceFromSingleChunk(Block header, Chunk chunk_);
     explicit SourceFromSingleChunk(Block data);
-    String getName() const override;
+    String getName() const override { return "SourceFromSingleChunk"; }
 
 protected:
-    Chunk generate() override;
+    Chunk generate() override { return std::move(chunk); }
 
 private:
     Chunk chunk;

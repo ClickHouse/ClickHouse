@@ -1,9 +1,9 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -24,7 +24,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-thread_local ThreadStatus constinit * current_thread = nullptr;
+
+thread_local ThreadStatus * current_thread = nullptr;
+thread_local ThreadStatus * main_thread = nullptr;
 
 #if !defined(SANITIZER)
 namespace
@@ -120,7 +122,7 @@ ThreadStatus::ThreadStatus()
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
-            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
+            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString(errno));
         }
         else
         {
@@ -128,7 +130,7 @@ ThreadStatus::ThreadStatus()
             struct sigaction action{};
             if (0 != sigaction(SIGSEGV, nullptr, &action))
             {
-                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
+                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString(errno));
             }
             else if (!(action.sa_flags & SA_ONSTACK))
             {
@@ -136,7 +138,7 @@ ThreadStatus::ThreadStatus()
 
                 if (0 != sigaction(SIGSEGV, &action, nullptr))
                 {
-                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
+                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString(errno));
                 }
             }
         }
@@ -146,19 +148,28 @@ ThreadStatus::ThreadStatus()
 
 ThreadStatus::~ThreadStatus()
 {
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
+    try
+    {
+        if (untracked_memory > 0)
+            memory_tracker.alloc(untracked_memory);
+        else
+            memory_tracker.free(-untracked_memory);
+    }
+    catch (const DB::Exception &)
+    {
+        /// It's a minor tracked memory leak here (not the memory itself but it's counter).
+        /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
+        tryLogCurrentException(log);
+    }
 
     if (thread_group)
     {
-        ThreadGroupStatus::ProfileEventsCountersAndMemory counters
-        {
+        std::lock_guard guard(thread_group->mutex);
+        thread_group->finished_threads_counters_memory.emplace_back(ThreadGroupStatus::ProfileEventsCountersAndMemory{
             performance_counters.getPartiallyAtomicSnapshot(),
             memory_tracker.get(),
-            thread_id
-        };
-
-        std::lock_guard guard(thread_group->mutex);
-        thread_group->finished_threads_counters_memory.emplace_back(std::move(counters));
+            thread_id,
+        });
         thread_group->threads.erase(this);
     }
 
@@ -170,7 +181,7 @@ ThreadStatus::~ThreadStatus()
         deleter();
 
     /// Only change current_thread if it's currently being used by this ThreadStatus
-    /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
+    /// For example, PushingToViewsBlockOutputStream creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
 }
@@ -189,10 +200,13 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(ThreadState permitted_state, const char * description) const
+void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description) const
 {
-    if (getCurrentState() == permitted_state)
-        return;
+    for (auto permitted_state : permitted_states)
+    {
+        if (getCurrentState() == permitted_state)
+            return;
+    }
 
     if (description)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);

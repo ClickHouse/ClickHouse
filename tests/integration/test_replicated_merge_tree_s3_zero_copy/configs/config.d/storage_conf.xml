@@ -7,18 +7,12 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </s3>
-            <cache_s3>
-                <type>cache</type>
-                <disk>s3</disk>
-                <max_size>100000000</max_size>
-                <path>./cache_s3/</path>
-            </cache_s3>
         </disks>
         <policies>
             <s3>
                 <volumes>
                     <main>
-                        <disk>cache_s3</disk>
+                        <disk>s3</disk>
                     </main>
                 </volumes>
             </s3>
@@ -27,7 +21,6 @@
 
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
-        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
     </merge_tree>
 
     <remote_servers>

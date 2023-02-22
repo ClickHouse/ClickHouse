@@ -1,20 +1,17 @@
 #pragma once
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/CheckResults.h>
+#include <Disks/IDisk.h>
 
 
 namespace DB
 {
-class IDisk;
-using DiskPtr = std::shared_ptr<IDisk>;
-
 
 /// Stores the sizes of all columns, and can check whether the columns are corrupted.
 class FileChecker
 {
 public:
-    FileChecker(const String & file_info_path_);
     FileChecker(DiskPtr disk_, const String & file_info_path_);
 
     void setPath(const String & file_info_path_);
@@ -36,14 +33,8 @@ public:
     /// Returns stored file size.
     size_t getFileSize(const String & full_file_path) const;
 
-    /// Returns total size of all files.
-    size_t getTotalSize() const;
-
 private:
     void load();
-
-    bool fileReallyExists(const String & path_) const;
-    size_t getRealFileSize(const String & path_) const;
 
     const DiskPtr disk;
     const Poco::Logger * log = &Poco::Logger::get("FileChecker");

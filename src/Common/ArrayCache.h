@@ -514,6 +514,8 @@ private:
             return allocateFromFreeRegion(*free_region, size);
         }
 
+//        std::cerr << "Requested size: " << size << "\n";
+
         /// Evict something from cache and continue.
         while (true)
         {
@@ -722,3 +724,5 @@ public:
         return res;
     }
 };
+
+template <typename Key, typename Payload> constexpr size_t ArrayCache<Key, Payload>::min_chunk_size;

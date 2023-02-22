@@ -2,7 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/errnoToString.h>
 
 #include <unistd.h>
@@ -25,9 +25,9 @@ void LazyPipeFDs::open()
 {
     for (int & fd : fds_rw)
         if (fd >= 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipe is already opened");
+            throw Exception("Pipe is already opened", ErrorCodes::LOGICAL_ERROR);
 
-#ifndef OS_DARWIN
+#ifndef __APPLE__
     if (0 != pipe2(fds_rw, O_CLOEXEC))
         throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_PIPE);
 #else
@@ -106,7 +106,7 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
     {
         if (errno == EINVAL)
         {
-            LOG_INFO(log, "Cannot get pipe capacity, {}. Very old Linux kernels have no support for this fcntl.", errnoToString());
+            LOG_INFO(log, "Cannot get pipe capacity, {}. Very old Linux kernels have no support for this fcntl.", errnoToString(ErrorCodes::CANNOT_FCNTL));
             /// It will work nevertheless.
         }
         else

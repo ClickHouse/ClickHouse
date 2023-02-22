@@ -2,11 +2,12 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/Buffer_fwd.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
+#include <base/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>
@@ -24,23 +25,15 @@ namespace DB
 
 struct StorageKafkaInterceptors;
 
-using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
-
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public IStorage, WithContext
+class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage, WithContext
 {
+    friend struct shared_ptr_helper<StorageKafka>;
     friend struct StorageKafkaInterceptors;
 
 public:
-    StorageKafka(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ColumnsDescription & columns_,
-        std::unique_ptr<KafkaSettings> kafka_settings_,
-        const String & collection_name_);
-
     std::string getName() const override { return "Kafka"; }
 
     bool noPushingToViews() const override { return true; }
@@ -55,25 +48,31 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
 
-    /// We want to control the number of rows in a chunk inserted into Kafka
-    bool prefersLargeBlocks() const override { return false; }
+    void pushReadBuffer(ConsumerBufferPtr buf);
+    ConsumerBufferPtr popReadBuffer();
+    ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
-    void pushConsumer(KafkaConsumerPtr consumer);
-    KafkaConsumerPtr popConsumer();
-    KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    ProducerBufferPtr createWriteBuffer(const Block & header);
 
     const auto & getFormatName() const { return format_name; }
 
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
     HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+protected:
+    StorageKafka(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ColumnsDescription & columns_,
+        std::unique_ptr<KafkaSettings> kafka_settings_,
+        const String & collection_name_);
 
 private:
     // Configuration and state
@@ -83,7 +82,7 @@ private:
     const String group;
     const String client_id;
     const String format_name;
-    const size_t max_rows_per_message;
+    const char row_delimiter; /// optional row delimiter for generating char delimited stream in order to make various input stream parsers happy.
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
     Poco::Logger * log;
@@ -97,7 +96,7 @@ private:
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
 
-    std::vector<KafkaConsumerPtr> consumers; /// available consumers
+    std::vector<ConsumerBufferPtr> buffers; /// available buffers for Kafka consumers
 
     std::mutex mutex;
 
@@ -117,13 +116,14 @@ private:
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
+    /// Handle error mode
+    HandleKafkaErrorMode handle_error_mode;
+
     SettingsChanges createSettingsAdjustments();
-    KafkaConsumerPtr createConsumer(size_t consumer_number);
+    ConsumerBufferPtr createReadBuffer(size_t consumer_number);
 
     /// If named_collection is specified.
     String collection_name;
-
-    std::atomic<bool> shutdown_called = false;
 
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & conf);

@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/data-types/domains/ipv4
----
 ## IPv4 {#ipv4}
 
 `IPv4`是与`UInt32`类型保持二进制兼容的Domain类型，其用于存储IPv4地址的值。它提供了更为紧凑的二进制存储的同时支持识别可读性更加友好的输入输出格式。
@@ -67,3 +64,5 @@ SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
     ┌─toTypeName(CAST(from, 'UInt32'))─┬──────────i─┐
     │ UInt32                           │ 3086477370 │
     └──────────────────────────────────┴────────────┘
+
+[来源文章](https://clickhouse.com/docs/en/data_types/domains/ipv4) <!--hide-->
