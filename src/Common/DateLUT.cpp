@@ -8,7 +8,6 @@
 #include <filesystem>
 #include <fstream>
 #include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace
@@ -149,7 +148,7 @@ DateLUT::DateLUT()
 }
 
 
-const ALWAYS_INLINE DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
+const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
