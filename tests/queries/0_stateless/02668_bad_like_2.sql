@@ -7,3 +7,5 @@ select like('X-Forwarded-For: (null)\nCdn-Src-Ip: (null)\nClientip: (null)', '%\
 select like('X-Forwarded-For: (null)\nCdn-Src-Ip: (null)\nClientip: (null)', '%\\\n%');
 select 'C:\\Windows\\System32\\cmd.exe' like '%C:\\Windows\\System32\\cmd.exe%';
 select 'C:\\Windows\\System32\\Speech_OneCore\\common\\SpeechModelDownload.exe' like '%C:\\Windows\\System32\\Speech_OneCore\\common\\SpeechModelDownload.exe%';
+select 'C:\\Windows\\System32\\cmd.exe' like '%C:\\\\Windows\\\\System32\\\\cmd.exe%';
+select 'C:\\Windows\\System32\\Speech_OneCore\\common\\SpeechModelDownload.exe' like '%C:\\\\Windows\\\\System32\\\\Speech_OneCore\\\\common\\\\SpeechModelDownload.exe%';
