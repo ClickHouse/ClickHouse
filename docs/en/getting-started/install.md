@@ -66,6 +66,13 @@ The [Quick Start](/docs/en/quick-start.mdx/#step-1-get-clickhouse) walks through
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
 #### Setup the Debian repository
+
+:::tip
+In the command below the `stable` repository is added to the apt sources.  If you require the long-term support (LTS) versions you can replace `stable` with `lts`.  For more information on choosing a version read [which ClickHouse version to use in production?](/docs/en/faq/operations/production.md).
+
+You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
+:::
+
 ``` bash
 sudo apt-get install -y apt-transport-https ca-certificates dirmngr
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
@@ -124,9 +131,6 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
-
-You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
 #### Install standalone ClickHouse Keeper
 
@@ -206,6 +210,8 @@ sudo systemctl start clickhouse-keeper
 sudo systemctl status clickhouse-keeper
 ```
 
+You can also download and install packages manually: [stable](https://packages.clickhouse.com/rpm/stable), [LTS](https://packages.clickhouse.com/rpm/stable).
+
 <details markdown="1">
 
 <summary>Deprecated Method for installing rpm-packages</summary>
@@ -221,16 +227,6 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
 </details>
-
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
-
-Then run these commands to install packages:
-
-``` bash
-sudo yum install clickhouse-server clickhouse-client
-```
-
-You can also download and install packages manually from [here](https://packages.clickhouse.com/rpm/stable).
 
 ### From Tgz Archives {#from-tgz-archives}
 
