@@ -65,11 +65,11 @@ inline String likePatternToRegexp(std::string_view pattern)
                 res += ".";
                 break;
             case '\\':
+                ++pos;
                 if (pos == end)
                 {
                     throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern");
                 }
-                ++pos;
                 switch (*pos)
                 {
                     case '^':
