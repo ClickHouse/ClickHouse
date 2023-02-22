@@ -231,7 +231,15 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 
                 seen_elements[element_pos] = 1;
                 auto & element_column = extractElementColumn(column, element_pos);
-                elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+                try
+                {
+                    elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("(while reading the value of nested key " + name + ")");
+                    throw;
+                }
 
                 skipWhitespaceIfAny(istr);
                 ++processed;
