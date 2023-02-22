@@ -69,14 +69,30 @@ inline String likePatternToRegexp(std::string_view pattern)
                 {
                     throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern");
                 }
-                else
+                ++pos;
+                switch (*pos)
                 {
-                    res += '\\';
-                    ++pos;
-                    res += *pos;
-                    ++pos;
-                    break;
+                    case '^':
+                    case '$':
+                    case '.':
+                    case '[':
+                    case '|':
+                    case '(':
+                    case ')':
+                    case '?':
+                    case '*':
+                    case '+':
+                    case '{':
+                    case '\\':
+                        res += '\\';
+                        res += *pos;
+                        ++pos;
+                        break;
+                    default:
+                        res += *pos;
+                        break;
                 }
+                break;
             default:
                 res += *pos;
                 ++pos;
