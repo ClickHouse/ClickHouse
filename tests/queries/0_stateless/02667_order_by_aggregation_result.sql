@@ -34,3 +34,27 @@ SELECT
     final_col + 1 AS final_col2
 FROM ttttttt
 GROUP BY col3;
+
+-- https://github.com/ClickHouse/ClickHouse/issues/46724
+
+CREATE TABLE table1
+(
+    id String,
+    device UUID
+)
+ENGINE = MergeTree() ORDER BY tuple();
+
+INSERT INTO table1 VALUES ('notEmpty', '417ddc5d-e556-4d27-95dd-a34d84e46a50');
+INSERT INTO table1 VALUES ('', '417ddc5d-e556-4d27-95dd-a34d84e46a50');
+INSERT INTO table1 VALUES ('', '00000000-0000-0000-0000-000000000000');
+
+SELECT
+    if(empty(id), toString(device), id) AS device,
+    multiIf(
+            notEmpty(id),'a',
+            device == '00000000-0000-0000-0000-000000000000', 'b',
+            'c' ) AS device_id_type,
+    count()
+FROM table1
+GROUP BY device, device_id_type
+ORDER BY device;
