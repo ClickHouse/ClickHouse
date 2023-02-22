@@ -9,12 +9,13 @@
              XXX: for now this messages will appears in stderr.
         -->
         <debug>cgrp,consumer,topic,protocol</debug>
+
+        <topic name="consumer_hang">
+            <!-- default: 3000 -->
+            <heartbeat_interval_ms>300</heartbeat_interval_ms>
+            <!-- default: 10000 -->
+            <session_timeout_ms>6000</session_timeout_ms>
+        </topic>
     </kafka>
 
-    <kafka_consumer_hang>
-        <!-- default: 3000 -->
-        <heartbeat_interval_ms>300</heartbeat_interval_ms>
-        <!-- default: 10000 -->
-        <session_timeout_ms>6000</session_timeout_ms>
-    </kafka_consumer_hang>
 </clickhouse>
