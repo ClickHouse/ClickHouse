@@ -29,11 +29,11 @@ public:
     const Field * tryGet(std::string_view name) const;
     Field * tryGet(std::string_view name);
 
-    /// inserts element if doesn't exists and returns true, else just returns false
+    /// Inserts element if doesn't exists and returns true, otherwise  just returns false
     bool insertSetting(std::string_view name, const Field & value);
-    /// sets element to value, inserts if doesn't exist
+    /// Sets element to value, inserts if doesn't exist
     void setSetting(std::string_view name, const Field & value);
-    /// if element exists - removes it and returns true, else returns false
+    /// If element exists - removes it and returns true, otherwise  returns false
     bool removeSetting(std::string_view name);
 };
 
