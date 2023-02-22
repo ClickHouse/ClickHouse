@@ -110,6 +110,8 @@ private:
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes;
     std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes;
+    std::optional<ReadBufferFromFilePRead> cgroupmem_v2_limit_in_bytes;
+    std::optional<ReadBufferFromFilePRead> cgroupmem_v2_usage_in_bytes;
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal;
 
@@ -202,6 +204,7 @@ private:
     void openBlockDevices();
     void openSensorsChips();
     void openEDAC();
+    void updateCgroupMemoryMetrics(std::optional<ReadBufferFromFilePRead> memoryLimitReadBuffer, std::optional<ReadBufferFromFilePRead> memoryUsageReadBuffer);
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;

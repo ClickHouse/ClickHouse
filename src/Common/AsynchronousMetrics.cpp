@@ -884,43 +884,14 @@ void AsynchronousMetrics::update(TimePoint update_time)
         }
     }
 
-    if (cgroupmem_limit_in_bytes || cgroupmem_usage_in_bytes || cgroupmem_v2_limit_in_bytes || cgroupmem_v2_usage_in_bytes)
+    if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes) 
     {
-        try
-        {
-            cgroupmem_limit_in_bytes->rewind();
-            cgroupmem_usage_in_bytes->rewind();
-
-            uint64_t cgroup_mem_limit_in_bytes = 0;
-            uint64_t cgroup_mem_usage_in_bytes = 0;
-
-            readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
-            readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
-
-            if (!cgroup_mem_limit_in_bytes && !cgroup_mem_limit_in_bytes)
-            {
-                cgroupmem_v2_limit_in_bytes->rewind();
-                cgroupmem_v2_usage_in_bytes->rewind();
-
-                readText(cgroup_mem_limit_in_bytes, *cgroupmem_v2_limit_in_bytes);
-                readText(cgroup_mem_usage_in_bytes, *cgroupmem_v2_usage_in_bytes);
-            }
-
-            if (cgroup_mem_limit_in_bytes && cgroup_mem_usage_in_bytes)
-            {
-                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes." };
-                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
-            }
-            else
-            {
-                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
-                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        updateCgroupMemoryMetrics(cgroupmem_limit_in_bytes, cgroupmem_usage_in_bytes);
+    } 
+    
+    if (cgroupmem_v2_limit_in_bytes && cgroupmem_v2_usage_in_bytes)
+    {
+        updateCgroupMemoryMetrics(cgroupmem_v2_limit_in_bytes, cgroupmem_v2_usage_in_bytes);
     }
 
     if (meminfo)
@@ -1487,6 +1458,40 @@ void AsynchronousMetrics::update(TimePoint update_time)
     // Finally, update the current metrics.
     std::lock_guard lock(mutex);
     values = new_values;
+}
+
+void AsynchronousMetrics::updateCgroupMemoryMetrics(std::optional<ReadBufferFromFilePRead> memoryLimitReadBuffer, std::optional<ReadBufferFromFilePRead> memoryUsageReadBuffer) 
+{
+        try {
+            memoryLimitReadBuffer->rewind();
+            memoryUsageReadBuffer->rewind();
+
+            uint64_t cgroup_mem_limit_in_bytes = 0;
+            uint64_t cgroup_mem_usage_in_bytes = 0;
+
+            string cgroup_mem_limit_str = "";
+            readText(cgroup_mem_limit_str, *memoryLimitReadBuffer);
+            if (std::isdigit(cgroup_mem_limit_str)) {
+                memoryLimitReadBuffer->rewind();
+                readText(cgroup_mem_limit_in_bytes, *memoryLimitReadBuffer);
+            }
+            readText(cgroup_mem_usage_in_bytes, *memoryUsageReadBuffer);
+
+            if (cgroup_mem_limit_in_bytes && cgroup_mem_usage_in_bytes)
+            {
+                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes. If stated zero, CgroupMemoryTotal is the same as OSMemoryTotal." };
+                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
+            }
+            else
+            {
+                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
+                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
 }
 
 }
