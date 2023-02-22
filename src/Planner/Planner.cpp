@@ -1436,7 +1436,7 @@ void Planner::buildPlanForQueryNode()
           */
         if (query_analysis_result.limit_length && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
-        else if (!limit_applied && apply_offset && query_analysis_result.limit_length)
+        else if (!limit_applied && apply_offset && query_analysis_result.limit_offset)
             addOffsetStep(query_plan, query_analysis_result);
 
         /// Project names is not done on shards, because initiator will not find columns in blocks
