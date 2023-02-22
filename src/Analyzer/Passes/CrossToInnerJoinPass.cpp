@@ -42,7 +42,7 @@ void exctractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi
     }
     else if (func->getFunctionName() == "and")
     {
-        for (auto & arg : args)
+        for (const auto & arg : args)
             exctractJoinConditions(arg, equi_conditions, other);
     }
     else
@@ -77,7 +77,7 @@ std::pair<const IQueryTreeNode *, bool> getExpressionSource(const QueryTreeNodeP
     {
         const IQueryTreeNode * source = nullptr;
         const auto & args = func->getArguments().getNodes();
-        for (auto & arg : args)
+        for (const auto & arg : args)
         {
             auto [arg_source, is_ok] = getExpressionSource(arg);
             if (!is_ok)
@@ -232,7 +232,7 @@ private:
             return nodes.front();
 
         auto function_node = std::make_shared<FunctionNode>("and");
-        for (auto & node : nodes)
+        for (const auto & node : nodes)
             function_node->getArguments().getNodes().push_back(node);
 
         const auto & function = FunctionFactory::instance().get("and", getContext());
