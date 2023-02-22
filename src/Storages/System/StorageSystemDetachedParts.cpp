@@ -52,7 +52,7 @@ class SourceState
     StoragesInfoStream stream;
 
 public:
-    SourceState(StoragesInfoStream && stream_)
+    explicit SourceState(StoragesInfoStream && stream_)
         : stream(std::move(stream_))
     {}
 
@@ -78,7 +78,7 @@ public:
     String getName() const override { return "DataPartsSource"; }
 
 protected:
-    Chunk nullWhenNoRows(MutableColumns && new_columns)
+    static Chunk nullWhenNoRows(MutableColumns && new_columns)
     {
         chassert(!new_columns.empty());
         const auto rows = new_columns[0]->size();
@@ -113,7 +113,7 @@ private:
     const std::vector<UInt8> columns_mask;
     const UInt64 block_size;
     const bool has_bytes_on_disk_column;
-    static const size_t files_peer_thread = 30;
+    static const size_t support_threads = 35;
 
     StoragesInfo current_info;
     DetachedPartsInfo detached_parts;
@@ -134,6 +134,36 @@ private:
         if (!has_bytes_on_disk_column)
             return;
 
+        struct Task
+        {
+            DiskPtr disk;
+            String file;
+            std::atomic<size_t> * counter = nullptr;
+        };
+
+        struct SharedState
+        {
+            std::vector<Task> tasks;
+            std::atomic<size_t> next_task = {0};
+        };
+
+        SharedState shared_state;
+
+        for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
+        {
+            auto & p = detached_parts.at(p_id);
+            auto & disk = p.disk;
+
+            auto part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / p.dir_name;
+            auto relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
+            auto listing = partFilesOnDisk(disk, relative_path);
+
+            auto * counter = &parts_sizes[p_id - begin];
+
+            for (auto & file : listing)
+                shared_state.tasks.push_back({disk, file, counter});
+        }
+
         std::vector<std::future<void>> futures;
         SCOPE_EXIT_SAFE({
             /// Exceptions are not propagated
@@ -143,32 +173,21 @@ private:
             futures.clear();
         });
 
-        for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
+        for (size_t i = 0; i < support_threads; ++i)
         {
-            auto & p = detached_parts.at(p_id);
-            DiskPtr & disk = p.disk;
-
-            const String part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / p.dir_name;
-            const String relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
-            std::vector<String> listing = partFilesOnDisk(disk, relative_path);
-
-            auto * counter = &parts_sizes[p_id - begin];
-            for (size_t slice_begin = 0; slice_begin < listing.size(); slice_begin += files_peer_thread)
-            {
-                size_t slice_end = std::min(slice_begin + files_peer_thread, listing.size());
-                auto slice = std::vector<String>(listing.begin() + slice_begin, listing.begin() + slice_end);
-                futures.push_back(
-                    scheduleFromThreadPool<void>(
-                        [disk, counter, files = std::move(slice)] ()
+            futures.push_back(
+                scheduleFromThreadPool<void>(
+                    [&shared_state] ()
+                    {
+                        for (auto id = shared_state.next_task++; id < shared_state.tasks.size(); id = shared_state.next_task++)
                         {
-                            size_t partial_files_size = 0;
-                            for (const auto & file : files)
-                                partial_files_size += disk->getFileSize(file);
-                            counter->fetch_add(partial_files_size);
-                        },
-                        IOThreadPool::get(),
-                        "DP_BytesOnDisk"));
-            }
+                            auto & task = shared_state.tasks.at(id);
+                            auto size = task.disk->getFileSize(task.file);
+                            task.counter->fetch_add(size);
+                        }
+                    },
+                    IOThreadPool::get(),
+                    "DP_BytesOnDisk"));
         }
 
         /// Exceptions are propagated
@@ -192,7 +211,6 @@ private:
 
             size_t src_index = 0;
             size_t res_index = 0;
-            String detached_part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / p.dir_name;
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(current_info.database);
             if (columns_mask[src_index++])
@@ -210,7 +228,7 @@ private:
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(p.disk->getName());
             if (columns_mask[src_index++])
-                new_columns[res_index++]->insert((fs::path(current_info.data->getFullPathOnDisk(p.disk)) / detached_part_path).string());
+                new_columns[res_index++]->insert((fs::path(current_info.data->getFullPathOnDisk(p.disk)) / MergeTreeData::DETACHED_DIR_NAME / p.dir_name).string());
             if (columns_mask[src_index++])
                 new_columns[res_index++]->insert(p.valid_name ? p.prefix : Field());
             if (columns_mask[src_index++])
