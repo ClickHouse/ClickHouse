@@ -1269,7 +1269,7 @@ try
             /// Note: If you specified it in the top level config (not it config of default profile)
             /// then ClickHouse will use it exactly.
             /// This is done for backward compatibility.
-            if (global_context->areBackgroundExecutorsInitialized() && (server_settings.background_pool_size.changed || server_settings.background_merges_mutations_concurrency_ratio.changed || server_settings.background_merges_mutations_scheduling_policy.changed))
+            if (global_context->areBackgroundExecutorsInitialized())
             {
                 auto new_pool_size = server_settings.background_pool_size;
                 auto new_ratio = server_settings.background_merges_mutations_concurrency_ratio;
@@ -1277,35 +1277,28 @@ try
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings.background_merges_mutations_scheduling_policy.toString());
             }
 
-            if (global_context->areBackgroundExecutorsInitialized() && server_settings.background_move_pool_size.changed)
+            if (global_context->areBackgroundExecutorsInitialized())
             {
                 auto new_pool_size = server_settings.background_move_pool_size;
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            if (global_context->areBackgroundExecutorsInitialized() && server_settings.background_fetches_pool_size.changed)
+            if (global_context->areBackgroundExecutorsInitialized())
             {
                 auto new_pool_size = server_settings.background_fetches_pool_size;
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            if (global_context->areBackgroundExecutorsInitialized() && server_settings.background_common_pool_size.changed)
+            if (global_context->areBackgroundExecutorsInitialized())
             {
                 auto new_pool_size = server_settings.background_common_pool_size;
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            if (server_settings.background_buffer_flush_schedule_pool_size.changed)
-                global_context->getBufferFlushSchedulePool().increaseThreadsCount(server_settings.background_buffer_flush_schedule_pool_size);
-
-            if (server_settings.background_schedule_pool_size.changed)
-                global_context->getSchedulePool().increaseThreadsCount(server_settings.background_schedule_pool_size);
-
-            if (server_settings.background_message_broker_schedule_pool_size.changed)
-                global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings.background_message_broker_schedule_pool_size);
-
-            if (server_settings.background_distributed_schedule_pool_size.changed)
-                global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings.background_distributed_schedule_pool_size);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(server_settings.background_buffer_flush_schedule_pool_size);
+            global_context->getSchedulePool().increaseThreadsCount(server_settings.background_schedule_pool_size);
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings.background_message_broker_schedule_pool_size);
+            global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings.background_distributed_schedule_pool_size);
 
             if (config->has("resources"))
             {
