@@ -162,7 +162,25 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Configuration {#configuration}
 
-Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
+Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`topic name="*"`, nested in `kafka`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
+
+``` xml
+  <!-- Global configuration options for all tables of Kafka engine type -->
+  <kafka>
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+    <!-- Configuration specific for topic "logs" -->
+    <topic name="logs">
+      <retry_backoff_ms>250</retry_backoff_ms>
+      <fetch_min_bytes>100000</fetch_min_bytes>
+    </topic>
+  </kafka>
+
+```
+
+<details markdown="1">
+
+<summary>Example in deprecated syntax</summary>
 
 ``` xml
   <!-- Global configuration options for all tables of Kafka engine type -->
@@ -172,11 +190,15 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   </kafka>
 
   <!-- Configuration specific for topic "logs" -->
+  <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
   <kafka_logs>
     <retry_backoff_ms>250</retry_backoff_ms>
     <fetch_min_bytes>100000</fetch_min_bytes>
   </kafka_logs>
 ```
+
+</details>
+
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 
