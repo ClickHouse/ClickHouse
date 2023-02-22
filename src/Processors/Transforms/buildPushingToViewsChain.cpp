@@ -174,7 +174,7 @@ class FinalizingViewsTransform final : public IProcessor
     static InputPorts initPorts(std::vector<Block> headers);
 
 public:
-    FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data, bool materialized_views_ignore_errors_);
+    FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data);
 
     String getName() const override { return "FinalizingViewsTransform"; }
     Status prepare() override;
@@ -185,7 +185,6 @@ private:
     ViewsDataPtr views_data;
     std::vector<ExceptionStatus> statuses;
     std::exception_ptr any_exception;
-    bool materialized_views_ignore_errors;
 };
 
 
@@ -409,7 +408,7 @@ Chain buildPushingToViewsChain(
             headers.push_back(chain.getOutputHeader());
 
         auto copying_data = std::make_shared<CopyingDataToViewsTransform>(storage_header, views_data);
-        auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(headers), views_data, settings.materialized_views_ignore_errors);
+        auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(headers), views_data);
         auto out = copying_data->getOutputs().begin();
         auto in = finalizing_views->getInputs().begin();
 
@@ -686,11 +685,10 @@ void PushingToWindowViewSink::consume(Chunk chunk)
 }
 
 
-FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data, bool materialized_views_ignore_errors_)
+FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data)
     : IProcessor(initPorts(std::move(headers)), {Block()})
     , output(outputs.front())
     , views_data(std::move(data))
-    , materialized_views_ignore_errors(materialized_views_ignore_errors_)
 {
     statuses.resize(views_data->views.size());
 }
@@ -712,6 +710,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
     if (!output.canPush())
         return Status::PortFull;
 
+    bool materialized_views_ignore_errors = views_data->context->getSettingsRef().materialized_views_ignore_errors;
     size_t num_finished = 0;
     size_t pos = 0;
     for (auto & input : inputs)
@@ -785,6 +784,8 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 
 void FinalizingViewsTransform::work()
 {
+    bool materialized_views_ignore_errors = views_data->context->getSettingsRef().materialized_views_ignore_errors;
+
     size_t i = 0;
     for (auto & view : views_data->views)
     {
