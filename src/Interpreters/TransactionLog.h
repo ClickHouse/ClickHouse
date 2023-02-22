@@ -107,11 +107,14 @@ public:
 
     /// Returns CSN if transaction with specified ID was committed and UnknownCSN if it was not.
     /// Returns PrehistoricCSN for PrehistoricTID without creating a TransactionLog instance as a special case.
-    static CSN getCSN(const TransactionID & tid);
-    static CSN getCSN(const TIDHash & tid);
+    /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
+    static CSN getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
+    static CSN getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
+    static CSN getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> & failback_with_strict_load_csn);
 
     /// Ensures that getCSN returned UnknownCSN because transaction is not committed and not because entry was removed from the log.
-    static void assertTIDIsNotOutdated(const TransactionID & tid);
+    static void assertTIDIsNotOutdated(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
+
 
     /// Returns a pointer to transaction object if it's running or nullptr.
     MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
@@ -147,7 +150,8 @@ private:
 
     ZooKeeperPtr getZooKeeper() const;
 
-    CSN getCSNImpl(const TIDHash & tid_hash) const;
+    /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
+    CSN getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr) const;
 
     const ContextPtr global_context;
     Poco::Logger * const log;

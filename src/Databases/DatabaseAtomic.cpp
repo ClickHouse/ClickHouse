@@ -106,7 +106,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     auto table = DatabaseOrdinary::detachTableUnlocked(name);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleanupDetachedTables(); //-V1001
+    not_in_use = cleanupDetachedTables();
     return table;
 }
 

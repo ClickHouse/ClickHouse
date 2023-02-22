@@ -1654,8 +1654,8 @@ void Context::setCurrentQueryId(const String & query_id)
         UUID uuid{};
     } random;
 
-    random.words.a = thread_local_rng(); //-V656
-    random.words.b = thread_local_rng(); //-V656
+    random.words.a = thread_local_rng();
+    random.words.b = thread_local_rng();
 
 
     String query_id_to_set = query_id;
@@ -3799,6 +3799,12 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
 
+    String background_merges_mutations_scheduling_policy = "round_robin";
+    if (config.has("background_merges_mutations_scheduling_policy"))
+        background_merges_mutations_scheduling_policy = config.getString("background_merges_mutations_scheduling_policy");
+    else if (config.has("profiles.default.background_merges_mutations_scheduling_policy"))
+        background_merges_mutations_scheduling_policy = config.getString("profiles.default.background_merges_mutations_scheduling_policy");
+
     size_t background_move_pool_size = 8;
     if (config.has("background_move_pool_size"))
         background_move_pool_size = config.getUInt64("background_move_pool_size");
@@ -3823,10 +3829,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        background_merges_mutations_scheduling_policy
     );
-    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
-        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio);
+    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
+        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio, background_merges_mutations_scheduling_policy);
 
     shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
@@ -4069,6 +4076,16 @@ bool Context::canUseParallelReplicasOnFollower() const
         && settings.max_parallel_replicas > 1
         && !settings.use_hedged_requests
         && getClientInfo().collaborate_with_initiator;
+}
+
+UInt64 Context::getClientProtocolVersion() const
+{
+    return client_protocol_version;
+}
+
+void Context::setClientProtocolVersion(UInt64 version)
+{
+    client_protocol_version = version;
 }
 
 }

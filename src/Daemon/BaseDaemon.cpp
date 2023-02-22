@@ -1116,8 +1116,7 @@ void BaseDaemon::setupWatchdog()
             logger().information("Child process no longer exists.");
             _exit(WEXITSTATUS(status));
         }
-
-        if (WIFEXITED(status))
+        else if (WIFEXITED(status))
         {
             logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
             _exit(WEXITSTATUS(status));

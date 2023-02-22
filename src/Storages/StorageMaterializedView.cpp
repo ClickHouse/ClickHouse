@@ -255,12 +255,13 @@ bool StorageMaterializedView::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
+    bool cleanup,
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
+    return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
 StorageID StorageMaterializedView::createFreshTable() const
@@ -398,19 +399,22 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto new_target_table_name = generateInnerTableName(new_table_id);
         auto rename = std::make_shared<ASTRenameQuery>();
 
-        ASTRenameQuery::Table from;
         assert(inner_table_id.database_name == old_table_id.database_name);
-        from.database = inner_table_id.database_name;
-        from.table = inner_table_id.table_name;
 
-        ASTRenameQuery::Table to;
-        to.database = new_table_id.database_name;
-        to.table = new_target_table_name;
-
-        ASTRenameQuery::Element elem;
-        elem.from = from;
-        elem.to = to;
-        rename->elements.emplace_back(elem);
+        ASTRenameQuery::Element elem
+        {
+            ASTRenameQuery::Table
+            {
+                inner_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(inner_table_id.database_name),
+                std::make_shared<ASTIdentifier>(inner_table_id.table_name)
+            },
+            ASTRenameQuery::Table
+            {
+                new_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(new_table_id.database_name),
+                std::make_shared<ASTIdentifier>(new_target_table_name)
+            }
+        };
+        rename->elements.emplace_back(std::move(elem));
 
         InterpreterRenameQuery(rename, getContext()).execute();
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
