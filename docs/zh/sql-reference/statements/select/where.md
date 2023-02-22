@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/select/where
 sidebar_label: WHERE
 ---
 

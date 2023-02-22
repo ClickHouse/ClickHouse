@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/
 sidebar_label: "Интерфейсы"
 sidebar_position: 14
 ---
@@ -24,3 +23,4 @@ ClickHouse предоставляет три сетевых интерфейса
 -   [Клиентские библиотеки](third-party/client-libraries.md);
 -   [Библиотеки для интеграции](third-party/integrations.md);
 -   [Визуальные интерфейсы](third-party/gui.md).
+

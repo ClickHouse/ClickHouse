@@ -74,8 +74,8 @@ private:
     MergeListEntry & merge_list_entry;
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
-    Int64 prev_untracked_memory_limit;
-    Int64 prev_untracked_memory;
+    UInt64 prev_untracked_memory_limit;
+    UInt64 prev_untracked_memory;
     String prev_query_id;
 };
 

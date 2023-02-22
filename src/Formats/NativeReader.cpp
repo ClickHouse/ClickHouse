@@ -45,7 +45,7 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
 {
     istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
     if (!istr_concrete)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "When need to use index for NativeReader, istr must be CompressedReadBufferFromFile.");
+        throw Exception("When need to use index for NativeReader, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
 
     if (index_block_it == index_block_end)
         return;
@@ -103,7 +103,7 @@ Block NativeReader::read()
     if (istr.eof())
     {
         if (use_index)
-            throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Input doesn't contain all data for index.");
+            throw ParsingException("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return res;
     }
@@ -145,7 +145,12 @@ Block NativeReader::read()
         readBinary(type_name, istr);
         column.type = data_type_factory.get(type_name);
 
-        setVersionToAggregateFunctions(column.type, true, server_revision);
+        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        {
+            auto version = aggregate_function_data_type->getVersionFromRevision(server_revision);
+            aggregate_function_data_type->setVersion(version, /*if_empty=*/ true);
+        }
 
         SerializationPtr serialization;
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
@@ -168,9 +173,9 @@ Block NativeReader::read()
         {
             /// Index allows to do more checks.
             if (index_column_it->name != column.name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
+                throw Exception("Index points to column with wrong name: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
             if (index_column_it->type != type_name)
-                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
+                throw Exception("Index points to column with wrong type: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
         }
 
         /// Data
@@ -213,7 +218,7 @@ Block NativeReader::read()
     if (use_index)
     {
         if (index_column_it != index_block_it->columns.end())
-            throw Exception(ErrorCodes::INCORRECT_INDEX, "Inconsistent index: not all columns were read");
+            throw Exception("Inconsistent index: not all columns were read", ErrorCodes::INCORRECT_INDEX);
 
         ++index_block_it;
         if (index_block_it != index_block_end)
@@ -232,7 +237,6 @@ Block NativeReader::read()
             else
                 tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
         }
-        tmp_res.info = res.info;
 
         res.swap(tmp_res);
     }

@@ -20,6 +20,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
 #include <Disks/IDisk.h>
 #include <boost/algorithm/string/find_iterator.hpp>
@@ -105,7 +106,7 @@ namespace
 
                 for (size_t replica_index = 1; replica_index <= replicas; ++replica_index)
                 {
-                    address.replica_index = static_cast<UInt32>(replica_index);
+                    address.replica_index = replica_index;
                     make_connection(address);
                 }
             }
@@ -120,10 +121,11 @@ namespace
     {
         if (expected != calculated)
         {
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH,
-                            "Checksum of extra info doesn't match: corrupted data. Reference: {}{}. Actual: {}{}.",
-                            getHexUIntLowercase(expected.first), getHexUIntLowercase(expected.second),
-                            getHexUIntLowercase(calculated.first), getHexUIntLowercase(calculated.second));
+            String message = "Checksum of extra info doesn't match: corrupted data."
+                " Reference: " + getHexUIntLowercase(expected.first) + getHexUIntLowercase(expected.second)
+                + ". Actual: " + getHexUIntLowercase(calculated.first) + getHexUIntLowercase(calculated.second)
+                + ".";
+            throw Exception(message, ErrorCodes::CHECKSUM_DOESNT_MATCH);
         }
     }
 
@@ -137,11 +139,6 @@ namespace
         /// .bin file cannot have zero rows/bytes.
         size_t rows = 0;
         size_t bytes = 0;
-
-        UInt32 shard_num = 0;
-        std::string cluster;
-        std::string distributed_table;
-        std::string remote_table;
 
         /// dumpStructure() of the header -- obsolete
         std::string block_header_string;
@@ -196,14 +193,6 @@ namespace
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
                             in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
-            }
-
-            if (header_buf.hasPendingData())
-            {
-                readVarUInt(distributed_header.shard_num, header_buf);
-                readStringBinary(distributed_header.cluster, header_buf);
-                readStringBinary(distributed_header.distributed_table, header_buf);
-                readStringBinary(distributed_header.remote_table, header_buf);
             }
 
             /// Add handling new data here, for example:
@@ -570,6 +559,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
 {
     std::map<UInt64, std::string> files;
+    size_t new_bytes_count = 0;
 
     fs::directory_iterator end;
     for (fs::directory_iterator it{path}; it != end; ++it)
@@ -578,7 +568,21 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
         if (!it->is_directory() && startsWith(fs::path(file_path_str).extension(), ".bin"))
         {
             files[parse<UInt64>(fs::path(file_path_str).stem())] = file_path_str;
+            new_bytes_count += fs::file_size(fs::path(file_path_str));
         }
+    }
+
+    {
+        std::lock_guard status_lock(status_mutex);
+
+        if (status.files_count != files.size())
+            LOG_TRACE(log, "Files set to {} (was {})", files.size(), status.files_count);
+        if (status.bytes_count != new_bytes_count)
+            LOG_TRACE(log, "Bytes set to {} (was {})", new_bytes_count, status.bytes_count);
+
+        metric_pending_files.changeTo(files.size());
+        status.files_count = files.size();
+        status.bytes_count = new_bytes_count;
     }
 
     return files;
@@ -605,9 +609,9 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    OpenTelemetry::TracingContextHolderPtr thread_trace_context;
-
     Stopwatch watch;
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
+
     try
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
@@ -615,18 +619,8 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(__PRETTY_FUNCTION__,
-            distributed_header.client_info.client_trace_context,
-            this->storage.getContext()->getOpenTelemetrySpanLog());
-        thread_trace_context->root_span.addAttribute("clickhouse.shard_num", distributed_header.shard_num);
-        thread_trace_context->root_span.addAttribute("clickhouse.cluster", distributed_header.cluster);
-        thread_trace_context->root_span.addAttribute("clickhouse.distributed", distributed_header.distributed_table);
-        thread_trace_context->root_span.addAttribute("clickhouse.remote", distributed_header.remote_table);
-        thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
-        thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
-
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
             file_path,
             connection->getDescription(),
@@ -643,18 +637,8 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     }
     catch (Exception & e)
     {
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute(std::current_exception());
-
         e.addMessage(fmt::format("While sending {}", file_path));
         maybeMarkAsBroken(file_path, e);
-        throw;
-    }
-    catch (...)
-    {
-        if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute(std::current_exception());
-
         throw;
     }
 
@@ -699,14 +683,12 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
 
 struct StorageDistributedDirectoryMonitor::Batch
 {
-    /// File indexes for this batch.
     std::vector<UInt64> file_indices;
     size_t total_rows = 0;
     size_t total_bytes = 0;
     bool recovered = false;
 
     StorageDistributedDirectoryMonitor & parent;
-    /// Information about all available indexes (not only for the current batch).
     const std::map<UInt64, String> & file_index_to_path;
 
     bool split_batch_on_failure = true;
@@ -764,6 +746,14 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             fs::rename(tmp_file, parent.current_batch_file_path);
         }
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
+        auto connection = parent.pool->get(timeouts);
+
+        LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
+            file_indices.size(),
+            connection->getDescription(),
+            formatReadableQuantity(total_rows),
+            formatReadableSizeWithBinarySuffix(total_bytes));
 
         bool batch_broken = false;
         bool batch_marked_as_broken = false;
@@ -771,14 +761,14 @@ struct StorageDistributedDirectoryMonitor::Batch
         {
             try
             {
-                sendBatch();
+                sendBatch(*connection, timeouts);
             }
             catch (const Exception & e)
             {
-                if (split_batch_on_failure && file_indices.size() > 1 && isSplittableErrorCode(e.code(), e.isRemoteException()))
+                if (split_batch_on_failure && isSplittableErrorCode(e.code(), e.isRemoteException()))
                 {
                     tryLogCurrentException(parent.log, "Trying to split batch due to");
-                    sendSeparateFiles();
+                    sendSeparateFiles(*connection, timeouts);
                 }
                 else
                     throw;
@@ -795,23 +785,10 @@ struct StorageDistributedDirectoryMonitor::Batch
             }
             else
             {
-                std::vector<std::string> files;
-                for (auto file_index_info : file_indices | boost::adaptors::indexed())
-                {
-                    if (file_index_info.index() > 8)
-                    {
-                        files.push_back("...");
-                        break;
-                    }
-
-                    auto file_index = file_index_info.value();
-                    auto file_path = file_index_to_path.find(file_index);
-                    if (file_path != file_index_to_path.end())
-                        files.push_back(file_path->second);
-                    else
-                        files.push_back(fmt::format("#{}.bin (deleted)", file_index));
-                }
-                e.addMessage(fmt::format("While sending batch, size: {}, files: {}", file_indices.size(), fmt::join(files, "\n")));
+                std::vector<std::string> files(file_index_to_path.size());
+                for (const auto && file_info : file_index_to_path | boost::adaptors::indexed())
+                    files[file_info.index()] = file_info.value().second;
+                e.addMessage(fmt::format("While sending batch {}", fmt::join(files, "\n")));
 
                 throw;
             }
@@ -863,12 +840,9 @@ struct StorageDistributedDirectoryMonitor::Batch
     }
 
 private:
-    void sendBatch()
+    void sendBatch(Connection & connection, const ConnectionTimeouts & timeouts)
     {
         std::unique_ptr<RemoteInserter> remote;
-        bool compression_expected = false;
-
-        IConnectionPool::Entry connection;
 
         for (UInt64 file_idx : file_indices)
         {
@@ -880,27 +854,14 @@ private:
             ReadBufferFromFile in(file_path->second);
             const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-            OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
-                distributed_header.client_info.client_trace_context,
-                parent.storage.getContext()->getOpenTelemetrySpanLog());
-
             if (!remote)
             {
-                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-                connection = parent.pool->get(timeouts);
-                compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-
-                LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
-                    file_indices.size(),
-                    connection->getDescription(),
-                    formatReadableQuantity(total_rows),
-                    formatReadableSizeWithBinarySuffix(total_bytes));
-
-                remote = std::make_unique<RemoteInserter>(*connection, timeouts,
+                remote = std::make_unique<RemoteInserter>(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
             }
+            bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
 
@@ -908,7 +869,7 @@ private:
             remote->onFinish();
     }
 
-    void sendSeparateFiles()
+    void sendSeparateFiles(Connection & connection, const ConnectionTimeouts & timeouts)
     {
         size_t broken_files = 0;
 
@@ -927,20 +888,11 @@ private:
                 ReadBufferFromFile in(file_path->second);
                 const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-                // this function is called in a separated thread, so we set up the trace context from the file
-                OpenTelemetry::TracingContextHolder thread_trace_context(__PRETTY_FUNCTION__,
-                    distributed_header.client_info.client_trace_context,
-                    parent.storage.getContext()->getOpenTelemetrySpanLog());
-
-                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-                auto connection = parent.pool->get(timeouts);
-                bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-
-                RemoteInserter remote(*connection, timeouts,
+                RemoteInserter remote(connection, timeouts,
                     distributed_header.insert_query,
                     distributed_header.insert_settings,
                     distributed_header.client_info);
-
+                bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
                 writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
                 remote.onFinish();
             }
