@@ -500,6 +500,12 @@ Parse named tuple columns as JSON objects.
 
 Enabled by default.
 
+## input_format_json_ignore_unknown_keys_in_named_tuple {#input_format_json_ignore_unknown_keys_in_named_tuple}
+
+Ignore unknown keys in json object for named tuples.
+
+Disabled by default.
+
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
 Insert default values for missing elements in JSON object while parsing named tuple.
@@ -995,6 +1001,12 @@ Use Arrow String type instead of Binary for String columns.
 
 Disabled by default.
 
+### output_format_arrow_fixed_string_as_fixed_byte_array (#output_format_arrow_fixed_string_as_fixed_byte_array)
+
+Use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString columns.
+
+Enabled by default.
+
 ## ORC format settings {#orc-format-settings}
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
@@ -1080,6 +1092,12 @@ Disabled by default.
 Use Parquet String type instead of Binary for String columns.
 
 Disabled by default.
+
+### output_format_parquet_fixed_string_as_fixed_byte_array (#output_format_parquet_fixed_string_as_fixed_byte_array)
+
+Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns.
+
+Enabled by default.
 
 ## Hive format settings {#hive-format-settings}
 

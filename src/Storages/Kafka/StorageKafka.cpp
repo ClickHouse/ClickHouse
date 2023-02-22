@@ -772,10 +772,10 @@ void registerStorageKafka(StorageFactory & factory)
             if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 &&                 \
                 !kafka_settings->PAR_NAME.changed)                          \
             {                                                               \
-                throw Exception(                                            \
-                    "Required parameter '" #PAR_NAME "' "                   \
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,\
+                    "Required parameter '{}' "                              \
                     "for storage Kafka not specified",                      \
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);          \
+                    #PAR_NAME);                                             \
             }                                                               \
             if (args_count >= (ARG_NUM))                                    \
             {                                                               \
@@ -783,11 +783,11 @@ void registerStorageKafka(StorageFactory & factory)
                 if (has_settings &&                                         \
                     kafka_settings->PAR_NAME.changed)                       \
                 {                                                           \
-                    throw Exception(                                        \
-                        "The argument №" #ARG_NUM " of storage Kafka "      \
-                        "and the parameter '" #PAR_NAME "' "                \
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,              \
+                        "The argument №{} of storage Kafka "                \
+                        "and the parameter '{}' "                           \
                         "in SETTINGS cannot be specified at the same time", \
-                        ErrorCodes::BAD_ARGUMENTS);                         \
+                        #ARG_NUM, #PAR_NAME);                               \
                 }                                                           \
                 /* move engine args to settings */                          \
                 else                                                        \

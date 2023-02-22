@@ -196,7 +196,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
         }
         else
         {
-            throw Exception{message, ErrorCodes::NETWORK_ERROR};
+            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
         }
     }
 }
@@ -362,6 +362,7 @@ try
     else
         path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
+    std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
@@ -375,7 +376,7 @@ try
         if (effective_user_id == 0)
         {
             message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
         }
         else
         {

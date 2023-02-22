@@ -234,7 +234,7 @@ void ColumnsDescription::remove(const String & column_name)
     {
         String exception_message = fmt::format("There is no column {} in table", column_name);
         appendHintsMessage(exception_message, column_name);
-        throw Exception(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     }
 
     for (auto list_it = range.first; list_it != range.second;)
@@ -251,7 +251,7 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     {
         String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
         appendHintsMessage(exception_message, column_from);
-        throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
+        throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
     }
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
@@ -425,23 +425,49 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     switch (options.kind)
     {
         case GetColumnsOptions::All:
+        {
             res = getAll();
             break;
+        }
+        case GetColumnsOptions::AllPhysicalAndAliases:
+        {
+            res = getAllPhysical();
+            auto aliases = getAliases();
+            res.insert(res.end(), aliases.begin(), aliases.end());
+            break;
+        }
         case GetColumnsOptions::AllPhysical:
+        {
             res = getAllPhysical();
             break;
+        }
+        case GetColumnsOptions::OrdinaryAndAliases:
+        {
+            res = getOrdinary();
+            auto aliases = getAliases();
+            res.insert(res.end(), aliases.begin(), aliases.end());
+            break;
+        }
         case GetColumnsOptions::Ordinary:
+        {
             res = getOrdinary();
             break;
+        }
         case GetColumnsOptions::Materialized:
+        {
             res = getMaterialized();
             break;
+        }
         case GetColumnsOptions::Aliases:
+        {
             res = getAliases();
             break;
+        }
         case GetColumnsOptions::Ephemeral:
+        {
             res = getEphemeral();
             break;
+        }
     }
 
     if (options.with_subcolumns)

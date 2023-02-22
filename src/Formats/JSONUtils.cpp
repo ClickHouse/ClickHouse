@@ -44,11 +44,10 @@ namespace JSONUtils
         {
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
             if (min_bytes != 0 && current_object_size > 10 * min_bytes)
-                throw ParsingException(
-                    "Size of JSON object is extremely large. Expected not greater than " + std::to_string(min_bytes)
-                        + " bytes, but current is " + std::to_string(current_object_size)
-                        + " bytes per row. Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely JSON is malformed",
-                    ErrorCodes::INCORRECT_DATA);
+                throw ParsingException(ErrorCodes::INCORRECT_DATA,
+                    "Size of JSON object is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
+                    "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
+                    "most likely JSON is malformed", min_bytes, current_object_size);
 
             if (quotes)
             {
@@ -199,7 +198,7 @@ namespace JSONUtils
     {
         try
         {
-            bool as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
+            bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
 
             if (yield_strings)
             {

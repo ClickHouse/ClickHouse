@@ -43,3 +43,5 @@ expect ":) "
 
 send -- "exit\r"
 expect eof
+
+spawn bash -c "rm queries_02352"

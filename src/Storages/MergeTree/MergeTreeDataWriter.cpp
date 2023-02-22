@@ -1,13 +1,12 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
 #include <Disks/createVolume.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -152,6 +151,10 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
 {
     for (auto & stream : streams)
         stream.finalizer.finish();
+
+    part->getDataPartStorage().precommitTransaction();
+    for (const auto & [_, projection] : part->getProjectionParts())
+        projection->getDataPartStorage().precommitTransaction();
 }
 
 std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offsets, const IColumn::Selector & selector, size_t partition_num)
@@ -277,7 +280,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.version_column, block_size + 1);
+                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
@@ -392,6 +395,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     {
         part_dir = part_name;
     }
+
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     /// If we need to calculate some columns to sort.
@@ -443,18 +447,13 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
-        data_part_volume,
-        data.relative_data_path,
-        part_dir);
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir)
+        .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
+        .withPartInfo(new_part_info)
+        .build();
 
+    auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
-
-    auto new_data_part = data.createPart(
-        part_name,
-        data.choosePartType(expected_size, block.rows()),
-        new_part_info,
-        data_part_storage);
 
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
@@ -558,8 +557,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection)
 {
     TemporaryPart temp_part;
-    const StorageMetadataPtr & metadata_snapshot = projection.metadata;
-    MergeTreePartInfo new_part_info("all", 0, 0, 0);
+    const auto & metadata_snapshot = projection.metadata;
 
     MergeTreeDataPartType part_type;
     if (parent_part->getType() == MergeTreeDataPartType::InMemory)
@@ -572,20 +570,14 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         size_t expected_size = block.bytes();
         // just check if there is enough space on parent volume
         data.reserveSpace(expected_size, parent_part->getDataPartStorage());
-        part_type = data.choosePartTypeOnDisk(expected_size, block.rows());
+        part_type = data.choosePartFormatOnDisk(expected_size, block.rows()).part_type;
     }
 
-    auto relative_path = part_name + (is_temp ? ".tmp_proj" : ".proj");
-    auto projection_part_storage = parent_part->getDataPartStorage().getProjection(relative_path, !is_temp);
+    auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
+    auto projection_part_storage = new_data_part->getDataPartStoragePtr();
+
     if (is_temp)
         projection_part_storage->beginTransaction();
-
-    auto new_data_part = data.createPart(
-        part_name,
-        part_type,
-        new_part_info,
-        projection_part_storage,
-        parent_part);
 
     new_data_part->is_temp = is_temp;
 
@@ -695,7 +687,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     IMergeTreeDataPart * parent_part,
     size_t block_num)
 {
-    String part_name = fmt::format("{}_{}", projection.name, block_num);
+    auto part_name = fmt::format("{}_{}", projection.name, block_num);
     return writeProjectionPartImpl(
         part_name,
         true /* is_temp */,

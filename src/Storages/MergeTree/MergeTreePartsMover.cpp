@@ -240,7 +240,8 @@ MergeTreeMutableDataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEn
         cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME);
     }
 
-    auto cloned_part = data->createPart(part->name, cloned_part_storage);
+    MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage);
+    auto cloned_part = std::move(builder).withPartFormatFromDisk().build();
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getDataPartStorage().getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
