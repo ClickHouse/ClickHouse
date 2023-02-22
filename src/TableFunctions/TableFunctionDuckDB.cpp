@@ -81,7 +81,12 @@ void TableFunctionDuckDB::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 void registerTableFunctionDuckDB(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDuckDB>();
+    factory.registerFunction<TableFunctionDuckDB>(
+        {.documentation
+         = {R"(The table function can be used to read the table from DuckDB database.)",
+            Documentation::Examples{{"duckdb", "SELECT * FROM duckdb(database_path, table_name)"}},
+            Documentation::Categories{"DuckDB"}},
+         .allow_readonly = false});
 }
 
 }

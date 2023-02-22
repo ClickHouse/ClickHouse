@@ -96,6 +96,7 @@ bool DatabaseDuckDB::checkDuckDBTable(const String & table_name) const
     if (!duckdb_instance)
         duckdb_instance = openDuckDB(database_path, getContext(), /* throw_on_error */true);
 
+    /// TODO: Add table name validation
     const String query = fmt::format("SELECT table_name FROM duckdb_tables WHERE table_name='{}';", table_name);
 
     duckdb::Connection con(*duckdb_instance);
