@@ -724,8 +724,11 @@ public:
     BackupsWorker & getBackupsWorker() const;
 
     /// I/O formats.
+    /// If number_of_streams is set then the number of threads are divided among the streams
+    /// Eg: max_threads = 16, number_of_streams = 8, then each stream will use 2 threads
+    /// This is done to improve performance
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt, const bool disable_parallel_parsing = false) const;
+                                  const std::optional<FormatSettings> & format_settings = std::nullopt, const std::optional<size_t> number_of_streams = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;

@@ -217,7 +217,7 @@ InputFormatPtr FormatFactory::getInput(
     ContextPtr context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings,
-    const bool disable_parallel_parsing) const
+    const std::optional<size_t> number_of_streams) const
 {
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
@@ -230,14 +230,18 @@ InputFormatPtr FormatFactory::getInput(
     const Settings & settings = context->getSettingsRef();
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
 
+    size_t max_threads = settings.max_threads;
+    if (number_of_streams.has_value() && number_of_streams.value())
+        max_threads = std::max(max_threads/number_of_streams.value(),1UL);
+
     // Doesn't make sense to use parallel parsing with less than four threads
     // (segmentator + two parsers + reader).
-    bool parallel_parsing = !disable_parallel_parsing && settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
+    bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && max_threads >= 4;
 
-    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
 
-    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage_for_user)
+    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * max_threads * 2 > settings.max_memory_usage_for_user)
         parallel_parsing = false;
 
     if (parallel_parsing)
@@ -247,6 +251,7 @@ InputFormatPtr FormatFactory::getInput(
         if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(buf))
             parallel_parsing = false;
     }
+
 
     if (parallel_parsing)
     {
@@ -264,8 +269,9 @@ InputFormatPtr FormatFactory::getInput(
             (ReadBuffer & input) -> InputFormatPtr
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
+
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
+            buf, sample, parser_creator, file_segmentation_engine, name, max_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
         auto format = std::make_shared<ParallelParsingInputFormat>(params);
         if (!settings.input_format_record_errors_file_path.toString().empty())

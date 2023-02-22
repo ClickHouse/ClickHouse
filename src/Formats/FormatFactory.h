@@ -128,7 +128,7 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
-        const bool disable_parallel_parsing = false) const;
+        const std::optional<size_t> number_of_streams = std::nullopt) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
