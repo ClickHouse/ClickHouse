@@ -3,6 +3,11 @@ SELECT '\w' LIKE '\w%';
 SELECT '\w' LIKE '%\w';
 SELECT '\w' LIKE '\w';
 
+SELECT '\w' LIKE '%\\\w%';
+SELECT '\w' LIKE '\\\w%';
+SELECT '\w' LIKE '%\\\w';
+SELECT '\w' LIKE '\\\w';
+
 SELECT '\\w' LIKE '%\\w%';
 SELECT '\\w' LIKE '\\w%';
 SELECT '\\w' LIKE '%\\w';
@@ -12,6 +17,11 @@ SELECT '\i' LIKE '%\i%';
 SELECT '\i' LIKE '\i%';
 SELECT '\i' LIKE '%\i';
 SELECT '\i' LIKE '\i';
+
+SELECT '\i' LIKE '%\\\i%';
+SELECT '\i' LIKE '\\\i%';
+SELECT '\i' LIKE '%\\\i';
+SELECT '\i' LIKE '\\\i';
 
 SELECT '\\i' LIKE '%\\i%';
 SELECT '\\i' LIKE '\\i%';
