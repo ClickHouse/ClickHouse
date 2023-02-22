@@ -151,9 +151,5 @@
     "docker/docs/check": {
         "name": "clickhouse/docs-check",
         "dependent": []
-    },
-    "docker/docs/release": {
-        "name": "clickhouse/docs-release",
-        "dependent": []
     }
 }
