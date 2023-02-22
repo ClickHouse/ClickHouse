@@ -126,6 +126,8 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_row_policies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
 
         {"transaction_id", getTransactionIDDataType()},
+
+        {"AsyncReadCounters", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
     };
 
 }
@@ -271,6 +273,11 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
+
+    if (async_read_counters)
+        async_read_counters->dumpToMapColumn(columns[i++].get());
+    else
+        columns[i++]->insertDefault();
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

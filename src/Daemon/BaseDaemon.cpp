@@ -994,6 +994,11 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
+    bool restart = false;
+    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
+    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
+        restart = true;
+
     while (true)
     {
         /// This pipe is used to synchronize notifications to the service manager from the child process
@@ -1111,8 +1116,7 @@ void BaseDaemon::setupWatchdog()
             logger().information("Child process no longer exists.");
             _exit(WEXITSTATUS(status));
         }
-
-        if (WIFEXITED(status))
+        else if (WIFEXITED(status))
         {
             logger().information(fmt::format("Child process exited normally with code {}.", WEXITSTATUS(status)));
             _exit(WEXITSTATUS(status));
@@ -1141,14 +1145,14 @@ void BaseDaemon::setupWatchdog()
             logger().fatal("Child process was not exited normally by unknown reason.");
         }
 
-        /// Automatic restart is not enabled but you can play with it.
-#if 1
-        _exit(WEXITSTATUS(status));
-#else
-        logger().information("Will restart.");
-        if (argv0)
-            memcpy(argv0, original_process_name.c_str(), original_process_name.size());
-#endif
+        if (restart)
+        {
+            logger().information("Will restart.");
+            if (argv0)
+                memcpy(argv0, original_process_name.c_str(), original_process_name.size());
+        }
+        else
+            _exit(WEXITSTATUS(status));
     }
 }
 

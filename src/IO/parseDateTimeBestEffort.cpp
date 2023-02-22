@@ -287,7 +287,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 UInt8 hour_or_day_of_month_or_month = 0;
                 if (num_digits == 2)
                     readDecimalNumber<2>(hour_or_day_of_month_or_month, digits);
-                else if (num_digits == 1)   //-V547
+                else if (num_digits == 1)
                     readDecimalNumber<1>(hour_or_day_of_month_or_month, digits);
                 else
                     return on_error(ErrorCodes::LOGICAL_ERROR, "Cannot read DateTime: logical error, unexpected branch in code");

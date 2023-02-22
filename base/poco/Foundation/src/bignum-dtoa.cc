@@ -276,7 +276,7 @@ static void GenerateShortestDigits(Bignum* numerator, Bignum* denominator,
 
 // Let v = numerator / denominator < 10.
 // Then we generate 'count' digits of d = x.xxxxx... (without the decimal point)
-// from left to right. Once 'count' digits have been produced we decide wether
+// from left to right. Once 'count' digits have been produced we decide whether
 // to round up or down. Remainders of exactly .5 round upwards. Numbers such
 // as 9.999999 propagate a carry all the way, and change the
 // exponent (decimal_point), when rounding upwards.
@@ -548,7 +548,7 @@ static void InitialScaledStartValuesNegativeExponentNegativePower(
 //
 // Let ep == estimated_power, then the returned values will satisfy:
 //  v / 10^ep = numerator / denominator.
-//  v's boundarys m- and m+:
+//  v's boundaries m- and m+:
 //    m- / 10^ep == v / 10^ep - delta_minus / denominator
 //    m+ / 10^ep == v / 10^ep + delta_plus / denominator
 //  Or in other words:

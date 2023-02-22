@@ -334,6 +334,9 @@ public:
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
 
+        /// For Replacing mode. Can be empty for Replacing.
+        String is_deleted_column;
+
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
 
@@ -474,6 +477,12 @@ public:
 
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
+
+    size_t getAllPartsCount() const;
+
+    /// Return the number of marks in all parts
+    size_t getTotalMarksCount() const;
+
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
@@ -518,7 +527,7 @@ public:
 
     size_t getTotalActiveSizeInRows() const;
 
-    size_t getPartsCount() const;
+    size_t getActivePartsCount() const;
 
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
     /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
@@ -1292,7 +1301,8 @@ protected:
         const String & new_part_name,
         const DataPartPtr & result_part,
         const DataPartsVector & source_parts,
-        const MergeListEntry * merge_entry);
+        const MergeListEntry * merge_entry,
+        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
