@@ -61,8 +61,8 @@ inline String likePatternToRegexp(std::string_view pattern)
                 }
                 break;
             case '_':
-                ++pos;
                 res += ".";
+                ++pos;
                 break;
             case '\\':
                 ++pos;
