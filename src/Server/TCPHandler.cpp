@@ -1057,7 +1057,7 @@ bool TCPHandler::receiveProxyHeader()
     /// Only PROXYv1 is supported.
     /// Validation of protocol is not fully performed.
 
-    LimitReadBuffer limit_in(*in, 107, true); /// Maximum length from the specs.
+    LimitReadBuffer limit_in(*in, 107, /* trow_exception */ true, /* exact_limit */ false); /// Maximum length from the specs.
 
     assertString("PROXY ", limit_in);
 
