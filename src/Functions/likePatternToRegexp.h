@@ -20,7 +20,6 @@ inline String likePatternToRegexp(std::string_view pattern)
     const char * pos = pattern.data();
     const char * const end = pattern.begin() + pattern.size();
 
-    char char_slot;
     if (pos < end && *pos == '%')
     {
         while (++pos < end && *pos == '%')
@@ -33,8 +32,7 @@ inline String likePatternToRegexp(std::string_view pattern)
     }
     while (pos != end)
     {
-        char_slot = *(pos++);
-        switch (char_slot)
+        switch (*pos)
         {
             case '^':
             case '$':
@@ -48,9 +46,11 @@ inline String likePatternToRegexp(std::string_view pattern)
             case '+':
             case '{':
                 res += '\\';
-                res += char_slot;
+                res += *pos;
+                ++pos;
                 break;
             case '%':
+                ++pos;
                 if (pos != end)
                 {
                     res += ".*";
@@ -61,6 +61,7 @@ inline String likePatternToRegexp(std::string_view pattern)
                 }
                 break;
             case '_':
+                ++pos;
                 res += ".";
                 break;
             case '\\':
@@ -71,11 +72,14 @@ inline String likePatternToRegexp(std::string_view pattern)
                 else
                 {
                     res += '\\';
-                    res += *(pos++);
+                    ++pos;
+                    res += *pos;
+                    ++pos;
                     break;
                 }
             default:
-                res += char_slot;
+                res += *pos;
+                ++pos;
                 break;
         }
     }
