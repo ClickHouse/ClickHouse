@@ -31,6 +31,8 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
 {
     context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS);
 
+    NamedCollectionUtils::loadIfNot();
+
     auto collections = NamedCollectionFactory::instance().getAll();
     for (const auto & [name, collection] : collections)
     {
