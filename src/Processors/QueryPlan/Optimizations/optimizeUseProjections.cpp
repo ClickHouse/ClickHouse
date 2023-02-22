@@ -116,6 +116,20 @@ static DAGIndex buildDAGIndex(const ActionsDAG & dag)
     return index;
 }
 
+static bool hasNullableOrMissingColumn(const DAGIndex & index, const Names & names)
+{
+    for (const auto & query_name : names)
+    {
+        auto jt = index.find(query_name);
+        if (jt == index.end() || jt->second->result_type->isNullable())
+            return true;
+    }
+
+    return false;
+}
+
+/// Here we try to match aggregate functions from the query to
+/// aggregate functions from projection.
 bool areAggregatesMatch(
     const AggregateProjectionInfo & info,
     const AggregateDescriptions & aggregates,
@@ -123,23 +137,14 @@ bool areAggregatesMatch(
     const DAGIndex & query_index,
     const DAGIndex & proj_index)
 {
+    /// Index (projection agg function name) -> pos
     std::unordered_map<std::string, std::list<size_t>> projection_aggregate_functions;
     for (size_t i = 0; i < info.aggregates.size(); ++i)
         projection_aggregate_functions[info.aggregates[i].function->getName()].push_back(i);
 
-    // struct AggFuncMatch
-    // {
-    //     /// idx in projection
-    //     size_t idx;
-    //     /// nodes in query DAG
-    //     ActionsDAG::NodeRawConstPtrs args;
-    // };
-
-    // std::vector<AggFuncMatch> aggregate_function_matches;
-    // aggregate_function_matches.reserve(aggregates.size());
-
     for (const auto & aggregate : aggregates)
     {
+        /// Get a list of candidates by name first.
         auto it = projection_aggregate_functions.find(aggregate.function->getName());
         if (it == projection_aggregate_functions.end())
         {
@@ -150,9 +155,8 @@ bool areAggregatesMatch(
 
             return false;
         }
-        auto & candidates = it->second;
 
-        // std::optional<AggFuncMatch> match;
+        auto & candidates = it->second;
         bool found_match = false;
 
         for (size_t idx : candidates)
@@ -173,46 +177,28 @@ bool areAggregatesMatch(
                 continue;
             }
 
+            /// This is a special case for the function count().
+            /// We can assume that 'count(expr) == count()' if expr is not nullable.
             if (typeid_cast<const AggregateFunctionCount *>(candidate.function.get()))
             {
-                bool all_args_not_null = true;
-                for (const auto & query_name : aggregate.argument_names)
-                {
-                    auto jt = query_index.find(query_name);
+                bool has_nullable_or_missing_arg = false;
+                has_nullable_or_missing_arg |= hasNullableOrMissingColumn(query_index, aggregate.argument_names);
+                has_nullable_or_missing_arg |= hasNullableOrMissingColumn(proj_index, candidate.argument_names);
 
-                    if (jt == query_index.end() || jt->second->result_type->isNullable())
-                    {
-                        all_args_not_null = false;
-                        break;
-                    }
-                }
-
-                for (const auto & proj_name : candidate.argument_names)
-                {
-                    auto kt = proj_index.find(proj_name);
-
-                    if (kt == proj_index.end() || kt->second->result_type->isNullable())
-                    {
-                        all_args_not_null = false;
-                        break;
-                    }
-                }
-
-                if (all_args_not_null)
+                if (!has_nullable_or_missing_arg)
                 {
                     /// we can ignore arguments for count()
-                    /// match = AggFuncMatch{idx, {}};
                     found_match = true;
                     break;
                 }
             }
 
-            if (aggregate.argument_names.size() != candidate.argument_names.size())
-                continue;
+            /// Now, function names and types matched.
+            /// Next, match arguments from DAGs.
 
             size_t num_args = aggregate.argument_names.size();
-            // ActionsDAG::NodeRawConstPtrs args;
-            // args.reserve(num_args);
+            if (num_args != candidate.argument_names.size())
+                continue;
 
             size_t next_arg = 0;
             while (next_arg < num_args)
@@ -252,22 +238,18 @@ bool areAggregatesMatch(
                     break;
                 }
 
-                // args.push_back(query_node);
                 ++next_arg;
             }
 
             if (next_arg < aggregate.argument_names.size())
                 continue;
 
-            // match = AggFuncMatch{idx, std::move(args)};
             found_match = true;
             break;
         }
 
         if (!found_match)
             return false;
-
-        // aggregate_function_matches.emplace_back(std::move(*match));
     }
 
     return true;
@@ -299,6 +281,8 @@ ActionsDAGPtr analyzeAggregateProjection(
     std::unordered_set<const ActionsDAG::Node *> proj_key_nodes;
 
     {
+        /// Just, filling the set above.
+
         for (const auto & key : info.keys)
         {
             auto it = proj_index.find(key.name);
@@ -311,6 +295,9 @@ ActionsDAGPtr analyzeAggregateProjection(
 
         query_key_nodes.reserve(keys.size() + 1);
 
+        /// We need to add filter column to keys set.
+        /// It should be computable from projection keys.
+        /// It will be removed in FilterStep.
         if (filter_node)
             query_key_nodes.push_back(filter_node);
 
@@ -324,6 +311,9 @@ ActionsDAGPtr analyzeAggregateProjection(
             query_key_nodes.push_back(it->second);
         }
     }
+
+    /// Here we want to match query keys with projection keys.
+    /// Query key can be any expression depending on projection keys.
 
     struct Frame
     {
@@ -386,6 +376,7 @@ ActionsDAGPtr analyzeAggregateProjection(
 
     auto proj_dag = query_dag.foldActionsByProjection(new_inputs, query_key_nodes);
 
+    /// Just add all the aggregates to dag inputs.
     auto & proj_dag_outputs =  proj_dag->getOutputs();
     for (const auto & aggregate : aggregates)
         proj_dag_outputs.push_back(&proj_dag->addInput(aggregate.column_name, aggregate.function->getResultType()));
@@ -548,7 +539,7 @@ bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     if (!can_use_minmax_projection && agg_projections.empty())
         return false;
 
-    LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Has agg projection");
+    // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Has agg projection");
 
     ActionsDAGPtr dag;
     bool need_remove_column = false;
