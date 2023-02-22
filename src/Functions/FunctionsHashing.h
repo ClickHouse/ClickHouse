@@ -1042,7 +1042,7 @@ private:
                 }
                 else
                 {
-                    if (std::is_same_v<Impl, JavaHashImpl>)
+                    if constexpr (std::is_same_v<Impl, JavaHashImpl>)
                         h = JavaHashImpl::apply(vec_from[i]);
                     else
                     {
