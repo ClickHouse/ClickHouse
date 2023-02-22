@@ -16,16 +16,17 @@ namespace DB
 namespace
 {
 
-class CountDistinctVisitor : public InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>
+class CountDistinctVisitor : public QueryTreeVisitor<CountDistinctVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>;
-    using Base::Base;
+    using QueryTreeVisitor<CountDistinctVisitor>::QueryTreeVisitor;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    static constexpr bool TOP_TO_BOTTOM = true;
+
+    bool needApply(QueryTreeNodePtr & node)
     {
         if (!getSettings().count_distinct_optimization)
-            return;
+            return false;
 
         auto * query_node = node->as<QueryNode>();
 
@@ -33,32 +34,43 @@ public:
         if (!query_node || (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
             query_node->hasHaving() || query_node->hasWindow() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
             query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasOffset()))
-            return;
+            return false;
 
         /// Check that query has only single table expression
         auto join_tree_node_type = query_node->getJoinTree()->getNodeType();
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
-            return;
+            return false;
 
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();
         if (projection_nodes.size() != 1)
-            return;
+            return false;
 
         /// Check that query single projection node is `countDistinct` function
         auto & projection_node = projection_nodes[0];
         auto * function_node = projection_node->as<FunctionNode>();
         if (!function_node)
-            return;
+            return false;
 
         auto lower_function_name = Poco::toLower(function_node->getFunctionName());
         if (lower_function_name != "countdistinct" && lower_function_name != "uniqexact")
-            return;
+            return false;
 
         /// Check that `countDistinct` function has single COLUMN argument
         auto & count_distinct_arguments_nodes = function_node->getArguments().getNodes();
         if (count_distinct_arguments_nodes.size() != 1 && count_distinct_arguments_nodes[0]->getNodeType() != QueryTreeNodeType::COLUMN)
-            return;
+            return false;
+
+        return true;
+    }
+
+    void apply(QueryTreeNodePtr & node)
+    {
+        auto * query_node = node->as<QueryNode>();
+        auto & projection_nodes = query_node->getProjection().getNodes();
+        auto * function_node = projection_nodes[0]->as<FunctionNode>();
+
+        auto & count_distinct_arguments_nodes = function_node->getArguments().getNodes();
 
         auto & count_distinct_argument_column = count_distinct_arguments_nodes[0];
         auto & count_distinct_argument_column_typed = count_distinct_argument_column->as<ColumnNode &>();
