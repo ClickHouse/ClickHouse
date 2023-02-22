@@ -282,7 +282,7 @@ bool StorageMaterializedView::optimize(
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
+    return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
 }
 
 StorageID StorageMaterializedView::createFreshTable() const

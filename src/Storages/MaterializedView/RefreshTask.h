@@ -38,7 +38,7 @@ public:
     };
 
     /// Never call it manual, public for shared_ptr construction only
-    RefreshTask(const ASTRefreshStrategy & strategy);
+    explicit RefreshTask(const ASTRefreshStrategy & strategy);
 
     /// The only proper way to construct task
     static RefreshTaskHolder create(
@@ -59,6 +59,9 @@ public:
 
     /// Cancel task execution
     void cancel();
+
+    /// Cancel task execution synchronously
+    void cancelSync();
 
     /// Pause task execution (must be either resumed or canceled later)
     void pause();
@@ -83,13 +86,15 @@ private:
 
     void refresh();
 
-    ExecutionResult executeRefresh();
+    ExecutionResult executeRefresh(std::unique_lock<std::mutex> & state_lock);
 
     void initializeRefresh(std::shared_ptr<const StorageMaterializedView> view);
 
     void completeRefresh(std::shared_ptr<StorageMaterializedView> view);
 
     void cancelRefresh(std::shared_ptr<const StorageMaterializedView> view);
+
+    void pauseRefresh(std::shared_ptr<const StorageMaterializedView> view);
 
     std::chrono::sys_seconds calculateRefreshTime(std::chrono::system_clock::time_point now) const;
 
@@ -105,6 +110,10 @@ private:
                 task->doRefresh();
         };
     }
+
+    void cancelLocked();
+
+    void cleanState();
 
     std::shared_ptr<StorageMaterializedView> lockView();
 
@@ -140,13 +149,15 @@ private:
     std::uniform_int_distribution<Int64> refresh_spread;
 
     /// Task state
-    std::atomic<TaskState> state{TaskState::Disabled};
+    std::mutex state_mutex;
+    std::condition_variable sync_canceled;
+    TaskState state{TaskState::Disabled};
     LastTaskState last_state{LastTaskState::Unknown};
+    bool canceled;
 
     /// Outer triggers
     std::atomic_bool refresh_immediately;
     std::atomic_bool interrupt_execution;
-    std::atomic_bool canceled;
 };
 
 }
