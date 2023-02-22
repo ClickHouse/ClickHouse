@@ -5,7 +5,6 @@
 namespace DB
 {
 
-template <QuotingStrategy QUOTING_STRATEGY>
 class NoEscapingKeyStateHandler : public StateHandler
 {
 public:
@@ -22,17 +21,13 @@ public:
         {
             const auto current_character = file[pos];
 
-            if (isalnum(current_character))
+            if (isValidCharacter(current_character))
             {
                 return {pos, State::READING_KEY};
             }
-
-            if constexpr (QUOTING_STRATEGY == QuotingStrategy::WithQuoting)
+            else if (enclosing_character && current_character == enclosing_character)
             {
-                if (enclosing_character && current_character == enclosing_character)
-                {
-                    return {pos + 1u, State::READING_ENCLOSED_KEY};
-                }
+                return {pos + 1u, State::READING_ENCLOSED_KEY};
             }
 
             pos++;
@@ -58,7 +53,7 @@ public:
                 key = createElement(file, start_index, pos - 1);
                 return {pos, State::WAITING_VALUE};
             }
-            else if (!std::isalnum(current_character) && current_character != '_')
+            else if (!isValidCharacter(current_character))
             {
                 return {pos, State::WAITING_KEY};
             }
@@ -109,6 +104,11 @@ public:
 
 private:
     const char key_value_delimiter;
+
+    static bool isValidCharacter(char character)
+    {
+        return std::isalnum(character) || character == '_';
+    }
 };
 
 }

@@ -6,7 +6,6 @@
 namespace DB
 {
 
-template <QuotingStrategy QUOTING_STRATEGY>
 class NoEscapingValueStateHandler : public StateHandler
 {
 public:
@@ -27,14 +26,11 @@ public:
         {
             const auto current_character = file[pos];
 
-            if constexpr (QuotingStrategy::WithQuoting == QUOTING_STRATEGY)
+            if (enclosing_character && current_character == enclosing_character)
             {
-                if (current_character == enclosing_character)
-                {
-                    return {pos + 1u, State::READING_ENCLOSED_VALUE};
-                }
+                return {pos + 1u, State::READING_ENCLOSED_VALUE};
             }
-            if (current_character == item_delimiter)
+            else if (current_character == item_delimiter)
             {
                 return {pos, State::READING_EMPTY_VALUE};
             }

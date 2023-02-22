@@ -7,7 +7,6 @@
 namespace DB
 {
 
-template <QuotingStrategy QUOTING_STRATEGY>
 class InlineEscapingKeyStateHandler : public StateHandler
 {
 public:
@@ -28,18 +27,13 @@ public:
             {
                 return {pos, State::READING_KEY};
             }
-
-            if (isalnum(current_character))
+            else if (isValidCharacter(current_character))
             {
                 return {pos, State::READING_KEY};
             }
-
-            if constexpr (QUOTING_STRATEGY == QuotingStrategy::WithQuoting)
+            else if (enclosing_character && current_character == enclosing_character)
             {
-                if (current_character == enclosing_character)
-                {
-                    return {pos + 1u, State::READING_ENCLOSED_KEY};
-                }
+                return {pos + 1u, State::READING_ENCLOSED_KEY};
             }
 
             pos++;
@@ -69,12 +63,11 @@ public:
                 escape = true;
                 continue;
             }
-
-            if (current_character == key_value_delimiter)
+            else if (current_character == key_value_delimiter)
             {
                 return {pos, State::WAITING_VALUE};
             }
-            else if (!std::isalnum(current_character) && current_character != '_')
+            else if (!isValidCharacter(current_character))
             {
                 return {pos, State::WAITING_KEY};
             }
@@ -129,6 +122,11 @@ public:
 private:
     const char escape_character;
     const char key_value_delimiter;
+
+    static bool isValidCharacter(char character)
+    {
+        return std::isalnum(character) || character == '_';
+    }
 };
 
 }

@@ -10,26 +10,6 @@
 namespace DB
 {
 
-template <typename Extractor>
-concept CKeyValuePairExtractor = requires(Extractor extractor)
-{
-    {
-        extractor.extract(
-            std::string_view {},
-            std::declval<ColumnString::MutablePtr &>(),
-            std::declval<ColumnString::MutablePtr &>()
-        )
-    } -> std::same_as<uint64_t>;
-
-    {
-        extractor.extract(
-            std::declval<const std::string &>(),
-            std::declval<ColumnString::MutablePtr &>(),
-            std::declval<ColumnString::MutablePtr &>()
-        )
-    } -> std::same_as<uint64_t>;
-};
-
 template <CKeyStateHandler KeyStateHandler, CValueStateHandler ValueStateHandler>
 class CHKeyValuePairExtractor : public KeyValuePairExtractor
 {
