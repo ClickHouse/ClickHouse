@@ -703,7 +703,7 @@ public:
         }
 #endif
 
-        while (haystack < haystack_end)
+        while (haystack < haystack_end && haystack_end - haystack >= needle_end - needle)
         {
 #ifdef __SSE4_1__
             /// find first and second characters
