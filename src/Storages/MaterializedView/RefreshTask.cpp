@@ -47,9 +47,9 @@ RefreshTask::RefreshTask(
     const ASTRefreshStrategy & strategy)
     : refresh_timer(makeRefreshTimer(strategy))
     , refresh_spread{makeSpreadDistribution(strategy.spread)}
+    , canceled{false}
     , refresh_immediately{false}
     , interrupt_execution{false}
-    , canceled{false}
 {}
 
 RefreshTaskHolder RefreshTask::create(
@@ -92,7 +92,7 @@ void RefreshTask::start()
 void RefreshTask::stop()
 {
     refresh_task->deactivate();
-    cancel();
+    cancelSync();
     storeState(TaskState::Disabled);
 }
 
@@ -104,20 +104,36 @@ void RefreshTask::run()
 
 void RefreshTask::cancel()
 {
-    canceled.store(true);
-    interrupt_execution.store(true);
+    std::lock_guard guard(state_mutex);
+    cancelLocked();
+}
+
+void RefreshTask::cancelSync()
+{
+    std::unique_lock lock(state_mutex);
+    cancelLocked();
+    sync_canceled.wait(lock, [this] { return !canceled; });
 }
 
 void RefreshTask::pause()
 {
-    interrupt_execution.store(true);
+    std::lock_guard guard(state_mutex);
+    if (state == TaskState::Running)
+    {
+        interrupt_execution.store(true);
+        state = TaskState::Paused;
+    }
 }
 
 void RefreshTask::resume()
 {
-    interrupt_execution.store(false);
-    refresh_immediately.store(true);
-    refresh_task->schedule();
+    std::lock_guard guard(state_mutex);
+    if (state == TaskState::Paused)
+    {
+        refresh_immediately.store(true);
+        refresh_task->schedule();
+        state = TaskState::Scheduled;
+    }
 }
 
 void RefreshTask::notify(const StorageID & parent_id)
@@ -154,15 +170,17 @@ void RefreshTask::refresh()
     if (!view)
         return;
 
+    std::unique_lock lock(state_mutex);
+
     if (!refresh_executor)
         initializeRefresh(view);
 
     storeState(TaskState::Running);
 
-    switch (executeRefresh())
+    switch (executeRefresh(lock))
     {
         case ExecutionResult::Paused:
-            storeState(TaskState::Paused);
+            pauseRefresh(view);
             return;
         case ExecutionResult::Finished:
             completeRefresh(view);
@@ -174,28 +192,24 @@ void RefreshTask::refresh()
             break;
     }
 
-    refresh_executor.reset();
-    refresh_block.reset();
-    refresh_query.reset();
+    cleanState();
 
     storeLastRefresh(std::chrono::system_clock::now());
     scheduleRefresh(last_refresh);
 }
 
-RefreshTask::ExecutionResult RefreshTask::executeRefresh()
+RefreshTask::ExecutionResult RefreshTask::executeRefresh(std::unique_lock<std::mutex> & state_lock)
 {
+    state_lock.unlock();
+
     bool not_finished{true};
     while (!interrupt_execution.load() && not_finished)
         not_finished = refresh_executor->executeStep(interrupt_execution);
 
-    auto defer = make_scope_guard([this]
-                                  {
-                                      canceled.store(false);
-                                      interrupt_execution.store(false);
-                                  });
+    state_lock.lock();
     if (!not_finished)
         return ExecutionResult::Finished;
-    if (interrupt_execution.load() && !canceled.load())
+    if (interrupt_execution.load() && !canceled)
         return ExecutionResult::Paused;
     return ExecutionResult::Cancelled;
 
@@ -227,6 +241,14 @@ void RefreshTask::cancelRefresh(std::shared_ptr<const StorageMaterializedView> v
 {
     auto drop_context = Context::createCopy(view->getContext());
     InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, drop_context, drop_context, refresh_query->table_id, /*sync=*/true);
+    interrupt_execution.store(false);
+    if (std::exchange(canceled, false))
+        sync_canceled.notify_all();
+}
+
+void RefreshTask::pauseRefresh(std::shared_ptr<const StorageMaterializedView> /*view*/)
+{
+    interrupt_execution.store(false);
 }
 
 void RefreshTask::scheduleRefresh(std::chrono::system_clock::time_point now)
@@ -275,6 +297,31 @@ void RefreshTask::progressCallback(const Progress & progress)
     set_entry->elapsed_ns.store(progress.elapsed_ns, std::memory_order_relaxed);
 }
 
+void RefreshTask::cancelLocked()
+{
+    switch (state)
+    {
+        case TaskState::Running:
+            canceled = true;
+            interrupt_execution.store(true);
+            break;
+        case TaskState::Paused:
+            if (auto view = lockView())
+                cancelRefresh(view);
+            cleanState();
+            break;
+        default:
+            break;
+    }
+}
+
+void RefreshTask::cleanState()
+{
+    refresh_executor.reset();
+    refresh_block.reset();
+    refresh_query.reset();
+}
+
 std::shared_ptr<StorageMaterializedView> RefreshTask::lockView()
 {
     return std::static_pointer_cast<StorageMaterializedView>(view_to_refresh.lock());
@@ -282,7 +329,7 @@ std::shared_ptr<StorageMaterializedView> RefreshTask::lockView()
 
 void RefreshTask::storeState(TaskState task_state)
 {
-    state.store(task_state);
+    state = task_state;
     set_entry->state.store(static_cast<RefreshTaskStateUnderlying>(task_state));
 }
 

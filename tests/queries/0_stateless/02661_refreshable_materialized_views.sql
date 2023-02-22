@@ -1,3 +1,20 @@
-CREATE MATERIALIZED VIEW test REFRESH AFTER 15 SECOND ENGINE = MergeTree() ORDER BY number AS SELECT * FROM system.numbers LIMIT 10;
+CREATE MATERIALIZED VIEW test REFRESH AFTER 15 SECOND ENGINE = MergeTree() ORDER BY number AS SELECT * FROM system.numbers LIMIT 10000000;
 
-SELECT refresh_status, last_refresh_status FROM system.view_refreshes WHERE view = 'test';
+SELECT view FROM system.view_refreshes WHERE view = 'test';
+
+CREATE MATERIALIZED VIEW test1 REFRESH EVERY 1 HOUR ENGINE = MergeTree() ORDER BY number AS SELECT * FROM test;
+
+CREATE MATERIALIZED VIEW test2 REFRESH EVERY 2 HOUR OFFSET 42 MINUTE 8 SECOND RANDOMIZE FOR 10 MINUTE  ENGINE = MergeTree() ORDER BY number AS SELECT * FROM test;
+
+SELECT view FROM system.view_refreshes WHERE view LIKE 'test%' ORDER BY view;
+
+SYSTEM STOP VIEW test;
+SYSTEM STOP VIEWS;
+
+SELECT view, refresh_status FROM system.view_refreshes WHERE view LIKE 'test%' ORDER BY view;
+
+SYSTEM START VIEWS;
+
+DROP VIEW test;
+DROP VIEW test1;
+DROP VIEW test2;

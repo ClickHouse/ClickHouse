@@ -28,14 +28,16 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         refresh->schedule_kind = ASTRefreshStrategy::ScheduleKind::EVERY;
         ASTPtr period;
-        ASTPtr periodic_offset;
         if (!ParserTimePeriod{}.parse(pos, period, expected))
             return false;
-        if (!ParserTimeInterval{}.parse(pos, periodic_offset, expected))
-            return false;
-
         refresh->set(refresh->period, period);
-        refresh->set(refresh->periodic_offset, periodic_offset);
+        if (ParserKeyword{"OFFSET"}.ignore(pos, expected))
+        {
+            ASTPtr periodic_offset;
+            if (!ParserTimeInterval{}.parse(pos, periodic_offset, expected))
+                return false;
+            refresh->set(refresh->periodic_offset, periodic_offset);
+        }
     }
     if (refresh->schedule_kind == ASTRefreshStrategy::ScheduleKind::UNKNOWN)
         return false;
