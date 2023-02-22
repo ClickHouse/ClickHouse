@@ -267,18 +267,18 @@ public:
         return cur;
     }
 
-    /*
-    static Pos mysqlFractionalSecond(Pos, Pos, Date &)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional second");
-    }
-    */
-
     static Pos mysqlISO8601Date(Pos cur, Pos end, Date & date)
     {
         cur = readNumber4(cur, end, date.year);
         cur = readNumber2(cur, end, date.month);
         cur = readNumber2(cur, end, date.day);
+
+        date.week_date_format = false;
+        date.day_of_year_format = false;
+
+        date.century_format = false;
+        date.is_year_of_era = false;
+        date.has_year = true;
         return cur;
     }
 
@@ -286,19 +286,33 @@ public:
     {
         cur = readNumber2(cur, end, date.year);
         date.year += 2000;
+        date.century_format = false;
+        date.is_year_of_era = false;
+        date.has_year = true;
         return cur;
     }
 
     static Pos mysqlISO8601Year4(Pos cur, Pos end, Date & date)
     {
         cur = readNumber4(cur, end, date.year);
+        date.century_format = false;
+        date.is_year_of_era = false;
+        date.has_year = true;
         return cur;
     }
 
     static Pos mysqlDayOfYear(Pos cur, Pos end, Date & date)
     {
         cur = readNumber3(cur, end, date.day_of_year);
+
+        date.day_of_year_values.push_back(date.day_of_year);
         date.day_of_year_format = true;
+        date.week_date_format = false;
+        if (!date.has_year)
+        {
+            date.has_year = true;
+            date.year = 2000;
+        }
         return cur;
     }
 
@@ -307,27 +321,42 @@ public:
         ensureSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1");
 
         date.day_of_week = *cur - '0';
+        date.week_date_format = true;
+        date.day_of_year_format = false;
+        if (!date.has_year)
+        {
+            date.has_year = true;
+            date.year = 2000;
+        }
         return cur;
     }
 
     static Pos mysqlISO8601Week(Pos cur, Pos end, Date & date)
     {
-        return readNumber2(cur, end, date.week);
+        cur = readNumber2(cur, end, date.week);
+        date.week_date_format = true;
+        date.day_of_year_format = false;
+        if (date.has_year)
+        {
+            date.has_year = true;
+            date.year = 2000;
+        }
+        return cur;
     }
 
     static Pos mysqlDayOfWeek0To6(Pos cur, Pos end, Date & date)
     {
-        Pos res = mysqlDayOfWeek(cur, end, date);
+        cur = mysqlDayOfWeek(cur, end, date);
+        if (date.day_of_week == 0)
+            date.day_of_week = 7;
 
-        if (date.day_of_week == 7)
-            date.day_of_week = 0;
-        return res;
+        return cur;
     }
 
     static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, Date & date)
     {
         mysqlDayOfWeekTextShort(cur, end, date);
-        auto expect_text = weekdaysFull[date.day_of_week];
+        auto expect_text = weekdaysFull[date.day_of_week - 1];
 
         ensureSpace(cur, end, expect_text.size(), "mysqlDayOfWeekTextLong requires size >= " + std::to_string(expect_text.size()));
         std::string_view text(cur, expect_text.size());
@@ -340,26 +369,27 @@ public:
 
     static Pos mysqlYear2(Pos cur, Pos end, Date & date)
     {
-        Pos res = readNumber2(cur, end, date.year);
+        cur = readNumber2(cur, end, date.year);
         date.year += 2000;
-        return res;
+        date.century_format = false;
+        date.is_year_of_era = false;
+        date.has_year = true;
+        return cur;
     }
 
 
     static Pos mysqlYear4(Pos cur, Pos end, Date & date)
     {
-        return readNumber4(cur, end, date.year);
+        cur = readNumber4(cur, end, date.year);
+        date.century_format = false;
+        date.is_year_of_era = false;
+        date.has_year = true;
+        return cur;
     }
-
-    /*
-    static Pos mysqlQuarter(Pos cur, Pos end, Date & date)
-    {
-        /// TODO
-    }
-    */
 
     static Pos mysqlTimezoneOffset(Pos cur, Pos end, Date & date)
     {
+        /// TODO figure out what timezone_id mean
         ensureSpace(cur, end, 1, "Parse mysqlTimezoneOffset failed");
         Int32 sign = 1;
         if (*cur == '-')
@@ -385,11 +415,12 @@ public:
     {
         ensureSpace(cur, end, 2, "mysqlAMPM requires size >= 2");
 
-        std::string_view text(cur, 2);
+        std::string text(cur, 2);
+        Poco::toUpper(text);
         if (text == "PM")
-            date.is_am = false;
-        else if (text == "AM")
             date.is_am = true;
+        else if (text == "AM")
+            date.is_am = false;
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Text should be AM or PM, but {} provided", text);
 
@@ -399,28 +430,25 @@ public:
 
     static Pos mysqlHHMM12(Pos cur, Pos end, Date & date)
     {
-        Int32 hour;
-        Int32 minute;
-        cur = readNumber2(cur, end, hour);
+        cur = readNumber2(cur, end, date.hour);
+        date.is_clock_hour = false;
+        date.is_hour_of_half_day = true;
+
         cur = assertChar(cur, end, ':');
-        cur = readNumber2(cur, end, minute);
+        cur = readNumber2(cur, end, date.minute);
         cur = assertChar(cur, end, ' ');
         cur = mysqlAMPM(cur, end, date);
-
-        /// TODO process hour and minute
         return cur;
     }
 
     static Pos mysqlHHMM24(Pos cur, Pos end, Date & date)
     {
-        Int32 hour;
-        Int32 minute;
+        cur = readNumber2(cur, end, date.hour);
+        date.is_clock_hour = false;
+        date.is_hour_of_half_day = false;
 
-        cur = readNumber2(cur, end, hour);
         cur = assertChar(cur, end, ':');
-        cur = readNumber2(cur, end, minute);
-
-        /// TODO process hour and minute
+        cur = readNumber2(cur, end, date.minute);
         return cur;
     }
 
@@ -432,6 +460,9 @@ public:
     static Pos mysqlISO8601Time(Pos cur, Pos end, Date & date)
     {
         cur = readNumber2(cur, end, date.hour);
+        date.is_clock_hour = false;
+        date.is_hour_of_half_day = false;
+
         cur = assertChar(cur, end, ':');
         cur = readNumber2(cur, end, date.minute);
         cur = assertChar(cur, end, ':');
@@ -454,21 +485,11 @@ public:
         date.is_clock_hour = false;
         return cur;
     }
-
-
 };
 
 
 struct ParseDateTimeTraits
 {
-    /*
-    enum class SupportInteger
-    {
-        Yes,
-        No
-    };
-    */
-
     enum class ParseSyntax
     {
         MySQL,
@@ -542,8 +563,59 @@ public:
         const auto & time_zone = getTimeZone(arguments);
 
         std::vector<Action> instructions;
-    }
+        parseFormat(format, instructions);
 
+        for (size_t i = 0; i<input_rows_count; ++i)
+        {
+            StringRef str_ref = col_str->getDataAt(i);
+            Date date;
+            Pos cur = str_ref.data;
+            Pos end = str_ref.data + str_ref.size;
+            for (const auto & instruction: instructions)
+            {
+                cur = instruction.perform(cur, end, date);
+            }
+
+            // Ensure all input was consumed.
+            if (cur < end)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Invalid format input {} is malformed at {}",
+                    str_ref.toView(),
+                    std::string_view(cur, end - cur));
+
+            // Era is BC and year of era is provided
+            if (date.is_year_of_era && !date.is_ad)
+                date.year = -1 * (date.year - 1);
+
+            if (date.is_hour_of_half_day && !date.is_am)
+                date.hour += 12;
+
+            // Ensure all day of month values are valid for ending month value
+            for (size_t i = 0; i < date.day_of_month_values.size(); ++i)
+            {
+                if (!util::isValidDate(date.year, date.month, date.dayOfMonthValues[i]))
+                {
+                    VELOX_USER_FAIL(
+                        "Value {} for dayOfMonth must be in the range [1,{}]",
+                        date.dayOfMonthValues[i],
+                        util::getMaxDayOfMonth(date.year, date.month));
+                }
+            }
+
+            // Ensure all day of year values are valid for ending year value
+            for (int i = 0; i < date.dayOfYearValues.size(); i++)
+            {
+                if (!util::isValidDayOfYear(date.year, date.dayOfYearValues[i]))
+                {
+                    VELOX_USER_FAIL(
+                        "Value {} for dayOfMonth must be in the range [1,{}]",
+                        date.dayOfYearValues[i],
+                        util::isLeapYear(date.year) ? 366 : 365);
+                }
+            }
+        }
+    }
 
 
 private:
@@ -793,11 +865,7 @@ private:
         }
     }
 
-    void parseJodaFormat(const String & format, std::vector<Action> & instructions)
-    {
-        /// TODO
-    }
-
+    void parseJodaFormat(const String & /*format*/, std::vector<Action> & /*instructions*/) { }
 
 
     String getFormat(const ColumnsWithTypeAndName & arguments) const
