@@ -41,6 +41,7 @@ Query id: feb5ed16-1c24-4227-aa54-78c02b3b27d4
 │        0 │
 └──────────┘
 1 rows in set. Elapsed: 1.018 sec.
+
 SELECT
     name,
     elapsed_us,
