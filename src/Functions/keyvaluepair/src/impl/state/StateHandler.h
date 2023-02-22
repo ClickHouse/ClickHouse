@@ -7,13 +7,6 @@
 namespace DB
 {
 
-enum QuotingStrategy
-{
-    WithQuoting,
-    WithoutQuoting
-};
-
-
 template <typename KeyStateHandler>
 concept CInlineEscapingKeyStateHandler = requires(KeyStateHandler handler)
 {
@@ -58,7 +51,7 @@ concept CValueStateHandler = CInlineEscapingValueStateHandler<T> || CNoEscapingV
 
 struct StateHandler
 {
-    StateHandler(std::optional<char> enclosing_character);
+    explicit StateHandler(std::optional<char> enclosing_character);
     StateHandler(const StateHandler &) = default;
 
     virtual ~StateHandler() = default;
