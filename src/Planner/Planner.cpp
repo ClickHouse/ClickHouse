@@ -591,20 +591,24 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     if (query_node.hasInterpolate())
     {
         auto interpolate_actions_dag = std::make_shared<ActionsDAG>();
+        auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+        for (auto & query_plan_column : query_plan_columns)
+        {
+            query_plan_column.column = nullptr;
+            interpolate_actions_dag->addInput(query_plan_column);
+        }
 
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
         auto & interpolate_list_nodes = interpolate_list_node.getNodes();
 
         if (interpolate_list_nodes.empty())
         {
-            auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-            for (auto & query_plan_column : query_plan_columns)
+            for (const auto * input_node : interpolate_actions_dag->getInputs())
             {
-                if (column_names_with_fill.contains(query_plan_column.name))
+                if (column_names_with_fill.contains(input_node->result_name))
                     continue;
 
-                const auto * input_action_node = &interpolate_actions_dag->addInput(query_plan_column);
-                interpolate_actions_dag->getOutputs().push_back(input_action_node);
+                interpolate_actions_dag->getOutputs().push_back(input_node);
             }
         }
         else
