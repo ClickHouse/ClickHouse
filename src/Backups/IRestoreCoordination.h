@@ -34,6 +34,10 @@ public:
     /// Sets that this replica is going to restore a ReplicatedAccessStorage.
     /// The function returns false if this access storage is being already restored by another replica.
     virtual bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) = 0;
+
+    /// This function is used to check if concurrent restores are running
+    /// other than the restore passed to the function
+    virtual bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const = 0;
 };
 
 }

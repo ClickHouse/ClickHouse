@@ -623,10 +623,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     {
         bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
         if (join_on_const_ok)
-        {
-            table_join.on_expression = nullptr;
             return;
-        }
 
         bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
