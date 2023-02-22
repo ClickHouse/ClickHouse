@@ -21,15 +21,9 @@ inline String likePatternToRegexp(std::string_view pattern)
     const char * const end = pattern.begin() + pattern.size();
 
     if (pos < end && *pos == '%')
-    {
-        while (++pos < end && *pos == '%')
-        {
-        }
-    }
+        while (++pos < end && *pos == '%');
     else
-    {
         res = "^";
-    }
     while (pos != end)
     {
         switch (*pos)
@@ -52,13 +46,9 @@ inline String likePatternToRegexp(std::string_view pattern)
             case '%':
                 ++pos;
                 if (pos != end)
-                {
                     res += ".*";
-                }
                 else
-                {
                     return res;
-                }
                 break;
             case '_':
                 res += ".";
@@ -67,9 +57,7 @@ inline String likePatternToRegexp(std::string_view pattern)
             case '\\':
                 ++pos;
                 if (pos == end)
-                {
                     throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern");
-                }
                 switch (*pos)
                 {
                     case '^':
