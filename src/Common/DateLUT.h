@@ -5,9 +5,6 @@
 #include <base/defines.h>
 
 #include <boost/noncopyable.hpp>
-//
-//#include "Interpreters/Context_fwd.h"
-//#include "Interpreters/Context.h"
 #include "Common/CurrentThread.h"
 
 #include <atomic>
@@ -24,30 +21,31 @@ public:
     static ALWAYS_INLINE const DateLUTImpl & instance()  // -V1071
     {
         const auto & date_lut = getInstance();
-
-        if (DB::CurrentThread::isInitialized())
-        {
-            const auto query_context = DB::CurrentThread::get().getQueryContext();
-
-            if (query_context)
-            {
-                auto implicit_timezone = extractTimezoneFromContext(query_context);
-
-                if (!implicit_timezone.empty())
-                    return instance(implicit_timezone);
-            }
-        }
-
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
     /// Return singleton DateLUTImpl instance for a given time zone.
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
-        if (time_zone.empty())
-            return instance();
-
         const auto & date_lut = getInstance();
+
+        if (time_zone.empty())
+        {
+            if (DB::CurrentThread::isInitialized())
+            {
+                const auto query_context = DB::CurrentThread::get().getQueryContext();
+
+                if (query_context)
+                {
+                    auto implicit_timezone = extractTimezoneFromContext(query_context);
+
+                    if (!implicit_timezone.empty())
+                        return instance(implicit_timezone);
+                }
+            }
+            return *date_lut.default_impl.load(std::memory_order_acquire);
+        }
+
         return date_lut.getImplementation(time_zone);
     }
     static void setDefaultTimezone(const std::string & time_zone)
