@@ -465,6 +465,7 @@ void StorageDistributedDirectoryMonitor::run()
 
                 tryLogCurrentException(getLoggerName().data());
                 status.last_exception = std::current_exception();
+                status.last_exception_time = std::chrono::system_clock::now();
             }
         }
         else
