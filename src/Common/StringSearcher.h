@@ -568,7 +568,7 @@ private:
     /// first character in `needle`
     uint8_t first_needle_character = 0;
 
-#ifdef __SSE2__
+#ifdef __SSE4_1__
     /// second character of "needle" (if its length is > 1)
     uint8_t second_needle_character = 0;
     /// The first/second needle character broadcasted into a 16 bytes vector
@@ -664,12 +664,14 @@ public:
     requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
+        const auto needle_size = needle_end - needle;
+
         if (needle == needle_end)
             return haystack;
 
 #ifdef __SSE4_1__
         /// Fast path for single-character needles. Compare 16 characters of the haystack against the needle character at once.
-        if (needle + 1 == needle_end)
+        if (needle_size == 1)
         {
             while (haystack < haystack_end)
             {
@@ -703,7 +705,7 @@ public:
         }
 #endif
 
-        while (haystack < haystack_end && haystack_end - haystack >= needle_end - needle)
+        while (haystack < haystack_end && haystack_end - haystack >= needle_size)
         {
 #ifdef __SSE4_1__
             /// Compare the [0:15] bytes from haystack and broadcasted 16 bytes vector from first character of needle.
