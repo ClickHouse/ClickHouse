@@ -3939,3 +3939,30 @@ Default value: `0`.
 :::note
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
+
+## implicit_timezone {#implicit_timezone}
+
+If specified, sets a implicit timezone (instead of server-default). All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
+Examples:
+```
+SELECT timeZone(), timeZoneOf(now())
+┌─timeZone()────┬─timeZoneOf(now())─┐
+│ Europe/Berlin │ Europe/Berlin     │
+└───────────────┴───────────────────┘
+
+:) SELECT timeZone(), timeZoneOf(now()) SETTINGS implicit_timezone = 'Asia/Novosibirsk'
+┌─timeZone()────┬─timeZoneOf(now())─┐
+│ Europe/Berlin │ Asia/Novosibirsk  │
+└───────────────┴───────────────────┘
+
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS implicit_timezone = 'America/Denver';
+┌─toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich')─┐
+│                                                      1999-12-13 07:23:23.123 │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Possible values:
+
+-    Any valid timezone in `Region/Place` notation, e.g. `Europe/Berlin`
+
+Default value: `''`.
