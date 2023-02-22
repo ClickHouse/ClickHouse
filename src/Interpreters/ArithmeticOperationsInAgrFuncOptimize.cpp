@@ -73,11 +73,11 @@ Field zeroField(const Field & value)
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
-const String & changeNameIfNeeded(const String & func_name, const String & child_name, const ASTLiteral & literal)
+const String & changeNameIfNeeded(const String & func_name, const String & child_name, bool need_reverse)
 {
     static const std::unordered_map<String, std::unordered_set<String>> matches = {
-        { "min", { "multiply", "divide" } },
-        { "max", { "multiply", "divide" } }
+        { "min", { "multiply", "divide", "minus" } },
+        { "max", { "multiply", "divide", "minus" } }
     };
 
     static const std::unordered_map<String, String> swap_to = {
@@ -85,7 +85,7 @@ const String & changeNameIfNeeded(const String & func_name, const String & child
         { "max", "min" }
     };
 
-    if (literal.value < zeroField(literal.value) && matches.contains(func_name) && matches.find(func_name)->second.contains(child_name))
+    if (need_reverse && matches.contains(func_name) && matches.find(func_name)->second.contains(child_name))
         return swap_to.find(func_name)->second;
 
     return func_name;
@@ -119,13 +119,20 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
         /// It's possible to rewrite 'sum(1/n)' with 'sum(1) * div(1/n)' but we lose accuracy. Ignored.
         if (child_func->name == "divide")
             return {};
+        /** Need reverse max <-> min for:
+          *
+          * max(-1*value) -> -1*min(value)
+          * max(value/-2) -> min(value)/-2
+          * max(1-value) -> 1 - min(value)
+          */
+        bool need_reverse = first_literal->value < zeroField(first_literal->value) || ((lower_name == "min" || lower_name == "max") && child_func->name == "minus");
 
-        const String & new_name = changeNameIfNeeded(lower_name, child_func->name, *first_literal);
+        const String & new_name = changeNameIfNeeded(lower_name, child_func->name, need_reverse);
         optimized_ast = exchangeExtractFirstArgument(new_name, *child_func);
     }
     else if (second_literal) /// second or both are consts
     {
-        const String & new_name = changeNameIfNeeded(lower_name, child_func->name, *second_literal);
+        const String & new_name = changeNameIfNeeded(lower_name, child_func->name, second_literal->value < zeroField(second_literal->value));
         optimized_ast = exchangeExtractSecondArgument(new_name, *child_func);
     }
 
