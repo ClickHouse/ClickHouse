@@ -44,7 +44,7 @@ Using named collections:
 ```
 
 ```sql
-CREATE TABLE iceberg_table ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
+CREATE TABLE deltalake ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
 ```
 
 ## See also
