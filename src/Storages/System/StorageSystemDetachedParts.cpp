@@ -63,6 +63,19 @@ public:
     }
 };
 
+struct WorkerState
+{
+    struct Task
+    {
+        DiskPtr disk;
+        String file;
+        std::atomic<size_t> * counter = nullptr;
+    };
+
+    std::vector<Task> tasks;
+    std::atomic<size_t> next_task = {0};
+};
+
 class DetachedPartsSource : public ISource
 {
 public:
@@ -113,7 +126,7 @@ private:
     const std::vector<UInt8> columns_mask;
     const UInt64 block_size;
     const bool has_bytes_on_disk_column;
-    static const size_t support_threads = 35;
+    const size_t support_threads = 35;
 
     StoragesInfo current_info;
     DetachedPartsInfo detached_parts;
@@ -134,20 +147,7 @@ private:
         if (!has_bytes_on_disk_column)
             return;
 
-        struct Task
-        {
-            DiskPtr disk;
-            String file;
-            std::atomic<size_t> * counter = nullptr;
-        };
-
-        struct SharedState
-        {
-            std::vector<Task> tasks;
-            std::atomic<size_t> next_task = {0};
-        };
-
-        SharedState shared_state;
+        WorkerState worker_state;
 
         for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
         {
@@ -161,7 +161,7 @@ private:
             auto * counter = &parts_sizes[p_id - begin];
 
             for (auto & file : listing)
-                shared_state.tasks.push_back({disk, file, counter});
+                worker_state.tasks.push_back({disk, file, counter});
         }
 
         std::vector<std::future<void>> futures;
@@ -173,21 +173,27 @@ private:
             futures.clear();
         });
 
-        for (size_t i = 0; i < support_threads; ++i)
+        auto max_thread_to_run = std::min(support_threads, worker_state.tasks.size() / 10);
+        for (size_t i = 0; i < max_thread_to_run; ++i)
         {
+            if (worker_state.next_task.load() >= worker_state.tasks.size())
+                break;
+
+            auto worker = [&worker_state] ()
+            {
+                for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
+                {
+                    auto & task = worker_state.tasks.at(id);
+                    auto size = task.disk->getFileSize(task.file);
+                    task.counter->fetch_add(size);
+                }
+            };
+
             futures.push_back(
-                scheduleFromThreadPool<void>(
-                    [&shared_state] ()
-                    {
-                        for (auto id = shared_state.next_task++; id < shared_state.tasks.size(); id = shared_state.next_task++)
-                        {
-                            auto & task = shared_state.tasks.at(id);
-                            auto size = task.disk->getFileSize(task.file);
-                            task.counter->fetch_add(size);
-                        }
-                    },
-                    IOThreadPool::get(),
-                    "DP_BytesOnDisk"));
+                        scheduleFromThreadPool<void>(
+                            std::move(worker),
+                            IOThreadPool::get(),
+                            "DP_BytesOnDisk"));
         }
 
         /// Exceptions are propagated
