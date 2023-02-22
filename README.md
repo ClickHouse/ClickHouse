@@ -2,6 +2,11 @@
 
 ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.
 
+## How To Install (Linux, macOS, FreeBSD)
+```
+curl https://clickhouse.com/ | sh
+```
+
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
