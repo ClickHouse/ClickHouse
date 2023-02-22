@@ -10,24 +10,32 @@ export TEST_MARK="02435_insert_${CLICKHOUSE_DATABASE}_"
 
 $CLICKHOUSE_CLIENT -q 'select * from numbers(5000000) format TSV' > $DATA_FILE
 $CLICKHOUSE_CLIENT -q 'create table dedup_test(A Int64) Engine = MergeTree order by A settings non_replicated_deduplication_window=1000;'
-$CLICKHOUSE_CURL -sS -X POST --data-binary @- "$CLICKHOUSE_URL&max_insert_block_size=100000&input_format_parallel_parsing=0&query=insert+into+dedup_test+format+TSV"  < $DATA_FILE
+
+function insert_data
+{
+    SETTINGS="query_id=$ID&max_insert_block_size=100000&input_format_parallel_parsing=0"
+    TRASH_SETTINGS="query_id=$ID&input_format_parallel_parsing=0&max_threads=1&max_insert_threads=1&max_insert_block_size=1100000&max_block_size=1100000&min_insert_block_size_bytes=0&min_insert_block_size_rows=1100000&max_insert_block_size=1100000"
+    TYPE=$(( RANDOM % 3 ))
+    if [[ "$TYPE" -eq 0 ]]; then
+        $CLICKHOUSE_CURL -sS -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+dedup_test+format+TSV" < $DATA_FILE
+    elif [[ "$TYPE" -eq 1 ]]; then
+        $CLICKHOUSE_CURL -sS -X POST -H "Transfer-Encoding: chunked" --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+dedup_test+format+TSV" < $DATA_FILE
+    else
+        $CLICKHOUSE_CURL -sS -F 'file=@-' "$CLICKHOUSE_URL&$TRASH_SETTINGS&file_format=TSV&file_types=UInt64" -X POST --form-string 'query=insert into dedup_test select * from file' < $DATA_FILE
+    fi
+}
+
+export -f insert_data
+
+insert_data
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 function thread_insert
 {
     # supress "Killed" messages from bash
-    function wrap
-    {
-        if (( RANDOM % 2 )); then
-            $CLICKHOUSE_CURL -sS -X POST --data-binary @- "$CLICKHOUSE_URL&query_id=$ID&max_insert_block_size=100000&input_format_parallel_parsing=0&query=insert+into+dedup_test+format+TSV"  < $DATA_FILE
-        else
-            $CLICKHOUSE_CURL -sS -X POST -H "Transfer-Encoding: chunked" --data-binary @- "$CLICKHOUSE_URL&query_id=$ID&max_insert_block_size=100000&input_format_parallel_parsing=0&query=insert+into+dedup_test+format+TSV"  < $DATA_FILE
-        fi
-    }
-    export -f wrap
     while true; do
         export ID="$TEST_MARK$RANDOM"
-        bash -c wrap 2>&1| grep -Fav "Killed"
+        bash -c insert_data 2>&1| grep -Fav "Killed"
     done
 }
 

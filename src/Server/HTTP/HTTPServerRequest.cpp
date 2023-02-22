@@ -56,12 +56,17 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     if (getChunkedTransferEncoding())
         stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), context->getMaxChunkSize());
     else if (hasContentLength())
-        stream = std::make_unique<LimitReadBuffer>(std::move(in), getContentLength(), /* trow_exception */ true, /* exact_limit */ true);
+    {
+        size_t content_length = getContentLength();
+        stream = std::make_unique<LimitReadBuffer>(std::move(in), content_length,
+                                                   /* trow_exception */ true, /* exact_limit */ content_length);
+    }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {
         stream = std::move(in);
-        LOG_WARNING(&Poco::Logger::get("HTTPServerRequest"), "Got an HTTP request with no content length, "
-                    "it may be impossible to distinguish graceful EOF from abnormal connection loss");
+        if (!startsWith(getContentType(), "multipart/form-data"))
+            LOG_WARNING(&Poco::Logger::get("HTTPServerRequest"), "Got an HTTP request with no content length "
+                "and no chunked/multipart encoding, it may be impossible to distinguish graceful EOF from abnormal connection loss");
     }
     else
         /// We have to distinguish empty buffer and nullptr.
