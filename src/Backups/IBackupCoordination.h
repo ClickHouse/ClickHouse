@@ -114,6 +114,10 @@ public:
 
     /// Returns the list of all the archive suffixes which were generated.
     virtual Strings getAllArchiveSuffixes() const = 0;
+
+    /// This function is used to check if concurrent backups are running
+    /// other than the backup passed to the function
+    virtual bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const = 0;
 };
 
 }

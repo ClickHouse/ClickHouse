@@ -554,6 +554,11 @@ void HTTPHandler::processQuery(
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
+    else
+    {
+        /// We should create it even if we don't have a session_id
+        session->makeSessionContext();
+    }
 
     auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));

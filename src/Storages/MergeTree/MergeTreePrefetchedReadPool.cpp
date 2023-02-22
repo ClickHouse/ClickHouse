@@ -31,6 +31,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     RangesInDataParts && parts_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
+    const ExpressionActionsSettings & actions_settings_,
     const Names & column_names_,
     const Names & virtual_column_names_,
     size_t preferred_block_size_bytes_,
@@ -44,7 +45,6 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     , header(storage_snapshot_->getSampleBlockForColumns(column_names_))
     , mark_cache(context_->getGlobalContext()->getMarkCache().get())
     , uncompressed_cache(use_uncompressed_cache_ ? context_->getGlobalContext()->getUncompressedCache().get() : nullptr)
-    , reader_settings(reader_settings_)
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
     , index_granularity_bytes(storage_settings_.index_granularity_bytes)
     , fixed_index_granularity(storage_settings_.index_granularity)
@@ -52,6 +52,8 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     , column_names(column_names_)
     , virtual_column_names(virtual_column_names_)
     , prewhere_info(prewhere_info_)
+    , actions_settings(actions_settings_)
+    , reader_settings(reader_settings_)
     , is_remote_read(is_remote_read_)
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
 {
@@ -321,6 +323,8 @@ MergeTreePrefetchedReadPool::PartsInfos MergeTreePrefetchedReadPool::getPartsInf
             column_names,
             virtual_column_names,
             prewhere_info,
+            actions_settings,
+            reader_settings,
             /* with_subcolumns */true);
 
         part_info->size_predictor = !predict_block_size_bytes
