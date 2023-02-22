@@ -43,7 +43,7 @@ namespace DB
     M(UInt64, mark_cache_size, 5368709120, "Size of cache for marks (index of MergeTree family of tables).", 0) \
     M(String, mark_cache_policy, "SLRU", "Mark cache policy name.", 0) \
     M(UInt64, index_uncompressed_cache_size, 0, "Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.", 0) \
-    M(UInt64, index_mark_cache_size, 0, "Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.", 0) \
+    M(UInt64, index_mark_cache_size, 0, "Size of cache for index marks. Zero means disabled.", 0) \
     M(UInt64, mmap_cache_size, 1000, "A cache for mmapped files.", 0)  /* The choice of default is arbitrary. */ \
     \
     M(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
