@@ -1025,27 +1025,19 @@ private:
 
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
-                    if constexpr (std::endian::native == std::endian::little)
+                    if constexpr (std::is_same_v<ToType, UInt64>)
                     {
-                        if constexpr (std::is_same_v<ToType, UInt64>)
-                            h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
-                        else
-                            h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                        UInt64 v = bit_cast<UInt64>(vec_from[i]);
+                        if constexpr (std::endian::native == std::endian::big)
+                            v = __builtin_bswap64(v);
+                        h = IntHash64Impl::apply(v);
                     }
                     else
                     {
-                        if constexpr (std::is_same_v<ToType, UInt64>)
-                        {
-                            UInt64 v = bit_cast<UInt64>(vec_from[i]);
-                            v = __builtin_bswap64(v);
-                            h = IntHash64Impl::apply(v);
-                        }
-                        else
-                        {
-                            UInt32 v = bit_cast<UInt32>(vec_from[i]);
+                        UInt32 v = bit_cast<UInt32>(vec_from[i]);
+                        if constexpr (std::endian::native == std::endian::big)
                             v = __builtin_bswap32(v);
-                            h = IntHash32Impl::apply(v);
-                        }
+                        h = IntHash32Impl::apply(v);
                     }
                 }
                 else
