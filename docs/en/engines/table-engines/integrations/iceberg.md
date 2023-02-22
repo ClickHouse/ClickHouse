@@ -21,7 +21,7 @@ CREATE TABLE iceberg_table
 -   `url` — url with the path to an existing Iceberg table.
 -   `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
 
-Engine parameters can be specified using [Named Collections](../operations/settings/named-collections.md)
+Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
 **Example**
 
