@@ -13,6 +13,7 @@ namespace DB
 
 class MergeTreeData;
 struct MergeTreeReadTask;
+struct MergeTreeReaderSettings;
 struct MergeTreeBlockSizePredictor;
 class IMergeTreeDataPartInfoForReader;
 
@@ -91,6 +92,8 @@ struct MergeTreeReadTask
         int64_t priority_ = 0,
         std::future<MergeTreeReaderPtr> reader_ = {},
         std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_ = {});
+
+    ~MergeTreeReadTask();
 };
 
 
@@ -100,6 +103,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const Names & required_columns,
     const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);
 
 struct MergeTreeBlockSizePredictor
