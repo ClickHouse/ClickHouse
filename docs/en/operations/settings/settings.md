@@ -1561,6 +1561,17 @@ Possible values:
 
 Default value: `100000`.
 
+### async_insert_max_query_number {#async-insert-max-query-number}
+
+The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `450`.
+
 ### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.

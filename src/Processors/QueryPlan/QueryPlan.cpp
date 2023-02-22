@@ -177,7 +177,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (last_pipeline)
         {
             frame.pipelines.emplace_back(std::move(last_pipeline));
-            last_pipeline = nullptr; //-V1048
+            last_pipeline = nullptr;
         }
 
         size_t next_child = frame.pipelines.size();

@@ -481,7 +481,7 @@ struct Compatibility
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString //-V730
+struct SingleValueDataString
 {
 private:
     using Self = SingleValueDataString;
