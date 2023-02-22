@@ -60,6 +60,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool thr
     if (asts.empty())
         return nullptr;
 
+    NamedCollectionUtils::loadIfNot();
+
     auto collection = tryGetNamedCollectionFromASTs(asts, throw_unknown_collection);
     if (!collection)
         return nullptr;
