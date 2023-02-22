@@ -50,21 +50,18 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build()
 
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithoutEscaping()
 {
-    using KeyStateHandler = NoEscapingKeyStateHandler<QuotingStrategy::WithQuoting>;
-    using ValueStateHandler = NoEscapingValueStateHandler<QuotingStrategy::WithQuoting>;
-
-    CKeyStateHandler auto key_state_handler = KeyStateHandler(
+    CKeyStateHandler auto key_state_handler = NoEscapingKeyStateHandler(
         key_value_pair_delimiter.value_or(':'),
         enclosing_character
     );
 
-    CValueStateHandler auto value_state_handler = ValueStateHandler(
+    CValueStateHandler auto value_state_handler = NoEscapingValueStateHandler(
         item_delimiter.value_or(','),
         enclosing_character,
         value_special_character_allowlist
     );
 
-    return std::make_shared<CHKeyValuePairExtractor<KeyStateHandler, ValueStateHandler>>(key_state_handler, value_state_handler);
+    return std::make_shared<CHKeyValuePairExtractor<NoEscapingKeyStateHandler, NoEscapingValueStateHandler>>(key_state_handler, value_state_handler);
 }
 
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping()

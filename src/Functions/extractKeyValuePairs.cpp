@@ -19,40 +19,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-auto ExtractKeyValuePairs::getExtractor(
-    CharArgument escape_character,
-    CharArgument key_value_pair_delimiter,
-    CharArgument item_delimiter,
-    CharArgument enclosing_character,
-    std::unordered_set<char> value_special_characters_allow_list)
-{
-    auto builder = KeyValuePairExtractorBuilder();
-
-    if (escape_character)
-    {
-        builder.withEscapeCharacter(escape_character.value());
-    }
-
-    if (key_value_pair_delimiter)
-    {
-        builder.withKeyValuePairDelimiter(key_value_pair_delimiter.value());
-    }
-
-    if (item_delimiter)
-    {
-        builder.withItemDelimiter(item_delimiter.value());
-    }
-
-    if (enclosing_character)
-    {
-        builder.withEnclosingCharacter(enclosing_character.value());
-    }
-
-    builder.withValueSpecialCharacterAllowlist(value_special_characters_allow_list);
-
-    return builder.build();
-}
-
 ExtractKeyValuePairs::ExtractKeyValuePairs()
     : return_type(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))
 {
@@ -63,6 +29,10 @@ String ExtractKeyValuePairs::getName() const
     return name;
 }
 
+FunctionPtr ExtractKeyValuePairs::create(ContextPtr)
+{
+    return std::make_shared<ExtractKeyValuePairs>();
+}
 
 static ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor)
 {
@@ -89,14 +59,42 @@ static ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtr
     return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
 }
 
+auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments)
+{
+    auto builder = KeyValuePairExtractorBuilder();
+
+    if (parsed_arguments.escape_character)
+    {
+        builder.withEscapeCharacter(parsed_arguments.escape_character.value());
+    }
+
+    if (parsed_arguments.key_value_pair_delimiter)
+    {
+        builder.withKeyValuePairDelimiter(parsed_arguments.key_value_pair_delimiter.value());
+    }
+
+    if (parsed_arguments.item_delimiter)
+    {
+        builder.withItemDelimiter(parsed_arguments.item_delimiter.value());
+    }
+
+    if (parsed_arguments.enclosing_character)
+    {
+        builder.withEnclosingCharacter(parsed_arguments.enclosing_character.value());
+    }
+
+    builder.withValueSpecialCharacterAllowlist(parsed_arguments.value_special_characters_allow_list);
+
+    return builder.build();
+}
+
 ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    auto [data_column, escape_character, key_value_pair_delimiter, item_delimiter,
-          enclosing_character, value_special_characters_allow_list] = parseArguments(arguments);
+    auto parsed_arguments = parseArguments(arguments);
 
-    auto extractor_without_escaping = getExtractor(escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list);
+    auto extractor_without_escaping = getExtractor(parsed_arguments);
 
-    return extract(data_column, extractor_without_escaping);
+    return extract(parsed_arguments.data_column, extractor_without_escaping);
 }
 
 bool ExtractKeyValuePairs::isVariadic() const
@@ -104,7 +102,7 @@ bool ExtractKeyValuePairs::isVariadic() const
     return true;
 }
 
-bool ExtractKeyValuePairs::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const
+bool ExtractKeyValuePairs::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const
 {
     return false;
 }
@@ -114,7 +112,7 @@ std::size_t ExtractKeyValuePairs::getNumberOfArguments() const
     return 0u;
 }
 
-DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes & /*arguments*/) const
+DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes &) const
 {
     return return_type;
 }
@@ -126,7 +124,7 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", name);
     }
 
-    std::unordered_set<char> value_special_characters_allow_list;
+    SetArgument value_special_characters_allow_list;
 
     auto data_column = arguments[0].column;
 
@@ -208,7 +206,10 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             R"(Extracts key value pairs from any string. The string does not need to be 100% structured in a key value pair format,
             it might contain noise (e.g. log files). The key value pair format to be interpreted should be specified via function arguments.
             A key value pair consists of a key followed by a key_value_pair_delimiter and a value.
-            Special characters (e.g. $!@#¨) must be escaped. Enclosed/ quoted keys and values are accepted.
+            Special characters (e.g. $!@#¨) must be escaped or added to the value_special_character_allow_list.
+            Enclosed/ quoted keys and values are accepted.
+
+            If escaping is not needed, it is advised not to set the escape character as a more optimized version of the algorithm will be used.
 
             The below grammar is a simplified representation of what is expected/ supported (does not include escaping and character allow_listing):
 
@@ -242,15 +243,15 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
             Query:
 
             ``` sql
-            select extractKeyValuePairs('9 ads =nm, no\:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe\ picasso, team: psg,', '\\', ':', ',', '"', '.');
+            select extractKeyValuePairs('9 ads =nm, no*:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe* picasso, team: psg,', '*', ':', ',', '"', '.');
             ```
 
             Result:
 
             ``` text
-            ┌─extractKeyValuePairs('9 ads =nm, no\\:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe\\ picasso, team: psg,', '\\', ':', ',', '"', '.')─┐
-            │ {'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}                                                                            │
-            └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            ┌─extractKeyValuePairs('9 ads =nm, no*:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe* picasso, team: psg,', '*', ':', ',', '"', '.')─┐
+            │ {'no:me':'neymar','age':'30','height':'1.75','school':'lupe picasso','team':'psg'}                                                                     │
+            └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             ```)")
         );
 }

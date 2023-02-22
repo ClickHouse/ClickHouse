@@ -24,14 +24,14 @@ public:
         CharArgument key_value_pair_delimiter;
         CharArgument item_delimiter;
         CharArgument enclosing_character;
-        std::unordered_set<char> value_special_characters_allow_list;
+        SetArgument value_special_characters_allow_list;
     };
 
     ExtractKeyValuePairs();
 
     static constexpr auto name = "extractKeyValuePairs";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<ExtractKeyValuePairs>(); }
+    static FunctionPtr create(ContextPtr);
 
     String getName() const override;
 
@@ -52,9 +52,7 @@ private:
 
     static CharArgument extractControlCharacter(ColumnPtr column);
 
-    static auto getExtractor(CharArgument escape_character, CharArgument key_value_pair_delimiter,
-                             CharArgument item_delimiter, CharArgument enclosing_character,
-                             std::unordered_set<char> value_special_characters_allow_list);
+    static auto getExtractor(const ParsedArguments & parsed_arguments);
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override;
 };

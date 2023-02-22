@@ -8,7 +8,6 @@
 namespace DB
 {
 
-template <QuotingStrategy QUOTING_STRATEGY>
 class InlineEscapingValueStateHandler : public StateHandler
 {
 public:
@@ -30,14 +29,11 @@ public:
         {
             const auto current_character = file[pos];
 
-            if constexpr (QuotingStrategy::WithQuoting == QUOTING_STRATEGY)
+            if (enclosing_character && current_character == enclosing_character)
             {
-                if (current_character == enclosing_character)
-                {
-                    return {pos + 1u, State::READING_ENCLOSED_VALUE};
-                }
+                return {pos + 1u, State::READING_ENCLOSED_VALUE};
             }
-            if (current_character == item_delimiter)
+            else if (current_character == item_delimiter)
             {
                 return {pos, State::READING_EMPTY_VALUE};
             }
@@ -121,11 +117,7 @@ private:
 
     bool isValidCharacter(char character) const
     {
-        if (character == escape_character)
-        {
-            return true;
-        }
-        return special_character_allowlist.contains(character) || std::isalnum(character) || character == '_';
+        return std::isalnum(character) || character == '_' || special_character_allowlist.contains(character);
     }
 };
 
