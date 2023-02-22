@@ -8,7 +8,7 @@ namespace DB
     class ASTStorage;
 
 
-#define RABBITMQ_RELATED_SETTINGS(M) \
+#define RABBITMQ_RELATED_SETTINGS(M, ALIAS) \
     M(String, rabbitmq_host_port, "", "A host-port to connect to RabbitMQ server.", 0) \
     M(String, rabbitmq_exchange_name, "clickhouse-exchange", "The exchange name, to which messages are sent.", 0) \
     M(String, rabbitmq_format, "", "The message format.", 0) \
@@ -36,9 +36,9 @@ namespace DB
     M(Bool, rabbitmq_commit_on_select, false, "Commit messages when select query is made", 0) \
     M(UInt64, rabbitmq_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
 
-#define LIST_OF_RABBITMQ_SETTINGS(M) \
-    RABBITMQ_RELATED_SETTINGS(M) \
-    FORMAT_FACTORY_SETTINGS(M)
+#define LIST_OF_RABBITMQ_SETTINGS(M, ALIAS) \
+    RABBITMQ_RELATED_SETTINGS(M, ALIAS) \
+    FORMAT_FACTORY_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS)
 

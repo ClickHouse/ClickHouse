@@ -20,7 +20,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/Operators.h>
 #include <Disks/IDisk.h>
 #include <boost/algorithm/string/find_iterator.hpp>
@@ -700,12 +699,14 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
 
 struct StorageDistributedDirectoryMonitor::Batch
 {
+    /// File indexes for this batch.
     std::vector<UInt64> file_indices;
     size_t total_rows = 0;
     size_t total_bytes = 0;
     bool recovered = false;
 
     StorageDistributedDirectoryMonitor & parent;
+    /// Information about all available indexes (not only for the current batch).
     const std::map<UInt64, String> & file_index_to_path;
 
     bool split_batch_on_failure = true;
@@ -795,17 +796,22 @@ struct StorageDistributedDirectoryMonitor::Batch
             else
             {
                 std::vector<std::string> files;
-                for (const auto && file_info : file_index_to_path | boost::adaptors::indexed())
+                for (auto file_index_info : file_indices | boost::adaptors::indexed())
                 {
-                    if (file_info.index() > 8)
+                    if (file_index_info.index() > 8)
                     {
                         files.push_back("...");
                         break;
                     }
 
-                    files.push_back(file_info.value().second);
+                    auto file_index = file_index_info.value();
+                    auto file_path = file_index_to_path.find(file_index);
+                    if (file_path != file_index_to_path.end())
+                        files.push_back(file_path->second);
+                    else
+                        files.push_back(fmt::format("#{}.bin (deleted)", file_index));
                 }
-                e.addMessage(fmt::format("While sending batch, nums: {}, files: {}", file_index_to_path.size(), fmt::join(files, "\n")));
+                e.addMessage(fmt::format("While sending batch, size: {}, files: {}", file_indices.size(), fmt::join(files, "\n")));
 
                 throw;
             }

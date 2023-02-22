@@ -180,6 +180,7 @@ WriteBuffers
 WithNamesAndTypes
 XCode
 YAML
+Yasm
 YYYY
 Zipkin
 ZooKeeper
