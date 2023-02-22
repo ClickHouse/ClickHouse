@@ -223,8 +223,10 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             break;
 
         std::unordered_set<std::string_view> names_set; /// We should check for duplicate column names in current row
-        for (auto & [name, new_type] : new_names_and_types)
+        for (auto & new_name_and_type : new_names_and_types)
         {
+            auto & name = new_name_and_type.name;
+            auto & new_type = new_name_and_type.type;
             if (names_set.contains(name))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
             names_set.insert(name);
