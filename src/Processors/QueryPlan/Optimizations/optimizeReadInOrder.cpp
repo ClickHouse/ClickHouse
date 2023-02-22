@@ -176,7 +176,7 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag = expression->clone();
 }
 
-/// This function builds a common DAG which is a gerge of DAGs from Filter and Expression steps chain.
+/// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
 void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns & fixed_columns, size_t & limit)
 {
