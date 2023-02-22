@@ -235,4 +235,69 @@ public:
 template <typename Visitor, typename Condition>
 using ConstInDepthQueryTreeConditionalVisitor = InDepthQueryTreeConditionalVisitor<Visitor, Condition, true /*const_visitor*/>;
 
+template <typename Impl>
+class QueryTreeVisitor
+{
+public:
+    explicit QueryTreeVisitor(ContextPtr context_)
+        : current_context(std::move(context_))
+    {}
+
+    bool needApply(QueryTreeNodePtr & node)
+    {
+        return getImpl().needApply(node);
+    }
+
+    void visit(QueryTreeNodePtr & node)
+    {
+        auto current_scope_context_ptr = current_context;
+        SCOPE_EXIT(
+            current_context = std::move(current_scope_context_ptr);
+        );
+
+        if (auto * query_node = node->template as<QueryNode>())
+            current_context = query_node->getContext();
+        else if (auto * union_node = node->template as<UnionNode>())
+            current_context = union_node->getContext();
+
+        if (!TOP_TO_BOTTOM)
+            visitChildren(node);
+
+        if (needApply(node))
+            getImpl().apply(node);
+
+        if (TOP_TO_BOTTOM)
+            visitChildren(node);
+    }
+
+    const ContextPtr & getContext() const
+    {
+        return current_context;
+    }
+
+    const Settings & getSettings() const
+    {
+        return current_context->getSettingsRef();
+    }
+private:
+
+    Impl & getImpl()
+    {
+        return *static_cast<Impl *>(this);
+    }
+
+    void visitChildren(QueryTreeNodePtr & node)
+    {
+        for (auto & child : node->getChildren())
+        {
+            if (child)
+                visit(child);
+        }
+    }
+
+    static constexpr bool TOP_TO_BOTTOM = Impl::TOP_TO_BOTTOM;
+
+    ContextPtr current_context;
+};
+
 }
