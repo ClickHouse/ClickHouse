@@ -20,9 +20,6 @@ try
 {
     using namespace DB;
 
-    std::stringstream s;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    s.exceptions(std::ios::failbit);
-
     {
         std::string src = "1";
 
@@ -39,21 +36,12 @@ try
         }
 
         if (limit_in.count() != 1)
-        {
-            s << "Failed!, incorrect count(): " << limit_in.count();
-            throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, incorrect count(): {}", limit_in.count());
 
         if (in.count() != limit_in.count())
-        {
-            s << "Failed!, incorrect underlying buffer's count(): " << in.count();
-            throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, incorrect underlying buffer's count(): {}", in.count());
         if (src != dst)
-        {
-            s << "Failed!, incorrect destination value, read: " << dst << ", expected: " << src;
-            throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, incorrect destination value, read: {}, expected: {}", dst, src);
     }
     {
         std::string src = "abc";
@@ -73,38 +61,23 @@ try
 
 
             if (in.count() != 2)
-            {
-                s << "Failed!, Incorrect underlying buffer's count: " << in.count() << ", expected: " << 2;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect underlying buffer's count: {}, expected: {}", in.count(), 2);
 
             if (limit_in.count() != 1)
-            {
-                s << "Failed!, Incorrect count: " << limit_in.count() << ", expected: " << 1;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect count: {}, expected: {}", limit_in.count(), 1);
         }
 
         if (dst != "b")
-        {
-            s << "Failed!, Incorrect destination value: " << dst << ", expected 'b'";
-            throw Exception(ErrorCodes::LOGICAL_ERROR, dst);
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect destination value: {}, expected 'b'", dst);
 
         char y;
         readChar(y, in);
         if (y != 'c')
-        {
-            s << "Failed!, Read incorrect value from underlying buffer: " << y << ", expected 'c'";
-            throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Read incorrect value from underlying buffer: {}, expected 'c'", y);
         while (!in.eof())
             in.ignore();
         if (in.count() != 3)
-        {
-            s << "Failed!, Incorrect final count from underlying buffer: " << in.count() << ", expected: 3";
-            throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect final count from underlying buffer: {}, expected: 3", in.count());
     }
 
     {
@@ -118,17 +91,11 @@ try
             readChar(x, limit_in);
 
             if (limit_in.count() != 1)
-            {
-                s << "Failed!, Incorrect count: " << limit_in.count() << ", expected: " << 1;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect count: {}, expected: {}", limit_in.count(), 1);
         }
 
         if (in.count() != 1)
-        {
-            s << "Failed!, Incorrect final count from underlying buffer: " << in.count() << ", expected: 1";
-            throw Exception(ErrorCodes::LOGICAL_ERROR, s.str());
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect final count from underlying buffer: {}, expected: 1", in.count());
     }
 
     return 0;

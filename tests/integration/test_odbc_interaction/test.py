@@ -21,6 +21,7 @@ node1 = cluster.add_instance(
         "configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml",
         "configs/dictionaries/sqlite3_odbc_cached_dictionary.xml",
         "configs/dictionaries/postgres_odbc_hashed_dictionary.xml",
+        "configs/dictionaries/postgres_odbc_no_connection_pool_dictionary.xml",
     ],
 )
 
@@ -620,6 +621,34 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
         node1,
         "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))",
         "xxx",
+    )
+    cursor.execute("truncate table clickhouse.test_table")
+
+
+def test_no_connection_pooling(started_cluster):
+    skip_test_msan(node1)
+
+    conn = get_postgres_conn(started_cluster)
+    cursor = conn.cursor()
+    cursor.execute(
+        "insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')"
+    )
+    node1.exec_in_container(["ss", "-K", "dport", "5432"], privileged=True, user="root")
+    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_nopool")
+    assert_eq_with_retry(
+        node1,
+        "select dictGetString('postgres_odbc_nopool', 'column2', toUInt64(1))",
+        "hello",
+    )
+    assert_eq_with_retry(
+        node1,
+        "select dictGetString('postgres_odbc_nopool', 'column2', toUInt64(2))",
+        "world",
+    )
+
+    # No open connections should be left because we don't use connection pooling.
+    assert "" == node1.exec_in_container(
+        ["ss", "-H", "dport", "5432"], privileged=True, user="root"
     )
     cursor.execute("truncate table clickhouse.test_table")
 

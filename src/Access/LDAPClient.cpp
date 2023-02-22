@@ -205,7 +205,7 @@ void LDAPClient::handleError(int result_code, String text)
             }
         }
 
-        throw Exception(text, ErrorCodes::LDAP_ERROR);
+        throw Exception::createDeprecated(text, ErrorCodes::LDAP_ERROR);
     }
 }
 
@@ -569,7 +569,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         message += matched_msg;
                     }
 
-                    throw Exception(message, ErrorCodes::LDAP_ERROR);
+                    throw Exception::createDeprecated(message, ErrorCodes::LDAP_ERROR);
                 }
 
                 break;

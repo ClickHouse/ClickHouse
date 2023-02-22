@@ -6,6 +6,10 @@ sidebar_label: TTL
 
 # Manipulations with Table TTL
 
+:::note
+If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/docs/en/guides/developer/ttl.md) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
+:::
+
 ## MODIFY TTL
 
 You can change [table TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) with a request of the following form:

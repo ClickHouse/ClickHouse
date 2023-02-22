@@ -16,7 +16,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Transforms/MongoDBSource.h>
+#include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 namespace DB

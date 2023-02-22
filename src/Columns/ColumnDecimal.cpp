@@ -83,7 +83,7 @@ template <is_decimal T>
 UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
-        throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getFamilyName());
     else
         return static_cast<NativeT>(data[n]);
 }

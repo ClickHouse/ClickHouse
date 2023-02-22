@@ -104,12 +104,12 @@ static void getFileReaderAndSchema(
 
     auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, arrow::default_memory_pool());
     if (!result.ok())
-        throw Exception(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
 
     auto read_schema_result = file_reader->ReadSchema();
     if (!read_schema_result.ok())
-        throw Exception(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception::createDeprecated(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     schema = std::move(read_schema_result).ValueOrDie();
 }
 

@@ -96,6 +96,16 @@ def test_select(started_cluster):
         10,
     )
 
+    # intersect and except are counted
+    common_pattern(
+        node_select,
+        "select",
+        "select sleep(1) INTERSECT select sleep(1) EXCEPT select sleep(1)",
+        "insert into test_concurrent_insert values (0)",
+        2,
+        10,
+    )
+
 
 def test_insert(started_cluster):
     common_pattern(

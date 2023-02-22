@@ -4,7 +4,6 @@
 #include <base/sleep.h>
 #include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <thread>

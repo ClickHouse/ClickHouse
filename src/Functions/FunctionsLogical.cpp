@@ -265,9 +265,8 @@ struct TernaryValueBuilderImpl<>
 {
     [[noreturn]] static void build(const IColumn * x, UInt8 * /* nullable_ternary_column_data */)
     {
-        throw Exception(
-                std::string("Unknown numeric column of type: ") + demangle(typeid(*x).name()),
-                ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unknown numeric column of type: {}", demangle(typeid(*x).name()));
     }
 };
 
@@ -440,13 +439,13 @@ struct TypedExecutorInvoker<Op>
     template <typename T, typename Result>
     static void apply(const ColumnVector<T> &, const IColumn & y, Result &)
     {
-        throw Exception(std::string("Unknown numeric column y of type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column y of type: {}", demangle(typeid(y).name()));
     }
 
     template <typename Result>
     static void apply(const IColumn & x, const IColumn &, Result &)
     {
-        throw Exception(std::string("Unknown numeric column x of type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column x of type: {}", demangle(typeid(x).name()));
     }
 };
 
