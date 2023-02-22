@@ -1,10 +1,8 @@
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 
-#include <Functions/FunctionFactory.h>
-
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -25,11 +23,11 @@ public:
             return;
 
         auto & first_argument = function_node->getArguments().getNodes()[0];
-        const auto * first_argument_constant_node = first_argument->as<ConstantNode>();
-        if (!first_argument_constant_node)
+        auto first_argument_constant_value = first_argument->getConstantValueOrNull();
+        if (!first_argument_constant_value)
             return;
 
-        const auto & condition_value = first_argument_constant_node->getValue();
+        const auto & condition_value = first_argument_constant_value->getValue();
 
         bool condition_boolean_value = false;
 

@@ -4,7 +4,6 @@
 #include <Core/SortDescription.h>
 
 #include <Parsers/IAST.h>
-#include <Parsers/SelectUnionMode.h>
 
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ActionsDAG.h>
@@ -27,16 +26,13 @@ String dumpQueryPlan(QueryPlan & query_plan);
 String dumpQueryPipeline(QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode);
+Block buildCommonHeaderForUnion(const Blocks & queries_headers);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node);
 
 /// Build context for subquery execution
 ContextPtr buildSubqueryContext(const ContextPtr & context);
-
-/// Update mutable context for subquery execution
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 
 /// Build limits for storage
 StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptions & options);
@@ -59,11 +55,5 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);
   * Function is applied recursively to subqueries in JOIN TREE.
   */
 bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node);
-
-/// Returns `and` function node that has condition nodes as its arguments
-QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
-
-/// Try extract boolean constant from condition node
-std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
 
 }

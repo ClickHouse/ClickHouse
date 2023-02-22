@@ -175,7 +175,7 @@ public:
               *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size))
     {
         if (!lock)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
         /// Ensure that indices are loaded because we're going to update them.
         storage.loadIndices(lock);
@@ -283,7 +283,7 @@ StorageStripeLog::StorageStripeLog(
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     /// Ensure the file checker is initialized.
     if (file_checker.empty())
@@ -358,7 +358,7 @@ Pipe StorageStripeLog::read(
 
     ReadLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     size_t data_file_size = file_checker.getFileSize(data_file_path);
     if (!data_file_size)
@@ -396,7 +396,7 @@ SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const Storage
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
@@ -406,7 +406,7 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr 
 {
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     return file_checker.check();
 }
@@ -435,7 +435,7 @@ void StorageStripeLog::loadIndices(std::chrono::seconds lock_timeout)
     /// a data race between two threads trying to load indices simultaneously.
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     loadIndices(lock);
 }
@@ -532,7 +532,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
 
     ReadLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     if (!file_checker.getFileSize(data_file_path))
         return;
@@ -603,7 +603,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 {
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
     loadIndices(lock);
@@ -626,7 +626,6 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
             copyData(*in, *out);
-            out->finalize();
         }
 
         /// Append the index.
@@ -675,10 +674,11 @@ void registerStorageStripeLog(StorageFactory & factory)
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, args.engine_args.size());
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String disk_name = getDiskName(*args.storage_def, args.getContext());
+        String disk_name = getDiskName(*args.storage_def);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return std::make_shared<StorageStripeLog>(

@@ -33,7 +33,7 @@ public:
         ObjectStoragePtr object_storage_,
         const std::string & object_storage_root_path_);
 
-    MetadataTransactionPtr createTransaction() override;
+    MetadataTransactionPtr createTransaction() const override;
 
     const std::string & getPath() const override;
 

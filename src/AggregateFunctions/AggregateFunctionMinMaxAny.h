@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int LOGICAL_ERROR;
 }
 
 /** Aggregate functions that store one of passed values.
@@ -481,20 +480,18 @@ struct Compatibility
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct SingleValueDataString
+struct SingleValueDataString //-V730
 {
 private:
     using Self = SingleValueDataString;
 
-    /// 0 size indicates that there is no value. Empty string must has terminating '\0' and, therefore, size of empty string is 1
-    UInt32 size = 0;
-    UInt32 capacity = 0;    /// power of two or zero
+    Int32 size = -1;    /// -1 indicates that there is no value.
+    Int32 capacity = 0;    /// power of two or zero
     char * large_data;
 
 public:
-    static constexpr UInt32 AUTOMATIC_STORAGE_SIZE = 64;
-    static constexpr UInt32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
-    static constexpr UInt32 MAX_STRING_SIZE = std::numeric_limits<Int32>::max();
+    static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
+    static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
 
 private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
@@ -505,7 +502,7 @@ public:
 
     bool has() const
     {
-        return size;
+        return size >= 0;
     }
 
 private:
@@ -539,26 +536,19 @@ public:
 
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const
     {
-        if (unlikely(MAX_STRING_SIZE < size))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
-
-        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
-        Int32 size_to_write = size ? size : -1;
-        writeBinary(size_to_write, buf);
+        writeBinary(size, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
+    void allocateLargeDataIfNeeded(Int64 size_to_reserve, Arena * arena)
     {
         if (capacity < size_to_reserve)
         {
-            if (unlikely(MAX_STRING_SIZE < size_to_reserve))
+            capacity = static_cast<Int32>(roundUpToPowerOfTwoOrZero(size_to_reserve));
+            /// It might happen if the size was too big and the rounded value does not fit a size_t
+            if (unlikely(capacity < size_to_reserve))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", size_to_reserve);
-
-            size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
-            chassert(rounded_capacity <= MAX_STRING_SIZE + 1);  /// rounded_capacity <= 2^31
-            capacity = static_cast<UInt32>(rounded_capacity);
 
             /// Don't free large_data here.
             large_data = arena->alloc(capacity);
@@ -567,28 +557,31 @@ public:
 
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
     {
-        /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
-        Int32 rhs_size_signed;
-        readBinary(rhs_size_signed, buf);
+        Int32 rhs_size;
+        readBinary(rhs_size, buf);
 
-        if (rhs_size_signed < 0)
-        {
-            /// Don't free large_data here.
-            size = 0;
-            return;
-        }
-
-        UInt32 rhs_size = rhs_size_signed;
-        if (rhs_size <= MAX_SMALL_STRING_SIZE)
+        if (rhs_size < 0)
         {
             /// Don't free large_data here.
             size = rhs_size;
-            buf.readStrict(small_data, size);
+            return;
+        }
+
+        if (rhs_size <= MAX_SMALL_STRING_SIZE)
+        {
+            /// Don't free large_data here.
+
+            size = rhs_size;
+
+            if (size > 0)
+                buf.readStrict(small_data, size);
         }
         else
         {
             /// Reserve one byte more for null-character
-            allocateLargeDataIfNeeded(rhs_size + 1, arena);
+            Int64 rhs_size_to_reserve = rhs_size;
+            rhs_size_to_reserve += 1; /// Avoid overflow
+            allocateLargeDataIfNeeded(rhs_size_to_reserve, arena);
             size = rhs_size;
             buf.readStrict(large_data, size);
         }
@@ -623,10 +616,7 @@ public:
     /// Assuming to.has()
     void changeImpl(StringRef value, Arena * arena)
     {
-        if (unlikely(MAX_STRING_SIZE < value.size))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({})", value.size);
-
-        UInt32 value_size = static_cast<UInt32>(value.size);
+        Int32 value_size = static_cast<Int32>(value.size);
 
         if (value_size <= MAX_SMALL_STRING_SIZE)
         {
@@ -795,7 +785,7 @@ public:
         if (!value.isNull())
         {
             writeBinary(true, buf);
-            serialization.serializeBinary(value, buf, {});
+            serialization.serializeBinary(value, buf);
         }
         else
             writeBinary(false, buf);
@@ -807,7 +797,7 @@ public:
         readBinary(is_not_null, buf);
 
         if (is_not_null)
-            serialization.deserializeBinary(value, buf, {});
+            serialization.deserializeBinary(value, buf);
     }
 
     void change(const IColumn & column, size_t row_num, Arena *)
@@ -1222,25 +1212,26 @@ private:
 
 public:
     explicit AggregateFunctionsSingleValue(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {}, createResultType(type))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
         , serialization(type->getDefaultSerialization())
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))
         {
             if (!type->isComparable())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of aggregate function {} "
-                                "because the values of that data type are not comparable", type->getName(), getName());
+                throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
+                    + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
     String getName() const override { return Data::name(); }
 
-    static DataTypePtr createResultType(const DataTypePtr & type_)
+    DataTypePtr getReturnType() const override
     {
+        auto result_type = this->argument_types.at(0);
         if constexpr (Data::is_nullable)
-            return makeNullable(type_);
-        return type_;
+            return makeNullable(result_type);
+        return result_type;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -1383,7 +1374,7 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -1395,7 +1386,7 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -1407,7 +1398,7 @@ public:
         }
         else
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+            throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 

@@ -3,14 +3,12 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/TargetSpecific.h>
-#include <Core/UUID.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <bit>
-#include <boost/algorithm/string/replace.hpp>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -191,24 +189,24 @@ MergeTreeRangeReader::Stream::Stream(
 {
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read from mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+        throw Exception("Trying create stream to read from mark №"+ toString(current_mark) + " but total marks count is "
+            + toString(marks_count), ErrorCodes::LOGICAL_ERROR);
 
     if (last_mark > marks_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read to mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+        throw Exception("Trying create stream to read to mark №"+ toString(current_mark) + " but total marks count is "
+            + toString(marks_count), ErrorCodes::LOGICAL_ERROR);
 }
 
 void MergeTreeRangeReader::Stream::checkNotFinished() const
 {
     if (isFinished())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read out of marks range.");
+        throw Exception("Cannot read out of marks range.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 void MergeTreeRangeReader::Stream::checkEnoughSpaceInCurrentGranule(size_t num_rows) const
 {
     if (num_rows + offset_after_current_mark > current_mark_index_granularity)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read from granule more than index_granularity.");
+        throw Exception("Cannot read from granule more than index_granularity.", ErrorCodes::LOGICAL_ERROR);
 }
 
 size_t MergeTreeRangeReader::Stream::readRows(Columns & columns, size_t num_rows)
@@ -231,8 +229,7 @@ void MergeTreeRangeReader::Stream::toNextMark()
     else if (current_mark == total_marks_count)
         current_mark_index_granularity = 0; /// HACK?
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to read from mark {}, but total marks count {}",
-                        toString(current_mark), toString(total_marks_count));
+        throw Exception("Trying to read from mark " + toString(current_mark) + ", but total marks count " + toString(total_marks_count), ErrorCodes::LOGICAL_ERROR);
 
     offset_after_current_mark = 0;
 }
@@ -308,12 +305,12 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (rows_per_granule.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
+        throw Exception("Can't adjust last granule because no granules were added", ErrorCodes::LOGICAL_ERROR);
 
     if (num_rows_to_subtract > rows_per_granule.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Can't adjust last granule because it has {} rows, but try to subtract {} rows.",
-                        rows_per_granule.back(), num_rows_to_subtract);
+                        toString(rows_per_granule.back()), toString(num_rows_to_subtract));
 
     rows_per_granule.back() -= num_rows_to_subtract;
     total_rows_per_granule -= num_rows_to_subtract;
@@ -922,43 +919,10 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return prev_reader ? prev_reader->isCurrentRangeFinished() : stream.isFinished();
 }
 
-
-/// When executing ExpressionActions on an empty block, it is not possible to determine the number of rows
-/// in the block for the new columns so the result block will have 0 rows and it will not match the rest of
-/// the columns in the ReadResult.
-/// The dummy column is added to maintain the information about the number of rows in the block and to produce
-/// the result block with the correct number of rows.
-String addDummyColumnWithRowCount(Block & block, size_t num_rows)
-{
-    bool has_columns = false;
-    for (const auto & column : block)
-    {
-        if (column.column)
-        {
-            assert(column.column->size() == num_rows);
-            has_columns = true;
-            break;
-        }
-    }
-
-    if (has_columns)
-        return {};
-
-    ColumnWithTypeAndName dummy_column;
-    dummy_column.column = DataTypeUInt8().createColumnConst(num_rows, Field(1));
-    dummy_column.type = std::make_shared<DataTypeUInt8>();
-    /// Generate a random name to avoid collisions with real columns.
-    dummy_column.name = "....dummy...." + toString(UUIDHelpers::generateV4());
-    block.insert(dummy_column);
-
-    return dummy_column.name;
-}
-
-
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
 {
     if (max_rows == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
+        throw Exception("Expected at least 1 row to read, got 0.", ErrorCodes::LOGICAL_ERROR);
 
     ReadResult read_result(log);
 
@@ -1022,7 +986,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 for (const auto & col : read_result.additional_columns)
                     additional_columns.insert(col);
 
-                addDummyColumnWithRowCount(additional_columns, read_result.num_rows);
                 merge_tree_reader->evaluateMissingDefaults(additional_columns, columns);
             }
 
@@ -1234,8 +1197,8 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
 
     /// added_rows may be zero if all columns were read in prewhere and it's ok.
     if (num_rows && num_rows != result.total_rows_per_granule)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeReader read {} rows, but {} expected.",
-                        num_rows, result.total_rows_per_granule);
+        throw Exception("RangeReader read " + toString(num_rows) + " rows, but "
+                        + toString(result.total_rows_per_granule) + " expected.", ErrorCodes::LOGICAL_ERROR);
 
     return columns;
 }
@@ -1344,16 +1307,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             Block additional_columns = block;
 
             if (prewhere_info->actions)
-            {
-                const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
-
-                LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
-
                 prewhere_info->actions->execute(block);
-
-                if (!dummy_column.empty())
-                    block.erase(dummy_column);
-            }
 
             result.additional_columns.clear();
             /// Additional columns might only be needed if there are more steps in the chain.
@@ -1415,16 +1369,13 @@ std::string PrewhereExprInfo::dump() const
 {
     WriteBufferFromOwnString s;
 
-    const char indent[] = "\n      ";
     for (size_t i = 0; i < steps.size(); ++i)
     {
         s << "STEP " << i << ":\n"
-            << "  ACTIONS: " << (steps[i].actions ?
-                (indent + boost::replace_all_copy(steps[i].actions->dumpActions(), "\n", indent)) :
-                "nullptr") << "\n"
+            << "  ACTIONS: " << (steps[i].actions ? steps[i].actions->dumpActions() : "nullptr") << "\n"
             << "  COLUMN: " << steps[i].column_name << "\n"
             << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
-            << "  NEED_FILTER: " << steps[i].need_filter << "\n\n";
+            << "  NEED_FILTER: " << steps[i].need_filter << "\n";
     }
 
     return s.str();

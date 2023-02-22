@@ -15,7 +15,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
-#include <base/scope_guard.h>
 
 
 namespace DB
@@ -96,7 +95,7 @@ private:
     CurrentMetrics::Metric tasks_metric;
     std::string thread_name;
 
-    [[nodiscard]] scope_guard attachToThreadGroup();
+    void attachToThreadGroup();
 };
 
 

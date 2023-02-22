@@ -18,6 +18,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -58,7 +59,7 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
 
     if (!const_column && !non_const_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: hash column must be Const Column or UInt64 Column.");
+        throw Exception("LOGICAL ERROR: hash column must be Const Column or UInt64 Column.", ErrorCodes::LOGICAL_ERROR);
 
     if (const_column)
     {
@@ -99,22 +100,6 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_)
     : WithContext(context_), header(header_), query_info(info_), hash_functions(hash_functions_)
 {
-    if (context_->getSettingsRef().allow_experimental_analyzer)
-    {
-        if (!query_info.filter_actions_dag)
-        {
-            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
-            return;
-        }
-
-        RPNBuilder<RPNElement> builder(
-            query_info.filter_actions_dag->getOutputs().at(0),
-            context_,
-            [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
-        rpn = std::move(builder).extractRPN();
-        return;
-    }
-
     ASTPtr filter_node = buildFilterNode(query_info.query);
 
     if (!filter_node)
@@ -174,7 +159,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
             rpn_stack.back() = arg1 || arg2;
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
 
     return rpn_stack[0];
@@ -245,11 +230,11 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             rpn_stack.emplace_back(false, true);
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::mayBeTrueInRange");
+        throw Exception("Unexpected stack size in KeyCondition::mayBeTrueInRange", ErrorCodes::LOGICAL_ERROR);
 
     return rpn_stack[0].can_be_true;
 }
@@ -387,7 +372,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
 
             if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
+                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             bool match_with_subtype = false;
             const auto & sub_columns = tuple_column->getColumns();
@@ -574,7 +559,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (function_name == "has" || function_name == "indexOf")
         {
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
+                throw Exception("First argument for function " + function_name + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             /// We can treat `indexOf` function similar to `has`.
             /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
@@ -627,8 +612,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         else
         {
             if (array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
+                throw Exception("An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -679,7 +663,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
+                throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             bool match_with_subtype = false;
             const DataTypes & subtypes = value_tuple_data_type->getElements();

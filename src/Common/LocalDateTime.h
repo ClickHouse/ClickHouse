@@ -31,7 +31,7 @@ private:
 
     void init(time_t time, const DateLUTImpl & time_zone)
     {
-        DateLUTImpl::DateTimeComponents components = time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(time));
+        DateLUTImpl::DateTimeComponents components = time_zone.toDateTimeComponents(time);
 
         m_year = components.date.year;
         m_month = components.date.month;

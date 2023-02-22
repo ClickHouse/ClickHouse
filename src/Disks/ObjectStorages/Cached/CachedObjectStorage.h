@@ -101,8 +101,6 @@ public:
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
-    bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
-
     const std::string & getCacheConfigName() const { return cache_config_name; }
 
     ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
@@ -112,8 +110,6 @@ public:
     ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & path) const override;
 
     WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
-
-    FileCachePtr getCache() const { return cache; }
 
 private:
     FileCache::Key getCacheKey(const std::string & path) const;

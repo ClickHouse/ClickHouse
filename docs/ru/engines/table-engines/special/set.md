@@ -20,3 +20,4 @@ sidebar_label: Set
 При создании таблицы, применяются следующие параметры:
 
 -   [persistent](../../../operations/settings/settings.md#persistent)
+

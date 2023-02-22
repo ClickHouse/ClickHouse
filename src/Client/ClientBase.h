@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Common/NamePrompter.h"
-#include <Parsers/ASTCreateQuery.h>
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
@@ -15,7 +14,6 @@
 #include <boost/program_options.hpp>
 #include <Storages/StorageFile.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace po = boost::program_options;
@@ -72,7 +70,7 @@ protected:
 
     virtual bool processWithFuzzing(const String &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
+        throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual void connect() = 0;
@@ -166,18 +164,12 @@ private:
     void updateSuggest(const ASTPtr & ast);
 
     void initQueryIdFormats();
-    bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
     void initTtyBuffer(ProgressOption progress);
-
-    /// Should be one of the first, to be destroyed the last,
-    /// since other members can use them.
-    SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
@@ -215,7 +207,9 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
-    MergeTreeSettings cmd_merge_tree_settings;
+
+    SharedContextHolder shared_context;
+    ContextMutablePtr global_context;
 
     /// thread status should be destructed before shared context because it relies on process list.
     std::optional<ThreadStatus> thread_status;
@@ -257,7 +251,6 @@ protected:
     bool need_render_profile_events = true;
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
-    bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
@@ -302,7 +295,6 @@ protected:
     std::vector<HostAndPort> hosts_and_ports{};
 
     bool allow_repeated_settings = false;
-    bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
 

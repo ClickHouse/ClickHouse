@@ -1,9 +1,6 @@
-#include <Common/Exception.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/UnionStep.h>
-
+#include <Common/Exception.h>
 #include <stack>
 
 namespace DB
@@ -115,9 +112,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
-            if (optimization_settings.aggregation_in_order)
-                optimizeAggregationInOrder(*frame.node, nodes);
-
             if (optimization_settings.distinct_in_order)
                 tryDistinctReadInOrder(frame.node);
         }
@@ -132,7 +126,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         }
 
         optimizePrimaryKeyCondition(stack);
-        enableMemoryBoundMerging(*frame.node, nodes);
 
         stack.pop_back();
     }

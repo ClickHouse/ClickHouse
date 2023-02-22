@@ -3,17 +3,12 @@
 #include <IO/WithFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
-    );
     if (thread_group)
         CurrentThread::attachTo(thread_group);
 
@@ -60,10 +55,6 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
 void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
-    );
     if (thread_group)
         CurrentThread::attachToIfDetached(thread_group);
 
@@ -161,12 +152,6 @@ Chunk ParallelParsingInputFormat::generate()
     /// Delayed launching of segmentator thread
     if (unlikely(!parsing_started.exchange(true)))
     {
-        /// Lock 'finish_and_wait_mutex' to avoid recreation of
-        /// 'segmentator_thread' after it was joined.
-        std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
-        if (finish_and_wait_called)
-            return {};
-
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
     }

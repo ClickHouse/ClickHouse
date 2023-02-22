@@ -248,7 +248,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             LOG_TRACE(log, "Don't have unfinished tasks after restarting");
         else
             LOG_INFO(log, "Have {} unfinished tasks, will check them", current_tasks.size());
-
         assert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
         auto task_it = current_tasks.begin();
         while (task_it != current_tasks.end())
@@ -280,9 +279,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                     task->completely_processed = true;
                 }
                 else
-                {
                     processTask(*task, zookeeper);
-                }
                 ++task_it;
             }
             else
@@ -294,7 +291,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 /// of log entry number (with leading zeros).
                 if (!first_failed_task_name || task->entry_name < *first_failed_task_name)
                     first_failed_task_name = task->entry_name;
-
                 task_it = current_tasks.erase(task_it);
             }
         }
@@ -420,24 +416,18 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
 {
     current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
-
     /// Tasks are scheduled and executed in main thread <==> Parallel execution is disabled
     assert((worker_pool != nullptr) == (1 < pool_size));
-
     /// Parallel execution is disabled ==> All previous tasks are failed to start or finished,
     /// so current tasks list must be empty when we are ready to process new one.
     assert(worker_pool || current_tasks.empty());
-
     /// Parallel execution is enabled ==> Not more than pool_size tasks are currently executing.
     /// Note: If current_tasks.size() == pool_size, then all worker threads are busy,
     /// so we will wait on worker_pool->scheduleOrThrowOnError(...)
     assert(!worker_pool || current_tasks.size() <= pool_size);
-
     current_tasks.emplace_back(std::move(task));
-
     if (first_failed_task_name && *first_failed_task_name == current_tasks.back()->entry_name)
         first_failed_task_name.reset();
-
     return *current_tasks.back();
 }
 
@@ -670,8 +660,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     active_node->setAlreadyRemoved();
 
     task.createSyncedNodeIfNeed(zookeeper);
-    updateMaxDDLEntryID(task.entry_name);
     task.completely_processed = true;
+    updateMaxDDLEntryID(task.entry_name);
 }
 
 
@@ -758,13 +748,13 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     /// but DDL worker can continue processing other queries.
     while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
     {
-        ReplicatedTableStatus status;
+        StorageReplicatedMergeTree::Status status;
         // Has to get with zk fields to get active replicas field
         replicated_storage->getStatus(status, true);
 
         // Should return as soon as possible if the table is dropped.
-        bool replica_dropped = storage->is_dropped;
-        bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(storage->getStorageID(), context);
+        bool replica_dropped = replicated_storage->is_dropped;
+        bool all_replicas_likely_detached = status.active_replicas == 0 && !DatabaseCatalog::instance().isTableExist(replicated_storage->getStorageID(), context);
         if (replica_dropped || all_replicas_likely_detached)
         {
             LOG_WARNING(log, ", task {} will not be executed.", task.entry_name);
@@ -994,7 +984,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 {
     if (entry.hosts.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");
+        throw Exception("Empty host list in a distributed DDL task", ErrorCodes::LOGICAL_ERROR);
 
     auto zookeeper = getAndSetZooKeeper();
 

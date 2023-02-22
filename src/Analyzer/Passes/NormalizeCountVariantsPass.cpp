@@ -4,9 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -14,17 +12,11 @@ namespace DB
 namespace
 {
 
-class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>
+class NormalizeCountVariantsVisitor : public InDepthQueryTreeVisitor<NormalizeCountVariantsVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<NormalizeCountVariantsVisitor>;
-    using Base::Base;
-
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_normalize_count_variants)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !function_node->isAggregateFunction() || (function_node->getFunctionName() != "count" && function_node->getFunctionName() != "sum"))
             return;
@@ -33,11 +25,11 @@ public:
             return;
 
         auto & first_argument = function_node->getArguments().getNodes()[0];
-        auto * first_argument_constant_node = first_argument->as<ConstantNode>();
-        if (!first_argument_constant_node)
+        auto first_argument_constant_value = first_argument->getConstantValueOrNull();
+        if (!first_argument_constant_value)
             return;
 
-        const auto & first_argument_constant_literal = first_argument_constant_node->getValue();
+        const auto & first_argument_constant_literal = first_argument_constant_value->getValue();
 
         if (function_node->getFunctionName() == "count" && !first_argument_constant_literal.isNull())
         {
@@ -46,8 +38,7 @@ public:
         }
         else if (function_node->getFunctionName() == "sum" &&
             first_argument_constant_literal.getType() == Field::Types::UInt64 &&
-            first_argument_constant_literal.get<UInt64>() == 1 &&
-            !getSettings().aggregate_functions_null_for_empty)
+            first_argument_constant_literal.get<UInt64>() == 1)
         {
             resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
@@ -56,18 +47,20 @@ public:
 private:
     static inline void resolveAsCountAggregateFunction(FunctionNode & function_node)
     {
+        auto function_result_type = function_node.getResultType();
+
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
 
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function), std::move(function_result_type));
     }
 };
 
 }
 
-void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void NormalizeCountVariantsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    NormalizeCountVariantsVisitor visitor(context);
+    NormalizeCountVariantsVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

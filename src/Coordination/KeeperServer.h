@@ -135,8 +135,6 @@ public:
     uint64_t createSnapshot();
 
     KeeperLogInfo getKeeperLogInfo();
-
-    bool requestLeader();
 };
 
 }

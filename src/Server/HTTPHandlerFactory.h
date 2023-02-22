@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Common/AsynchronousMetrics.h>
+#include <Interpreters/AsynchronousMetrics.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
-#include <Server/HTTPRequestHandlerFactoryMain.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 
@@ -19,6 +18,23 @@ namespace ErrorCodes
 }
 
 class IServer;
+
+/// Handle request using child handlers
+class HTTPRequestHandlerFactoryMain : public HTTPRequestHandlerFactory
+{
+public:
+    explicit HTTPRequestHandlerFactoryMain(const std::string & name_);
+
+    void addHandler(HTTPRequestHandlerFactoryPtr child_factory) { child_factories.emplace_back(child_factory); }
+
+    std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
+
+private:
+    Poco::Logger * log;
+    std::string name;
+
+    std::vector<HTTPRequestHandlerFactoryPtr> child_factories;
+};
 
 template <typename TEndpoint>
 class HandlingRuleHTTPHandlerFactory : public HTTPRequestHandlerFactory
@@ -63,7 +79,7 @@ public:
             else if (filter_type == "methods")
                 addFilter(methodsFilter(config, prefix + ".methods"));
             else
-                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}", prefix, filter_type);
+                throw Exception("Unknown element in config: " + prefix + "." + filter_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         }
     }
 
@@ -131,12 +147,6 @@ createPrometheusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
     const std::string & config_prefix);
-
-HTTPRequestHandlerFactoryPtr
-createPrometheusMainHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics,
-    const std::string & name);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer

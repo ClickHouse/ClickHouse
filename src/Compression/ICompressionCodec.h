@@ -11,6 +11,13 @@
 namespace DB
 {
 
+class ICompressionCodec;
+
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+using Codecs = std::vector<CompressionCodecPtr>;
+
+class IDataType;
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 /**
@@ -99,12 +106,6 @@ public:
     /// If it is a post-processing codec such as encryption. Usually it does not make sense to apply non-post-processing codecs after this.
     virtual bool isEncryption() const { return false; }
 
-    /// If it is a specialized codec for floating-point time series. Applying it to non-floating point data is suspicious.
-    virtual bool isFloatingPointTimeSeriesCodec() const { return false; }
-
-    /// If the codec's purpose is to calculate deltas between consecutive values.
-    virtual bool isDeltaCompression() const { return false; }
-
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
@@ -119,7 +120,7 @@ protected:
     /// Return size of compressed data without header
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
-    /// Actually compress data without header
+    /// Actually compress data, without header
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
 
     /// Actually decompress data without header
@@ -132,8 +133,5 @@ private:
     ASTPtr full_codec_desc;
     CodecMode decompressMode{CodecMode::Synchronous};
 };
-
-using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = std::vector<CompressionCodecPtr>;
 
 }

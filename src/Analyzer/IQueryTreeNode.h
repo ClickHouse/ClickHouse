@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 class WriteBuffer;
@@ -90,17 +91,36 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
-    struct CompareOptions
+    /// Returns true if node has constant value
+    bool hasConstantValue() const
     {
-        bool compare_aliases = true;
-    };
+        return getConstantValueOrNull() != nullptr;
+    }
+
+    /** Returns constant value with type if node has constant value, and can be replaced with it.
+      * Examples: scalar subquery, function with constant arguments.
+      */
+    virtual const ConstantValue & getConstantValue() const
+    {
+        auto constant_value = getConstantValueOrNull();
+        if (!constant_value)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node does not have constant value");
+
+        return *constant_value;
+    }
+
+    /// Returns constant value with type if node has constant value or null otherwise
+    virtual ConstantValuePtr getConstantValueOrNull() const
+    {
+        return {};
+    }
 
     /** Is tree equal to other tree with node root.
       *
-      * With default compare options aliases of query tree nodes are compared during isEqual call.
+      * Aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
+    bool isEqual(const IQueryTreeNode & rhs) const;
 
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;
@@ -114,18 +134,6 @@ public:
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
-
-    /** Get a deep copy of the query tree.
-      * If node to clone is key in replacement map, then instead of clone it
-      * use value node from replacement map.
-      */
-    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
-    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
-
-    /** Get a deep copy of the query tree.
-      * If node to clone is node to replace, then instead of clone it use replacement node.
-      */
-    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const

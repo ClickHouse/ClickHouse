@@ -215,14 +215,10 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#elif defined(__powerpc64__) && defined(__linux__)
+#elif defined(__powerpc64__)
     return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
-#elif defined(__powerpc64__) && defined(__FreeBSD__)
-    return reinterpret_cast<void *>(context.uc_mcontext.mc_srr0);
 #elif defined(__riscv)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
-#elif defined(__s390x__)
-    return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #else
     return nullptr;
 #endif

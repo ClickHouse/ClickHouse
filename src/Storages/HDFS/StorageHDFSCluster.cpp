@@ -1,5 +1,4 @@
 #include "config.h"
-#include "Interpreters/Context_fwd.h"
 
 #if USE_HDFS
 
@@ -8,7 +7,6 @@
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -43,17 +41,15 @@ StorageHDFSCluster::StorageHDFSCluster(
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & compression_method_,
-    bool structure_argument_was_provided_)
-    : IStorageCluster(table_id_)
+    const String & compression_method_)
+    : IStorage(table_id_)
     , cluster_name(cluster_name_)
     , uri(uri_)
     , format_name(format_name_)
     , compression_method(compression_method_)
-    , structure_argument_was_provided(structure_argument_was_provided_)
 {
-    checkHDFSURL(uri_);
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
+    checkHDFSURL(uri_);
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -61,6 +57,7 @@ StorageHDFSCluster::StorageHDFSCluster(
     {
         auto columns = StorageHDFS::getTableStructureFromData(format_name, uri_, compression_method, context_);
         storage_metadata.setColumns(columns);
+        add_columns_structure_to_query = true;
     }
     else
         storage_metadata.setColumns(columns_);
@@ -79,8 +76,13 @@ Pipe StorageHDFSCluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    auto cluster = getCluster(context);
-    auto extension = getTaskIteratorExtension(query_info.query, context);
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
+
+    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
+    auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iterator]() mutable -> String
+    {
+        return iterator->next();
+    });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -93,20 +95,28 @@ Pipe StorageHDFSCluster::read(
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     auto query_to_send = query_info.original_query->clone();
-    if (!structure_argument_was_provided)
+    if (add_columns_structure_to_query)
         addColumnsStructureToQueryWithClusterEngine(
             query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), 3, getName());
 
-    const auto & current_settings = context->getSettingsRef();
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
-    for (const auto & shard_info : cluster->getShardsInfo())
+    for (const auto & replicas : cluster->getShardsAddresses())
     {
-        auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
-        for (auto & try_result : try_results)
+        /// There will be only one replica, because we consider each replica as a shard
+        for (const auto & node : replicas)
         {
+            auto connection = std::make_shared<Connection>(
+                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                "HDFSClusterInititiator",
+                node.compression,
+                node.secure
+            );
+
+
+            /// For unknown reason global context is passed to IStorage::read() method
+            /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                shard_info.pool,
-                std::vector<IConnectionPool::Entry>{try_result},
+                connection,
                 queryToString(query_to_send),
                 header,
                 context,
@@ -114,7 +124,7 @@ Pipe StorageHDFSCluster::read(
                 scalars,
                 Tables(),
                 processed_stage,
-                extension);
+                RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
@@ -136,18 +146,6 @@ QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
-
-ClusterPtr StorageHDFSCluster::getCluster(ContextPtr context) const
-{
-    return context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
-}
-
-RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ASTPtr, ContextPtr context) const
-{
-    auto iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context, uri);
-    auto callback = std::make_shared<HDFSSource::IteratorWrapper>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
-    return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
-}
 
 NamesAndTypesList StorageHDFSCluster::getVirtuals() const
 {

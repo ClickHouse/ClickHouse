@@ -7,8 +7,6 @@ assignees: ''
 
 ---
 
-**I have tried the following solutions**: https://clickhouse.com/docs/en/faq/troubleshooting/#troubleshooting-installation-errors
-
 **Installation type**
 
 Packages, docker, single binary, curl?

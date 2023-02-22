@@ -8,7 +8,7 @@
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnMap.h>
-#include <Common/NamedCollections/NamedCollections.h>
+#include <Storages/NamedCollections.h>
 
 
 namespace DB
