@@ -304,6 +304,11 @@ if (TARGET ch_contrib::llvm)
     dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
 endif ()
 
+if (TARGET ch_contrib::gwp_asan)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::gwp_asan)
+    target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::gwp_asan)
+endif()
+
 # Otherwise it will slow down stack traces printing too much.
 set_source_files_properties(
         Common/Elf.cpp
@@ -337,14 +342,13 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-mwaitpkg")
 endif ()
 
-target_link_libraries(common PUBLIC ch_contrib::re2_st)
-target_link_libraries(common PUBLIC ch_contrib::re2)
-
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
             boost::system
             ch_contrib::cityhash
+            ch_contrib::re2
+            ch_contrib::re2_st
             ch_contrib::zlib
             pcg_random
             Poco::Foundation
@@ -544,6 +548,10 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
     dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
+endif()
+
+if (TARGET ch_contrib::ulid)
+    dbms_target_link_libraries (PUBLIC ch_contrib::ulid)
 endif()
 
 if (TARGET ch_contrib::bzip2)

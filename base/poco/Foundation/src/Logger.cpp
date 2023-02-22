@@ -470,7 +470,7 @@ public:
 
 namespace
 {
-	static AutoLoggerShutdown als;
+	static AutoLoggerShutdown auto_logger_shutdown;
 }
 
 

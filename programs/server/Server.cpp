@@ -770,8 +770,6 @@ try
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionUtils::loadFromConfig(config());
-
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -1177,8 +1175,6 @@ try
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
-    NamedCollectionUtils::loadFromSQL(global_context);
-
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         include_from_path,
@@ -1282,6 +1278,8 @@ try
                 auto new_pool_size = config->getUInt64("background_pool_size", 16);
                 auto new_ratio = config->getUInt64("background_merges_mutations_concurrency_ratio", 2);
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size * new_ratio);
+                auto new_scheduling_policy = config->getString("background_merges_mutations_scheduling_policy", "round_robin");
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_scheduling_policy);
             }
 
             if (global_context->areBackgroundExecutorsInitialized() && config->has("background_move_pool_size"))
@@ -1654,11 +1652,12 @@ try
         /// that may execute DROP before loadMarkedAsDroppedTables() in background,
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
+        database_catalog.createBackgroundTasks();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         convertDatabasesEnginesIfNeed(global_context);
         startupSystemTables();
-        database_catalog.loadDatabases();
+        database_catalog.startupBackgroundCleanup();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.

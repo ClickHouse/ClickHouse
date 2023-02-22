@@ -114,6 +114,7 @@ endif()
 
 add_contrib (llvm-project-cmake llvm-project)
 add_contrib (libfuzzer-cmake llvm-project)
+add_contrib (gwpasan-cmake llvm-project)
 add_contrib (libxml2-cmake libxml2)
 
 add_contrib (aws-cmake
@@ -189,6 +190,8 @@ add_contrib (annoy-cmake annoy)
 add_contrib (xxHash-cmake xxHash)
 
 add_contrib (google-benchmark-cmake google-benchmark)
+
+add_contrib (ulid-c-cmake ulid-c)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

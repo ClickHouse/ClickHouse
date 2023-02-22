@@ -221,6 +221,8 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_srr0);
 #elif defined(__riscv)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
+#elif defined(__s390x__)
+    return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #else
     return nullptr;
 #endif

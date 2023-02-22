@@ -21,28 +21,20 @@
 #include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API Error
-	/// The Error class provides utility functions
-	/// for error reporting.
+/// The Error class provides utility functions
+/// for error reporting.
 {
 public:
+    static int last();
+    /// Utility function returning the last error.
 
-#ifdef POCO_OS_FAMILY_WINDOWS
-	static DWORD last();
-		/// Utility function returning the last error.
-
-	static std::string getMessage(DWORD errorCode);
-		/// Utility function translating numeric error code to string.
-#else
-	static int last();
-		/// Utility function returning the last error.
-
-	static std::string getMessage(int errorCode);
-		/// Utility function translating numeric error code to string.
-#endif
+    static std::string getMessage(int errorCode);
+    /// Utility function translating numeric error code to string.
 };
 
 

@@ -363,6 +363,41 @@ struct SipHash128KeyedImpl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+struct SipHash128ReferenceImpl
+{
+    static constexpr auto name = "sipHash128Reference";
+
+    using ReturnType = UInt128;
+
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
+
+    static UInt128 apply(const char * data, const size_t size) { return sipHash128Reference(data, size); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct SipHash128ReferenceKeyedImpl
+{
+    static constexpr auto name = "sipHash128ReferenceKeyed";
+    using ReturnType = UInt128;
+    using Key = impl::SipHashKey;
+
+    static Key parseKey(const ColumnWithTypeAndName & key) { return impl::parseSipHashKey(key); }
+
+    static UInt128 applyKeyed(const Key & key, const char * begin, size_t size)
+    {
+        return sipHash128ReferenceKeyed(key.key0, key.key1, begin, size);
+    }
+
+    static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
+    {
+        UInt128 hashes[] = {h1, h2};
+        return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 /** Why we need MurmurHash2?
   * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
   * Usually there is no reason to use MurmurHash.
@@ -1624,6 +1659,8 @@ using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
 using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key>;
+using FunctionSipHash128Reference = FunctionAnyHash<SipHash128ReferenceImpl>;
+using FunctionSipHash128ReferenceKeyed = FunctionAnyHash<SipHash128ReferenceKeyedImpl, true, SipHash128ReferenceKeyedImpl::Key>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;

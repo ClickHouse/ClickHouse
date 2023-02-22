@@ -20,9 +20,6 @@
 #include "Poco/Exception.h"
 
 
-#ifdef POCO_OS_FAMILY_WINDOWS
-	#pragma warning(disable:4312)// 'type cast' : conversion from 'std::size_t' to 'SQLPOINTER' of greater size
-#endif
 
 
 using Poco::DataFormatException;
@@ -382,7 +379,7 @@ std::string ODBCStatementImpl::nativeSQL()
 			delete [] pNative;
 			throw ConnectionException(_rConnection, "SQLNativeSql()");
 		}
-		++retlen;//accomodate for terminating '\0'
+		++retlen;//accommodate for terminating '\0'
 	}while (retlen > length);
 
 	std::string sql(pNative);

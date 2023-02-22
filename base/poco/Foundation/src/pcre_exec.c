@@ -689,7 +689,7 @@ the alternative names that are used. */
 #define foc           number
 #define save_mark     data
 
-/* These statements are here to stop the compiler complaining about unitialized
+/* These statements are here to stop the compiler complaining about uninitialized
 variables. */
 
 #ifdef SUPPORT_UCP
@@ -1041,7 +1041,7 @@ for (;;)
     the result of a recursive call to match() whatever happened so it was
     possible to reduce stack usage by turning this into a tail recursion,
     except in the case of a possibly empty group. However, now that there is
-    the possiblity of (*THEN) occurring in the final alternative, this
+    the possibility of (*THEN) occurring in the final alternative, this
     optimization is no longer always possible.
 
     We can optimize if we know there are no (*THEN)s in the pattern; at present
@@ -7016,7 +7016,7 @@ for(;;)
   /* If we have just passed a CR and we are now at a LF, and the pattern does
   not contain any explicit matches for \r or \n, and the newline option is CRLF
   or ANY or ANYCRLF, advance the match position by one more character. In
-  normal matching start_match will aways be greater than the first position at
+  normal matching start_match will always be greater than the first position at
   this stage, but a failed *SKIP can cause a return at the same point, which is
   why the first test exists. */
 
