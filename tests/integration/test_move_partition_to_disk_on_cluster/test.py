@@ -43,10 +43,10 @@ def test_move_partition_to_disk_on_cluster(start_cluster):
     for node in [node1, node2]:
         node.query(
             sql="CREATE TABLE test_local_table"
-                "(x UInt64) "
-                "ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_local_table', '{replica}') "
-                "ORDER BY tuple()"
-                "SETTINGS storage_policy = 'jbod_with_external';",
+            "(x UInt64) "
+            "ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_local_table', '{replica}') "
+            "ORDER BY tuple()"
+            "SETTINGS storage_policy = 'jbod_with_external';",
         )
 
     node1.query("INSERT INTO test_local_table VALUES (0)")
@@ -61,10 +61,10 @@ def test_move_partition_to_disk_on_cluster(start_cluster):
 
     for node in [node1, node2]:
         assert (
-                node.query(
-                    "SELECT partition_id, disk_name FROM system.parts WHERE table = 'test_local_table' FORMAT Values"
-                )
-                == "('all','jbod1')"
+            node.query(
+                "SELECT partition_id, disk_name FROM system.parts WHERE table = 'test_local_table' FORMAT Values"
+            )
+            == "('all','jbod1')"
         )
 
     node1.query(
@@ -73,10 +73,10 @@ def test_move_partition_to_disk_on_cluster(start_cluster):
 
     for node in [node1, node2]:
         assert (
-                node.query(
-                    "SELECT partition_id, disk_name FROM system.parts WHERE table = 'test_local_table' FORMAT Values"
-                )
-                == "('all','external')"
+            node.query(
+                "SELECT partition_id, disk_name FROM system.parts WHERE table = 'test_local_table' FORMAT Values"
+            )
+            == "('all','external')"
         )
 
     node1.query(
@@ -85,10 +85,8 @@ def test_move_partition_to_disk_on_cluster(start_cluster):
 
     for node in [node1, node2]:
         assert (
-                node.query(
-                    "SELECT partition_id, disk_name FROM system.parts WHERE table = 'test_local_table' FORMAT Values"
-                )
-                == "('all','jbod1')"
+            node.query(
+                "SELECT partition_id, disk_name FROM system.parts WHERE table = 'test_local_table' FORMAT Values"
+            )
+            == "('all','jbod1')"
         )
-
-
