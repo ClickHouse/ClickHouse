@@ -509,6 +509,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings.additional_table_filters, joined_tables.tablesWithColumns().front().table, *context);
 
+    if (autoFinalOnQuery(query))
+    {
+        query.setFinal();
+    }
+
     auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
@@ -3020,6 +3025,15 @@ void InterpreterSelectQuery::ignoreWithTotals()
     getSelectQuery().group_by_with_totals = false;
 }
 
+bool InterpreterSelectQuery::autoFinalOnQuery(ASTSelectQuery & query)
+{
+    // query.tables() is required because not all queries have tables in it, it could be a function.
+    bool is_auto_final_setting_on = context->getSettingsRef().final;
+    bool is_final_supported = storage && storage->supportsFinal() && !storage->isRemote() && query.tables();
+    bool is_query_already_final = query.final();
+
+    return is_auto_final_setting_on && !is_query_already_final && is_final_supported;
+}
 
 void InterpreterSelectQuery::initSettings()
 {

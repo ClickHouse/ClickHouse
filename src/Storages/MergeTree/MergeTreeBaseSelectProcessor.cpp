@@ -176,16 +176,16 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
             return ChunkAndProgress{
                 .chunk = Chunk(ordered_columns, res.row_count),
                 .num_read_rows = res.num_read_rows,
-                .num_read_bytes = res.num_read_bytes};
+                .num_read_bytes = res.num_read_bytes,
+                .is_finished = false};
         }
         else
         {
-            num_read_rows += res.num_read_rows;
-            num_read_bytes += res.num_read_bytes;
+            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
         }
     }
 
-    return {Chunk(), num_read_rows, num_read_bytes};
+    return {Chunk(), num_read_rows, num_read_bytes, true};
 }
 
 void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
