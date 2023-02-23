@@ -11,7 +11,7 @@ from commit_status_helper import (
     get_commit,
     post_labels,
     remove_labels,
-    reset_mergeable_check,
+    set_mergeable_check,
 )
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    reset_mergeable_check(commit, "skipped")
+    set_mergeable_check(commit, "skipped")
 
     if description_error:
         print(
