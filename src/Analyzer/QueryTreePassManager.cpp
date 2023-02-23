@@ -36,9 +36,11 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 #include <Analyzer/Passes/OrEqualityChainToInPass.h>
+
 
 namespace DB
 {
@@ -265,6 +267,9 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<OrEqualityChainToInPass>());
 
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
+
+    manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+
 }
 
 }
