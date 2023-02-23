@@ -174,7 +174,7 @@ void assertNotEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
-inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
+inline bool checkChar(char c, ReadBuffer & buf)
 {
     char a;
     if (!buf.peek(a) || a != c)
@@ -458,7 +458,7 @@ void readIntText(T & x, ReadBuffer & buf)
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
-bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
+bool tryReadIntText(T & x, ReadBuffer & buf)
 {
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
