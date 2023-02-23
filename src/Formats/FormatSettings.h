@@ -46,9 +46,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort, /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -176,6 +176,14 @@ struct FormatSettings
         String column_for_object_name;
     } json_object_each_row;
 
+    enum class ParquetVersion
+    {
+        V1_0,
+        V2_4,
+        V2_6,
+        V2_LATEST,
+    };
+
     struct
     {
         UInt64 row_group_size = 1000000;
@@ -187,6 +195,7 @@ struct FormatSettings
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         UInt64 max_block_size = 8192;
+        ParquetVersion output_version;
     } parquet;
 
     struct Pretty
