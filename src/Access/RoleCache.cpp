@@ -163,11 +163,15 @@ void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
 
     std::lock_guard lock{mutex};
     auto role_from_cache = cache.get(role_id);
-    if (!role_from_cache)
-        return;
-    role_from_cache->first = changed_role;
-    cache.update(role_id, role_from_cache);
-    collectEnabledRoles(&notifications);
+    if (role_from_cache)
+    {
+        /// We update the role stored in a cache entry only if that entry has not expired yet.
+        role_from_cache->first = changed_role;
+        cache.update(role_id, role_from_cache);
+    }
+
+    /// An enabled role for some users has been changed, we need to recalculate the access rights.
+    collectEnabledRoles(&notifications); /// collectEnabledRoles() must be called with the `mutex` locked.
 }
 
 
@@ -177,8 +181,12 @@ void RoleCache::roleRemoved(const UUID & role_id)
     scope_guard notifications;
 
     std::lock_guard lock{mutex};
+
+    /// If a cache entry with the role has expired already, that remove() will do nothing.
     cache.remove(role_id);
-    collectEnabledRoles(&notifications);
+
+    /// An enabled role for some users has been removed, we need to recalculate the access rights.
+    collectEnabledRoles(&notifications); /// collectEnabledRoles() must be called with the `mutex` locked.
 }
 
 }
