@@ -696,7 +696,7 @@ try
     {
         const String config_path = config().getString("config-file", "config.xml");
         const auto config_dir = std::filesystem::path{config_path}.replace_filename("openssl.conf");
-        setenv("OPENSSL_CONF", config_dir.string(), true);
+        setenv("OPENSSL_CONF", config_dir.c_str(), true);
     }
 #endif
 
