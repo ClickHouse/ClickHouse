@@ -17,14 +17,18 @@
 class DateLUT : private boost::noncopyable
 {
 public:
-    /// Return singleton DateLUTImpl instance for the default time zone.
+    /// Return singleton DateLUTImpl instance for server's timezone (the one which server has).
     static ALWAYS_INLINE const DateLUTImpl & instance()
     {
         const auto & date_lut = getInstance();
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
-    /// Return singleton DateLUTImpl instance for a given time zone.
+    /*
+    Return singleton DateLUTImpl instance for a given time zone. If timezone is an empty string,
+    timezone set by `timezone` setting for current session is used. If it is not set, server's timezone is used,
+    and return is the same as calling instance().
+    */
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
         const auto & date_lut = getInstance();

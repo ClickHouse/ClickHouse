@@ -4085,26 +4085,27 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 
 Значение по умолчанию: `''`.
 
-## implicit_timezone {#implicit_timezone}
+## timezone {#timezone}
 
 Задаёт значение часового пояса (timezone) по умолчанию для текущей сессии вместо часового пояса сервера. То есть, все значения DateTime/DateTime64, для которых явно не задан параметр timezone, будут интерпретированы как относящиеся к указанной зоне.
 
 Примеры:
+```clickhouse
+SELECT timeZone(), serverTimezone() FORMAT TSV
+
+Europe/Berlin	Europe/Berlin
 ```
-SELECT timeZone(), timeZoneOf(now())
-┌─timeZone()────┬─timeZoneOf(now())─┐
-│ Europe/Berlin │ Europe/Berlin     │
-└───────────────┴───────────────────┘
 
-:) SELECT timeZone(), timeZoneOf(now()) SETTINGS implicit_timezone = 'Asia/Novosibirsk'
-┌─timeZone()────┬─timeZoneOf(now())─┐
-│ Europe/Berlin │ Asia/Novosibirsk  │
-└───────────────┴───────────────────┘
+```clickhouse
+SELECT timeZone(), serverTimezone() SETTINGS timezone = 'Asia/Novosibirsk' FORMAT TSV
 
-SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS implicit_timezone = 'America/Denver';
-┌─toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich')─┐
-│                                                      1999-12-13 07:23:23.123 │
-└──────────────────────────────────────────────────────────────────────────────┘
+Asia/Novosibirsk	Europe/Berlin
+```
+
+```clickhouse
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS timezone = 'America/Denver' FORMAT TSV
+
+1999-12-13 07:23:23.123
 ```
 
 Возможные значения:

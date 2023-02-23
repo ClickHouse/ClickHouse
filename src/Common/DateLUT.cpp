@@ -167,6 +167,5 @@ DateLUT & DateLUT::getInstance()
 
 std::string DateLUT::extractTimezoneFromContext(const DB::ContextPtr query_context)
 {
-    std::string ret = query_context->getSettingsRef().implicit_timezone.value;
-    return ret;
+    return query_context->getSettingsRef().timezone.value;
 }

@@ -3940,25 +3940,27 @@ Default value: `0`.
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
 
-## implicit_timezone {#implicit_timezone}
+## timezone {#timezone}
 
 If specified, sets a implicit timezone (instead of server-default). All DateTime/DateTime64 values (and/or functions results) that have no explicit timezone specified are treated as having this timezone instead of default.
 Examples:
+
+```clickhouse
+SELECT timeZone(), serverTimezone() FORMAT TSV
+
+Europe/Berlin	Europe/Berlin
 ```
-SELECT timeZone(), timeZoneOf(now())
-┌─timeZone()────┬─timeZoneOf(now())─┐
-│ Europe/Berlin │ Europe/Berlin     │
-└───────────────┴───────────────────┘
 
-:) SELECT timeZone(), timeZoneOf(now()) SETTINGS implicit_timezone = 'Asia/Novosibirsk'
-┌─timeZone()────┬─timeZoneOf(now())─┐
-│ Europe/Berlin │ Asia/Novosibirsk  │
-└───────────────┴───────────────────┘
+```clickhouse
+SELECT timeZone(), serverTimezone() SETTINGS timezone = 'Asia/Novosibirsk' FORMAT TSV
 
-SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS implicit_timezone = 'America/Denver';
-┌─toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich')─┐
-│                                                      1999-12-13 07:23:23.123 │
-└──────────────────────────────────────────────────────────────────────────────┘
+Asia/Novosibirsk	Europe/Berlin
+```
+
+```clickhouse
+SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS timezone = 'America/Denver' FORMAT TSV
+
+1999-12-13 07:23:23.123
 ```
 
 Possible values:
