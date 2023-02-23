@@ -169,12 +169,15 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   <kafka>
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
+
     <!-- Configuration specific to topics "logs" and "stats" -->
+
     <kafka_topic>
       <name>logs</name>
       <retry_backoff_ms>250</retry_backoff_ms>
       <fetch_min_bytes>100000</fetch_min_bytes>
     </kafka_topic>
+
     <kafka_topic>
       <name>stats</name>
       <retry_backoff_ms>400</retry_backoff_ms>
@@ -197,10 +200,12 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 
   <!-- Configuration specific to topics "logs" and "stats" -->
   <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
+
   <kafka_logs>
     <retry_backoff_ms>250</retry_backoff_ms>
     <fetch_min_bytes>100000</fetch_min_bytes>
   </kafka_logs>
+
   <kafka_stats>
     <retry_backoff_ms>400</retry_backoff_ms>
     <fetch_min_bytes>50000</fetch_min_bytes>
