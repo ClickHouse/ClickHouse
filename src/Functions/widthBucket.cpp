@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -6,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -25,48 +27,99 @@ namespace ErrorCodes
 
 class FunctionWidthBucket : public IFunction
 {
-    template <is_any_of<UInt8, UInt16, UInt32, UInt64> TResultType>
+    template <typename TDataType>
+    static const typename ColumnVector<TDataType>::Container * getDataIfNotNull(const ColumnVector<TDataType> * col_vec)
+    {
+        if (nullptr == col_vec)
+        {
+            return nullptr;
+        }
+        return &col_vec->getData();
+    }
+
+    template <typename TDataType>
+    static TDataType
+    getValue(const ColumnConst * col_const, const typename ColumnVector<TDataType>::Container * col_vec, const size_t index)
+    {
+        if (nullptr != col_const)
+        {
+            return col_const->getValue<TDataType>();
+        }
+        return col_vec->data()[index];
+    }
+
+    template <typename TResultType, typename TCountType>
+    static TResultType calculate(const Float64 operand, const Float64 min, const Float64 max, const TCountType count)
+    {
+        if (operand < min || min >= max)
+        {
+            return 0;
+        }
+        else if (operand >= max)
+        {
+            return count + 1;
+        }
+
+        return static_cast<TResultType>(count * ((operand - min) / (max - min)) + 1);
+    }
+
+    template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
     static ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {
-        auto result_column = ColumnVector<TResultType>::create();
-        auto & results = result_column->getData();
-        results.reserve(input_rows_count);
+        using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
         std::vector<ColumnPtr> casted_columns;
         casted_columns.reserve(3);
-        for (const auto & arg : arguments)
+        for (const auto argument_index : collections::range(0, 3))
         {
-            casted_columns.push_back(castColumn(arg, common_type));
+            casted_columns.push_back(castColumn(arguments[argument_index], common_type));
         }
 
-        const auto & operands = checkAndGetColumn<ColumnVector<Float64>>(casted_columns[0].get())->getData();
-        const auto & mins = checkAndGetColumn<ColumnVector<Float64>>(casted_columns[1].get())->getData();
-        const auto & maxs = checkAndGetColumn<ColumnVector<Float64>>(casted_columns[2].get())->getData();
-        const auto & counts = checkAndGetColumn<ColumnVector<TResultType>>(arguments[3].column.get())->getData();
-        assert(operands.size() == input_rows_count);
-        assert(mins.size() == input_rows_count);
-        assert(maxs.size() == input_rows_count);
-        assert(counts.size() == input_rows_count);
+        const auto * operands_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[0].get()));
+        const auto * mins_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[1].get()));
+        const auto * maxs_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[2].get()));
+        const auto * counts_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<TCountType>>(arguments[3].column.get()));
 
-        for (auto i{0u}; i < input_rows_count; ++i)
+        const auto * operands_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[0].get());
+        const auto * mins_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[1].get());
+        const auto * maxs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[2].get());
+        const auto * counts_col_const = checkAndGetColumnConst<ColumnVector<TCountType>>(arguments[3].column.get());
+
+        assert((nullptr != operands_col_const) ^ (nullptr != operands_vec && operands_vec->size() == input_rows_count));
+        assert((nullptr != mins_col_const) ^ (nullptr != mins_vec && mins_vec->size() == input_rows_count));
+        assert((nullptr != maxs_col_const) ^ (nullptr != maxs_vec && maxs_vec->size() == input_rows_count));
+        assert((nullptr != counts_col_const) ^ (nullptr != counts_vec && counts_vec->size() == input_rows_count));
+
+        const auto are_all_const_cols
+            = nullptr != operands_col_const && nullptr != mins_col_const && nullptr != maxs_col_const && nullptr != counts_col_const;
+
+
+        if (are_all_const_cols)
         {
-            const auto operand = operands[i];
-            const auto min = mins[i];
-            const auto max = maxs[i];
-            const auto count = counts[i];
-            if (operand < min || min >= max)
-            {
-                results.push_back(0);
-            }
-            else if (operand >= max)
-            {
-                results.push_back(count + 1);
-            }
-            else
-            {
-                results.push_back(static_cast<TResultType>(count * ((operand - min) / (max - min)) + 1));
-            }
+            auto result_column = ColumnVector<ResultType>::create();
+            result_column->reserve(1);
+            auto & result_data = result_column->getData();
+            result_data.push_back(calculate<ResultType>(
+                operands_col_const->getValue<Float64>(),
+                mins_col_const->getValue<Float64>(),
+                maxs_col_const->getValue<Float64>(),
+                counts_col_const->template getValue<TCountType>()));
+
+            return ColumnConst::create(std::move(result_column), input_rows_count);
+        }
+
+        auto result_column = ColumnVector<ResultType>::create();
+        result_column->reserve(1);
+        auto & result_data = result_column->getData();
+
+        for (const auto row_index : collections::range(0, input_rows_count))
+        {
+            const auto operand = getValue<Float64>(operands_col_const, operands_vec, row_index);
+            const auto min = getValue<Float64>(mins_col_const, mins_vec, row_index);
+            const auto max = getValue<Float64>(maxs_col_const, maxs_vec, row_index);
+            const auto count = getValue<TCountType>(counts_col_const, counts_vec, row_index);
+            result_data.push_back(calculate<ResultType>(operand, min, max, count));
         }
 
         return result_column;
@@ -85,17 +138,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (auto i{0u}; i < 3; ++i)
+        for (const auto argument_index : collections::range(0, arguments.size()))
         {
-            const auto & data_type = arguments[i];
-            const auto is_integer_or_float = isInteger(data_type) || isFloat(data_type);
-            const auto extended = is_integer_or_float ? data_type->getSizeOfValueInMemory() > 8 : false;
-            if (!is_integer_or_float || extended)
+            if (!isNativeNumber(arguments[argument_index]))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first three arguments of function {} must be Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32 or "
-                    "Float64.",
+                    "The first three arguments of function {} must be a Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32 "
+                    "or Float64.",
                     getName());
             }
         }
@@ -126,9 +176,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr
+    executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        switch (result_type->getTypeId())
+        switch (arguments[3].type->getTypeId())
         {
             case TypeIndex::UInt8:
                 return executeForResultType<UInt8>(arguments, input_rows_count);
