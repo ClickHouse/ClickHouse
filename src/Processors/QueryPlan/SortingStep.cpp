@@ -238,7 +238,7 @@ void SortingStep::fullSortStreams(
             });
 
         StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+        limits.mode = LimitsMode::LIMITS_CURRENT;
         limits.size_limits = sort_settings.size_limits;
 
         pipeline.addSimpleTransform(
