@@ -8,7 +8,7 @@ namespace DB
 /**
  * This pass replaces chains of equality functions inside an OR with a single IN operator.
  * The replacement is done if:
- *  - rhs of the equality function is a literal
+ *  - rhs of the equality function is a constant
  *  - length of chain is at least 'optimize_min_equality_disjunction_chain_length' long OR lhs is LowCardinality
  *
  * E.g. (optimize_min_equality_disjunction_chain_length = 2)
@@ -25,10 +25,10 @@ namespace DB
  * -------------------------------
  */
 
-class OrEqualityChainToInPass final : public IQueryTreePass
+class LogicalExpressionOptimizerPass final : public IQueryTreePass
 {
 public:
-    String getName() override { return "OrEqualityChainToIn"; }
+    String getName() override { return "LogicalExpressionOptimizer"; }
 
     String getDescription() override { return "Transform all the 'or's with equality check to a single IN function"; }
 
