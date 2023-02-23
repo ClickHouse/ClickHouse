@@ -15,7 +15,7 @@ CREATE TABLE bloom_filter_idx
     INDEX bf (s, lower(s)) TYPE ngrambf_v1(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_idx VALUES
 (0, 'ClickHouse - столбцовая система управления базами данных (СУБД)'),
