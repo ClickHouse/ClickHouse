@@ -982,7 +982,7 @@ struct JSONExtractTree
                     return false;
             }
 
-            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(value);
+            assert_cast<ColumnDecimal<DecimalType> &>(dest).insertValue(value);
             return true;
         }
 

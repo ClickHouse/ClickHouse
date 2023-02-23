@@ -224,12 +224,12 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
 
         /// Sanity check. If new bucket was read, we should be able to push it.
         /// This is always false, but we still keep this condition in case the code will be changed.
-        if (!all_inputs_finished) // -V547
+        if (!all_inputs_finished)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "GroupingAggregatedTransform has read new two-level bucket, but couldn't push it.");
     }
     else
     {
-        if (!all_inputs_finished) // -V547
+        if (!all_inputs_finished)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "GroupingAggregatedTransform should have read all chunks for single level aggregation, "
                             "but not all of the inputs are finished.");
