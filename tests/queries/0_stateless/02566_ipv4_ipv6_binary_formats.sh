@@ -6,8 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 echo "CapnProto"
-${CLICKHOUSE_LOCAL} -q "select '2001:db8:11a3:9d7:1f34:8a2e:7a0:765d'::IPv6 as ipv6, '127.0.0.1'::IPv4 as ipv4 format CapnProto settings format_schema='format_schemas/02566_ipv4_ipv6:Message'" > 02566_ipv4_ipv6_data.capnp
-${CLICKHOUSE_LOCAL} -q "select * from file(02566_ipv4_ipv6_data.capnp, auto, 'ipv6 IPv6, ipv4 IPv4') settings format_schema='format_schemas/02566_ipv4_ipv6:Message'"
+${CLICKHOUSE_LOCAL} -q "select '2001:db8:11a3:9d7:1f34:8a2e:7a0:765d'::IPv6 as ipv6, '127.0.0.1'::IPv4 as ipv4 format CapnProto settings format_schema='$CURDIR/format_schemas/02566_ipv4_ipv6:Message'" > 02566_ipv4_ipv6_data.capnp
+${CLICKHOUSE_LOCAL} -q "select * from file(02566_ipv4_ipv6_data.capnp, auto, 'ipv6 IPv6, ipv4 IPv4') settings format_schema='$CURDIR/format_schemas/02566_ipv4_ipv6:Message'"
 rm 02566_ipv4_ipv6_data.capnp
 
 echo "Avro"
