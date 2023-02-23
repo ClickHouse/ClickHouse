@@ -113,7 +113,7 @@ public:
         }
 
         std::size_t diff = curSize - _size;
-        Iterator it = --_keys.end(); //--keys can never be invoked on an empty list due to the minSize==1 requirement of LRU
+        Iterator it = --_keys.end(); /// --keys can never be invoked on an empty list due to the minSize==1 requirement of LRU
         std::size_t i = 0;
 
         while (i++ < diff)
