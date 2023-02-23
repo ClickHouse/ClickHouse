@@ -809,10 +809,10 @@ def test_hdfsCluster_unset_skip_unavailable_shards(started_cluster):
     hdfs_api.write_data("/unskip_unavailable_shards", data)
 
     assert (
-            node1.query(
-                "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
-            )
-            == data
+        node1.query(
+            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
+        )
+        == data
     )
 
 
